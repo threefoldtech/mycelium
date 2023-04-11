@@ -15,6 +15,8 @@ pub struct Peer {
 impl Peer {
     pub fn new(id: String, to_tun: mpsc::UnboundedSender<Vec<u8>>, mut stream: TcpStream) -> Result<Self, Box<dyn Error>> {
 
+        stream.set_nodelay(true).unwrap();
+
         // Create channel for each peer
         let (to_peer, mut from_tun) = mpsc::unbounded_channel::<Vec<u8>>();
 
