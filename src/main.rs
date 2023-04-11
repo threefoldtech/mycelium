@@ -114,7 +114,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let link_mtu = 1500;
             let mut buf = vec![0u8; link_mtu];
             match node_tun_clone.recv(&mut buf).await{
-                Ok(_) => {
+                Ok(n) => {
+
+                    buf.truncate(n);
                    println!("Got this from TUN: {:?}", buf); // ZAL ROUTER SOLICITATIONS TONEN
 
                     // TEMPORARY - TEMPORARY - **************************************$$
