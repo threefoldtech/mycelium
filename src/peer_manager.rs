@@ -15,8 +15,9 @@ struct PeersConfig {
     peers: Vec<SocketAddr>,
 }
 
+#[derive(Debug,Clone)]
 pub struct PeerManager {
-    pub known_peers: Mutex<Vec<Peer>>,
+    pub known_peers: Arc<Mutex<Vec<Peer>>>,
 }
 
 impl PeerManager {
@@ -26,7 +27,7 @@ impl PeerManager {
         known_peers.push(myself_peer);
 
         Self {
-            known_peers: Mutex::new(known_peers),
+            known_peers: Arc::new(Mutex::new(known_peers)),
         }
     }
 
@@ -64,5 +65,12 @@ impl PeerManager {
                 eprintln!("Error reading nodeconfig.toml file: {}", e);
             }
        }
+    }
+
+    pub fn print_known_peers(&self) {
+        let known_peers = self.known_peers.lock().unwrap();
+        for peer in known_peers.iter() {
+            println!("Known peer: {}", peer.id);
+        }
     }
 }
