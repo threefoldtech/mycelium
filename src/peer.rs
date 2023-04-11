@@ -32,7 +32,7 @@ impl Peer {
                                 read_buf.truncate(n);
 
                                 // For testing purposes
-                                println!("Received bytes from peer: {:?}", read_buf);
+                                //println!("Received bytes from peer: {:?}", read_buf);
 
                                 // Send to TUN interface
                                 if let Err(error) = to_tun.send(read_buf.clone()) {

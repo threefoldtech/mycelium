@@ -8,6 +8,9 @@ use tokio::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
+use etherparse::IpHeader;
+use etherparse::PacketHeaders;
+
 
 mod node_setup;
 mod peer;
@@ -92,7 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             while let Some(packet) = from_peers.recv().await {
                 match node_tun_clone.send(&packet).await {
                     Ok(packet) => {
-                        println!("Received from 'from_peers': {:?}", packet);
+                        //println!("Received from 'from_peers': {:?}", packet);
                     },
                     Err(e) => {
                         eprintln!("Error sending to TUN interface: {}", e);
@@ -117,7 +120,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(n) => {
 
                     buf.truncate(n);
-                   println!("Got this from TUN: {:?}", buf); // ZAL ROUTER SOLICITATIONS TONEN
+
+                    let (header, _, remainder) = IpHeader::from_slice(&buf).unwrap();
+
+                    if let IpHeader::Version4(header,_) = header {
+                        if header.payload_len != remainder.len() as u16 {
+                            eprintln!("got trailing data");
+                        }
+                    } else {
+                        continue;
+                    }
+                    // if !remainder.is_empty() {
+                    //     println!("Found trailing packet data");
+                    // } else {
+                    //     eprintln!("Error: no remainder");
+                    // }
+
+                    // let packet_header = PacketHeaders::from_ip_slice(&buf).unwrap();
+
+                    // let payload_len = match packet_header.ip{
+                    //     Some(IpHeader::Version4(header,_)) => {
+                    //         header.payload_len
+                    //     },
+                    //     Some(IpHeader::Version6(header, _ )) => {
+                    //         header.payload_length
+                    //     },
+                    //     None => {
+                    //         continue
+                    //     }
+                    // };
+
+
+
+
+                   //println!("Got this from TUN: {:?}", buf); // ZAL ROUTER SOLICITATIONS TONEN
 
                     // TEMPORARY - TEMPORARY - **************************************$$
                     // TEMP TESTING: we hebben nu gewoon static 1 node toegevoegd van A naar B
