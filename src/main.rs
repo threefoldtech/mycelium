@@ -12,6 +12,7 @@ use tokio::net::TcpStream;
 mod node_setup;
 mod peer;
 mod peer_manager;
+mod packet_control;
 
 use peer::Peer;
 use peer_manager::PeerManager;
@@ -83,11 +84,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })
     });
 
-    // TODO: Loop to read the 'from_peers' receiver and foward it toward the TUN interface
 
+    // // TEST MESSAGE
+
+    // tokio::spawn(async move {
+    //     match TcpListener::bind("[::]:9651").await {
+    //         Ok(list) => {
+    //             match list.accept().await {
+    //                 Ok((stream,_)) => {
+    //                     println!("OKE LATEN WE KEER TESTEN");
+                        
+    //                 },
+    //                 Err(_) => {}
+    //             }
+    //         }, 
+    //         Err(_) => {}
+    //     }
+    // });
+
+
+
+
+
+    // Loop to read the 'from_peers' receiver and foward it toward the TUN interface
+    tokio::spawn(async move{
+        loop {
+            while let Some(packet) = from_peers.recv().await {
+                match node_tun.send(&packet).await {
+                    Ok(packet) => {
+                        println!("Received from 'from_peers': {:?}", packet);
+                    },
+                    Err(e) => {
+                        eprintln!("Error sending to TUN interface: {}", e);
+                    }
+                }
+            }
+        }
+    });
 
     // TODO: Loop to read from the TUN interface and forward it towards to correct destination peer (by selecting the correct to_peer sender)
-
+    tokio::spawn(async move{
+        loop {
+            // let link_mtu = 1500;
+            // let mut buf = vec![0u8; link_mtu];
+            // match node_tun.recv(buf).await{
+            //     Ok(_) => {
+            //        // TODO 
+            //     },
+            //     Err(e) => {
+            //         eprintln!("Error reading from TUN interface: {}", e);
+            //     }
+            // }
+            // WE NEED TO WORK WITH FRAMED HERE
+        }
+    });
 
 
     tokio::time::sleep(std::time::Duration::from_secs(60 * 60 * 24)).await;
