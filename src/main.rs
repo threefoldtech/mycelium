@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
-use etherparse::IpHeader;
+use etherparse::{IpHeader, icmpv6, Icmpv6Header, ip_number, Icmpv4Header, Icmpv4Type};
 use etherparse::PacketHeaders;
 
 
@@ -120,61 +120,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(n) => {
 
                     buf.truncate(n);
+                    
+
+                    // TEMPORARY
+                    // To play with etherparse, let create some basic filters for
+                    // ICMP and ICMPv6 packets. Note: these have no real purpose other than
+                    // playing around with etherparse crate
 
                     let (header, _, remainder) = IpHeader::from_slice(&buf).unwrap();
 
-                    if let IpHeader::Version4(header,_) = header {
-                        if header.payload_len != remainder.len() as u16 {
-                            eprintln!("got trailing data");
+                    // Differentiate between IPv4 and IPv6 packets
+                    match header {
+                        IpHeader::Version4(ipv4_header, _) => {
+                            // ICMP packets
+                            if ipv4_header.protocol == ip_number::ICMP {
+                               let icmp_header = Icmpv4Header::from_slice(&remainder).unwrap().0;
+                                match icmp_header.icmp_type {
+                                    Icmpv4Type::EchoRequest(_) => println!("ICMP Echo Request packet"),
+                                    Icmpv4Type::EchoReply(_) => println!("ICMP Echo Reply packet"),
+                                    // ... additional ICMP packets type belows
+                                    _ => (),
+                                }
+                            }
+                        },
+                        IpHeader::Version6(ipv6_header, _) => {
+                            // ICMP packets
+                            if ipv6_header.next_header == ip_number::IPV6_ICMP {
+                                let icmpv6_header = Icmpv6Header::from_slice(&remainder).unwrap().0;
+                                match icmpv6_header.icmp_type.type_u8() {
+                                    icmpv6::TYPE_ROUTER_SOLICITATION => println!("ICMPv6 Router Solicitation packet"),
+                                    icmpv6::TYPE_ROUTER_ADVERTISEMENT => println!("ICMPv6 Router Advertisement packet"),
+                                    // ... additional ICMPv6 packet types below
+                                    _ => (),
+                                }
+                            }
                         }
-                    } else {
-                        continue;
                     }
-                    // if !remainder.is_empty() {
-                    //     println!("Found trailing packet data");
-                    // } else {
-                    //     eprintln!("Error: no remainder");
-                    // }
-
-                    // let packet_header = PacketHeaders::from_ip_slice(&buf).unwrap();
-
-                    // let payload_len = match packet_header.ip{
-                    //     Some(IpHeader::Version4(header,_)) => {
-                    //         header.payload_len
-                    //     },
-                    //     Some(IpHeader::Version6(header, _ )) => {
-                    //         header.payload_length
-                    //     },
-                    //     None => {
-                    //         continue
-                    //     }
-                    // };
 
 
-
-
-                   //println!("Got this from TUN: {:?}", buf); // ZAL ROUTER SOLICITATIONS TONEN
-
-                    // TEMPORARY - TEMPORARY - **************************************$$
-                    // TEMP TESTING: we hebben nu gewoon static 1 node toegevoegd van A naar B
-                    // en B voegt A automatisch ook als peer toe
-                    // laten we nu voorlopig gewoon zeggen --> packetmanager eerste peer in lijst
-                    // en daarmee verder testen
-
-
-
+                    // TEMPORARY: send the message to the Node B (looksaus) --> caution: normally
+                    // we need to check based upon some kind of ID where to send the packet to
+                    // by selecting the correct to_peer sender halve
                     if let Some(first_peer) = &peer_man_clone.known_peers.lock().unwrap().get(1) {
                         first_peer.to_peer.send(buf).unwrap();
                     }
-
-
-
-                    
-
-
-
-                    // TEMPORARY - TEMPORARY - **************************************$$
-                     
 
 
 
