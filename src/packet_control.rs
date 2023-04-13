@@ -1,11 +1,9 @@
-use etherparse::ip_number;
 use tokio_util::codec::{Decoder, Encoder};
 use bytes::{BytesMut, Buf, BufMut};
 
-
 pub enum Packet {
     DataPacket(DataPacket), // packet coming from kernel
-    ControlPacket(ControlPacket), // babel related packets
+    //ControlPacket(ControlPacket), // babel related packets
 }
 // todo: high-level packetcodec 
 
@@ -14,15 +12,23 @@ pub struct DataPacket {
     pub raw_data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 pub enum PacketType {
-    DataPacket,
-    ControlPacket,
+    DataPacket = 0,
+    _ControlPacket = 1,
 }
 
 pub struct PacketCodec {
-    packet_type: PacketType,
+    packet_type: Option<PacketType>,
     data_packet_codec: DataPacketCodec,
-    control_packet_codec: ControlPacketCodec,
+    //control_packet_codec: ControlPacketCodec,
+}
+
+impl PacketCodec {
+    pub fn new() -> Self {
+        PacketCodec {packet_type: None, data_packet_codec: DataPacketCodec::new()}
+    }
 }
 
 pub struct DataPacketCodec {
@@ -31,7 +37,7 @@ pub struct DataPacketCodec {
 
 impl DataPacketCodec{
     pub fn new() -> Self {
-        DataPacketCodec { len:None }
+        DataPacketCodec { len: None }
     }
 }
 
@@ -44,7 +50,7 @@ impl Decoder for DataPacketCodec {
             data_len
         } else {
 
-            // do we have enough data to decode
+            // check we have enough data to decode
             if src.len() < 2 {
                 return Ok(None);
             }    
@@ -89,94 +95,67 @@ impl Encoder<DataPacket> for DataPacketCodec {
     }
 }
 
-pub enum ControlPacket {
-    Ping(u32),
-    OtherControlType(u32),
-    // ... additional types of control packets
-}
+impl Decoder for PacketCodec {
+    type Item = Packet;
+    type Error = std::io::Error; 
 
-struct ControlPacketHeader {
-    header_type: u8,
-    len: u8,
-}
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let packet_type = if let Some(packet_type) = self.packet_type {
+            packet_type
+        } else {
 
-pub struct ControlPacketCodec {
-   //header: ControlPacketHeader,
-   //data: Vec<u8>,
-}
+            // Check if we have enough bytes to read one byte (which shows to packet type)
+            if src.len() < 1 {
+                return Ok(None);
+            }
 
-// impl Decoder for ControlPacketCodec {
-//     type Item = ControlPacket;
-//     type Error = std::io::Error;
+            let raw_packet_type = src.get_u8(); // Beware: this advances src by 1 u8
+            let packet_type = match raw_packet_type {
+                0 => { PacketType::DataPacket }
+                // 1 => { PacketType::ControlPacket }
+                _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unrecognized packet type"))
+            };
+            
+            packet_type
+        };
 
-//     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-//         // Check if we have enough data to read the header
-//         if src.len() < 2 {
-//             return Ok(None);
-//         }
-
-//         // Read the header
-//         self.header.header_type = src[0];
-//         self.header.len = src[1];
-
-//         // Check if we have enough data to read the rest of the packet
-//         if src.len() < 2 + self.header.len as usize {
-//             return Ok(None);
-//         }
-
-//         // Read the rest of the packet
-//         self.data = src[2..2 + self.header.len as usize].to_vec();
-
-//         // Remove the packet from the buffer
-//         src.advance(2 + self.header.len as usize);
-
-//         // Parse the packet
-//         match self.header.header_type {
-//             ip_number::ICMP => {
-//                 // Ping packet
-//                 let ping_id = u32::from_le_bytes(self.data.clone().try_into().unwrap());
-//                 Ok(Some(ControlPacket::Ping(ping_id)))
-//             },
-//             1 => {
-//                 // Other control packet
-//                 let other_control_id = u32::from_le_bytes(self.data.clone().try_into().unwrap());
-//                 Ok(Some(ControlPacket::OtherControlType(other_control_id)))
-//             },
-//             _ => {
-//                 // Unknown packet type
-//                 Err(std::io::Error::new(
-//                     std::io::ErrorKind::InvalidData,
-//                     "Unknown packet type",
-//                 ))
-//             }
-//         }
-//     }
-// }
-
-// implement the encoder
-impl Encoder<ControlPacket> for ControlPacketCodec {
-    type Error = std::io::Error;
-
-    fn encode(&mut self, item: ControlPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        match item {
-            ControlPacket::Ping(ping_id) => {
-                // Write the header
-                dst.put_u8(0);
-                dst.put_u8(4);
-
-                // Write the data
-                dst.put_u32_le(ping_id);
-            },
-            ControlPacket::OtherControlType(other_control_id) => {
-                // Write the header
-                dst.put_u8(1);
-                dst.put_u8(4);
-
-                // Write the data
-                dst.put_u32_le(other_control_id);
-            },
+        match packet_type {
+            PacketType::DataPacket => {
+                match self.data_packet_codec.decode(src) {
+                    Ok(Some(p)) => {
+                        self.packet_type = None; // necessary otherwise we would have the situation where assume the packet_type already exists and just read further
+                        Ok(Some(Packet::DataPacket(p)))
+                    },
+                    Ok(None) => {
+                        Ok(None)
+                    },
+                    Err(e) => {
+                        Err(e)
+                    }
+                }
+            }
+            PacketType::_ControlPacket => {
+                unimplemented!()
+            }
         }
-
-        Ok(())
     }
 }
+
+impl Encoder<Packet> for PacketCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: Packet, dst: &mut BytesMut) -> Result<(), Self::Error> { 
+        match item {
+            Packet::DataPacket(datapacket) => {
+                dst.put_u8(0);
+                self.data_packet_codec.encode(datapacket, dst)
+            }
+            // PacketType::ControlPacket(controlpacket) => {
+            //     dst.put_u8(1);
+            //     self.control_packet.codec.encode(controlpacket);
+            // }
+        }
+    }
+}
+
+

@@ -1,8 +1,5 @@
-use std::collections::HashMap;
 use tokio::{sync::mpsc::UnboundedSender, net::TcpStream};
-use tokio_util::codec::Framed;
-
-use crate::peer::{Peer, self};
+use crate::peer::Peer;
 use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use std::net::SocketAddr; 
@@ -65,12 +62,5 @@ impl PeerManager {
                 eprintln!("Error reading nodeconfig.toml file: {}", e);
             }
        }
-    }
-
-    pub fn print_known_peers(&self) {
-        let known_peers = self.known_peers.lock().unwrap();
-        for peer in known_peers.iter() {
-            println!("Known peer: {}", peer.id);
-        }
     }
 }
