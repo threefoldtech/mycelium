@@ -3,6 +3,7 @@ use std::{
     net::{Ipv4Addr},
 };
 
+use bytes::BytesMut;
 use clap::Parser;
 use tokio::sync::mpsc;
 use tokio::net::TcpListener;
@@ -10,6 +11,7 @@ use tokio::net::TcpStream;
 
 use etherparse::{IpHeader, icmpv6, Icmpv6Header, ip_number, Icmpv4Header, Icmpv4Type};
 use etherparse::PacketHeaders;
+use tokio_util::codec::{Decoder, Encoder};
 
 
 mod node_setup;
@@ -116,10 +118,59 @@ async fn main() -> Result<(), Box<dyn Error>> {
         loop {
             let link_mtu = 1500;
             let mut buf = vec![0u8; link_mtu];
-            match node_tun_clone.recv(&mut buf).await{
+            match node_tun_clone.recv(&mut buf).await {
                 Ok(n) => {
-
                     buf.truncate(n);
+
+
+                    if let Some(first_peer) = &peer_man_clone.known_peers.lock().unwrap().get(1) {
+                        println!("Sending a message to my first_peer");
+                        first_peer.to_peer.send(buf).unwrap(); // assumption for now: buf is a fully qualified DataPacket for now
+                    }
+    
+                // // //     // Create a BytesMut buffer from the received data
+                // // //     let mut bytes_mut = BytesMut::from(&buf[..]);
+    
+                // // //     // Decode the data using the ControlPacketCodec
+                // // //     match packet_control::ControlPacketCodec::decode(&mut bytes_mut) {
+                // // //         Ok(Some(packet)) => {
+                // // //             // Handle the decoded packet
+                // // //             match packet {
+                // // //                 packet_control::ControlPacket::Ping(ping_id) => {
+                // // //                     // Handle the Ping packet
+                // // //                     println!("Received a Ping packet with ID: {}", ping_id);
+                // // //                 }
+                // // //                 packet_control::ControlPacket::OtherControlType(other_control_id) => {
+                // // //                     // Handle the OtherControlType packet
+                // // //                     println!("Received an OtherControlType packet with ID: {}", other_control_id);
+                // // //                 }
+                // // //             }
+
+
+                            
+                // // //             // if let Some(first_peer) = &peer_man_clone.known_peers.lock().unwrap().get(1) {
+                // // //             //     println!("Sending a message to my first_peer");
+                // // //             //     first_peer.to_peer.send(buf).unwrap();
+                // // //             // }
+
+                // // //         }
+                // // //         Ok(None) => {
+                // // //             // Not enough data to decode a packet, continue reading
+                // // //         }
+                // // //         Err(e) => {
+                // // //             // Handle the error while decoding
+                // // //             println!("Error decoding the packet: {}", e);
+                // // //         }
+                // // //     }
+                // // // },
+                // // // Err(e) => {
+                // // //     eprintln!("Error reading from TUN interface: {}", e);
+                // // // }
+            },
+            Err(e) => {
+                eprintln!("Error reading from TUN: {}", e);
+            }
+
                     
 
                     // TEMPORARY
@@ -127,57 +178,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     // ICMP and ICMPv6 packets. Note: these have no real purpose other than
                     // playing around with etherparse crate
 
-                    let (header, _, remainder) = IpHeader::from_slice(&buf).unwrap();
+                    // // // // // // let (header, _, remainder) = IpHeader::from_slice(&buf).unwrap();
 
-                    // Differentiate between IPv4 and IPv6 packets
-                    match header {
-                        IpHeader::Version4(ipv4_header, _) => {
-                            // ICMP packets
-                            if ipv4_header.protocol == ip_number::ICMP {
-                               let icmp_header = Icmpv4Header::from_slice(&remainder).unwrap().0;
-                                match icmp_header.icmp_type {
-                                    Icmpv4Type::EchoRequest(_) => println!("ICMP Echo Request packet"),
-                                    Icmpv4Type::EchoReply(_) => println!("ICMP Echo Reply packet"),
-                                    // ... additional ICMP packets type belows
-                                    _ => (),
-                                }
-                            }
-                        },
-                        IpHeader::Version6(ipv6_header, _) => {
-                            // ICMP packets
-                            if ipv6_header.next_header == ip_number::IPV6_ICMP {
-                                let icmpv6_header = Icmpv6Header::from_slice(&remainder).unwrap().0;
-                                match icmpv6_header.icmp_type.type_u8() {
-                                    icmpv6::TYPE_ROUTER_SOLICITATION => println!("ICMPv6 Router Solicitation packet"),
-                                    icmpv6::TYPE_ROUTER_ADVERTISEMENT => println!("ICMPv6 Router Advertisement packet"),
-                                    // ... additional ICMPv6 packet types below
-                                    _ => (),
-                                }
-                            }
-                        }
-                    }
+                    // // // // // // // Differentiate between IPv4 and IPv6 packets
+                    // // // // // // match header {
+                    // // // // // //     IpHeader::Version4(ipv4_header, _) => {
+                    // // // // // //         // ICMP packets
+                    // // // // // //         if ipv4_header.protocol == ip_number::ICMP {
+                    // // // // // //            let icmp_header = Icmpv4Header::from_slice(&remainder).unwrap().0;
+                    // // // // // //             match icmp_header.icmp_type {
+                    // // // // // //                 Icmpv4Type::EchoRequest(_) => println!("ICMP Echo Request packet"),
+                    // // // // // //                 Icmpv4Type::EchoReply(_) => println!("ICMP Echo Reply packet"),
+                    // // // // // //                 // ... additional ICMP packets type belows
+                    // // // // // //                 _ => (),
+                    // // // // // //             }
+                    // // // // // //         }
+                    // // // // // //     },
+                    // // // // // //     IpHeader::Version6(ipv6_header, _) => {
+                    // // // // // //         // ICMP packets
+                    // // // // // //         if ipv6_header.next_header == ip_number::IPV6_ICMP {
+                    // // // // // //             let icmpv6_header = Icmpv6Header::from_slice(&remainder).unwrap().0;
+                    // // // // // //             match icmpv6_header.icmp_type.type_u8() {
+                    // // // // // //                 icmpv6::TYPE_ROUTER_SOLICITATION => println!("ICMPv6 Router Solicitation packet"),
+                    // // // // // //                 icmpv6::TYPE_ROUTER_ADVERTISEMENT => println!("ICMPv6 Router Advertisement packet"),
+                    // // // // // //                 // ... additional ICMPv6 packet types below
+                    // // // // // //                 _ => (),
+                    // // // // // //             }
+                    // // // // // //         }
+                    // // // // // //     }
+                    // // // // // // }
 
 
                     // TEMPORARY: send the message to the Node B (looksaus) --> caution: normally
                     // we need to check based upon some kind of ID where to send the packet to
                     // by selecting the correct to_peer sender halve
-                    if let Some(first_peer) = &peer_man_clone.known_peers.lock().unwrap().get(1) {
-                        first_peer.to_peer.send(buf).unwrap();
-                    }
 
 
 
-                },
-                Err(e) => {
-                    eprintln!("Error reading from TUN interface: {}", e);
-                }
-            }
+                
+
             // WE NEED TO WORK WITH FRAMED HERE
 
             
             
 
-        }
+        }}
     });
 
 

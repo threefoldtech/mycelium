@@ -1,99 +1,182 @@
-// As an example, consider a protocol that can be used to send strings where each frame is 
-// a four byte integer that contains the length of the frame, followed by that many bytes of string data. 
-// The decoder fails with an error if the string data is not valid utf-8 or too long.
+use etherparse::ip_number;
+use tokio_util::codec::{Decoder, Encoder};
+use bytes::{BytesMut, Buf, BufMut};
 
-use tokio_util::codec::Decoder;
-use bytes::{BytesMut, Buf};
 
-pub struct MyStringDecoder{}
+pub enum Packet {
+    DataPacket(DataPacket), // packet coming from kernel
+    ControlPacket(ControlPacket), // babel related packets
+}
+// todo: high-level packetcodec 
 
-const MAX: usize = 8 * 1024 * 1024;
+pub struct DataPacket {
+    // ... additional types of data packets
+    pub raw_data: Vec<u8>,
+}
 
-impl Decoder for MyStringDecoder {
-    type Item = String;
-    type Error = std::io::Error;
+pub enum PacketType {
+    DataPacket,
+    ControlPacket,
+}
 
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.len() < 4 {
-            // Not enough data to read length marker.
-            return Ok(None);
-        }
+pub struct PacketCodec {
+    packet_type: PacketType,
+    data_packet_codec: DataPacketCodec,
+    control_packet_codec: ControlPacketCodec,
+}
 
-        // Read length marker
-        let mut length_bytes = [0u8; 4];
-        length_bytes.copy_from_slice(&src[..4]);
-        let length = u32::from_le_bytes(length_bytes) as usize;
+pub struct DataPacketCodec {
+    len: Option<u16>,
+}
 
-        // Check that the length is not too large to avoid a denial of
-        // service attack where the server runs out of memory.
-        if length > MAX {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Frame of length {} is too large.", length)
-            ));
-        }
-
-        if src.len() < 4 + length {
-            // The full string has not yet arrived.
-            //
-            // We reserve more place in the buffer. This is not strictly
-            // necessary, but is a good idea performance-wise.
-            src.reserve(4 + length - src.len());
-
-            // We inform the Framed that we need more bytes to form the next
-            // frame
-            return Ok(None);
-        }
-
-        // Use advance to modify src such that it no longer contains
-        // this frame.
-        let data = src[4..4 + length].to_vec();
-        src.advance(4 + length);
-
-        // Convert the data to a string, or fail if it is not valid utf-8.
-        match String::from_utf8(data) {
-            Ok(string) => Ok(Some(string)),
-            Err(utf8_error) => {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    utf8_error.utf8_error(),
-                ))
-            },
-        }
+impl DataPacketCodec{
+    pub fn new() -> Self {
+        DataPacketCodec { len:None }
     }
 }
 
-// As an example, consider a protocol that can be used to send strings where each frame is 
-// a four byte integer that contains the length of the frame, followed by that many bytes of string data. 
-// The encoder will fail if the string is too long.
-
-use tokio_util::codec::Encoder;
-
-pub struct MyStringEncoder {}
-
-impl Encoder<String> for MyStringEncoder {
+impl Decoder for DataPacketCodec {
+    type Item = DataPacket;
     type Error = std::io::Error;
 
-    fn encode(&mut self, item: String, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        // Don't send a string if it is longer than the other end will
-        // accept.
-        if item.len() > MAX {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Frame of length {} is too large.", item.len())
-            ));
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let data_len = if let Some(data_len) = self.len {
+            data_len
+        } else {
+
+            // do we have enough data to decode
+            if src.len() < 2 {
+                return Ok(None);
+            }    
+
+            let data_len = src.get_u16();
+            self.len = Some(data_len);
+
+            data_len
+        } as usize;
+
+        if src.len() < data_len {
+
+            src.reserve(data_len - src.len());
+
+            return Ok(None);
+        } 
+
+        // we have enough data
+        let data = src[..data_len].to_vec();
+        src.advance(data_len);
+
+        // set len to None so next we read we start at header again
+        self.len = None;
+
+        Ok(Some(DataPacket{raw_data: data}))
+   }
+}
+
+impl Encoder<DataPacket> for DataPacketCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: DataPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        // implies that length is never more than u16
+
+        dst.put_u16(item.raw_data.len() as u16);
+        dst.reserve(item.raw_data.len());
+
+        dst.extend_from_slice(&item.raw_data);
+
+
+        Ok(())
+    }
+}
+
+pub enum ControlPacket {
+    Ping(u32),
+    OtherControlType(u32),
+    // ... additional types of control packets
+}
+
+struct ControlPacketHeader {
+    header_type: u8,
+    len: u8,
+}
+
+pub struct ControlPacketCodec {
+   //header: ControlPacketHeader,
+   //data: Vec<u8>,
+}
+
+// impl Decoder for ControlPacketCodec {
+//     type Item = ControlPacket;
+//     type Error = std::io::Error;
+
+//     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+//         // Check if we have enough data to read the header
+//         if src.len() < 2 {
+//             return Ok(None);
+//         }
+
+//         // Read the header
+//         self.header.header_type = src[0];
+//         self.header.len = src[1];
+
+//         // Check if we have enough data to read the rest of the packet
+//         if src.len() < 2 + self.header.len as usize {
+//             return Ok(None);
+//         }
+
+//         // Read the rest of the packet
+//         self.data = src[2..2 + self.header.len as usize].to_vec();
+
+//         // Remove the packet from the buffer
+//         src.advance(2 + self.header.len as usize);
+
+//         // Parse the packet
+//         match self.header.header_type {
+//             ip_number::ICMP => {
+//                 // Ping packet
+//                 let ping_id = u32::from_le_bytes(self.data.clone().try_into().unwrap());
+//                 Ok(Some(ControlPacket::Ping(ping_id)))
+//             },
+//             1 => {
+//                 // Other control packet
+//                 let other_control_id = u32::from_le_bytes(self.data.clone().try_into().unwrap());
+//                 Ok(Some(ControlPacket::OtherControlType(other_control_id)))
+//             },
+//             _ => {
+//                 // Unknown packet type
+//                 Err(std::io::Error::new(
+//                     std::io::ErrorKind::InvalidData,
+//                     "Unknown packet type",
+//                 ))
+//             }
+//         }
+//     }
+// }
+
+// implement the encoder
+impl Encoder<ControlPacket> for ControlPacketCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: ControlPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        match item {
+            ControlPacket::Ping(ping_id) => {
+                // Write the header
+                dst.put_u8(0);
+                dst.put_u8(4);
+
+                // Write the data
+                dst.put_u32_le(ping_id);
+            },
+            ControlPacket::OtherControlType(other_control_id) => {
+                // Write the header
+                dst.put_u8(1);
+                dst.put_u8(4);
+
+                // Write the data
+                dst.put_u32_le(other_control_id);
+            },
         }
 
-        // Convert the length into a byte array.
-        // The cast to u32 cannot overflow due to the length check above.
-        let len_slice = u32::to_le_bytes(item.len() as u32);
-
-        // Reserve space in the buffer
-        dst.reserve(4 + item.len());
-
-        // Write the length and the string to the buffer
-        dst.extend_from_slice(&len_slice);
-        dst.extend_from_slice(&item.as_bytes());
         Ok(())
     }
 }
