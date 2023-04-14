@@ -144,7 +144,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     match packet_codec.decode(&mut buf) {
                         Ok(decoded_packet) => {
                             // Send it to to_routing halve
-                            to_routing_clone.send(decoded_packet.unwrap());
+                            match decoded_packet {
+                                Some(packet) => {
+                                    to_routing_clone.send(packet);
+                                },
+                                None => {
+                                    continue;
+                                }
+                            }
                         }
                         Err(e) => {
                             eprintln!("Failed to decode packet: {}", e);
