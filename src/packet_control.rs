@@ -5,10 +5,8 @@ pub enum Packet {
     DataPacket(DataPacket), // packet coming from kernel
     //ControlPacket(ControlPacket), // babel related packets
 }
-// todo: high-level packetcodec 
 
 pub struct DataPacket {
-    // ... additional types of data packets
     pub raw_data: Vec<u8>,
 }
 

@@ -1,5 +1,5 @@
 use tokio::{sync::mpsc::UnboundedSender, net::TcpStream};
-use crate::peer::Peer;
+use crate::{peer::Peer, packet_control::Packet};
 use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use std::net::SocketAddr; 
@@ -18,17 +18,15 @@ pub struct PeerManager {
 }
 
 impl PeerManager {
-    pub fn new(myself_peer: Peer) -> Self {
+    pub fn new() -> Self {
         let mut known_peers: Vec<Peer> = Vec::new();
-        // add itself
-        known_peers.push(myself_peer);
 
         Self {
             known_peers: Arc::new(Mutex::new(known_peers)),
         }
     }
 
-    pub async fn get_peers_from_config(&self, to_tun: UnboundedSender<Vec<u8>>) {
+    pub async fn get_peers_from_config(&self, to_tun: UnboundedSender<Packet>) {
        // Read from the nodeconfig.toml file
        match std::fs::read_to_string(NODE_CONFIG_FILE_PATH) {
             Ok(file_content) => {

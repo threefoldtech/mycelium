@@ -5,28 +5,26 @@ use tokio::{
     select,
     sync::{mpsc},
 };
-use tokio_util::codec::Framed;
+use tokio_util::codec::{Framed, Decoder};
 
 use crate::packet_control::{DataPacket, Packet, PacketCodec};
 
 #[derive(Debug)]
 pub struct Peer {
     pub id: String,
-    pub to_peer: mpsc::UnboundedSender<Vec<u8>>,
+    pub to_peer: mpsc::UnboundedSender<Packet>,
 }
 
 impl Peer {
-    pub fn new(
-        id: String,
-        to_tun: mpsc::UnboundedSender<Vec<u8>>,
-        stream: TcpStream,
-    ) -> Result<Self, Box<dyn Error>> {
-        let mut framed = Framed::new(stream, PacketCodec::new());
+    pub fn new(id: String, to_routing: mpsc::UnboundedSender<Packet>, stream: TcpStream) -> Result<Self, Box<dyn Error>> {
 
-        // Create channel for each peer
-        let (to_peer, mut from_tun) = mpsc::unbounded_channel::<Vec<u8>>();
+        // Create a Framed for each peer
+        let mut framed = Framed::new(stream, PacketCodec::new());
+        // Create an unbounded channel for each peer
+        let (to_peer, mut from_routing) = mpsc::unbounded_channel::<Packet>();
 
         tokio::spawn(async move {
+            let packet_codec= PacketCodec::new();
             loop {
                 select! {
                     // received from peer
@@ -35,9 +33,10 @@ impl Peer {
                             Some(Ok(packet)) => {
                                // Send to TUN interface
                                // toekomst: nog een een tussenstap
+                               println!("3: I'm the peer instance that got the message from the TCP stream");
                                 match packet {
                                     Packet::DataPacket(packet) => {
-                                        if let Err(error) = to_tun.send(packet.raw_data) {
+                                        if let Err(error) = to_routing.send(Packet::DataPacket(packet)){
                                          eprintln!("Error sending to TUN: {}", error);
                                         }
 
@@ -52,17 +51,15 @@ impl Peer {
                                 eprintln!("Error from framed: {}", e);
                             },
                             None => {
-                                println!("stream is closed.");
+                                println!("Stream is closed.");
                                 return
                             }
                         }
                     }
-                    // receive from tun (send to peer)
-                    Some(raw_data) = from_tun.recv() => {
-                        // if received from TUN, always data packet
-                        let data_packet = Packet::DataPacket(DataPacket {raw_data});
-
-                        if let Err(e) = framed.send(data_packet).await {
+                    // receive from from_routing
+                    Some(packet) = from_routing.recv() => { 
+                        // Send it over the TCP stream
+                        if let Err(e) = framed.send(packet).await {
                             eprintln!("Error writing to stream: {}", e);
                         }
                     }
