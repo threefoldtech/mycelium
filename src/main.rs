@@ -143,8 +143,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_tun_clone = node_tun.clone();
     let to_routing_clone = to_routing.clone();
     tokio::spawn(async move {
-        let mut buf = BytesMut::zeroed(LINK_MTU);
         loop {
+            let mut buf = BytesMut::zeroed(LINK_MTU);
             match node_tun_clone.recv(&mut buf).await {
                 Ok(n) => {
                     buf.truncate(n);
