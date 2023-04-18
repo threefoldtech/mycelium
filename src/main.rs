@@ -148,30 +148,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(n) => {
                     buf.truncate(n);
 
-                    println!("Got packet on my TUN");
+                    println!("Got packet on my TUN, byyes: {}", n);
 
                     // Remainder: if we read from TUN we will only need to parse them into DataPackets
                     // Extract the destination IP address using Etherparse
-                    let packet = PacketHeaders::from_ip_slice(&buf).unwrap();
-                    if let Some(IpHeader::Version4(header, _)) = packet.ip {
-                        let dest_addr = Ipv4Addr::from(header.destination);
-                        println!("Destination IPv4 address: {}", dest_addr);
+                    match PacketHeaders::from_ip_slice(&buf) {
+                        Ok(packet) => {
+                            if let Some(IpHeader::Version4(header, _)) = packet.ip {
+                                let dest_addr = Ipv4Addr::from(header.destination);
+                                println!("Destination IPv4 address: {}", dest_addr);
 
-                        let data_packet = DataPacket {
-                            dest_ip: dest_addr,
-                            raw_data: buf.to_vec(),
-                        };
+                                let data_packet = DataPacket {
+                                    dest_ip: dest_addr,
+                                    raw_data: buf.to_vec(),
+                                };
 
-                        match to_routing_clone.send(Packet::DataPacket(data_packet)) {
-                            Ok(_) => {
-                                println!("packet sent to to_routing");
-                            }
-                            Err(e) => {
-                                eprintln!("Error sending packet to to_routing: {}", e);
+                                println!("LEN: {}", data_packet.raw_data.len());
+
+                                match to_routing_clone.send(Packet::DataPacket(data_packet)) {
+                                    Ok(_) => {
+                                        println!("packet sent to to_routing");
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Error sending packet to to_routing: {}", e);
+                                    }
+                                }
+                            } else {
+                                println!("Non-IPv4 packet received, ignoring...");
                             }
                         }
-                    } else {
-                        println!("Non-IPv4 packet received, ignoring...");
+                        Err(e) => {
+                            println!("buffer: {:?}", buf);
+                            eprintln!("Error from_ip_slice: {e}");
+                        }
                     }
                 }
                 Err(e) => {
