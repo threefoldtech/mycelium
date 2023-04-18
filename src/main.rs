@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Create an unbounded channel for this node
-    let (_to_tun, mut from_routing) = mpsc::unbounded_channel::<Packet>();
+    let (to_tun, mut from_routing) = mpsc::unbounded_channel::<Packet>();
     let (to_routing, mut from_node) = mpsc::unbounded_channel::<Packet>();
 
     // Create the PeerManager: an interface to all peers this node is connected to
@@ -110,20 +110,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // tokio::spawn(async move {
-    //     // loop to read from_peers and send to to_peer or TUN interface
-    //     loop {
-    //         while let Some(packet) = from_peers.recv().await {
-    //             // packet for me: send to TUN
-
-    //             // Er klopt toch iets niet? je lees van from_peers en zou sturen naar TUN maar loop hieronder leest al from routing en stuur naar TUN
-    //             // ----> MOET HET NIET NAAR to_tun zijn in de plaats?
-
-    //             // TODO: packet for other peer: send to to_peer
-    //         }
-    //     }
-    // });
-
     // Loop to read the 'from_routing' receiver and foward it toward the TUN interface
     let node_tun_clone = node_tun.clone();
     tokio::spawn(async move {
@@ -188,15 +174,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    // Loop to read from from_node reeiver and route the packet further
+    // the route_packet function will send the packet towards the correct to_peer (based on dest ip of packet)
+    // or towards this own node's TUN interface (if dest ip of packet is this node's TUN addr)
     let peer_man_clone = peer_manager.clone();
+    let node_tun_clone = node_tun.clone();
+    let to_tun_sender_clone = to_tun.clone();
     tokio::spawn(async move {
         loop {
+            let node_tun_inner_clone = node_tun_clone.clone();
+            let to_tun_sender_inner_clone = to_tun_sender_clone.clone();
             while let Some(packet) = from_node.recv().await {
-                println!("Read message from from_node, sending it to route_packet function");
-                peer_man_clone.route_packet(packet);         
+                //println!("Read message from from_node, sending it to route_packet function");
+                peer_man_clone.route_packet(packet, node_tun_inner_clone.clone(), to_tun_sender_inner_clone.clone());
             }
         }
     });
+    
 
     tokio::time::sleep(std::time::Duration::from_secs(60 * 60 * 24)).await;
     Ok(())

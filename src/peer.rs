@@ -25,7 +25,6 @@ impl Peer {
         let (to_peer, mut from_routing) = mpsc::unbounded_channel::<Packet>();
 
         tokio::spawn(async move {
-            let packet_codec= PacketCodec::new();
             loop {
                 select! {
                     // received from peer
