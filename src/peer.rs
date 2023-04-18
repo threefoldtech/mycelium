@@ -1,5 +1,5 @@
 use futures::{SinkExt, StreamExt};
-use std::{error::Error, net::IpAddr};
+use std::{error::Error, net::{IpAddr, Ipv4Addr}};
 use tokio::{
     net::TcpStream,
     select,
@@ -11,12 +11,13 @@ use crate::packet_control::{DataPacket, Packet, PacketCodec};
 
 #[derive(Debug)]
 pub struct Peer {
-    pub overlay_ip: IpAddr, 
+    pub stream_ip: IpAddr, 
     pub to_peer: mpsc::UnboundedSender<Packet>,
+    pub overlay_ip: Ipv4Addr,
 }
 
 impl Peer {
-    pub fn new(overlay_ip: IpAddr, to_routing: mpsc::UnboundedSender<Packet>, stream: TcpStream) -> Result<Self, Box<dyn Error>> {
+    pub fn new(stream_ip: IpAddr, to_routing: mpsc::UnboundedSender<Packet>, stream: TcpStream, overlay_ip: Ipv4Addr) -> Result<Self, Box<dyn Error>> {
 
         // Create a Framed for each peer
         let mut framed = Framed::new(stream, PacketCodec::new());
@@ -68,6 +69,6 @@ impl Peer {
             }
         });
 
-        Ok(Self { overlay_ip, to_peer })
+        Ok(Self { stream_ip, to_peer, overlay_ip })
     }
 }

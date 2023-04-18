@@ -1,6 +1,7 @@
 use crate::{packet_control::Packet, peer::Peer};
 use serde::Deserialize;
-use std::net::SocketAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::net::{SocketAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedSender};
 
@@ -25,7 +26,7 @@ impl PeerManager {
         }
     }
 
-    pub async fn get_peers_from_config(&self, to_tun: UnboundedSender<Packet>) {
+    pub async fn get_peers_from_config(&self, to_tun: UnboundedSender<Packet>, tun_addr_own_node: Ipv4Addr) {
         // Read from the nodeconfig.toml file
         match std::fs::read_to_string(NODE_CONFIG_FILE_PATH) {
             Ok(file_content) => {
@@ -33,11 +34,24 @@ impl PeerManager {
                 let config: PeersConfig = toml::from_str(&file_content).unwrap();
                 for peer_addr in config.peers {
                     match TcpStream::connect(peer_addr).await {
-                        Ok(peer_stream) => {
+                        Ok(mut peer_stream) => {
                             println!("TCP stream connected: {}", peer_addr);
+
+                            
+                            // 2. Read other node's TUN address from the stream
+                            let mut buffer = [0u8; 4];
+                            peer_stream.read_exact(&mut buffer).await.unwrap();
+                            let received_overlay_ip = Ipv4Addr::from(buffer);
+                            println!("Received overlay IP from other node: {:?}", received_overlay_ip);
+
+                            // 3. Send own TUN address over the stream
+                            let ip_bytes = tun_addr_own_node.octets();
+                            peer_stream.write_all(&ip_bytes).await.unwrap();
+
+
                             // Create peer instance
-                            let peer_overlay_ip = peer_addr.ip();
-                            match Peer::new(peer_overlay_ip, to_tun.clone(), peer_stream) {
+                            let peer_stream_ip= peer_addr.ip();
+                            match Peer::new(peer_stream_ip, to_tun.clone(), peer_stream, received_overlay_ip) {
                                 Ok(new_peer) => {
                                     // Add peer to known_peers
                                     let mut known_peers = self.known_peers.lock().unwrap();
@@ -47,6 +61,7 @@ impl PeerManager {
                                     eprintln!("Error creating peer: {}", e);
                                 }
                             }
+
                         }
                         Err(e) => {
                             eprintln!(
@@ -68,18 +83,17 @@ impl PeerManager {
 
         // TESTING: print all peer_overlay_ip we got in known_peers
         println!("PRINTING ALL CURRENT KNOWN PEERS");
-        let known_peers = self.known_peers.lock().unwrap();
+        let mut known_peers = self.known_peers.lock().unwrap();
         for peer in known_peers.iter() {
-            println!("Peer: {}", peer.overlay_ip);
+            println!("Peer: {}", peer.stream_ip);
         }
         println!("PACKET DESTINATION IP: {}", packet.get_dest_ip().unwrap());
 
         // extract the IP from the Packet and look in the known_peers which peer ID matches with the destination IP
         if packet.get_dest_ip().is_some() {
-            let mut known_peers = self.known_peers.lock().unwrap();
             for peer in known_peers.iter_mut() {
-                if peer.overlay_ip == packet.get_dest_ip().unwrap() {
-                    println!("Found matching peer! {}", peer.overlay_ip);
+                if peer.stream_ip == packet.get_dest_ip().unwrap() { // FIX NEEDED --> == is NOT CORRECT!
+                    println!("Found matching peer! {}", peer.stream_ip);
                     peer.to_peer.send(packet);
                     break;
                 } else {

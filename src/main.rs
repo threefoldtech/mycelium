@@ -7,8 +7,7 @@ use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
 use packet_control::{DataPacket, Packet, PacketCodec};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::{net::{TcpListener, TcpStream}, sync::mpsc, io::AsyncReadExt};
 
 mod node_setup;
 mod packet_control;
@@ -56,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peer_man_clone = peer_manager.clone();
     let to_routing_clone = to_routing.clone();
     tokio::spawn(async move {
-        peer_man_clone.get_peers_from_config(to_routing_clone).await; // --> here we create peer by TcpStream connect
+        peer_man_clone.get_peers_from_config(to_routing_clone, cli.tun_addr).await; // --> here we create peer by TcpStream connect
     });
 
     let peer_man_clone = peer_manager.clone();
@@ -69,14 +68,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 loop {
                     let to_routing_clone_clone = to_routing_clone.clone();
                     match listener.accept().await {
-                        Ok((stream, _)) => {
-                            println!(
-                                "Got inbound request from: {}",
-                                stream.peer_addr().unwrap().to_string()
-                            );
+                        Ok((mut stream, _)) => {
+                            // TEMPORARY: as we do not work with Babel yet, we will send to overlay ip (= addr of TUN) manually
+                            // The packet flow looks like this:
+                            // Listener accepts a TCP connect call here and send it's overlay IP over the stream
+                            // In the peer_manager.rs at the place where we are connected we should manually add the overlay IP to the peer instance
+
+                            
+                            // 1. Send own TUN address over the stream
+                            let ip_bytes = cli.tun_addr.octets();
+                            stream.write_all(&ip_bytes).await.unwrap();
+
+                            // 4. Read other node's TUN address from the stream
+                            let mut buffer = [0u8; 4];
+                            stream.read_exact(&mut buffer).await.unwrap();
+                            let received_overlay_ip = Ipv4Addr::from(buffer);
+                            println!("Received overlay IP from other node: {:?}", received_overlay_ip);
+
+
                             // "reverse peer add"
-                            let peer_overlay_ip= stream.peer_addr().unwrap().ip();
-                            match Peer::new(peer_overlay_ip, to_routing_clone_clone, stream) {
+                            let peer_stream_ip= stream.peer_addr().unwrap().ip();
+                            match Peer::new(peer_stream_ip, to_routing_clone_clone, stream, received_overlay_ip) {
                                 Ok(new_peer) => {
                                     println!("adding new peer to known_peers: {:?}", new_peer);
                                     peer_man_clone.known_peers.lock().unwrap().push(new_peer);
@@ -141,6 +153,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             match node_tun_clone.recv(&mut buf).await {
                 Ok(n) => {
                     buf.truncate(n);
+
+                    println!("Got packet on my TUN");
 
                     // Remainder: if we read from TUN we will only need to parse them into DataPackets 
 
