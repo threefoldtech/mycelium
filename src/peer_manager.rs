@@ -110,6 +110,7 @@ impl PeerManager {
             let mut known_peers = self.known_peers.lock().unwrap();
             for peer in known_peers.iter_mut() {
                 if peer.overlay_ip == packet_dest_ip {
+                    println!("Routing packet towards: {}", peer.overlay_ip.to_string());
                     peer.to_peer.send(packet);
                     break;
                 } else {

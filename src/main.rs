@@ -122,6 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         loop {
             while let Some(packet) = from_routing.recv().await {
                 let data_packet = if let Packet::DataPacket(p) = packet {
+                    println!("LENTHEEE: {}", p.raw_data.len());
                     p
                 } else {
                     continue;
