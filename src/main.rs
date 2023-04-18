@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
                 match node_tun_clone.send(&data_packet.raw_data).await {
                     Ok(_) => {
-                        //println!("Received from 'from_routing': {:?}", packet);
+                        println!("Sending it towards this node's TUN");
                     }
                     Err(e) => {
                         eprintln!("Error sending to TUN interface: {}", e);
