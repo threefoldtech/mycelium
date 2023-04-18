@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use etherparse::{PacketHeaders, IpHeader};
 use tokio_util::codec::{Decoder, Encoder};
 use bytes::{BytesMut, Buf, BufMut};
@@ -10,7 +12,7 @@ pub enum Packet {
 
 // create function to extract destip from Packet type
 impl Packet {
-    pub fn get_dest_ip(&self) -> Option<std::net::IpAddr> {
+    pub fn get_dest_ip(&self) -> std::net::Ipv4Addr {
         match self {
             Packet::DataPacket(packet) => packet.dest_ip,
             //Packet::ControlPacket(packet) => packet.dest_ip,
@@ -21,7 +23,7 @@ impl Packet {
 #[derive(Clone)]
 pub struct DataPacket {
     pub raw_data: Vec<u8>,
-    pub dest_ip: Option<std::net::IpAddr>,
+    pub dest_ip: std::net::Ipv4Addr,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -45,12 +47,12 @@ impl PacketCodec {
 
 pub struct DataPacketCodec {
     len: Option<u16>,
-    //dest_ip: Option<std::net::IpAddr>,
+    dest_ip: Option<std::net::Ipv4Addr>, 
 }
 
 impl DataPacketCodec{
     pub fn new() -> Self {
-        DataPacketCodec { len: None }
+        DataPacketCodec { len: None , dest_ip: None }
     }
 }
 
@@ -75,6 +77,23 @@ impl Decoder for DataPacketCodec {
             data_len
         } as usize;
 
+        let dest_ip = if let Some(dest_ip) = self.dest_ip {
+            dest_ip
+        } else {
+            if src.len() < 4 {
+                return Ok(None);
+            }
+
+            // decode octets
+            let mut ip_bytes = [0u8; 4];
+            ip_bytes.copy_from_slice(&src[..4]);
+            let dest_ip = Ipv4Addr::from(ip_bytes);
+            src.advance(4);
+
+            self.dest_ip = Some(dest_ip);
+            dest_ip
+        };
+
         if src.len() < data_len {
 
             src.reserve(data_len - src.len());
@@ -86,22 +105,10 @@ impl Decoder for DataPacketCodec {
         let data = src[..data_len].to_vec();
         src.advance(data_len);
 
-        // set len to None so next we read we start at header again
+        // Reset state 
         self.len = None;
-
-        // Extract the destination IP address
-        // THIS MIGHT NOT BE REQUIRED HERE?
-        let dest_ip = match PacketHeaders::from_ip_slice(&data) {
-            Ok(PacketHeaders {
-                ip: Some(ip_header),
-                ..
-            }) => match ip_header {
-                IpHeader::Version4(ipv4_header, _) => Some(std::net::IpAddr::V4(ipv4_header.destination.into())),
-                IpHeader::Version6(ipv6_header, _) => Some(std::net::IpAddr::V6(ipv6_header.destination.into())),
-            },
-            _ => None,
-        };
-
+        self.dest_ip = None;
+      
         Ok(Some(DataPacket { raw_data: data, dest_ip }))
     }
 }
@@ -112,8 +119,10 @@ impl Encoder<DataPacket> for DataPacketCodec {
     fn encode(&mut self, item: DataPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
         // implies that length is never more than u16
 
+        dst.reserve(item.raw_data.len() + 6);
         dst.put_u16(item.raw_data.len() as u16);
-        dst.reserve(item.raw_data.len());
+        // dest ip wegschrijven
+        dst.put_slice(&item.dest_ip.octets());
 
         dst.extend_from_slice(&item.raw_data);
 

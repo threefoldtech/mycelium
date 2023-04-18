@@ -5,7 +5,7 @@ use std::{
 
 use bytes::BytesMut;
 use clap::Parser;
-use etherparse::{IpHeader, PacketHeaders};
+use etherparse::{IpHeader, PacketHeaders, SlicedPacket, InternetSlice};
 use packet_control::{DataPacket, Packet, PacketCodec};
 use tokio::{net::{TcpListener}, sync::mpsc, io::AsyncReadExt};
 
@@ -148,25 +148,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     // Remainder: if we read from TUN we will only need to parse them into DataPackets 
 
                     // Extract the destination IP address
-                    let dest_ip = match PacketHeaders::from_ip_slice(&buf) {
-                        Ok(PacketHeaders {
-                            ip: Some(ip_header),
-                            ..
-                        }) => match ip_header {
-                            IpHeader::Version4(ipv4_header, _) => {
-                                Some(std::net::IpAddr::V4(ipv4_header.destination.into()))
+                    let mut dest_ip: Option<Ipv4Addr> = None;
+                    match SlicedPacket::from_ip(&buf) {
+                        Ok(sliced_packet) => {
+                            match sliced_packet.ip {
+                                Some(ip) => {
+                                    match ip {
+                                        InternetSlice::Ipv4(header_slice, _) => {
+                                            dest_ip = Some(header_slice.destination_addr());
+                                            println!("Got destination IP addr: {}", dest_ip.unwrap());
+                                        },
+                                        InternetSlice::Ipv6(_, _) => {}
+                                    }
+                                }, None => {
+                                    eprintln!("Error obtaining IP from sliced packet");
+                                }
                             }
-                            IpHeader::Version6(ipv6_header, _) => {
-                                Some(std::net::IpAddr::V6(ipv6_header.destination.into()))
-                            }
-                        },
-                        _ => None,
-                    };
+                        }, Err(e) => {
+                            eprintln!("Error getting IP: {}", e);
+                        }
+                    } 
 
                     // Create a DataPacket and set it to to_routing
                     let data_packet = DataPacket {
                         raw_data: buf.to_vec(),
-                        dest_ip,
+                        dest_ip: dest_ip.unwrap(),
                     };
                     to_routing_clone.send(Packet::DataPacket(data_packet));
                 }

@@ -102,21 +102,19 @@ impl PeerManager {
         let packet_dest_ip = packet.get_dest_ip();
 
         // Packet towards own node's TUN interface
-        if packet_dest_ip.unwrap() == own_node_tun.address().unwrap() {
+        if packet_dest_ip == own_node_tun.address().unwrap() {
             println!("Packet got address of our own TUN --> so sending it to my own TUN");
             to_tun_sender.send(packet);
         // Packet towards other peer
         } else {
             let mut known_peers = self.known_peers.lock().unwrap();
-            if packet_dest_ip.is_some() {
-                for peer in known_peers.iter_mut() {
-                    if peer.overlay_ip == packet_dest_ip.unwrap() {
-                        peer.to_peer.send(packet);
-                        break;
-                    }
+            for peer in known_peers.iter_mut() {
+                if peer.overlay_ip == packet_dest_ip {
+                    peer.to_peer.send(packet);
+                    break;
+                } else {
+                    println!("No peer match found");
                 }
-            } else {
-                eprintln!("Cannot route packet as we have not destination IP set in the packet");
             }
         }
     }
