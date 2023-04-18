@@ -1,13 +1,13 @@
 use std::{
     error::Error,
-    net::{IpAddr, Ipv4Addr},
+    net::{Ipv4Addr},
 };
 
 use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
 use packet_control::{DataPacket, Packet, PacketCodec};
-use tokio::{net::{TcpListener, TcpStream}, sync::mpsc, io::AsyncReadExt};
+use tokio::{net::{TcpListener}, sync::mpsc, io::AsyncReadExt};
 
 mod node_setup;
 mod packet_control;
@@ -18,7 +18,7 @@ mod routing;
 use peer::Peer;
 use peer_manager::PeerManager;
 use tokio::io::AsyncWriteExt;
-use tokio_util::codec::{Decoder, Encoder};
+use tokio_util::codec::{Encoder};
 
 const LINK_MTU: usize = 1500;
 
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Create an unbounded channel for this node
-    let (to_tun, mut from_routing) = mpsc::unbounded_channel::<Packet>();
+    let (_to_tun, mut from_routing) = mpsc::unbounded_channel::<Packet>();
     let (to_routing, mut from_node) = mpsc::unbounded_channel::<Packet>();
 
     // Create the PeerManager: an interface to all peers this node is connected to
@@ -70,8 +70,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     match listener.accept().await {
                         Ok((mut stream, _)) => {
 
-
-
                             // TEMPORARY: as we do not work with Babel yet, we will send to overlay ip (= addr of TUN) manually
                             // The packet flow looks like this:
                             // Listener accepts a TCP connect call here and send it's overlay IP over the stream
@@ -85,7 +83,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let mut buffer = [0u8; 4];
                             stream.read_exact(&mut buffer).await.unwrap();
                             let received_overlay_ip = Ipv4Addr::from(buffer);
-                            //println!("Received overlay IP from other node: {:?}", received_overlay_ip);
+                            println!("Received overlay IP from other node: {:?}", received_overlay_ip);
 
 
                             // "reverse peer add"

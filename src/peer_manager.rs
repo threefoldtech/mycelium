@@ -35,7 +35,7 @@ impl PeerManager {
                 for peer_addr in config.peers {
                     match TcpStream::connect(peer_addr).await {
                         Ok(mut peer_stream) => {
-                            println!("TCP stream connected: {}", peer_addr);
+                            //println!("TCP stream connected: {}", peer_addr);
 
                             
                             // 2. Read other node's TUN address from the stream
@@ -88,9 +88,7 @@ impl PeerManager {
                 if peer.overlay_ip == packet.get_dest_ip().unwrap() { // FIX NEEDED --> == is NOT CORRECT!
                     peer.to_peer.send(packet);
                     break;
-                } else {
-                    println!("No peer with matches, continue searching...");
-                }
+                } 
             }
         } else {
             eprintln!("Cannot route packet as we have not destination IP set in the packet");
