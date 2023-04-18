@@ -157,6 +157,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         InternetSlice::Ipv4(header_slice, _) => {
                                             dest_ip = Some(header_slice.destination_addr());
                                             println!("Got destination IP addr: {}", dest_ip.unwrap());
+
+                                            // Create a DataPacket and send it to to_routing
+                                            let data_packet = DataPacket {
+                                                raw_data: buf.to_vec(),
+                                                dest_ip: dest_ip.unwrap(),
+                                            };
+
+                                            to_routing_clone.send(Packet::DataPacket(data_packet));
+
+
                                         },
                                         InternetSlice::Ipv6(_, _) => {}
                                     }
@@ -169,12 +179,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     } 
 
-                    // Create a DataPacket and set it to to_routing
-                    let data_packet = DataPacket {
-                        raw_data: buf.to_vec(),
-                        dest_ip: dest_ip.unwrap(),
-                    };
-                    to_routing_clone.send(Packet::DataPacket(data_packet));
+                    // // Create a DataPacket and set it to to_routing
+                    // let data_packet = DataPacket {
+                    //     raw_data: buf.to_vec(),
+                    //     dest_ip: dest_ip.unwrap(),
+                    // };
+                    // to_routing_clone.send(Packet::DataPacket(data_packet));
                 }
                 Err(e) => {
                     eprintln!("Error reading from TUN: {}", e);
