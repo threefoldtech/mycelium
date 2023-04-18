@@ -1,13 +1,10 @@
-use std::{
-    error::Error,
-    net::{Ipv4Addr},
-};
+use std::{error::Error, net::Ipv4Addr};
 
 use bytes::BytesMut;
 use clap::Parser;
-use etherparse::{IpHeader, PacketHeaders, SlicedPacket, InternetSlice};
+use etherparse::{InternetSlice, IpHeader, PacketHeaders, SlicedPacket};
 use packet_control::{DataPacket, Packet, PacketCodec};
-use tokio::{net::{TcpListener}, sync::mpsc, io::AsyncReadExt};
+use tokio::{io::AsyncReadExt, net::TcpListener, sync::mpsc};
 
 mod node_setup;
 mod packet_control;
@@ -18,7 +15,7 @@ mod routing;
 use peer::Peer;
 use peer_manager::PeerManager;
 use tokio::io::AsyncWriteExt;
-use tokio_util::codec::{Encoder};
+use tokio_util::codec::Encoder;
 
 const LINK_MTU: usize = 1500;
 
@@ -55,7 +52,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peer_man_clone = peer_manager.clone();
     let to_routing_clone = to_routing.clone();
     tokio::spawn(async move {
-        peer_man_clone.get_peers_from_config(to_routing_clone, cli.tun_addr).await; // --> here we create peer by TcpStream connect
+        peer_man_clone
+            .get_peers_from_config(to_routing_clone, cli.tun_addr)
+            .await; // --> here we create peer by TcpStream connect
     });
 
     let peer_man_clone = peer_manager.clone();
@@ -69,12 +68,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let to_routing_clone_clone = to_routing_clone.clone();
                     match listener.accept().await {
                         Ok((mut stream, _)) => {
-
                             // TEMPORARY: as we do not work with Babel yet, we will send to overlay ip (= addr of TUN) manually
                             // The packet flow looks like this:
                             // Listener accepts a TCP connect call here and send it's overlay IP over the stream
                             // In the peer_manager.rs at the place where we are connected we should manually add the overlay IP to the peer instance
-                            
+
                             // 1. Send own TUN address over the stream
                             let ip_bytes = cli.tun_addr.octets();
                             stream.write_all(&ip_bytes).await.unwrap();
@@ -83,12 +81,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let mut buffer = [0u8; 4];
                             stream.read_exact(&mut buffer).await.unwrap();
                             let received_overlay_ip = Ipv4Addr::from(buffer);
-                            println!("Received overlay IP from other node: {:?}", received_overlay_ip);
-
+                            println!(
+                                "Received overlay IP from other node: {:?}",
+                                received_overlay_ip
+                            );
 
                             // "reverse peer add"
-                            let peer_stream_ip= stream.peer_addr().unwrap().ip();
-                            match Peer::new(peer_stream_ip, to_routing_clone_clone, stream, received_overlay_ip) {
+                            let peer_stream_ip = stream.peer_addr().unwrap().ip();
+                            match Peer::new(
+                                peer_stream_ip,
+                                to_routing_clone_clone,
+                                stream,
+                                received_overlay_ip,
+                            ) {
                                 Ok(new_peer) => {
                                     //println!("adding new peer to known_peers: {:?}", new_peer);
                                     peer_man_clone.known_peers.lock().unwrap().push(new_peer);
@@ -116,7 +121,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(async move {
         loop {
             while let Some(packet) = from_routing.recv().await {
-                let data_packet = if let Packet::DataPacket(p) = packet{
+                let data_packet = if let Packet::DataPacket(p) = packet {
                     p
                 } else {
                     continue;
@@ -145,46 +150,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     println!("Got packet on my TUN");
 
-                    // Remainder: if we read from TUN we will only need to parse them into DataPackets 
+                    // Remainder: if we read from TUN we will only need to parse them into DataPackets
+                    // Extract the destination IP address using Etherparse
+                    let packet = PacketHeaders::from_ip_slice(&buf).unwrap();
+                    if let Some(IpHeader::Version4(header, _)) = packet.ip {
+                        let dest_addr = Ipv4Addr::from(header.destination);
+                        println!("Destination IPv4 address: {}", dest_addr);
 
-                    // Extract the destination IP address
-                    let mut dest_ip: Option<Ipv4Addr> = None;
-                    match SlicedPacket::from_ip(&buf) {
-                        Ok(sliced_packet) => {
-                            match sliced_packet.ip {
-                                Some(ip) => {
-                                    match ip {
-                                        InternetSlice::Ipv4(header_slice, _) => {
-                                            dest_ip = Some(header_slice.destination_addr());
-                                            println!("Got destination IP addr: {}", dest_ip.unwrap());
+                        let data_packet = DataPacket {
+                            dest_ip: dest_addr,
+                            raw_data: buf.to_vec(),
+                        };
 
-                                            // Create a DataPacket and send it to to_routing
-                                            let data_packet = DataPacket {
-                                                raw_data: buf.to_vec(),
-                                                dest_ip: dest_ip.unwrap(),
-                                            };
-
-                                            to_routing_clone.send(Packet::DataPacket(data_packet));
-
-
-                                        },
-                                        InternetSlice::Ipv6(_, _) => {}
-                                    }
-                                }, None => {
-                                    eprintln!("Error obtaining IP from sliced packet");
-                                }
+                        match to_routing_clone.send(Packet::DataPacket(data_packet)) {
+                            Ok(_) => {
+                                println!("packet sent to to_routing");
                             }
-                        }, Err(e) => {
-                            eprintln!("Error getting IP: {}", e);
+                            Err(e) => {
+                                eprintln!("Error sending packet to to_routing: {}", e);
+                            }
                         }
-                    } 
-
-                    // // Create a DataPacket and set it to to_routing
-                    // let data_packet = DataPacket {
-                    //     raw_data: buf.to_vec(),
-                    //     dest_ip: dest_ip.unwrap(),
-                    // };
-                    // to_routing_clone.send(Packet::DataPacket(data_packet));
+                    } else {
+                        println!("Non-IPv4 packet received, ignoring...");
+                    }
                 }
                 Err(e) => {
                     eprintln!("Error reading from TUN: {}", e);
@@ -205,11 +193,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let to_tun_sender_inner_clone = to_tun_sender_clone.clone();
             while let Some(packet) = from_node.recv().await {
                 //println!("Read message from from_node, sending it to route_packet function");
-                peer_man_clone.route_packet(packet, node_tun_inner_clone.clone(), to_tun_sender_inner_clone.clone());
+                peer_man_clone.route_packet(
+                    packet,
+                    node_tun_inner_clone.clone(),
+                    to_tun_sender_inner_clone.clone(),
+                );
             }
         }
     });
-    
 
     tokio::time::sleep(std::time::Duration::from_secs(60 * 60 * 24)).await;
     Ok(())
