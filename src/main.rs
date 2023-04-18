@@ -111,14 +111,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     // Loop to read the 'from_routing' receiver and foward it toward the TUN interface
+    // TODO: you will only get DataPackets on TUN so the channel should only accept DataPackets (and not just Packet)
     let node_tun_clone = node_tun.clone();
     tokio::spawn(async move {
-        let mut packet_codec = PacketCodec::new();
         loop {
             while let Some(packet) = from_routing.recv().await {
-                let mut packet_bytes = BytesMut::new();
-                packet_codec.encode(packet, &mut packet_bytes);
-                match node_tun_clone.send(&packet_bytes).await {
+                let data_packet = if let Packet::DataPacket(p) = packet{
+                    p
+                } else {
+                    continue;
+                };
+                match node_tun_clone.send(&data_packet.raw_data).await {
                     Ok(_) => {
                         //println!("Received from 'from_routing': {:?}", packet);
                     }
