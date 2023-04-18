@@ -1,8 +1,12 @@
-use std::{error::Error, net::Ipv4Addr};
+use std::{
+    error::Error,
+    net::{IpAddr, Ipv4Addr},
+};
 
 use bytes::BytesMut;
 use clap::Parser;
-use packet_control::{Packet, PacketCodec};
+use etherparse::{IpHeader, PacketHeaders};
+use packet_control::{DataPacket, Packet, PacketCodec};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
@@ -48,7 +52,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Additional static peers are obtained through the nodeconfig.toml file
     let peer_manager = PeerManager::new();
 
-
     // Create static peers from the nodeconfig.toml file
     let peer_man_clone = peer_manager.clone();
     let to_routing_clone = to_routing.clone();
@@ -56,10 +59,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         peer_man_clone.get_peers_from_config(to_routing_clone).await; // --> here we create peer by TcpStream connect
     });
 
-
     let peer_man_clone = peer_manager.clone();
     let to_routing_clone = to_routing.clone();
-     // listen for inbound request --> "to created the reverse peer object" --> here we reverse create peer be listener.accept'ing
+    // listen for inbound request --> "to created the reverse peer object" --> here we reverse create peer be listener.accept'ing
     tokio::spawn(async move {
         match TcpListener::bind("[::]:9651").await {
             Ok(listener) => {
@@ -73,9 +75,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 stream.peer_addr().unwrap().to_string()
                             );
                             // "reverse peer add"
-                            let peer_id = stream.peer_addr().unwrap().to_string();
-                            match Peer::new(peer_id, to_routing_clone_clone, stream) {
+                            let peer_overlay_ip= stream.peer_addr().unwrap().ip();
+                            match Peer::new(peer_overlay_ip, to_routing_clone_clone, stream) {
                                 Ok(new_peer) => {
+                                    println!("adding new peer to known_peers: {:?}", new_peer);
                                     peer_man_clone.known_peers.lock().unwrap().push(new_peer);
                                 }
                                 Err(e) => {
@@ -133,35 +136,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_tun_clone = node_tun.clone();
     let to_routing_clone = to_routing.clone();
     tokio::spawn(async move {
-        let mut packet_codec = PacketCodec::new();
+        let mut buf = BytesMut::zeroed(LINK_MTU);
         loop {
-            let mut buf = BytesMut::with_capacity(LINK_MTU);
-
             match node_tun_clone.recv(&mut buf).await {
                 Ok(n) => {
                     buf.truncate(n);
-                    // Parse buffer into Packet
-                    match packet_codec.decode(&mut buf) {
-                        Ok(decoded_packet) => {
-                            // Send it to to_routing halve
-                            match decoded_packet {
-                                Some(packet) => {
-                                    to_routing_clone.send(packet);
-                                },
-                                None => {
-                                    continue;
-                                }
+
+                    // Remainder: if we read from TUN we will only need to parse them into DataPackets 
+
+                    // Extract the destination IP address
+                    let dest_ip = match PacketHeaders::from_ip_slice(&buf) {
+                        Ok(PacketHeaders {
+                            ip: Some(ip_header),
+                            ..
+                        }) => match ip_header {
+                            IpHeader::Version4(ipv4_header, _) => {
+                                Some(std::net::IpAddr::V4(ipv4_header.destination.into()))
                             }
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to decode packet: {}", e);
-                        }
-                    }
-                    // if let Some(first_peer) = &peer_man_clone.known_peers.lock().unwrap().get(0) {
-                    //     println!("Sending a message to my first_peer");
-                    //     // here parsing to decent Packet struct (with correct metadata en dest ip)
-                    //     //first_peer.to_peer.send(buf).unwrap(); // assumption for now: buf is a fully qualified DataPacket for now
-                    // }
+                            IpHeader::Version6(ipv6_header, _) => {
+                                Some(std::net::IpAddr::V6(ipv6_header.destination.into()))
+                            }
+                        },
+                        _ => None,
+                    };
+
+                    // Create a DataPacket and set it to to_routing
+                    let data_packet = DataPacket {
+                        raw_data: buf.to_vec(),
+                        dest_ip,
+                    };
+                    to_routing_clone.send(Packet::DataPacket(data_packet));
                 }
                 Err(e) => {
                     eprintln!("Error reading from TUN: {}", e);
@@ -170,13 +174,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-
-    // Loop that reads from to_node (= receiver halve of to_routing)
+    let peer_man_clone = peer_manager.clone();
     tokio::spawn(async move {
         loop {
             while let Some(packet) = from_node.recv().await {
-                routing::route_packet(packet, &peer_manager);
-            } 
+                println!("Read message from from_node, sending it to route_packet function");
+                peer_man_clone.route_packet(packet);         
+            }
         }
     });
 

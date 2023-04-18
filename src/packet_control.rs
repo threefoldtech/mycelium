@@ -1,13 +1,27 @@
+use etherparse::{PacketHeaders, IpHeader};
 use tokio_util::codec::{Decoder, Encoder};
 use bytes::{BytesMut, Buf, BufMut};
 
+#[derive(Clone)]
 pub enum Packet {
     DataPacket(DataPacket), // packet coming from kernel
     //ControlPacket(ControlPacket), // babel related packets
 }
 
+// create function to extract destip from Packet type
+impl Packet {
+    pub fn get_dest_ip(&self) -> Option<std::net::IpAddr> {
+        match self {
+            Packet::DataPacket(packet) => packet.dest_ip,
+            //Packet::ControlPacket(packet) => packet.dest_ip,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct DataPacket {
     pub raw_data: Vec<u8>,
+    pub dest_ip: Option<std::net::IpAddr>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -31,6 +45,7 @@ impl PacketCodec {
 
 pub struct DataPacketCodec {
     len: Option<u16>,
+    //dest_ip: Option<std::net::IpAddr>,
 }
 
 impl DataPacketCodec{
@@ -38,6 +53,7 @@ impl DataPacketCodec{
         DataPacketCodec { len: None }
     }
 }
+
 
 impl Decoder for DataPacketCodec {
     type Item = DataPacket;
@@ -73,8 +89,21 @@ impl Decoder for DataPacketCodec {
         // set len to None so next we read we start at header again
         self.len = None;
 
-        Ok(Some(DataPacket{raw_data: data}))
-   }
+        // Extract the destination IP address
+        // THIS MIGHT NOT BE REQUIRED HERE?
+        let dest_ip = match PacketHeaders::from_ip_slice(&data) {
+            Ok(PacketHeaders {
+                ip: Some(ip_header),
+                ..
+            }) => match ip_header {
+                IpHeader::Version4(ipv4_header, _) => Some(std::net::IpAddr::V4(ipv4_header.destination.into())),
+                IpHeader::Version6(ipv6_header, _) => Some(std::net::IpAddr::V6(ipv6_header.destination.into())),
+            },
+            _ => None,
+        };
+
+        Ok(Some(DataPacket { raw_data: data, dest_ip }))
+    }
 }
 
 impl Encoder<DataPacket> for DataPacketCodec {

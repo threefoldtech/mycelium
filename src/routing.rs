@@ -11,6 +11,11 @@ pub fn route_packet(packet: Packet, peer_manager: &peer_manager::PeerManager) {
     // 1.
 
     // 2.
+
+    println!("We reached here!");
+
+
+
     // TEMPORARY: we just send it to the first peer
     if let Some(first_peer) = &peer_manager.known_peers.lock().unwrap().get(0) {
         println!("Routing the message to the first peer");

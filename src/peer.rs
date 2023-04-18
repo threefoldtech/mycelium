@@ -1,5 +1,5 @@
 use futures::{SinkExt, StreamExt};
-use std::{error::Error};
+use std::{error::Error, net::IpAddr};
 use tokio::{
     net::TcpStream,
     select,
@@ -11,12 +11,12 @@ use crate::packet_control::{DataPacket, Packet, PacketCodec};
 
 #[derive(Debug)]
 pub struct Peer {
-    pub id: String,
+    pub overlay_ip: IpAddr, 
     pub to_peer: mpsc::UnboundedSender<Packet>,
 }
 
 impl Peer {
-    pub fn new(id: String, to_routing: mpsc::UnboundedSender<Packet>, stream: TcpStream) -> Result<Self, Box<dyn Error>> {
+    pub fn new(overlay_ip: IpAddr, to_routing: mpsc::UnboundedSender<Packet>, stream: TcpStream) -> Result<Self, Box<dyn Error>> {
 
         // Create a Framed for each peer
         let mut framed = Framed::new(stream, PacketCodec::new());
@@ -58,6 +58,7 @@ impl Peer {
                     }
                     // receive from from_routing
                     Some(packet) = from_routing.recv() => { 
+                        println!("Receiver from from_routing, sending it over the TCP stream");
                         // Send it over the TCP stream
                         if let Err(e) = framed.send(packet).await {
                             eprintln!("Error writing to stream: {}", e);
@@ -67,6 +68,6 @@ impl Peer {
             }
         });
 
-        Ok(Self { id, to_peer })
+        Ok(Self { overlay_ip, to_peer })
     }
 }
