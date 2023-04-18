@@ -69,11 +69,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let to_routing_clone_clone = to_routing_clone.clone();
                     match listener.accept().await {
                         Ok((mut stream, _)) => {
+
+
+
                             // TEMPORARY: as we do not work with Babel yet, we will send to overlay ip (= addr of TUN) manually
                             // The packet flow looks like this:
                             // Listener accepts a TCP connect call here and send it's overlay IP over the stream
                             // In the peer_manager.rs at the place where we are connected we should manually add the overlay IP to the peer instance
-
                             
                             // 1. Send own TUN address over the stream
                             let ip_bytes = cli.tun_addr.octets();
@@ -83,14 +85,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let mut buffer = [0u8; 4];
                             stream.read_exact(&mut buffer).await.unwrap();
                             let received_overlay_ip = Ipv4Addr::from(buffer);
-                            println!("Received overlay IP from other node: {:?}", received_overlay_ip);
+                            //println!("Received overlay IP from other node: {:?}", received_overlay_ip);
 
 
                             // "reverse peer add"
                             let peer_stream_ip= stream.peer_addr().unwrap().ip();
                             match Peer::new(peer_stream_ip, to_routing_clone_clone, stream, received_overlay_ip) {
                                 Ok(new_peer) => {
-                                    println!("adding new peer to known_peers: {:?}", new_peer);
+                                    //println!("adding new peer to known_peers: {:?}", new_peer);
                                     peer_man_clone.known_peers.lock().unwrap().push(new_peer);
                                 }
                                 Err(e) => {

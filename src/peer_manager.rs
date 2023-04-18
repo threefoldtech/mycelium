@@ -81,19 +81,11 @@ impl PeerManager {
 
     pub fn route_packet(&self, packet: Packet) {
 
-        // TESTING: print all peer_overlay_ip we got in known_peers
-        println!("PRINTING ALL CURRENT KNOWN PEERS");
-        let mut known_peers = self.known_peers.lock().unwrap();
-        for peer in known_peers.iter() {
-            println!("Peer: {}", peer.stream_ip);
-        }
-        println!("PACKET DESTINATION IP: {}", packet.get_dest_ip().unwrap());
-
         // extract the IP from the Packet and look in the known_peers which peer ID matches with the destination IP
+        let mut known_peers = self.known_peers.lock().unwrap();
         if packet.get_dest_ip().is_some() {
             for peer in known_peers.iter_mut() {
-                if peer.stream_ip == packet.get_dest_ip().unwrap() { // FIX NEEDED --> == is NOT CORRECT!
-                    println!("Found matching peer! {}", peer.stream_ip);
+                if peer.overlay_ip == packet.get_dest_ip().unwrap() { // FIX NEEDED --> == is NOT CORRECT!
                     peer.to_peer.send(packet);
                     break;
                 } else {
