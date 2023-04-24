@@ -2,7 +2,7 @@ use std::{error::Error, net::Ipv4Addr, sync::Arc};
 use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
-use packet::{DataPacket, ControlPacket, ControlPacketType};
+use packet::{DataPacket, ControlPacket, ControlPacketType, ControlStruct};
 use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpListener, sync::mpsc};
 
 mod node_setup;
@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // --> this is because we will handle them differently 
 
     // CHANNEL FOR CONTROL PACKETS
-    let (to_routing_control, mut from_node_control) = mpsc::unbounded_channel::<ControlPacket>();
+    let (to_routing_control, mut from_node_control) = mpsc::unbounded_channel::<ControlStruct>();
 
     /* BABEL ADDITIONS */
     let router = Arc::new(router::Router::new());
@@ -62,11 +62,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::spawn(async move {
             loop {
                 while let Some(packet) = from_node_control.recv().await {
-                    match packet.message_type {
+                    match packet.control_packet.message_type {
                         // different type of control packets
                         ControlPacketType::Hello => {
                             println!("Received Hello");
-                            println!("Should send IHU back");
+                            let dst_ip = packet.src_overlay_ip;
+                            packet.reply(ControlPacket::new_IHU(10, 1000, dst_ip)); 
+                        }
+                        ControlPacketType::IHU => {
+                            println!("Received IHU");
                         }
                         _ => {
                             println!("Received unknown control packet");

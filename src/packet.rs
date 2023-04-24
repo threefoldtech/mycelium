@@ -1,5 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
+use tokio::sync::mpsc;
+
 /* ********************************PAKCET*********************************** */
 #[derive(Debug, Clone)]
 pub enum Packet {
@@ -28,11 +30,41 @@ impl DataPacket {
 }
 
 /* ****************************CONTROL PACKET******************************** */
+
+#[derive(Debug, Clone)]
+pub struct ControlStruct {
+    pub control_packet: ControlPacket,
+    pub response_tx: mpsc::UnboundedSender<ControlPacket>,
+    pub src_overlay_ip: IpAddr,
+}
+
+impl ControlStruct {
+    pub fn reply(self, control_packet: ControlPacket) {
+        if let Err(e) = self.response_tx.send(control_packet) {
+            eprintln!("Error reply: {:?}", e);
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ControlPacket {
     pub message_type: ControlPacketType,
     pub body_length: u8,
     pub body: Option<ControlPacketBody>,
+}
+
+impl ControlPacket {
+    pub fn new_IHU(rxcost: u16, interval: u16, address: IpAddr) -> Self {
+        Self {
+            message_type: ControlPacketType::IHU,
+            body_length: 10,
+            body: Some(ControlPacketBody::IHU {
+                rxcost,
+                interval,
+                address,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -81,8 +113,6 @@ pub enum ControlPacketBody {
         interval: u16,
     },
     IHU { 
-        address_encoding: u8,
-        reserved: u8,
         rxcost: u16, 
         interval: u16,
         address: IpAddr, 

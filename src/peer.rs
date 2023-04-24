@@ -6,7 +6,7 @@ use std::{
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::packet::{ControlPacket, DataPacket};
+use crate::packet::{ControlPacket, DataPacket, ControlStruct};
 use crate::{codec::PacketCodec, packet::Packet};
 
 // IS A NEIGHBOR IN THE IDEA OF BABEL
@@ -26,7 +26,7 @@ impl Peer {
     pub fn new(
         stream_ip: IpAddr,
         to_routing_data: mpsc::UnboundedSender<DataPacket>,
-        to_routing_control: mpsc::UnboundedSender<ControlPacket>,
+        to_routing_control: mpsc::UnboundedSender<ControlStruct>,
         stream: TcpStream,
         overlay_ip: Ipv4Addr,
     ) -> Result<Self, Box<dyn Error>> {
@@ -35,8 +35,8 @@ impl Peer {
         // Create an unbounded channel for each peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Create control channel
-        let (to_peer_control, mut from_routing_control) =
-            mpsc::unbounded_channel::<ControlPacket>();
+        let (to_peer_control, mut from_routing_control) = mpsc::unbounded_channel::<ControlPacket>();
+        let (control_reply_tx, mut control_reply_rx) = mpsc::unbounded_channel::<ControlPacket>();
 
         tokio::spawn(async move {
             loop {
@@ -54,7 +54,13 @@ impl Peer {
 
                                 }
                                 Packet::ControlPacket(packet) => {
-                                    if let Err(error) = to_routing_control.send(packet){
+                                    // create control struct
+                                    let control_struct = ControlStruct {
+                                        control_packet: packet,
+                                        response_tx: control_reply_tx.clone(),
+                                        src_overlay_ip: IpAddr::V4(overlay_ip),
+                                    };
+                                    if let Err(error) = to_routing_control.send(control_struct){
                                      eprintln!("Error sending to to_routing_control: {}", error);
                                     }
 
@@ -88,6 +94,13 @@ impl Peer {
                         eprintln!("Error writing to stream: {}", e);
                     }
                 }
+                Some(packet) = control_reply_rx.recv() => {
+                    println!("Received CONTROL REPLY from routing, sending it over the TCP stream");
+                    // Send it over the TCP stream
+                    if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
+                        eprintln!("Error writing to stream: {}", e);
+                    }
+                } 
                 }
             }
         });

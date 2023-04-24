@@ -1,4 +1,4 @@
-use crate::packet::{DataPacket, ControlPacket};
+use crate::packet::{DataPacket, ControlPacket, ControlStruct};
 use crate::{packet::Packet, peer::Peer};
 use serde::Deserialize;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -39,7 +39,7 @@ impl PeerManager {
     pub async fn get_peers_from_config(
         &self,
         to_routing_data: UnboundedSender<DataPacket>,
-        to_routing_control: UnboundedSender<ControlPacket>,
+        to_routing_control: UnboundedSender<ControlStruct>,
         tun_addr_own_node: Ipv4Addr,
         router: Arc<Router>,
     ) {

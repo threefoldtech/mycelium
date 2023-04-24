@@ -212,33 +212,30 @@ impl Decoder for ControlPacketCodec {
         }
 
         let body_length = buf.get_u8();
+
+        if buf.remaining() < body_length as usize {
+            return Ok(None);
+        }
+
         let body = match message_type {
             ControlPacketType::PadN => {
-                if buf.remaining() < usize::from(body_length) {
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Incomplete message"));
-                }
                 buf.advance(usize::from(body_length));
                 Some(ControlPacketBody::PadN(body_length))
             }
             ControlPacketType::Hello => {
-                if buf.remaining() < 6 {
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Incomplete message"));
-                }
                 let flags = buf.get_u16();
                 let seqno = buf.get_u16();
                 let interval = buf.get_u16();
                 Some(ControlPacketBody::Hello { flags, seqno, interval })
             }
             ControlPacketType::IHU => {
-                if buf.remaining() < 8 {
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Incomplete message"));
-                }
                 let address_encoding = buf.get_u8();
-                let reserved = buf.get_u8();
+                // todo: based on address_encoding, we should decode the address on a different way
+                let _reserved = buf.get_u8();
                 let rxcost = buf.get_u16();
                 let interval = buf.get_u16();
                 let address = IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8()));
-                Some(ControlPacketBody::IHU { address_encoding, reserved, rxcost, interval, address })
+                Some(ControlPacketBody::IHU { rxcost, interval, address })
             }
             // Add decoding logic for other message types.
             _ => None,
@@ -270,9 +267,9 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                     buf.put_u16(seqno);
                     buf.put_u16(interval);
                 }
-                ControlPacketBody::IHU { address_encoding, reserved, rxcost, interval, address } => {
-                    buf.put_u8(address_encoding);
-                    buf.put_u8(reserved);
+                ControlPacketBody::IHU { rxcost, interval, address } => {
+                    buf.put_u8(0); // temp static address encoding
+                    buf.put_u8(0); // reserved field should be set to 0 and MUST be ignored on recpetion
                     buf.put_u16(rxcost);
                     buf.put_u16(interval);
                     match address {
