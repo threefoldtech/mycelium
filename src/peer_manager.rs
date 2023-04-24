@@ -81,7 +81,7 @@ impl PeerManager {
                                     //known_peers.push(new_peer);
                                     // new
                                     // add new_peer to router directly_connected_peers
-                                    router.directly_connected_peers.lock().unwrap().push(new_peer);
+                                    router.add_directly_connected_peer(new_peer);
                                 }
                                 Err(e) => {
                                     eprintln!("Error creating peer: {}", e);
@@ -113,6 +113,7 @@ impl PeerManager {
         data_packet: DataPacket,
         own_node_tun: Arc<Tun>,
         to_tun_sender: UnboundedSender<DataPacket>,
+        router: Arc<Router>,
     ) {
         // We first extract the IP from the Packet and look if the destination IP is our own overlay IP
         // So if --> forward packet to our own TUN interface

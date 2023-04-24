@@ -2,9 +2,9 @@ use std::{net::IpAddr, sync::{Mutex, Arc}};
 
 use crate::{peer::Peer, packet::{ControlPacket, ControlPacketType}};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Router {
-    pub directly_connected_peers: Arc<Mutex<Vec<Peer>>>,
+    directly_connected_peers: Arc<Mutex<Vec<Peer>>>,
 }
 
 impl Router {
@@ -14,8 +14,14 @@ impl Router {
         }
     }
 
-    pub fn add_directly_connected_peer(&mut self, peer: Peer) {
+    // NOTE: we gebruiken gewoon &self en niet &mut self want de mutex van directly_connected_peers fixt het feit dat er sws maar 1 iemand aankan
+    pub fn add_directly_connected_peer(&self, peer: Peer) {
         self.directly_connected_peers.lock().unwrap().push(peer);
+        // for debug: print connected peers once one get added
+        println!("CURRENT DIRECTLY CONNECTED PEERS:");
+        for peer in self.directly_connected_peers.lock().unwrap().iter() {
+            println!("Peer: {:?}", peer);
+        }
     }
 
     pub fn send_hello(&self) {
@@ -26,6 +32,7 @@ impl Router {
         };
         // send the hello_message to all the directly connected peers
         for peer in self.directly_connected_peers.lock().unwrap().iter() {
+            println!("CONTROL: Sending hello message to peer: {:?}", peer);
             peer.to_peer_control.send(hello_message.clone());
         }
     }

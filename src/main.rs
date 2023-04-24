@@ -2,7 +2,7 @@ use std::{error::Error, net::Ipv4Addr, sync::Arc};
 use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
-use packet::{DataPacket, ControlPacket};
+use packet::{DataPacket, ControlPacket, ControlPacketType};
 use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpListener, sync::mpsc};
 
 mod node_setup;
@@ -53,8 +53,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(4)).await; // beter use Timer
+            println!("sending hello");
             router_c.send_hello();
         }
+        });
+
+        // loop to read from_node_control
+        tokio::spawn(async move {
+            loop {
+                while let Some(packet) = from_node_control.recv().await {
+                    match packet.message_type {
+                        // different type of control packets
+                        ControlPacketType::Hello => {
+                            println!("Received Hello");
+                            println!("Should send IHU back");
+                        }
+                        _ => {
+                            println!("Received unknown control packet");
+                        }
+                    }
+                }
+            }
         });
     }
 
@@ -124,8 +143,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Ok(new_peer) => {
                                     //println!("adding new peer to known_peers: {:?}", new_peer);
                                     //peer_man_clone.known_peers.lock().unwrap().push(new_peer);
-                                    // add to router directly_connected_peers
-                                    router_clone.directly_connected_peers.lock().unwrap().push(new_peer);
+
+                                    router_clone.add_directly_connected_peer(new_peer);
                                 }
                                 Err(e) => {
                                     eprintln!("Error creating 'reverse' peer: {}", e);
@@ -226,8 +245,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peer_man_clone = peer_manager.clone();
     let node_tun_clone = node_tun.clone();
     let to_tun_sender_clone = to_tun.clone();
+    let router_clone = router.clone();
     tokio::spawn(async move {
         loop {
+            let router_inner_clone = router_clone.clone();
             let node_tun_inner_clone = node_tun_clone.clone();
             let to_tun_sender_inner_clone = to_tun_sender_clone.clone();
             while let Some(packet) = from_node_data.recv().await {
@@ -236,6 +257,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     packet,
                     node_tun_inner_clone.clone(),
                     to_tun_sender_inner_clone.clone(),
+                    router_inner_clone.clone(),
                 );
             }
         }
