@@ -1,5 +1,4 @@
 use std::net::{IpAddr, Ipv4Addr};
-
 use tokio::sync::mpsc;
 
 /* ********************************PAKCET*********************************** */
@@ -23,11 +22,7 @@ pub struct DataPacket {
     pub dest_ip: Ipv4Addr,
 }
 
-impl DataPacket {
-    pub fn get_dest_ip(&self) -> Ipv4Addr {
-        self.dest_ip
-    }
-}
+impl DataPacket {}
 
 /* ****************************CONTROL PACKET******************************** */
 
@@ -54,7 +49,7 @@ pub struct ControlPacket {
 }
 
 impl ControlPacket {
-    pub fn new_IHU(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
+    pub fn new_ihu(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
         Self {
             message_type: ControlPacketType::IHU,
             body_length: 10,

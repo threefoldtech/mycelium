@@ -11,7 +11,7 @@ use crate::{codec::PacketCodec, packet::Packet};
 
 // IS A NEIGHBOR IN THE IDEA OF BABEL
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Peer {
     pub stream_ip: IpAddr,
     pub to_peer_data: mpsc::UnboundedSender<DataPacket>,

@@ -1,11 +1,10 @@
-use crate::packet::{DataPacket, ControlPacket, ControlStruct};
-use crate::{packet::Packet, peer::Peer};
+use crate::packet::{DataPacket, ControlStruct};
+use crate::{peer::Peer};
 use serde::Deserialize;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedSender};
-use tokio_tun::Tun;
 use crate::router::Router;
 
 pub const NODE_CONFIG_FILE_PATH: &str = "nodeconfig.toml";
@@ -28,7 +27,7 @@ pub struct PeerManager {
 
 impl PeerManager {
     pub fn new() -> Self {
-        let mut known_peers: Vec<Peer> = Vec::new();
+        let known_peers: Vec<Peer> = Vec::new();
 
         Self {
             known_peers: Arc::new(Mutex::new(known_peers)),
@@ -76,11 +75,6 @@ impl PeerManager {
                                 received_overlay_ip,
                             ) {
                                 Ok(new_peer) => {
-                                    // Add peer to known_peers
-                                    //let mut known_peers = self.known_peers.lock().unwrap();
-                                    //known_peers.push(new_peer);
-                                    // new
-                                    // add new_peer to router directly_connected_peers
                                     router.add_directly_connected_peer(new_peer);
                                 }
                                 Err(e) => {
@@ -100,42 +94,6 @@ impl PeerManager {
             }
             Err(e) => {
                 eprintln!("Error reading nodeconfig.toml file: {}", e);
-            }
-        }
-    }
-
-    // should eventually be moved to router.rs
-    // SHOULD ONLY BE CALLED ON DATAPACKETS!!
-    //      --> because control packets are only sent between directly connected nodes
-    //      --> so they are not routed. If you receive a control packet, you know it's for you
-    pub fn route_packet(
-        &self,
-        data_packet: DataPacket,
-        own_node_tun: Arc<Tun>,
-        to_tun_sender: UnboundedSender<DataPacket>,
-        router: Arc<Router>,
-    ) {
-        // We first extract the IP from the Packet and look if the destination IP is our own overlay IP
-        // So if --> forward packet to our own TUN interface
-        // If not --> look in known_peers which peer's overlay_ip matches with destination IP
-
-        let packet_dest_ip = data_packet.get_dest_ip();
-
-        // Packet towards own node's TUN interface
-        if packet_dest_ip == own_node_tun.address().unwrap() {
-            println!("Packet got address of our own TUN --> so sending it to my own TUN");
-            to_tun_sender.send(data_packet);
-        // Packet towards other peer
-        } else {
-            let mut known_peers = self.known_peers.lock().unwrap();
-            for peer in known_peers.iter_mut() {
-                if peer.overlay_ip == packet_dest_ip {
-                    println!("Routing packet towards: {}", peer.overlay_ip.to_string());
-                    peer.to_peer_data.send(data_packet);
-                    break;
-                } else {
-                    println!("No peer match found");
-                }
             }
         }
     }

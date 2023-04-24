@@ -56,7 +56,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // The receiver (from_routing_data) is read (in a loop) in the main thread.
     let (to_tun, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
 
+    
     let router = Arc::new(router::Router::new());
+    let peer_manager = PeerManager::new();
+
+
     {
         let router = router.clone();
         tokio::spawn(async move {
@@ -66,14 +70,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         });
 
-        // loop to read from_node_control
+        // This loop reads control messages from the from_node_control channel receiver Halve.
+        // This means that this loop will be executed whenever a ControlPacket is received from a remote Peer instance (aka another Node). 
+        // HANDLING THE DIFFERENT CONTROL MESSAGES --> MOET ERGENS ANDERS GEBEUREN!
         tokio::spawn(async move {
             loop {
                 while let Some(packet) = from_node_control.recv().await {
                     match packet.control_packet.message_type {
                         ControlPacketType::Hello => {
                             let dst_ip = packet.src_overlay_ip;
-                            packet.reply(ControlPacket::new_IHU(10, 1000, dst_ip));
+                            packet.reply(ControlPacket::new_ihu(10, 1000, dst_ip));
                             println!("IHU {}", dst_ip);
                         }
                         ControlPacketType::IHU => {
@@ -87,13 +93,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         });
     }
-
-    
-    
-    
-    // Create the PeerManager: an interface to all peers this node is connected to
-    // Additional static peers are obtained through the nodeconfig.toml file
-    let peer_manager = PeerManager::new();
 
     // Create static peers from the nodeconfig.toml file
     {
@@ -151,9 +150,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     received_overlay_ip,
                                 ) {
                                     Ok(new_peer) => {
-                                        //println!("adding new peer to known_peers: {:?}", new_peer);
-                                        //peer_man_clone.known_peers.lock().unwrap().push(new_peer);
-
                                         router.add_directly_connected_peer(new_peer);
                                     }
                                     Err(e) => {
@@ -174,34 +170,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
-    // Loop to read the 'from_routing' receiver and foward it toward the TUN interface
-    // TODO: you will only get DataPackets on TUN so the channel should only accept DataPackets (and not just Packet)
-
+    // Loop to read the from_routing_data receiver which contains data packets with a destination IP of this node. 
+    // These packets are forwarded to the actual TUN interface.
     {
         let node_tun = node_tun.clone();
         tokio::spawn(async move {
             loop {
-                while let Some(packet) = from_routing_data.recv().await {
-                    let data_packet = if let p = packet {
-                        println!("LENTHEEE: {}", p.raw_data.len());
-                        p
-                    } else {
-                        continue;
-                    };
-                    match node_tun.send(&data_packet.raw_data).await {
-                        Ok(_) => {
-                            println!("Sending it towards this node's TUN");
-                        }
-                        Err(e) => {
-                            eprintln!("Error sending to TUN interface: {}", e);
-                        }
+                while let Some(data_packet) = from_routing_data.recv().await {
+                    if let Err(e) = node_tun.send(&data_packet.raw_data).await {
+                        eprintln!("Error sending to TUN interface: {}", e);
                     }
                 }
             }
         });
     }
 
-    // Loop to read from node's TUN interface and send it to to_routing sender halve
+    // Loop to read from node's TUN interface and send it to to_routing_data sender halve.
+    // Note: a packet will only arrive on the TUN interface if it has been put there by the kernel.
+    // This means that the application will never read packets from the TUN interface that it has sent itself.
     {
         let node_tun = node_tun.clone();
         let to_routing_data = to_routing_data.clone();
@@ -213,10 +199,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Ok(n) => {
                         buf.truncate(n);
 
-                        println!("Got packet on my TUN, byyes: {}", n);
-
-                        // Remainder: if we read from TUN we will only need to parse them into DataPackets
-                        // Extract the destination IP address using Etherparse
                         match PacketHeaders::from_ip_slice(&buf) {
                             Ok(packet) => {
                                 if let Some(IpHeader::Version4(header, _)) = packet.ip {
@@ -227,8 +209,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         dest_ip: dest_addr,
                                         raw_data: buf.to_vec(),
                                     };
-
-                                    println!("LEN: {}", data_packet.raw_data.len());
 
                                     match to_routing_data.send(data_packet) {
                                         Ok(_) => {
@@ -256,24 +236,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
-    // Loop to read from from_node reeiver and route the packet further
-    // the route_packet function will send the packet towards the correct to_peer (based on dest ip of packet)
-    // or towards this own node's TUN interface (if dest ip of packet is this node's TUN addr)
+    // Loop to read from from_node_data receiver and to pass the packet further towards
+    // the route_packet function which will send the packet towards the correct to_peer 
+    // or towards this node's TUN interface (if destination IP of packet match this node's TUN address).
     {
-        let peer_manager = peer_manager.clone();
+        // let peer_manager = peer_manager.clone();
         let node_tun = node_tun.clone();
         let to_tun = to_tun.clone();
         let router = router.clone();
         tokio::spawn(async move {
             loop {
-                while let Some(packet) = from_node_data.recv().await {
-                    peer_manager.route_packet(
-                        packet,
-                        node_tun.clone(),
-                        to_tun.clone(),
-                        router.clone(),
-                    );
-                }
+                while let Some(data_packet) = from_node_data.recv().await {
+                    router.route_data_packet(data_packet, node_tun.clone(), to_tun.clone());
+                } 
             }
         });
     }

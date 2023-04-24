@@ -229,7 +229,7 @@ impl Decoder for ControlPacketCodec {
                 Some(ControlPacketBody::Hello { flags, seqno, interval })
             }
             ControlPacketType::IHU => {
-                let address_encoding = buf.get_u8();
+                let _address_encoding = buf.get_u8();
                 // todo: based on address_encoding, we should decode the address on a different way
                 let _reserved = buf.get_u8();
                 let rxcost = buf.get_u16();
