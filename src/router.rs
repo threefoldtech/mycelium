@@ -31,11 +31,12 @@ impl Router {
             body: Some(crate::packet::ControlPacketBody::Hello { flags: 100u16, seqno: 200u16, interval: 300u16 }),
         };
 
-
-        // send the hello_message to all the directly connected peers
+        // Hello is sent to all directly connected peers 
         for peer in self.directly_connected_peers.lock().unwrap().iter() {
-            println!("CONTROL: Sending hello message to peer: {}", peer.overlay_ip.to_string());
-            peer.to_peer_control.send(hello_message.clone());
+            println!("Hello {}", peer.overlay_ip);
+            if let Err(e)  = peer.to_peer_control.send(hello_message.clone()) {
+                eprintln!("Error sending hello message to peer: {:?}", e);
+            }
         }
     }
 }

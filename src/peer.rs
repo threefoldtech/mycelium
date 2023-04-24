@@ -15,11 +15,8 @@ use crate::{codec::PacketCodec, packet::Packet};
 pub struct Peer {
     pub stream_ip: IpAddr,
     pub to_peer_data: mpsc::UnboundedSender<DataPacket>,
-    pub to_peer_control: mpsc::UnboundedSender<ControlPacket>, // RFC: the local node's interface over which this neighbour is reachable
-    pub overlay_ip: Ipv4Addr, // RFC: address of the neigbouring interface
-
-                              // additional fields according to babel RFC
-                              // pub txcost: u16,
+    pub to_peer_control: mpsc::UnboundedSender<ControlPacket>,
+    pub overlay_ip: Ipv4Addr, 
 }
 
 impl Peer {
@@ -30,19 +27,21 @@ impl Peer {
         stream: TcpStream,
         overlay_ip: Ipv4Addr,
     ) -> Result<Self, Box<dyn Error>> {
-        // Create a Framed for each peer
+
+        // Framed for peer
         let mut framed = Framed::new(stream, PacketCodec::new());
-        // Create an unbounded channel for each peer
+        // Data channel for peer 
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
-        // Create control channel
+        // Control channel for peer
         let (to_peer_control, mut from_routing_control) = mpsc::unbounded_channel::<ControlPacket>();
+        // Control reply channel for peer
         let (control_reply_tx, mut control_reply_rx) = mpsc::unbounded_channel::<ControlPacket>();
 
         tokio::spawn(async move {
             loop {
                 select! {
-                // received from peer
-
+                
+                // Received over the TCP stream
                 frame = framed.next() => {
                     match frame {
                         Some(Ok(packet)) => {
@@ -54,7 +53,8 @@ impl Peer {
 
                                 }
                                 Packet::ControlPacket(packet) => {
-                                    // create control struct
+                                    // Parse the DataPacket into a ControlStruct
+                                    // as the to_routing_control channel expects 
                                     let control_struct = ControlStruct {
                                         control_packet: packet,
                                         response_tx: control_reply_tx.clone(),
@@ -77,10 +77,8 @@ impl Peer {
                         }
                     }
 
-                // received from routing (both data and control channels)
-
+                // To send over the TCP stream
                 Some(packet) = from_routing_data.recv() => {
-                    println!("Received DATA from routing, sending it over the TCP stream");
                     // Send it over the TCP stream
                     if let Err(e) = framed.send(Packet::DataPacket(packet)).await {
                         eprintln!("Error writing to stream: {}", e);
@@ -88,14 +86,12 @@ impl Peer {
                 }
 
                 Some(packet) = from_routing_control.recv() => {
-                    println!("Received CONTROL from routing, sending it over the TCP stream");
                     // Send it over the TCP stream
                     if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
                         eprintln!("Error writing to stream: {}", e);
                     }
                 }
                 Some(packet) = control_reply_rx.recv() => {
-                    println!("Received CONTROL REPLY from routing, sending it over the TCP stream");
                     // Send it over the TCP stream
                     if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
                         eprintln!("Error writing to stream: {}", e);
