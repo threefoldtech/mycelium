@@ -1,21 +1,19 @@
-use std::{error::Error, net::Ipv4Addr};
-
+use std::{error::Error, net::Ipv4Addr, sync::Arc};
 use bytes::BytesMut;
 use clap::Parser;
-use etherparse::{InternetSlice, IpHeader, PacketHeaders, SlicedPacket};
-use packet_control::{DataPacket, Packet, PacketCodec};
-use tokio::{io::AsyncReadExt, net::TcpListener, sync::mpsc};
+use etherparse::{IpHeader, PacketHeaders};
+use packet::{DataPacket, ControlPacket};
+use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpListener, sync::mpsc};
 
 mod node_setup;
-mod packet_control;
+mod packet;
+mod codec;
 mod peer;
 mod peer_manager;
-mod routing;
+mod router;
 
 use peer::Peer;
 use peer_manager::PeerManager;
-use tokio::io::AsyncWriteExt;
-use tokio_util::codec::Encoder;
 
 const LINK_MTU: usize = 1500;
 
@@ -39,10 +37,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
             panic!("Error setting up node: {}", e);
         }
     };
+    
 
+    // We will split the communication of DataPackets and ControlPacket into two different channels
+    // --> this is because we will handle them differently 
+
+    // CHANNEL FOR CONTROL PACKETS
+    let (to_routing_control, mut from_node_control) = mpsc::unbounded_channel::<ControlPacket>();
+
+    /* BABEL ADDITIONS */
+    let router = Arc::new(router::Router::new());
+
+    {
+        let router_c = router.clone();
+        tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await; // beter use Timer
+            router_c.send_hello();
+        }
+        });
+    }
+
+
+    
+    // CHANNELS USED FOR COMMUNICATION OF DATAPACKETS
     // Create an unbounded channel for this node
-    let (to_tun, mut from_routing) = mpsc::unbounded_channel::<Packet>();
-    let (to_routing, mut from_node) = mpsc::unbounded_channel::<Packet>();
+    let (to_tun, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
+    let (to_routing_data, mut from_node_data) = mpsc::unbounded_channel::<DataPacket>();
 
     // Create the PeerManager: an interface to all peers this node is connected to
     // Additional static peers are obtained through the nodeconfig.toml file
@@ -50,22 +71,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create static peers from the nodeconfig.toml file
     let peer_man_clone = peer_manager.clone();
-    let to_routing_clone = to_routing.clone();
+    let to_routing_data_clone = to_routing_data.clone();
+    let to_routing_control_clone= to_routing_control.clone();
+    let router_clone = router.clone();
     tokio::spawn(async move {
         peer_man_clone
-            .get_peers_from_config(to_routing_clone, cli.tun_addr)
+            .get_peers_from_config(to_routing_data_clone, to_routing_control_clone, cli.tun_addr, router_clone)
             .await; // --> here we create peer by TcpStream connect
     });
 
     let peer_man_clone = peer_manager.clone();
-    let to_routing_clone = to_routing.clone();
+    let to_routing_data_clone = to_routing_data.clone();
+    let to_routing_control_clone = to_routing_control.clone();
+    let router_clone = router.clone();
     // listen for inbound request --> "to created the reverse peer object" --> here we reverse create peer be listener.accept'ing
     tokio::spawn(async move {
         match TcpListener::bind("[::]:9651").await {
             Ok(listener) => {
                 // loop to accept the inbound requests
                 loop {
-                    let to_routing_clone_clone = to_routing_clone.clone();
+                    let to_routing_data_clone_clone = to_routing_data_clone.clone();
+                    let to_routing_control_clone_clone = to_routing_control_clone.clone();
                     match listener.accept().await {
                         Ok((mut stream, _)) => {
                             // TEMPORARY: as we do not work with Babel yet, we will send to overlay ip (= addr of TUN) manually
@@ -90,13 +116,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let peer_stream_ip = stream.peer_addr().unwrap().ip();
                             match Peer::new(
                                 peer_stream_ip,
-                                to_routing_clone_clone,
+                                to_routing_data_clone_clone,
+                                to_routing_control_clone_clone,
                                 stream,
                                 received_overlay_ip,
                             ) {
                                 Ok(new_peer) => {
                                     //println!("adding new peer to known_peers: {:?}", new_peer);
-                                    peer_man_clone.known_peers.lock().unwrap().push(new_peer);
+                                    //peer_man_clone.known_peers.lock().unwrap().push(new_peer);
+                                    // add to router directly_connected_peers
+                                    router_clone.directly_connected_peers.lock().unwrap().push(new_peer);
                                 }
                                 Err(e) => {
                                     eprintln!("Error creating 'reverse' peer: {}", e);
@@ -120,8 +149,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_tun_clone = node_tun.clone();
     tokio::spawn(async move {
         loop {
-            while let Some(packet) = from_routing.recv().await {
-                let data_packet = if let Packet::DataPacket(p) = packet {
+            while let Some(packet) = from_routing_data.recv().await {
+                let data_packet = if let p = packet {
                     println!("LENTHEEE: {}", p.raw_data.len());
                     p
                 } else {
@@ -141,7 +170,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Loop to read from node's TUN interface and send it to to_routing sender halve
     let node_tun_clone = node_tun.clone();
-    let to_routing_clone = to_routing.clone();
+    let to_routing_clone = to_routing_data.clone();
     tokio::spawn(async move {
         loop {
             let mut buf = BytesMut::zeroed(LINK_MTU);
@@ -166,7 +195,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                 println!("LEN: {}", data_packet.raw_data.len());
 
-                                match to_routing_clone.send(Packet::DataPacket(data_packet)) {
+                                match to_routing_clone.send(data_packet) {
                                     Ok(_) => {
                                         println!("packet sent to to_routing");
                                     }
@@ -201,7 +230,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         loop {
             let node_tun_inner_clone = node_tun_clone.clone();
             let to_tun_sender_inner_clone = to_tun_sender_clone.clone();
-            while let Some(packet) = from_node.recv().await {
+            while let Some(packet) = from_node_data.recv().await {
                 //println!("Read message from from_node, sending it to route_packet function");
                 peer_man_clone.route_packet(
                     packet,

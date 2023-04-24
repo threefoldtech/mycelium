@@ -1,73 +1,101 @@
 use futures::{SinkExt, StreamExt};
-use std::{error::Error, net::{IpAddr, Ipv4Addr}};
-use tokio::{
-    net::TcpStream,
-    select,
-    sync::{mpsc},
+use std::{
+    error::Error,
+    net::{IpAddr, Ipv4Addr},
 };
-use tokio_util::codec::{Framed, Decoder};
+use tokio::{net::TcpStream, select, sync::mpsc};
+use tokio_util::codec::Framed;
 
-use crate::packet_control::{DataPacket, Packet, PacketCodec};
+use crate::packet::{ControlPacket, DataPacket};
+use crate::{codec::PacketCodec, packet::Packet};
+
+// IS A NEIGHBOR IN THE IDEA OF BABEL
 
 #[derive(Debug)]
 pub struct Peer {
-    pub stream_ip: IpAddr, 
-    pub to_peer: mpsc::UnboundedSender<Packet>,
-    pub overlay_ip: Ipv4Addr,
+    pub stream_ip: IpAddr,
+    pub to_peer_data: mpsc::UnboundedSender<DataPacket>,
+    pub to_peer_control: mpsc::UnboundedSender<ControlPacket>, // RFC: the local node's interface over which this neighbour is reachable
+    pub overlay_ip: Ipv4Addr, // RFC: address of the neigbouring interface
+
+                              // additional fields according to babel RFC
+                              // pub txcost: u16,
 }
 
 impl Peer {
-    pub fn new(stream_ip: IpAddr, to_routing: mpsc::UnboundedSender<Packet>, stream: TcpStream, overlay_ip: Ipv4Addr) -> Result<Self, Box<dyn Error>> {
-
+    pub fn new(
+        stream_ip: IpAddr,
+        to_routing_data: mpsc::UnboundedSender<DataPacket>,
+        to_routing_control: mpsc::UnboundedSender<ControlPacket>,
+        stream: TcpStream,
+        overlay_ip: Ipv4Addr,
+    ) -> Result<Self, Box<dyn Error>> {
         // Create a Framed for each peer
         let mut framed = Framed::new(stream, PacketCodec::new());
         // Create an unbounded channel for each peer
-        let (to_peer, mut from_routing) = mpsc::unbounded_channel::<Packet>();
+        let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
+        // Create control channel
+        let (to_peer_control, mut from_routing_control) =
+            mpsc::unbounded_channel::<ControlPacket>();
 
         tokio::spawn(async move {
             loop {
                 select! {
-                    // received from peer
-                    frame = framed.next() => {
-                        match frame {
-                            Some(Ok(packet)) => {
-                               // Send to TUN interface
-                               // toekomst: nog een een tussenstap
-                               println!("3: I'm the peer instance that got the message from the TCP stream");
-                                match packet {
-                                    Packet::DataPacket(packet) => {
-                                        if let Err(error) = to_routing.send(Packet::DataPacket(packet)){
-                                         eprintln!("Error sending to TUN: {}", error);
-                                        }
+                // received from peer
 
+                frame = framed.next() => {
+                    match frame {
+                        Some(Ok(packet)) => {
+                            match packet {
+                                Packet::DataPacket(packet) => {
+                                    if let Err(error) = to_routing_data.send(packet){
+                                     eprintln!("Error sending to TUN: {}", error);
                                     }
-                                    // Packet::ControlPacket(packet) => {
-                                        // TODO: control packet
-                                    // }
-                                }
 
-                            },
-                            Some(Err(e)) => {
-                                eprintln!("Error from framed: {}", e);
-                            },
-                            None => {
-                                println!("Stream is closed.");
-                                return
+                                }
+                                Packet::ControlPacket(packet) => {
+                                    if let Err(error) = to_routing_control.send(packet){
+                                     eprintln!("Error sending to TUN: {}", error);
+                                    }
+
+                                }
                             }
                         }
-                    }
-                    // receive from from_routing
-                    Some(packet) = from_routing.recv() => { 
-                        println!("Receiver from from_routing, sending it over the TCP stream");
-                        // Send it over the TCP stream
-                        if let Err(e) = framed.send(packet).await {
-                            eprintln!("Error writing to stream: {}", e);
+                        Some(Err(e)) => {
+                            eprintln!("Error from framed: {}", e);
+                        },
+                        None => {
+                            println!("Stream is closed.");
+                            return
+                        }
                         }
                     }
+
+                // received from routing (both data and control channels)
+
+                Some(packet) = from_routing_data.recv() => {
+                    println!("Received DATA from routing, sending it over the TCP stream");
+                    // Send it over the TCP stream
+                    if let Err(e) = framed.send(Packet::DataPacket(packet)).await {
+                        eprintln!("Error writing to stream: {}", e);
+                    }
+                }
+
+                Some(packet) = from_routing_control.recv() => {
+                    println!("Received CONTROL from routing, sending it over the TCP stream");
+                    // Send it over the TCP stream
+                    if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
+                        eprintln!("Error writing to stream: {}", e);
+                    }
+                }
                 }
             }
         });
-
-        Ok(Self { stream_ip, to_peer, overlay_ip })
+        Ok(Self {
+            stream_ip,
+            to_peer_data,
+            to_peer_control,
+            overlay_ip,
+        })
     }
 }
