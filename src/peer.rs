@@ -49,13 +49,13 @@ impl Peer {
                             match packet {
                                 Packet::DataPacket(packet) => {
                                     if let Err(error) = to_routing_data.send(packet){
-                                     eprintln!("Error sending to TUN: {}", error);
+                                     eprintln!("Error sending to to_routing_data: {}", error);
                                     }
 
                                 }
                                 Packet::ControlPacket(packet) => {
                                     if let Err(error) = to_routing_control.send(packet){
-                                     eprintln!("Error sending to TUN: {}", error);
+                                     eprintln!("Error sending to to_routing_control: {}", error);
                                     }
 
                                 }

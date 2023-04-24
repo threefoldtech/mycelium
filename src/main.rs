@@ -49,12 +49,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let router = Arc::new(router::Router::new());
 
     {
-        let router_c = router.clone();
+        let router = router.clone();
         tokio::spawn(async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(4)).await; // beter use Timer
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await; // beter use Timer
             println!("sending hello");
-            router_c.send_hello();
+            router.send_hello();
         }
         });
 

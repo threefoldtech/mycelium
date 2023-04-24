@@ -32,7 +32,7 @@ impl Router {
         };
         // send the hello_message to all the directly connected peers
         for peer in self.directly_connected_peers.lock().unwrap().iter() {
-            println!("CONTROL: Sending hello message to peer: {:?}", peer);
+            println!("CONTROL: Sending hello message to peer: {}", peer.overlay_ip.to_string());
             peer.to_peer_control.send(hello_message.clone());
         }
     }
