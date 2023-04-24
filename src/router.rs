@@ -17,11 +17,6 @@ impl Router {
     // NOTE: we gebruiken gewoon &self en niet &mut self want de mutex van directly_connected_peers fixt het feit dat er sws maar 1 iemand aankan
     pub fn add_directly_connected_peer(&self, peer: Peer) {
         self.directly_connected_peers.lock().unwrap().push(peer);
-        // for debug: print connected peers once one get added
-        println!("CURRENT DIRECTLY CONNECTED PEERS:");
-        for peer in self.directly_connected_peers.lock().unwrap().iter() {
-            println!("Peer: {:?}", peer);
-        }
     }
 
     pub fn send_hello(&self) {

@@ -59,7 +59,11 @@ impl Peer {
                                         control_packet: packet,
                                         response_tx: control_reply_tx.clone(),
                                         src_overlay_ip: IpAddr::V4(overlay_ip),
+                                        // note: although this control packet is received from the TCP stream
+                                        // we set the src_overlay_op to the overlay_ip of the peer
+                                        // as we 'arrived' in the peer instance of representing the sending node on this current node
                                     };
+                                        println!("src_overlay_ip: {}", overlay_ip.to_string());
                                     if let Err(error) = to_routing_control.send(control_struct){
                                      eprintln!("Error sending to to_routing_control: {}", error);
                                     }

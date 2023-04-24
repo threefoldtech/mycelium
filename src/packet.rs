@@ -54,14 +54,14 @@ pub struct ControlPacket {
 }
 
 impl ControlPacket {
-    pub fn new_IHU(rxcost: u16, interval: u16, address: IpAddr) -> Self {
+    pub fn new_IHU(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
         Self {
             message_type: ControlPacketType::IHU,
             body_length: 10,
             body: Some(ControlPacketBody::IHU {
                 rxcost,
                 interval,
-                address,
+                address: dest_address,
             }),
         }
     }

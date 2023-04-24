@@ -74,9 +74,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         ControlPacketType::Hello => {
                             let dst_ip = packet.src_overlay_ip;
                             packet.reply(ControlPacket::new_IHU(10, 1000, dst_ip));
+                            println!("IHU {}", dst_ip);
                         }
                         ControlPacketType::IHU => {
-                            println!("IHU {}", packet.src_overlay_ip);
+                            // Upon receiving an IHU message, nothing particular should happen
                         }
                         _ => {
                             println!("Received unknown control packet");
