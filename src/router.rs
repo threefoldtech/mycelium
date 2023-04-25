@@ -42,15 +42,15 @@ impl Router {
         // and further forwards the packet towards the actual TUN interface.
         if dest_ip == node_tun.address().unwrap() {
             if let Err(e) = to_tun.send(data_packet) {
-                eprintln!("Error sendign packet to to_tun: {}", e);
+                eprintln!("Error sending packet to to_tun: {}", e);
             }
         } else {
             // If the destination IP of the packet does not match this node's overlay IP, we should forward it to the
             // correct peer. This is done by sending the packet to the to_peer_data sender halve of the channel. The receiver 
             // halve is read in the peer select statement and further forwards the packet towards packet over the TCP stream.
             let peer = self.get_peer_from_ip(dest_ip);
-            if let Some(peer) = peer {
-                if let Err(e) = peer.to_peer_data.send(data_packet) {
+            if let Some(dest_peer) = peer {
+                if let Err(e) = dest_peer.to_peer_data.send(data_packet) {
                     eprintln!("Error sending packet to peer: {}", e);
                 }
             } 
@@ -60,10 +60,10 @@ impl Router {
     fn get_peer_from_ip (&self, peer_ip: Ipv4Addr) -> Option<Peer> {
         for peer in self.directly_connected_peers.lock().unwrap().iter() {
             if peer.overlay_ip == peer_ip {
-                Some(peer.clone());
+                return Some(peer.clone())
             }
         }
-        None
+        return None
     }
 }
 

@@ -63,7 +63,6 @@ impl Peer {
                                         // we set the src_overlay_op to the overlay_ip of the peer
                                         // as we 'arrived' in the peer instance of representing the sending node on this current node
                                     };
-                                        println!("src_overlay_ip: {}", overlay_ip.to_string());
                                     if let Err(error) = to_routing_control.send(control_struct){
                                      eprintln!("Error sending to to_routing_control: {}", error);
                                     }
@@ -81,7 +80,6 @@ impl Peer {
                         }
                     }
 
-                // To send over the TCP stream
                 Some(packet) = from_routing_data.recv() => {
                     // Send it over the TCP stream
                     if let Err(e) = framed.send(Packet::DataPacket(packet)).await {

@@ -212,10 +212,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                     match to_routing_data.send(data_packet) {
                                         Ok(_) => {
-                                            println!("packet sent to to_routing");
+                                            println!("packet sent to to_routing_data");
                                         }
                                         Err(e) => {
-                                            eprintln!("Error sending packet to to_routing: {}", e);
+                                            eprintln!("Error sending packet to to_routing_data: {}", e);
                                         }
                                     }
                                 } else {
