@@ -29,13 +29,13 @@ impl DataPacket {}
 #[derive(Debug, Clone)]
 pub struct ControlStruct {
     pub control_packet: ControlPacket,
-    pub response_tx: mpsc::UnboundedSender<ControlPacket>,
+    pub control_reply_tx: mpsc::UnboundedSender<ControlPacket>,
     pub src_overlay_ip: IpAddr,
 }
 
 impl ControlStruct {
     pub fn reply(self, control_packet: ControlPacket) {
-        if let Err(e) = self.response_tx.send(control_packet) {
+        if let Err(e) = self.control_reply_tx.send(control_packet) {
             eprintln!("Error reply: {:?}", e);
         }
     }
