@@ -118,7 +118,7 @@ impl Peer {
     }
 
     pub fn increase_hello_seqno(&mut self) {
-        self.last_sent_hello_seqno += 1;
+        self.last_sent_hello_seqno = self.last_sent_hello_seqno + 1;
         println!("last hello seqno increasted to {}", self.last_sent_hello_seqno);
     }
 }
