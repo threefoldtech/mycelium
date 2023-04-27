@@ -121,14 +121,11 @@ impl Router {
                         length: 7,
                         body: BabelTLV::Hello {
                             flags: 99u16,
-                            seqno: peer.last_sent_hello_seqno + 1,
+                            seqno: peer.last_sent_hello_seqno,
                             interval: 299u16,
                         },
                     }),
                 };
-                // Update the last sent hello seqno for this peer.
-                peer.last_sent_hello_seqno += 1;
-
                 // Store the current timestamp for this Hello message.
                 let current_timestamp = tokio::time::Instant::now();
                 sent_hello_timestamps.lock().unwrap().insert(IpAddr::V4(peer.overlay_ip), current_timestamp);
@@ -137,6 +134,8 @@ impl Router {
                 if let Err(e) = peer.to_peer_control.send(hello_message.clone()) {
                     eprintln!("Error sending hello message to peer: {:?}", e);
                 }
+
+                peer.increase_hello_seqno();
             }
         }
     }
