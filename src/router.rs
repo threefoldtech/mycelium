@@ -1,7 +1,7 @@
-use std::{net::{IpAddr, Ipv4Addr}, sync::{Mutex, Arc}};
+use std::{net::{Ipv4Addr}, sync::{Mutex, Arc}};
 use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, self};
 use tokio_tun::Tun;
-use crate::{peer::Peer, packet::{ControlPacket, ControlPacketType, DataPacket, ControlStruct}};
+use crate::{peer::Peer, packet::{ControlPacket, DataPacket, ControlStruct, BabelTLVType, BabelPacketHeader, BabelPacketBody, BabelTLV}};
 
 #[derive(Clone)]
 pub struct Router {
@@ -34,22 +34,24 @@ impl Router {
     }
 
     async fn handle_incoming_control_packets(mut router_control_rx: UnboundedReceiver<ControlStruct>) {
-        loop {
-            while let Some(control_struct) = router_control_rx.recv().await {
-                match control_struct.control_packet.message_type {
-                    ControlPacketType::Hello => {
+    loop {
+        while let Some(control_struct) = router_control_rx.recv().await {
+            if let Some(body) = &control_struct.control_packet.body {
+                match body.tlv_type {
+                    BabelTLVType::Hello => {
                         let dest_ip = control_struct.src_overlay_ip;
                         control_struct.reply(ControlPacket::new_ihu(10, 1000, dest_ip));
                         println!("IHU {}", dest_ip);
                     },
-                    ControlPacketType::IHU => {
-                        // Upon receiving an IHU, nothing parrticular needs to be done.
+                    BabelTLVType::IHU => {
+                        // Upon receiving an IHU, nothing particular needs to be done.
                     },
                     _ => {
                         eprintln!("Unknown control packet type");
                     }
                 }
             }
+        }
         }
     }
 
@@ -84,11 +86,20 @@ impl Router {
     async fn start_hello_sender(self) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
             let hello_message = ControlPacket {
-                message_type: ControlPacketType::Hello,
-                body_length: 0,
-                body: Some(crate::packet::ControlPacketBody::Hello { flags: 100u16, seqno: 200u16, interval: 300u16 }),
+                header: BabelPacketHeader::new(8),
+                body: Some(BabelPacketBody {
+                    tlv_type: BabelTLVType::Hello,
+                    length: 8,
+                    body: BabelTLV::Hello {
+                        flags: 100u16,
+                        seqno: 200u16,
+                        interval: 300u16,
+                    },
+                }),
             };
+
             for peer in self.get_directly_connected_peers() {
                 println!("Hello {}", peer.overlay_ip);
                 if let Err(e)  = peer.to_peer_control.send(hello_message.clone()) {
