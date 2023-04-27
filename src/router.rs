@@ -112,7 +112,7 @@ impl Router {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
-            for mut peer in self.get_directly_connected_peers() {
+            for peer in self.directly_connected_peers.lock().unwrap().iter_mut() {
 
                 let hello_message = ControlPacket {
                     header: BabelPacketHeader::new(7),
