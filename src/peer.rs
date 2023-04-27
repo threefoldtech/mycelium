@@ -17,6 +17,8 @@ pub struct Peer {
     pub to_peer_data: mpsc::UnboundedSender<DataPacket>,
     pub to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     pub overlay_ip: Ipv4Addr, 
+
+    pub last_sent_hello_seqno: u16,
 }
 
 impl Peer {
@@ -26,6 +28,7 @@ impl Peer {
         router_control_tx: mpsc::UnboundedSender<ControlStruct>,
         stream: TcpStream,
         overlay_ip: Ipv4Addr,
+
     ) -> Result<Self, Box<dyn Error>> {
 
         // Framed for peer
@@ -37,6 +40,9 @@ impl Peer {
         let (to_peer_control, mut from_routing_control) = mpsc::unbounded_channel::<ControlPacket>();
         // Control reply channel for peer
         let (control_reply_tx, mut control_reply_rx) = mpsc::unbounded_channel::<ControlPacket>();
+
+        // Initialize last_sent_hello_seqno to 0
+        let last_sent_hello_seqno = 0;
 
         tokio::spawn(async move {
             loop {
@@ -107,6 +113,7 @@ impl Peer {
             to_peer_data,
             to_peer_control,
             overlay_ip,
+            last_sent_hello_seqno,
         })
     }
 }

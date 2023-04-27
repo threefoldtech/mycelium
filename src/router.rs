@@ -1,7 +1,16 @@
-use std::{net::{Ipv4Addr}, sync::{Mutex, Arc}};
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, self};
+use crate::{
+    packet::{
+        BabelPacketBody, BabelPacketHeader, BabelTLV, BabelTLVType, ControlPacket, ControlStruct,
+        DataPacket,
+    },
+    peer::Peer,
+};
+use std::{
+    net::{Ipv4Addr, IpAddr},
+    sync::{Arc, Mutex}, collections::HashMap,
+};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
-use crate::{peer::Peer, packet::{ControlPacket, DataPacket, ControlStruct, BabelTLVType, BabelPacketHeader, BabelPacketBody, BabelTLV}};
 
 #[derive(Clone)]
 pub struct Router {
@@ -9,11 +18,12 @@ pub struct Router {
     pub router_control_tx: UnboundedSender<ControlStruct>,
     pub router_data_tx: UnboundedSender<DataPacket>,
     pub node_tun: Arc<Tun>,
+
+    pub sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>
 }
 
 impl Router {
     pub fn new(node_tun: Arc<Tun>) -> Self {
-
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
@@ -22,36 +32,52 @@ impl Router {
         let router = Router {
             directly_connected_peers: Arc::new(Mutex::new(Vec::new())),
             router_control_tx,
-            router_data_tx, 
+            router_data_tx,
             node_tun,
+            sent_hello_timestamps: Arc::new(Mutex::new(HashMap::new())),
         };
 
-        tokio::spawn(Router::start_hello_sender(router.clone()));
-        tokio::spawn(Router::handle_incoming_control_packets(router_control_rx));
-        tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
+        tokio::spawn(Router::start_hello_sender(router.clone(), router.sent_hello_timestamps.clone()));
+        tokio::spawn(Router::handle_incoming_control_packets(router_control_rx, router.sent_hello_timestamps.clone()));
+        tokio::spawn(Router::handle_incoming_data_packets(
+            router.clone(),
+            router_data_rx,
+        ));
 
         router
     }
 
-    async fn handle_incoming_control_packets(mut router_control_rx: UnboundedReceiver<ControlStruct>) {
-    loop {
-        while let Some(control_struct) = router_control_rx.recv().await {
-            if let Some(body) = &control_struct.control_packet.body {
-                match body.tlv_type {
-                    BabelTLVType::Hello => {
-                        let dest_ip = control_struct.src_overlay_ip;
-                        control_struct.reply(ControlPacket::new_ihu(10, 1000, dest_ip));
-                        println!("IHU {}", dest_ip);
-                    },
-                    BabelTLVType::IHU => {
-                        // Upon receiving an IHU, nothing particular needs to be done.
-                    },
-                    _ => {
-                        eprintln!("Unknown control packet type");
+    async fn handle_incoming_control_packets(
+        mut router_control_rx: UnboundedReceiver<ControlStruct>,
+        sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>,
+    ) {
+        loop {
+            while let Some(control_struct) = router_control_rx.recv().await {
+                if let Some(body) = &control_struct.control_packet.body {
+                    match body.tlv_type {
+                        BabelTLVType::Hello => {
+                            let dest_ip = control_struct.src_overlay_ip;
+                            control_struct.reply(ControlPacket::new_ihu(10, 1000, dest_ip));
+                            println!("IHU {}", dest_ip);
+                        }
+                        BabelTLVType::IHU => {
+                            // Upon receiving an IHU message, we should read the time difference between the
+                            // time the Hello message (with the same seqno) was sent and the time the IHU message
+                            // was received. This time difference is the link cost between this node and the peer that
+                            // sent the IHU message.
+                            if let Some(timestamp) = sent_hello_timestamps.lock().unwrap().get(&control_struct.src_overlay_ip) {
+                                let time_diff = tokio::time::Instant::now().duration_since(*timestamp);
+                                println!("Time difference (ms): {}", time_diff.as_millis());
+                            } else {
+                                eprintln!("No matching Hello message found for received IHU");
+                            }
+                        }
+                        _ => {
+                            eprintln!("Unknown control packet type");
+                        }
                     }
                 }
             }
-        }
         }
     }
 
@@ -68,9 +94,8 @@ impl Router {
                     if let Err(e) = self.node_tun.send(&data_packet.raw_data).await {
                         eprintln!("Error sending data packet to TUN interface: {:?}", e);
                     }
-                }
-                else {
-                    let matching_peer = self.get_peer_by_ip(dest_ip); 
+                } else {
+                    let matching_peer = self.get_peer_by_ip(dest_ip);
                     if let Some(peer) = matching_peer {
                         if let Err(e) = peer.to_peer_data.send(data_packet) {
                             eprintln!("Error sending data packet to peer: {:?}", e);
@@ -83,26 +108,33 @@ impl Router {
         }
     }
 
-    async fn start_hello_sender(self) {
+    async fn start_hello_sender(self, sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
-            let hello_message = ControlPacket {
-                header: BabelPacketHeader::new(8),
-                body: Some(BabelPacketBody {
-                    tlv_type: BabelTLVType::Hello,
-                    length: 8,
-                    body: BabelTLV::Hello {
-                        flags: 100u16,
-                        seqno: 200u16,
-                        interval: 300u16,
-                    },
-                }),
-            };
+            for mut peer in self.get_directly_connected_peers() {
 
-            for peer in self.get_directly_connected_peers() {
-                println!("Hello {}", peer.overlay_ip);
-                if let Err(e)  = peer.to_peer_control.send(hello_message.clone()) {
+                let hello_message = ControlPacket {
+                    header: BabelPacketHeader::new(7),
+                    body: Some(BabelPacketBody {
+                        tlv_type: BabelTLVType::Hello,
+                        length: 7,
+                        body: BabelTLV::Hello {
+                            flags: 99u16,
+                            seqno: peer.last_sent_hello_seqno + 1,
+                            interval: 299u16,
+                        },
+                    }),
+                };
+                // Update the last sent hello seqno for this peer.
+                peer.last_sent_hello_seqno += 1;
+
+                // Store the current timestamp for this Hello message.
+                let current_timestamp = tokio::time::Instant::now();
+                sent_hello_timestamps.lock().unwrap().insert(IpAddr::V4(peer.overlay_ip), current_timestamp);
+
+                println!("Hello({}) {}", peer.last_sent_hello_seqno, peer.overlay_ip);
+                if let Err(e) = peer.to_peer_control.send(hello_message.clone()) {
                     eprintln!("Error sending hello message to peer: {:?}", e);
                 }
             }
@@ -117,10 +149,10 @@ impl Router {
         self.directly_connected_peers.lock().unwrap().push(peer);
     }
 
-    fn get_peer_by_ip (&self, peer_ip: Ipv4Addr) -> Option<Peer> {
+    fn get_peer_by_ip(&self, peer_ip: Ipv4Addr) -> Option<Peer> {
         let peers = self.get_directly_connected_peers();
         let matching_peer = peers.iter().find(|peer| peer.overlay_ip == peer_ip);
-             
+
         match matching_peer {
             Some(peer) => Some(peer.clone()),
             None => None,
@@ -141,7 +173,7 @@ impl Router {
 // struct RouteEntry {
 //     source: (u8, u8, u16), // source (prefix, plen, router-id) for which this route is advertised
 //     neighbour: Peer, // neighbour that advertised this route
-//     metric: u16, // metric of this route as advertised by the neighbour 
+//     metric: u16, // metric of this route as advertised by the neighbour
 //     seqno: u16, // sequence number of this route as advertised by the neighbour
 //     next_hop: IpAddr, // next-hop for this route
 //     selected: bool, // whether this route is selected

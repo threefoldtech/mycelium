@@ -51,7 +51,7 @@ pub struct BabelPacketHeader {
 }
 
 // A BabelPacketBody describes exactly one TLV
-// According to the protocol the body of a Babel packet can contain multiple subsequent TLV's --> TODO
+// TODO: According to the protocol the body of a Babel packet can contain multiple subsequent TLV's
 #[derive(Debug, PartialEq, Clone)]
 pub struct BabelPacketBody {
     pub tlv_type: BabelTLVType,
@@ -133,7 +133,10 @@ impl BabelTLVType {
 pub enum BabelTLV {
     Pad1,
     PadN(u8),
-    AckReq { nonce: u16, interval: u16 },
+    AckReq { 
+        nonce: u16, 
+        interval: u16
+    },
     Ack { nonce: u16 },
     Hello { 
         flags: u16,
@@ -148,11 +151,13 @@ pub enum BabelTLV {
     RouterID { router_id: u16 },
     NextHop { address: IpAddr },
     Update {
-        address: IpAddr,
-        prefix: u8,
+        address_encoding: u8,
+        prefix_length: u8,
+        ommited: u8,
+        interval: u16,
         seqno: u16,
         metric: u16,
-        interval: u16,
+        prefix: Vec<u8>,
     },
     RouteReq { prefix: IpAddr, plen: u8 },
     SeqnoReq {
