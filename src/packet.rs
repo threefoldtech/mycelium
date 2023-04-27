@@ -1,6 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::sync::mpsc;
 
+pub const BABEL_MAGIC: u8 = 42;
+pub const BABEL_VERSION: u8 = 2;
+
 /* ********************************PAKCET*********************************** */
 #[derive(Debug, Clone)]
 pub enum Packet {
@@ -33,6 +36,29 @@ pub struct ControlStruct {
     pub src_overlay_ip: IpAddr,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct ControlPacket {
+    pub header: BabelPacketHeader,
+    pub body: Option<BabelPacketBody>,
+    // pub trailer: Option<BabelPacketTrailer>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BabelPacketHeader {
+    pub magic: u8,
+    pub version: u8,
+    pub body_length: u16,
+}
+
+// A BabelPacketBody describes exactly one TLV
+// According to the protocol the body of a Babel packet can contain multiple subsequent TLV's --> TODO
+#[derive(Debug, PartialEq, Clone)]
+pub struct BabelPacketBody {
+    pub tlv_type: BabelTLVType,
+    pub length: u8,
+    pub body: BabelTLV, 
+}
+
 impl ControlStruct {
     pub fn reply(self, control_packet: ControlPacket) {
         if let Err(e) = self.control_reply_tx.send(control_packet) {
@@ -41,29 +67,36 @@ impl ControlStruct {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct ControlPacket {
-    pub message_type: ControlPacketType,
-    pub body_length: u8,
-    pub body: Option<ControlPacketBody>,
+impl BabelPacketHeader {
+    pub fn new(body_length: u16) -> Self {
+        Self {
+            magic: BABEL_MAGIC,
+            version: BABEL_VERSION,
+            body_length,
+        }
+    }
 }
+
 
 impl ControlPacket {
     pub fn new_ihu(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
         Self {
-            message_type: ControlPacketType::IHU,
-            body_length: 10,
-            body: Some(ControlPacketBody::IHU {
-                rxcost,
-                interval,
-                address: dest_address,
+            header: BabelPacketHeader::new(10), 
+            body: Some(BabelPacketBody { 
+                tlv_type: BabelTLVType::IHU, 
+                length: 8, 
+                body: BabelTLV::IHU { 
+                    rxcost, 
+                    interval, 
+                    address: dest_address, 
+                } 
             }),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ControlPacketType {
+pub enum BabelTLVType {
     Pad1 = 0,
     PadN = 1,
     AckReq = 2,
@@ -77,7 +110,7 @@ pub enum ControlPacketType {
     SeqnoReq = 10,
 }
 
-impl ControlPacketType {
+impl BabelTLVType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Pad1),
@@ -97,7 +130,7 @@ impl ControlPacketType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ControlPacketBody {
+pub enum BabelTLV {
     Pad1,
     PadN(u8),
     AckReq { nonce: u16, interval: u16 },

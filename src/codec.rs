@@ -1,7 +1,7 @@
 use std::{io, net::{IpAddr, Ipv4Addr}};
 use bytes::{BufMut, BytesMut, Buf};
 use tokio_util::codec::{Encoder, Decoder};
-use crate::packet::{Packet, ControlPacket, DataPacket, PacketType, ControlPacketBody, ControlPacketType};
+use crate::packet::{Packet, ControlPacket, DataPacket, PacketType, ControlPacketBody, ControlPacketType, BabelTLVType, BabelPacketBody, BabelTLV, BabelPacketHeader};
 
 /* ********************************PAKCET*********************************** */
 pub struct PacketCodec {
@@ -194,58 +194,78 @@ impl Decoder for ControlPacketCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if buf.is_empty() {
+        if buf.remaining() < 4 {
             return Ok(None);
         }
 
-        let message_type = match ControlPacketType::from_u8(buf.get_u8()) {
-            Some(t) => t,
-            None => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid message type")),
-        };
-
-        if message_type == ControlPacketType::Pad1 {
-            return Ok(Some(ControlPacket {
-                message_type,
-                body_length: 0,
-                body: Some(ControlPacketBody::Pad1),
-            }));
-        }
-
-        let body_length = buf.get_u8();
+        let magic = buf.get_u8();
+        let version = buf.get_u8();
+        let body_length = buf.get_u16();
 
         if buf.remaining() < body_length as usize {
             return Ok(None);
         }
 
-        let body = match message_type {
-            ControlPacketType::PadN => {
-                buf.advance(usize::from(body_length));
-                Some(ControlPacketBody::PadN(body_length))
+        let header = BabelPacketHeader {
+            magic,
+            version,
+            body_length,
+        };
+
+        let tlv_type = match BabelTLVType::from_u8(buf.get_u8()) {
+            Some(t) => t,
+            None => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid TLV type")),
+        };
+
+        if tlv_type == BabelTLVType::Pad1 {
+            return Ok(Some(ControlPacket {
+                header,
+                body: Some(BabelPacketBody {
+                    tlv_type,
+                    length: 0,
+                    body: BabelTLV::Pad1,
+                }),
+            }));
+        }
+
+        let length = buf.get_u8();
+
+        let body = match tlv_type {
+            BabelTLVType::PadN => {
+                buf.advance(usize::from(length));
+                Some(BabelPacketBody {
+                    tlv_type,
+                    length,
+                    body: BabelTLV::PadN(length),
+                })
             }
-            ControlPacketType::Hello => {
+            BabelTLVType::Hello => {
                 let flags = buf.get_u16();
                 let seqno = buf.get_u16();
                 let interval = buf.get_u16();
-                Some(ControlPacketBody::Hello { flags, seqno, interval })
+                Some(BabelPacketBody {
+                    tlv_type,
+                    length,
+                    body: BabelTLV::Hello { flags, seqno, interval },
+                })
             }
-            ControlPacketType::IHU => {
+            BabelTLVType::IHU => {
                 let _address_encoding = buf.get_u8();
-                // todo: based on address_encoding, we should decode the address on a different way
                 let _reserved = buf.get_u8();
                 let rxcost = buf.get_u16();
                 let interval = buf.get_u16();
                 let address = IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8()));
-                Some(ControlPacketBody::IHU { rxcost, interval, address })
+                Some(BabelPacketBody {
+                    tlv_type,
+                    length,
+                    body: BabelTLV::IHU { rxcost, interval, address },
+                })
             }
-            // Add decoding logic for other message types.
+            // Add decoding logic for other TLV types.
             _ => None,
         };
 
-        Ok(Some(ControlPacket {
-            message_type,
-            body_length,
-            body,
-        }))
+        Ok(Some(ControlPacket { header, body }))
     }
 }
 
@@ -253,23 +273,29 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
     type Error = io::Error;
 
     fn encode(&mut self, message: ControlPacket, buf: &mut BytesMut) -> Result<(), Self::Error> {
-        buf.put_u8(message.message_type as u8);
-        buf.put_u8(message.body_length);
+        // Write BabelPacketHeader
+        buf.put_u8(message.header.magic);
+        buf.put_u8(message.header.version);
+        buf.put_u16(message.header.body_length);
 
         if let Some(body) = message.body {
-            match body {
-                ControlPacketBody::Pad1 => {}
-                ControlPacketBody::PadN(padding_length) => {
+            // Write BabelPacketBody
+            buf.put_u8(body.tlv_type as u8);
+            buf.put_u8(body.length);
+
+            match body.body {
+                BabelTLV::Pad1 => {}
+                BabelTLV::PadN(padding_length) => {
                     buf.put_slice(&vec![0; usize::from(padding_length)]);
                 }
-                ControlPacketBody::Hello { flags, seqno, interval } => {
+                BabelTLV::Hello { flags, seqno, interval } => {
                     buf.put_u16(flags);
                     buf.put_u16(seqno);
                     buf.put_u16(interval);
                 }
-                ControlPacketBody::IHU { rxcost, interval, address } => {
-                    buf.put_u8(0); // temp static address encoding
-                    buf.put_u8(0); // reserved field should be set to 0 and MUST be ignored on recpetion
+                BabelTLV::IHU { rxcost, interval, address } => {
+                    buf.put_u8(0); // Temporary static address encoding
+                    buf.put_u8(0); // Reserved field should be set to 0 and MUST be ignored on reception
                     buf.put_u16(rxcost);
                     buf.put_u16(interval);
                     match address {
@@ -280,11 +306,11 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                             buf.put_u8(ipv4.octets()[3]);
                         }
                         IpAddr::V6(_ipv6) => {
-                            println!("IPv6 not supported yet"); 
+                            println!("IPv6 not supported yet");
                         }
                     }
                 }
-                // Add encoding logic for other message types.
+                // Add encoding logic for other TLV types.
                 _ => {}
             }
         }
