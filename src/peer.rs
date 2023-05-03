@@ -19,6 +19,7 @@ pub struct Peer {
     pub overlay_ip: Ipv4Addr, 
 
     pub last_sent_hello_seqno: u16,
+    pub link_cost: u16,
 }
 
 impl Peer {
@@ -43,6 +44,8 @@ impl Peer {
 
         // Initialize last_sent_hello_seqno to 0
         let last_sent_hello_seqno = 0;
+        // Initialize last_path_cost to infinity
+        let link_cost = 65535;
 
         tokio::spawn(async move {
             loop {
@@ -114,6 +117,7 @@ impl Peer {
             to_peer_control,
             overlay_ip,
             last_sent_hello_seqno,
+            link_cost,
         })
     }
 

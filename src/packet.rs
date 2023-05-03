@@ -157,7 +157,7 @@ pub enum BabelTLV {
         interval: u16,
         seqno: u16,
         metric: u16,
-        prefix: Vec<u8>,
+        prefix: IpAddr,
     },
     RouteReq { prefix: IpAddr, plen: u8 },
     SeqnoReq {

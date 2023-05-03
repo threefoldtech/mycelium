@@ -16,17 +16,14 @@ struct PeersConfig {
 
 #[derive(Clone)]
 pub struct PeerManager {
-    pub known_peers: Arc<Mutex<Vec<Peer>>>, // --> moet eigenlijk in router
     pub router: Arc<Router>,
 }
 
 impl PeerManager {
 
     pub fn new(router: Arc<Router>) -> Self {
-        let known_peers: Vec<Peer> = Vec::new();
 
         let peer_manager = PeerManager {
-            known_peers: Arc::new(Mutex::new(known_peers)),
             router,
         };
 

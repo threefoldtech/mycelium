@@ -4,10 +4,13 @@ use crate::{
         DataPacket,
     },
     peer::Peer,
+    routing_table::{RoutingTable, RouteKey, RouteEntry},
+    source_table::{SourceTable, SourceKey, SourceEntry},
 };
 use std::{
-    net::{Ipv4Addr, IpAddr},
-    sync::{Arc, Mutex}, collections::HashMap,
+    collections::HashMap,
+    net::{IpAddr, Ipv4Addr},
+    sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
@@ -19,7 +22,9 @@ pub struct Router {
     pub router_data_tx: UnboundedSender<DataPacket>,
     pub node_tun: Arc<Tun>,
 
-    pub sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>
+    pub sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>,
+    pub routing_table: Arc<Mutex<RoutingTable>>,
+    pub source_table: Arc<Mutex<SourceTable>>,
 }
 
 impl Router {
@@ -35,19 +40,30 @@ impl Router {
             router_data_tx,
             node_tun,
             sent_hello_timestamps: Arc::new(Mutex::new(HashMap::new())),
+            routing_table: Arc::new(Mutex::new(RoutingTable::new())),
+            source_table: Arc::new(Mutex::new(SourceTable::new())),
         };
 
-        tokio::spawn(Router::start_hello_sender(router.clone(), router.sent_hello_timestamps.clone()));
-        tokio::spawn(Router::handle_incoming_control_packets(router_control_rx, router.sent_hello_timestamps.clone()));
+        tokio::spawn(Router::start_hello_sender(
+            router.clone(),
+            router.sent_hello_timestamps.clone(),
+        ));
+        tokio::spawn(Router::handle_incoming_control_packets(
+            router.clone(),
+            router_control_rx,
+            router.sent_hello_timestamps.clone(),
+        ));
         tokio::spawn(Router::handle_incoming_data_packets(
             router.clone(),
             router_data_rx,
         ));
+        tokio::spawn(Router::start_routing_table_updater(router.clone()));
 
         router
     }
 
     async fn handle_incoming_control_packets(
+        self,
         mut router_control_rx: UnboundedReceiver<ControlStruct>,
         sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>,
     ) {
@@ -65,9 +81,22 @@ impl Router {
                             // time the Hello message (with the same seqno) was sent and the time the IHU message
                             // was received. This time difference is the link cost between this node and the peer that
                             // sent the IHU message.
-                            if let Some(timestamp) = sent_hello_timestamps.lock().unwrap().get(&control_struct.src_overlay_ip) {
-                                let time_diff = tokio::time::Instant::now().duration_since(*timestamp);
-                                println!("Time difference (ms): {}", time_diff.as_millis());
+                            if let Some(timestamp) = sent_hello_timestamps
+                                .lock()
+                                .unwrap()
+                                .get(&control_struct.src_overlay_ip)
+                            {
+                                let time_diff =
+                                    tokio::time::Instant::now().duration_since(*timestamp);
+                                let sender_peer_ip = control_struct
+                                    .src_overlay_ip
+                                    .to_string()
+                                    .parse::<Ipv4Addr>()
+                                    .unwrap();
+                                self.update_peer_link_cost(
+                                    sender_peer_ip,
+                                    time_diff.as_millis() as u16,
+                                );
                             } else {
                                 eprintln!("No matching Hello message found for received IHU");
                             }
@@ -108,12 +137,14 @@ impl Router {
         }
     }
 
-    async fn start_hello_sender(self, sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>) {
+    async fn start_hello_sender(
+        self,
+        sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>,
+    ) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
             for peer in self.directly_connected_peers.lock().unwrap().iter_mut() {
-
                 let hello_message = ControlPacket {
                     header: BabelPacketHeader::new(7),
                     body: Some(BabelPacketBody {
@@ -128,7 +159,10 @@ impl Router {
                 };
                 // Store the current timestamp for this Hello message.
                 let current_timestamp = tokio::time::Instant::now();
-                sent_hello_timestamps.lock().unwrap().insert(IpAddr::V4(peer.overlay_ip), current_timestamp);
+                sent_hello_timestamps
+                    .lock()
+                    .unwrap()
+                    .insert(IpAddr::V4(peer.overlay_ip), current_timestamp);
 
                 println!("Hello({}) {}", peer.last_sent_hello_seqno, peer.overlay_ip);
                 if let Err(e) = peer.to_peer_control.send(hello_message.clone()) {
@@ -139,6 +173,51 @@ impl Router {
             }
         }
     }
+
+    // create the function for a task that will loop over the directly connected peers and create routing table entries for them
+    // this is done by looking at the currently set link cost. as the cost gets initialized to 65535, we can use this to check if
+    // the link cost has been set to a lower value, indicating that the peer is reachable and we can create a routing table entry
+    async fn start_routing_table_updater(self) {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+            for peer in self.directly_connected_peers.lock().unwrap().iter_mut() {
+                if peer.link_cost < 65535 {
+                    // before we can create a routing table entry, we need to create a source table entry
+                    let source_key = SourceKey {
+                        prefix: IpAddr::V4(peer.overlay_ip),
+                        plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
+                        router_id: 0 // we set all router ids to 0 temporarily
+                    };
+                    let source_entry = SourceEntry {
+                        metric: peer.link_cost,
+                        seqno: 0, // we set the seqno to 0 for now
+                    };
+                    // create the source table entry
+                    let source_key_clone = source_key.clone();
+                    self.source_table.lock().unwrap().insert(source_key, source_entry);
+
+                    // now we can create the routing table entry
+                    let route_key = RouteKey {
+                        prefix: IpAddr::V4(peer.overlay_ip),
+                        plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
+                        neighbor: IpAddr::V4(peer.overlay_ip),
+                    };
+                    let route_entry = RouteEntry {
+                        source: source_key_clone,
+                        neighbor: peer.clone(),
+                        metric: peer.link_cost,
+                        seqno: 0, // we set the seqno to 0 for now
+                        next_hop: IpAddr::V4(peer.overlay_ip),
+                        selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
+                    };
+                    // create the routing table entry
+                    self.routing_table.lock().unwrap().insert(route_key, route_entry);
+                }
+            }
+        }
+    }
+    
 
     pub fn get_directly_connected_peers(&self) -> Vec<Peer> {
         self.directly_connected_peers.lock().unwrap().clone()
@@ -161,24 +240,56 @@ impl Router {
     pub fn get_node_tun_address(&self) -> Ipv4Addr {
         self.node_tun.address().unwrap()
     }
+
+    pub fn update_peer_link_cost(&self, peer_ip: Ipv4Addr, link_cost: u16) {
+        let mut peers = self.directly_connected_peers.lock().unwrap();
+        let matching_peer = peers.iter_mut().find(|peer| peer.overlay_ip == peer_ip);
+
+        match matching_peer {
+            Some(peer) => {
+                // Only update the link cost if the new link cost is lower than the current link cost
+                if link_cost < peer.link_cost {
+                    peer.link_cost = link_cost;
+                    println!("Link cost to {} updated to {}", peer_ip, link_cost);
+                }
+            }
+            None => {
+                eprintln!("No matching peer found for link cost update");
+            }
+        }
+    }
+
+    pub fn is_update_feasible(
+        // update is tuple of (prefix, prefix_length, router_id, seqno, metric)
+        received_update: &(IpAddr, u8, u64, u16, u16),
+        source_table: &SourceTable,
+    ) -> bool {
+        let (prefix, plen, router_id, seqno, metric) = received_update;
+        let source_key = SourceKey {
+            prefix: *prefix,
+            plen: *plen,
+            router_id: *router_id,
+        };
+
+        // If the received metric is infinite, it's always feasible
+        // An update with an infinite metric is considered a retraction
+        // Retractions are used to notify neighbors that a previously advertised route is no longer available
+        if *metric == u16::MAX {
+            return true;
+        }
+
+        match source_table.get(&source_key) {
+            None => {
+                // If there's no entry in the source table, the update is feasible
+                true
+            }
+            Some(source_entry) => {
+                // If an entry exists in the source table, compare seqno and metric
+                let (seqno_2, metric_2) = (&source_entry.seqno, &source_entry.metric);
+
+                // Check feasibility conditions
+                seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2)
+            }
+        }
+    }
 }
-
-// struct Route {
-//     prefix: u8,
-//     plen: u8,
-//     neighbour: Peer,
-// }
-
-// struct RouteEntry {
-//     source: (u8, u8, u16), // source (prefix, plen, router-id) for which this route is advertised
-//     neighbour: Peer, // neighbour that advertised this route
-//     metric: u16, // metric of this route as advertised by the neighbour
-//     seqno: u16, // sequence number of this route as advertised by the neighbour
-//     next_hop: IpAddr, // next-hop for this route
-//     selected: bool, // whether this route is selected
-
-//     // each route table entry needs a route expiry timer
-//     // each route has two distinct (seqno, metric) pairs associated with it:
-//     // 1. (seqno, metric): describes the route's distance
-//     // 2. (seqno, metric): describes the feasibility distance (should be stored in source table and shared between all routes with the same source)
-// }
