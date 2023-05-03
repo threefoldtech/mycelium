@@ -182,7 +182,7 @@ impl Router {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
             for peer in self.directly_connected_peers.lock().unwrap().iter_mut() {
-                if peer.link_cost < 65535 {
+                if peer.link_cost != 65535 {
                     // before we can create a routing table entry, we need to create a source table entry
                     let source_key = SourceKey {
                         prefix: IpAddr::V4(peer.overlay_ip),
