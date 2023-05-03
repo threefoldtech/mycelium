@@ -176,13 +176,13 @@ impl Router {
 
     // create the function for a task that will loop over the directly connected peers and create routing table entries for them
     // this is done by looking at the currently set link cost. as the cost gets initialized to 65535, we can use this to check if
-    // the link cost has been set to a lower value, indicating that the peer is reachable and we can create a routing table entry
+    // the link cost has been set to a lower value, indicating that the peer is reachable and a routing table entry exits already
     async fn start_routing_table_updater(self) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
             for peer in self.directly_connected_peers.lock().unwrap().iter_mut() {
-                if peer.link_cost != 65535 {
+                if peer.link_cost == 65535 {
                     // before we can create a routing table entry, we need to create a source table entry
                     let source_key = SourceKey {
                         prefix: IpAddr::V4(peer.overlay_ip),
