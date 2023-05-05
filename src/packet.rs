@@ -153,7 +153,6 @@ pub enum BabelTLV {
     Update {
         address_encoding: u8,
         prefix_length: u8,
-        ommited: u8,
         interval: u16,
         seqno: u16,
         metric: u16,

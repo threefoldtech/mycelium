@@ -59,6 +59,8 @@ impl Router {
         ));
         tokio::spawn(Router::start_routing_table_updater(router.clone()));
 
+        tokio::spawn(Router::propagate_updates(router.clone()));
+
         router
     }
 
@@ -214,6 +216,46 @@ impl Router {
                     // create the routing table entry
                     self.routing_table.lock().unwrap().insert(route_key, route_entry);
                 }
+            }
+        }
+    }
+
+    // routing table updates are send periodically to all directly connected peers
+    // they can also be send when a change in the network topology occurs
+    // updates are used to advertise new routes or the retract existing routes (retracting when the metric is set to 0xFFFF)
+    async fn propagate_updates(self) {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+            let connected_peers = self.directly_connected_peers.lock().unwrap();
+            let connected_peers_cloned: Vec<&Peer> = connected_peers.iter().collect();
+
+            let routing_table = self.routing_table.lock().unwrap();
+            for (key, value) in routing_table.table.iter() {
+                // create update message and send to all peers
+                let update = BabelTLV::Update { 
+                    address_encoding: 1, // AE of 1 indicated IPv4 
+                    prefix_length: 32, // temp value - working with full IPv4 for now, not prefix-based
+                    interval: 999, // temp value 
+                    seqno: 0, // temp value 
+                    metric: value.metric, 
+                    prefix: key.prefix, 
+                };
+
+                for peer in &connected_peers_cloned {
+                    let control_packet = ControlPacket{
+                        header: BabelPacketHeader::new(14),
+                        body: Some(BabelPacketBody { 
+                            tlv_type: BabelTLVType::Update, 
+                            length: 14, 
+                            body: update.clone(), 
+                        }), 
+                    };
+                    println!("Sending route as control packet to {}: {:?}", peer.overlay_ip, control_packet);
+                    peer.to_peer_control.send(control_packet).unwrap();
+                } 
+
+
             }
         }
     }

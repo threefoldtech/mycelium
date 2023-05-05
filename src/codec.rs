@@ -36,6 +36,7 @@ impl Decoder for PacketCodec {
             }
 
             let packet_type_byte = src.get_u8(); // ! This will advance the buffer 1 byte !
+            println!("received packet with packet_type_byte: {}", packet_type_byte);
             let packet_type = match packet_type_byte {
                 0 => PacketType::DataPacket,
                 1 => PacketType::ControlPacket,
