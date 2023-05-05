@@ -247,7 +247,7 @@ impl Router {
                             tlv_type: BabelTLVType::Update,
                             length: 14,
                             body: BabelTLV::Update {
-                                address_encoding: 1, // AE of 1 indicated IPv4
+                                address_encoding: 0, // AE of 1 indicated IPv4
                                 prefix_length: 32, // temp value - working with full IPv4 for now, not prefix-based
                                 interval: 999,     // temp value
                                 seqno: 0,          // temp value

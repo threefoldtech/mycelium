@@ -282,11 +282,13 @@ impl Decoder for ControlPacketCodec {
                     )),
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address encoding")),
                 };
+                println!("UPDATE decoded successfully!");
                 Some(BabelPacketBody {
                     tlv_type,
                     length,
                     body: BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix }
                 })
+                
             }
             // Add decoding logic for other TLV types.
             _ => None,
