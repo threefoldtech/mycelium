@@ -4,8 +4,8 @@ use crate::{
         DataPacket,
     },
     peer::Peer,
-    routing_table::{RoutingTable, RouteKey, RouteEntry},
-    source_table::{SourceTable, SourceKey, SourceEntry},
+    routing_table::{RouteEntry, RouteKey, RoutingTable},
+    source_table::{SourceEntry, SourceKey, SourceTable},
 };
 use std::{
     collections::HashMap,
@@ -189,7 +189,7 @@ impl Router {
                     let source_key = SourceKey {
                         prefix: IpAddr::V4(peer.overlay_ip),
                         plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
-                        router_id: 0 // we set all router ids to 0 temporarily
+                        router_id: 0, // we set all router ids to 0 temporarily
                     };
                     let source_entry = SourceEntry {
                         metric: peer.link_cost,
@@ -197,7 +197,10 @@ impl Router {
                     };
                     // create the source table entry
                     let source_key_clone = source_key.clone();
-                    self.source_table.lock().unwrap().insert(source_key, source_entry);
+                    self.source_table
+                        .lock()
+                        .unwrap()
+                        .insert(source_key, source_entry);
 
                     // now we can create the routing table entry
                     let route_key = RouteKey {
@@ -214,7 +217,10 @@ impl Router {
                         selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
                     };
                     // create the routing table entry
-                    self.routing_table.lock().unwrap().insert(route_key, route_entry);
+                    self.routing_table
+                        .lock()
+                        .unwrap()
+                        .insert(route_key, route_entry);
                 }
             }
         }
@@ -233,33 +239,29 @@ impl Router {
             let routing_table = self.routing_table.lock().unwrap();
             for (key, value) in routing_table.table.iter() {
                 // create update message and send to all peers
-                let update = BabelTLV::Update { 
-                    address_encoding: 1, // AE of 1 indicated IPv4 
-                    prefix_length: 32, // temp value - working with full IPv4 for now, not prefix-based
-                    interval: 999, // temp value 
-                    seqno: 0, // temp value 
-                    metric: value.metric, 
-                    prefix: key.prefix, 
-                };
 
                 for peer in &connected_peers_cloned {
-                    let control_packet = ControlPacket{
+                    let update_message = ControlPacket {
                         header: BabelPacketHeader::new(14),
-                        body: Some(BabelPacketBody { 
-                            tlv_type: BabelTLVType::Update, 
-                            length: 14, 
-                            body: update.clone(), 
-                        }), 
+                        body: Some(BabelPacketBody {
+                            tlv_type: BabelTLVType::Update,
+                            length: 14,
+                            body: BabelTLV::Update {
+                                address_encoding: 1, // AE of 1 indicated IPv4
+                                prefix_length: 32, // temp value - working with full IPv4 for now, not prefix-based
+                                interval: 999,     // temp value
+                                seqno: 0,          // temp value
+                                metric: value.metric,
+                                prefix: key.prefix,
+                            },
+                        }),
                     };
-                    println!("Sending route as control packet to {}: {:?}", peer.overlay_ip, control_packet);
-                    peer.to_peer_control.send(control_packet).unwrap();
-                } 
-
-
+                    println!("Sending route as control packet to {}", peer.overlay_ip);
+                    peer.to_peer_control.send(update_message).unwrap();
+                }
             }
         }
     }
-    
 
     pub fn get_directly_connected_peers(&self) -> Vec<Peer> {
         self.directly_connected_peers.lock().unwrap().clone()

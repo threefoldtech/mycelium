@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
 use packet::DataPacket;
-use std::{error::Error, net::Ipv4Addr, sync::Arc};
+use std::{error::Error, net::{Ipv4Addr, SocketAddr}, sync::Arc};
 
 mod codec;
 mod node_setup;
@@ -19,6 +19,8 @@ const LINK_MTU: usize = 1500;
 struct Cli {
     #[arg(short = 'a', long = "tun-addr")]
     tun_addr: Ipv4Addr,
+    #[arg(short = 'p', long = "peers", num_args = 1..)]
+    static_peers: Vec<SocketAddr>,
 }
 
 #[tokio::main]
@@ -36,10 +38,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     
+    let static_peers = cli.static_peers;
+    
     // Creating a new Router instance 
     let router = Arc::new(router::Router::new(node_tun.clone()));
     // Creating a new PeerManager instance
-    let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(router.clone());
+    let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(router.clone(), static_peers);
 
 
     // The TUN interface will only receive data packets. This loops reads data packets from the TUN interface and forwards them to the router.

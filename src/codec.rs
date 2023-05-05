@@ -1,4 +1,4 @@
-use std::{io, net::{IpAddr, Ipv4Addr}};
+use std::{io, net::{IpAddr, Ipv4Addr, Ipv6Addr}};
 use bytes::{BufMut, BytesMut, Buf};
 use tokio_util::codec::{Encoder, Decoder};
 use crate::packet::{Packet, ControlPacket, DataPacket, PacketType, BabelTLVType, BabelPacketBody, BabelTLV, BabelPacketHeader};
@@ -36,7 +36,6 @@ impl Decoder for PacketCodec {
             }
 
             let packet_type_byte = src.get_u8(); // ! This will advance the buffer 1 byte !
-            println!("received packet with packet_type_byte: {}", packet_type_byte);
             let packet_type = match packet_type_byte {
                 0 => PacketType::DataPacket,
                 1 => PacketType::ControlPacket,
@@ -262,6 +261,33 @@ impl Decoder for ControlPacketCodec {
                     body: BabelTLV::IHU { rxcost, interval, address },
                 })
             }
+            BabelTLVType::Update => {
+                println!("UPDATE received, trying to decode now...");
+                let address_encoding = buf.get_u8();
+                let prefix_length = buf.get_u8();
+                let interval = buf.get_u16();
+                let seqno = buf.get_u16();
+                let metric = buf.get_u16();
+                let prefix = match address_encoding {
+                    0 => IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8())),
+                    1 => IpAddr::V6(Ipv6Addr::new(
+                        buf.get_u16(),
+                        buf.get_u16(),
+                        buf.get_u16(),
+                        buf.get_u16(),
+                        buf.get_u16(),
+                        buf.get_u16(),
+                        buf.get_u16(),
+                        buf.get_u16(),
+                    )),
+                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address encoding")),
+                };
+                Some(BabelPacketBody {
+                    tlv_type,
+                    length,
+                    body: BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix }
+                })
+            }
             // Add decoding logic for other TLV types.
             _ => None,
         };
@@ -300,6 +326,24 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                     buf.put_u16(rxcost);
                     buf.put_u16(interval);
                     match address {
+                        IpAddr::V4(ipv4) => {
+                            buf.put_u8(ipv4.octets()[0]);
+                            buf.put_u8(ipv4.octets()[1]);
+                            buf.put_u8(ipv4.octets()[2]);
+                            buf.put_u8(ipv4.octets()[3]);
+                        }
+                        IpAddr::V6(_ipv6) => {
+                            println!("IPv6 not supported yet");
+                        }
+                    }
+                }
+                BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix } => {
+                    buf.put_u8(address_encoding);
+                    buf.put_u8(prefix_length);
+                    buf.put_u16(interval);
+                    buf.put_u16(seqno);
+                    buf.put_u16(metric);
+                    match prefix {
                         IpAddr::V4(ipv4) => {
                             buf.put_u8(ipv4.octets()[0]);
                             buf.put_u8(ipv4.octets()[1]);

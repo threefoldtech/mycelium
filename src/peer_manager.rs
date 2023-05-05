@@ -21,7 +21,7 @@ pub struct PeerManager {
 
 impl PeerManager {
 
-    pub fn new(router: Arc<Router>) -> Self {
+    pub fn new(router: Arc<Router>, static_peers_sockets: Vec<SocketAddr>) -> Self {
 
         let peer_manager = PeerManager {
             router,
@@ -31,6 +31,9 @@ impl PeerManager {
         tokio::spawn(PeerManager::start_listener(peer_manager.clone()));
         // Reads the nodeconfig.toml file and connects to the peers in the file.
         tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
+        // Remote nodes can also be read from CLI arg
+        tokio::spawn(PeerManager::get_peers_from_cli(peer_manager.clone(), static_peers_sockets));
+        
 
         peer_manager
     }
@@ -88,6 +91,55 @@ impl PeerManager {
             }
         }
     }
+
+    // Each node has a nodeconfig.toml file which contains the underlay socket addresses of other nodes.
+    async fn get_peers_from_cli(self, socket_addresses: Vec<SocketAddr>) {
+        for peer_addr in socket_addresses {
+            println!("connecting to: {}", peer_addr);
+            match TcpStream::connect(peer_addr).await {
+                Ok(mut peer_stream) => {
+                    println!("stream established");
+                    // 2. Read other node's TUN address from the stream
+                    let mut buffer = [0u8; 4];
+                    peer_stream.read_exact(&mut buffer).await.unwrap();
+                    let received_overlay_ip = Ipv4Addr::from(buffer);
+                    println!(
+                        "Received overlay IP from other node: {:?}",
+                        received_overlay_ip
+                    );
+
+                    // 3. Send own TUN address over the stream
+                    let ip_bytes = self.router.get_node_tun_address().octets();
+                    peer_stream.write_all(&ip_bytes).await.unwrap();
+
+                    // Create peer instance
+                    let peer_stream_ip = peer_addr.ip();
+                    match Peer::new(
+                        peer_stream_ip,
+                        self.router.router_data_tx.clone(),
+                        self.router.router_control_tx.clone(),
+                        peer_stream,
+                        received_overlay_ip,
+                    ) {
+                        Ok(new_peer) => {
+                            self.router.add_directly_connected_peer(new_peer);
+                        }
+                        Err(e) => {
+                            eprintln!("Error creating peer: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Error connecting to TCP stream for {}: {}",
+                        peer_addr.to_string(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
 
     async fn start_listener(self) {
         match TcpListener::bind("[::]:9651").await {
