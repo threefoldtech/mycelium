@@ -16,6 +16,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
 
 const HELLO_INTERVAL: u16 = 4;
+const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
 
 #[derive(Clone)]
 pub struct Router {
@@ -50,10 +51,32 @@ impl Router {
         };
 
         tokio::spawn(Router::periodic_hello_sender(router.clone()));
+        tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
 
         router
     }
 
+    async fn handle_incoming_control_packet(self, mut router_control_rx: UnboundedReceiver<ControlStruct>) {
+        loop {
+            while let Some(control_struct) = router_control_rx.recv().await {
+                match control_struct.control_packet.body.tlv_type {
+                    BabelTLVType::AckReq => todo!(),
+                    BabelTLVType::Ack => todo!(),
+                    BabelTLVType::Hello => Self::handle_incoming_hello(control_struct),
+                    BabelTLVType::IHU => todo!(),
+                    BabelTLVType::NextHop => todo!(),
+                    BabelTLVType::Update => todo!(),
+                    BabelTLVType::RouteReq => todo!(),
+                    BabelTLVType::SeqnoReq => todo!(),
+                }
+            }
+        } 
+    }
+
+    fn handle_incoming_hello(control_struct: ControlStruct) {
+        let destination_ip = control_struct.src_overlay_ip;
+        control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
+    }
 
     async fn periodic_hello_sender(self) {
         for peer in self.peer_interfaces.lock().unwrap().iter_mut() {

@@ -239,7 +239,7 @@ impl Decoder for ControlPacketCodec {
                 let body = BabelPacketBody {
                     tlv_type,
                     length,
-                    tlv: BabelTLV::IHU { rxcost, interval, address },
+                    tlv: BabelTLV::IHU { interval, address },
                 };
                 body
             }
@@ -300,10 +300,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                     buf.put_u16(seqno);
                     buf.put_u16(interval);
                 }
-                BabelTLV::IHU { rxcost, interval, address } => {
-                    buf.put_u8(0); // Temporary static address encoding
-                    buf.put_u8(0); // Reserved field should be set to 0 and MUST be ignored on reception
-                    buf.put_u16(rxcost);
+                BabelTLV::IHU { interval, address } => {
                     buf.put_u16(interval);
                     match address {
                         IpAddr::V4(ipv4) => {

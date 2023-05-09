@@ -93,7 +93,7 @@ impl ControlPacket {
         } 
     }
 
-    pub fn new_ihu(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
+    pub fn new_ihu(interval: u16, dest_address: IpAddr) -> Self {
         let uses_ipv6 = match dest_address {
             IpAddr::V4(_) => false,
             IpAddr::V6(_) => true,
@@ -105,7 +105,6 @@ impl ControlPacket {
                 tlv_type: BabelTLVType::IHU, 
                 length: BabelTLVType::IHU.get_tlv_length(uses_ipv6), 
                 tlv: BabelTLV::IHU { 
-                    rxcost, 
                     interval, 
                     address: dest_address, 
                 } 
@@ -175,7 +174,7 @@ impl BabelTLVType {
             Self::AckReq => (4, 4),
             Self::Ack => (2, 2),
             Self::Hello => (4, 4),
-            Self::IHU => (20, 8),
+            Self::IHU => (18, 6),
             Self::NextHop => (16, 4),
             Self::Update => (28, 16),
             Self::RouteReq => (17, 5),
@@ -201,7 +200,6 @@ pub enum BabelTLV {
         interval: u16,
     },
     IHU { 
-        rxcost: u16, 
         interval: u16,
         address: IpAddr, 
     },
