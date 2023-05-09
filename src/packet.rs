@@ -113,13 +113,13 @@ pub enum BabelTLVType {
 impl BabelTLVType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Some(Self::Pad1),
-            1 => Some(Self::PadN),
+            // 0 => Some(Self::Pad1),
+            // 1 => Some(Self::PadN),
             2 => Some(Self::AckReq),
             3 => Some(Self::Ack),
             4 => Some(Self::Hello),
             5 => Some(Self::IHU),
-            6 => Some(Self::RouterID),
+            // 6 => Some(Self::RouterID),
             7 => Some(Self::NextHop),
             8 => Some(Self::Update),
             9 => Some(Self::RouteReq),
@@ -131,8 +131,9 @@ impl BabelTLVType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BabelTLV {
-    Pad1,
-    PadN(u8),
+    // These TLVs are not implemented as they are used for padding when sending multiple TLVs in one packet.
+    // Pad1,
+    // PadN(u8),
     AckReq { 
         nonce: u16, 
         interval: u16
@@ -148,7 +149,10 @@ pub enum BabelTLV {
         interval: u16,
         address: IpAddr, 
     },
-    RouterID { router_id: u16 },
+    // RouterID TLVs are sent just before Update TLVs and server the purpose of identifying the router that sent the Update TLV.
+    // This is used when multiple Update TLVs are sent where a prefix is included in the first Update TLV and omitted in the subsequent Update TLVs.
+    // As we do not support ommitted prefixes, we do not need to implement this TLV. We pass the router_id as a parameter to the Update TLV instead.
+    // RouterID { router_id: u16 },
     NextHop { address: IpAddr },
     Update {
         address_encoding: u8,
@@ -157,6 +161,7 @@ pub enum BabelTLV {
         seqno: u16,
         metric: u16,
         prefix: IpAddr,
+        router_id: u64,
     },
     RouteReq { prefix: IpAddr, plen: u8 },
     SeqnoReq {

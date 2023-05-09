@@ -5,7 +5,7 @@ use crate::{
     },
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
-    source_table::{SourceEntry, SourceKey, SourceTable},
+    source_table::{SourceKey, SourceTable, FeasibilityDistance},
 };
 use std::{
     collections::HashMap,
@@ -25,6 +25,8 @@ pub struct Router {
     pub sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>,
     pub routing_table: Arc<Mutex<RoutingTable>>,
     pub source_table: Arc<Mutex<SourceTable>>,
+
+    pub router_seqno: u16,
 }
 
 impl Router {
@@ -42,6 +44,7 @@ impl Router {
             sent_hello_timestamps: Arc::new(Mutex::new(HashMap::new())),
             routing_table: Arc::new(Mutex::new(RoutingTable::new())),
             source_table: Arc::new(Mutex::new(SourceTable::new())),
+            router_seqno: 0,
         };
 
         tokio::spawn(Router::start_hello_sender(
@@ -199,16 +202,13 @@ impl Router {
                         plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
                         router_id: 0, // we set all router ids to 0 temporarily
                     };
-                    let source_entry = SourceEntry {
-                        metric: peer.link_cost,
-                        seqno: 0, // we set the seqno to 0 for now
-                    };
+                    let feas_dist = FeasibilityDistance(0, peer.link_cost);
                     // create the source table entry
                     let source_key_clone = source_key.clone();
                     self.source_table
                         .lock()
                         .unwrap()
-                        .insert(source_key, source_entry);
+                        .insert(source_key, feas_dist);
 
                     // now we can create the routing table entry
                     let route_key = RouteKey {
@@ -336,12 +336,12 @@ impl Router {
                 // If there's no entry in the source table, the update is feasible
                 true
             }
-            Some(source_entry) => {
+            Some(feas_dist) => {
                 // If an entry exists in the source table, compare seqno and metric
-                let (seqno_2, metric_2) = (&source_entry.seqno, &source_entry.metric);
+                let (metric_2, seqno_2) = (feas_dist.0, feas_dist.1);
 
                 // Check feasibility conditions
-                seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2)
+                seqno > &seqno_2 || (seqno == &seqno_2 && metric < &metric_2)
             }
         }
     }

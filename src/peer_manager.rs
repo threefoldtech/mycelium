@@ -3,7 +3,7 @@ use crate::router::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::{net::TcpStream};
 

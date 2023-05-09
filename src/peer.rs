@@ -9,8 +9,6 @@ use tokio_util::codec::Framed;
 use crate::packet::{ControlPacket, DataPacket, ControlStruct};
 use crate::{codec::PacketCodec, packet::Packet};
 
-// IS A NEIGHBOR IN THE IDEA OF BABEL
-
 #[derive(Debug, Clone)]
 pub struct Peer {
     pub stream_ip: IpAddr,
@@ -50,7 +48,7 @@ impl Peer {
         tokio::spawn(async move {
             loop {
                 select! {
-                
+             
                 // Received over the TCP stream
                 frame = framed.next() => {
                     match frame {

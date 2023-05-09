@@ -8,15 +8,12 @@ pub struct SourceKey {
 }
 
 #[derive(Debug, Clone)]
-pub struct SourceEntry {
-    pub metric: u16,
-    pub seqno: u16,
-    // source_timer
-}
 
-// Used to store the feasibility distances
+pub struct FeasibilityDistance(pub u16, pub u16); // (metric, seqno)
+
+// Store (prefix, plen, router_id) -> feasibility distance mapping
 pub struct SourceTable {
-    pub table: HashMap<SourceKey, SourceEntry>,
+    pub table: HashMap<SourceKey, FeasibilityDistance>,
 }
 
 impl SourceTable {
@@ -26,15 +23,15 @@ impl SourceTable {
         }
     }
 
-    pub fn insert(&mut self, key: SourceKey, entry: SourceEntry) {
-        self.table.insert(key, entry);
+    pub fn insert(&mut self, key: SourceKey, feas_dist: FeasibilityDistance) {
+        self.table.insert(key, feas_dist);
     }
 
     pub fn remove(&mut self, key: &SourceKey) {
         self.table.remove(key);
     }
 
-    pub fn get(&self, key: &SourceKey) -> Option<&SourceEntry> {
+    pub fn get(&self, key: &SourceKey) -> Option<&FeasibilityDistance> {
         self.table.get(key)
     }
 }

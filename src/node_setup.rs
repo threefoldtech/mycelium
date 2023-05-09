@@ -54,31 +54,16 @@ pub async fn add_route(handle: Handle) -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn setup_node(tun_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
-    match create_tun_interface(tun_addr) {
-        Ok(tun) => {
-            println!("Interface '{}' ({}) created", TUN_NAME, tun_addr);
-            match rtnetlink::new_connection() {
-                Ok((conn, handle, _)) => {
-                    tokio::spawn(conn);
-                    match add_route(handle.clone()).await {
-                        Ok(_) => {
-                            println!("Static route created");
-                        },
-                        Err(e) => {
-                            panic!("Error adding route: {}", e);
-                        }
-                    }
-                },
-                Err(e) => {
-                    panic!("Error creating new handle: {}", e);
-                }
-            }
+    let tun = create_tun_interface(tun_addr)?;
+    println!("Interface '{}' ({}) created", TUN_NAME, tun_addr);
 
-            
-            Ok(tun)
-        }, 
-        Err(e) => {
-            panic!("Error creating TUN: {}", e);
-        }
-    }
+    let (conn, handle, _) = rtnetlink::new_connection()?;
+    tokio::spawn(conn);
+
+    add_route(handle.clone()).await?;
+
+    println!("Static route created");
+    
+    Ok(tun)
 }
+

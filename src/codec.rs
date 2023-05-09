@@ -217,28 +217,9 @@ impl Decoder for ControlPacketCodec {
             None => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid TLV type")),
         };
 
-        if tlv_type == BabelTLVType::Pad1 {
-            return Ok(Some(ControlPacket {
-                header,
-                body: Some(BabelPacketBody {
-                    tlv_type,
-                    length: 0,
-                    body: BabelTLV::Pad1,
-                }),
-            }));
-        }
-
         let length = buf.get_u8();
 
         let body = match tlv_type {
-            BabelTLVType::PadN => {
-                buf.advance(usize::from(length));
-                Some(BabelPacketBody {
-                    tlv_type,
-                    length,
-                    body: BabelTLV::PadN(length),
-                })
-            }
             BabelTLVType::Hello => {
                 let flags = buf.get_u16();
                 let seqno = buf.get_u16();
@@ -281,10 +262,11 @@ impl Decoder for ControlPacketCodec {
                     )),
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address encoding")),
                 };
+                let router_id = buf.get_u64();
                 Some(BabelPacketBody {
                     tlv_type,
                     length,
-                    body: BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix }
+                    body: BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix, router_id }
                 })
                 
             }
@@ -311,10 +293,6 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
             buf.put_u8(body.length);
 
             match body.body {
-                BabelTLV::Pad1 => {}
-                BabelTLV::PadN(padding_length) => {
-                    buf.put_slice(&vec![0; usize::from(padding_length)]);
-                }
                 BabelTLV::Hello { flags, seqno, interval } => {
                     buf.put_u16(flags);
                     buf.put_u16(seqno);
@@ -337,7 +315,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                         }
                     }
                 }
-                BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix } => {
+                BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix , router_id} => {
                     buf.put_u8(address_encoding);
                     buf.put_u8(prefix_length);
                     buf.put_u16(interval);
@@ -354,6 +332,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                             println!("IPv6 not supported yet");
                         }
                     }
+                    buf.put_u64(router_id);
                 }
                 // Add encoding logic for other TLV types.
                 _ => {}
