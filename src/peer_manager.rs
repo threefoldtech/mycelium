@@ -82,7 +82,7 @@ impl PeerManager {
                 let received_overlay_ip = Ipv4Addr::from(buffer);
 
                 println!(
-                    "Received overlay IP from other node: {:?}",
+                    "3: Received overlay IP from other node: {:?}",
                     received_overlay_ip
                 );
 

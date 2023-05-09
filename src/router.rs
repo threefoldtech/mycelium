@@ -50,13 +50,14 @@ impl Router {
             router_seqno: 0,
         };
 
-        tokio::spawn(Router::periodic_hello_sender(router.clone()));
-        tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
+        tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
+        tokio::spawn(Router::handle_incoming_control_packet(router_control_rx));
+        tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
 
         router
     }
 
-    async fn handle_incoming_control_packet(self, mut router_control_rx: UnboundedReceiver<ControlStruct>) {
+    async fn handle_incoming_control_packet(mut router_control_rx: UnboundedReceiver<ControlStruct>) {
         loop {
             while let Some(control_struct) = router_control_rx.recv().await {
                 match control_struct.control_packet.body.tlv_type {
@@ -73,12 +74,34 @@ impl Router {
         } 
     }
 
-    fn handle_incoming_hello(control_struct: ControlStruct) {
-        let destination_ip = control_struct.src_overlay_ip;
-        control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
+    async fn handle_incoming_data_packets(self, mut router_data_rx: UnboundedReceiver<DataPacket>) {
+        // If the destination IP of the data packet matches with the IP address of this node's TUN interface
+        // we should forward the data packet towards the TUN interface.
+        // If the destination IP doesn't match, we need to lookup if we have a matching peer instance
+        // where the destination IP matches with the peer's overlay IP. If we do, we should forward the
+        // data packet to the peer's to_peer_data channel.
+        loop {
+            while let Some(data_packet) = router_data_rx.recv().await {
+                let dest_ip = data_packet.dest_ip;
+                if dest_ip == self.node_tun.address().unwrap() {
+                    if let Err(e) = self.node_tun.send(&data_packet.raw_data).await {
+                        eprintln!("Error sending data packet to TUN interface: {:?}", e);
+                    }
+                } else {
+                    let matching_peer = self.get_peer_by_ip(dest_ip);
+                    if let Some(peer) = matching_peer {
+                        if let Err(e) = peer.to_peer_data.send(data_packet) {
+                            eprintln!("Error sending data packet to peer: {:?}", e);
+                        }
+                    } else {
+                        eprintln!("No matching peer found for data packet");
+                    }
+                }
+            }
+        }
     }
 
-    async fn periodic_hello_sender(self) {
+    async fn start_periodic_hello_sender(self) {
         for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
             let hello = ControlPacket::new_hello(peer.last_sent_hello_seqno, HELLO_INTERVAL);
             println!("Sending hello to peer: {:?}", peer.stream_ip);
@@ -88,6 +111,12 @@ impl Router {
         } 
     }
 
+    fn handle_incoming_hello(control_struct: ControlStruct) {
+        let destination_ip = control_struct.src_overlay_ip;
+        control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
+    }
+
+
     pub fn add_directly_connected_peer(&self, peer: Peer) {
         self.peer_interfaces.lock().unwrap().push(peer);
     }
@@ -96,8 +125,18 @@ impl Router {
         self.node_tun.address().unwrap()
     }
 
-    pub fn get_peer_interfaces(&self) -> Arc<Mutex<Vec<Peer>>> {
-        self.peer_interfaces.clone()
+    pub fn get_peer_interfaces(&self) -> Vec<Peer> {
+        self.peer_interfaces.lock().unwrap().clone()
+    }
+
+    fn get_peer_by_ip(&self, peer_ip: Ipv4Addr) -> Option<Peer> {
+        let peers = self.get_peer_interfaces();
+        let matching_peer = peers.iter().find(|peer| peer.overlay_ip == peer_ip);
+
+        match matching_peer {
+            Some(peer) => Some(peer.clone()),
+            None => None,
+        }
     }
 }
 
