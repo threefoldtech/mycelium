@@ -103,6 +103,14 @@ impl Router {
                                 eprintln!("No matching Hello message found for received IHU");
                             }
                         }
+                        BabelTLVType::Update => {
+                            // get the metric from the update message
+
+
+                            // upon receiving an update message, we should check if the update is feasible
+                            // check if there is already a route (based on the index) in the routing table
+                            println!("Received update from by boy {}! with metric ", control_struct.src_overlay_ip);
+                        }
                         _ => {
                             eprintln!("Unknown control packet type");
                         }
@@ -230,37 +238,38 @@ impl Router {
     // they can also be send when a change in the network topology occurs
     // updates are used to advertise new routes or the retract existing routes (retracting when the metric is set to 0xFFFF)
     async fn propagate_updates(self) {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        // loop {
+        //     tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
-            let connected_peers = self.directly_connected_peers.lock().unwrap();
-            let connected_peers_cloned: Vec<&Peer> = connected_peers.iter().collect();
+        //     let connected_peers = self.directly_connected_peers.lock().unwrap();
+        //     let connected_peers_cloned: Vec<&Peer> = connected_peers.iter().collect();
 
-            let routing_table = self.routing_table.lock().unwrap();
-            for (key, value) in routing_table.table.iter() {
-                // create update message and send to all peers
+        //     let routing_table = self.routing_table.lock().unwrap();
+        //     for (key, value) in routing_table.table.iter() {
+        //         // create update message and send to all peers
 
-                for peer in &connected_peers_cloned {
-                    let update_message = ControlPacket {
-                        header: BabelPacketHeader::new(14),
-                        body: Some(BabelPacketBody {
-                            tlv_type: BabelTLVType::Update,
-                            length: 14,
-                            body: BabelTLV::Update {
-                                address_encoding: 0, // AE of 1 indicated IPv4
-                                prefix_length: 32, // temp value - working with full IPv4 for now, not prefix-based
-                                interval: 999,     // temp value
-                                seqno: 0,          // temp value
-                                metric: value.metric,
-                                prefix: key.prefix,
-                            },
-                        }),
-                    };
-                    println!("Sending route as control packet to {}", peer.overlay_ip);
-                    peer.to_peer_control.send(update_message).unwrap();
-                }
-            }
-        }
+        //         for peer in &connected_peers_cloned {
+        //             let update_message = ControlPacket {
+        //                 header: BabelPacketHeader::new(14),
+        //                 body: Some(BabelPacketBody {
+        //                     tlv_type: BabelTLVType::Update,
+        //                     length: 14,
+        //                     body: BabelTLV::Update {
+        //                         address_encoding: 0, // AE of 1 indicated IPv4
+        //                         prefix_length: 32, // temp value - working with full IPv4 for now, not prefix-based
+        //                         interval: 999,     // temp value
+        //                         seqno: 0,          // temp value
+        //                         //metric: value.metric, // this is wrong i think?
+        //                         metric: peer.link_cost, 
+        //                         prefix: key.prefix,
+        //                     },
+        //                 }),
+        //             };
+        //             println!("Sending route as control packet to {}", peer.overlay_ip);
+        //             peer.to_peer_control.send(update_message).unwrap();
+        //         }
+        //     }
+        // }
     }
 
     pub fn get_directly_connected_peers(&self) -> Vec<Peer> {

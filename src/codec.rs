@@ -262,7 +262,6 @@ impl Decoder for ControlPacketCodec {
                 })
             }
             BabelTLVType::Update => {
-                println!("UPDATE received, trying to decode now...");
                 let address_encoding = buf.get_u8();
                 let prefix_length = buf.get_u8();
                 let interval = buf.get_u16();
@@ -282,7 +281,6 @@ impl Decoder for ControlPacketCodec {
                     )),
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address encoding")),
                 };
-                println!("UPDATE decoded successfully!");
                 Some(BabelPacketBody {
                     tlv_type,
                     length,
