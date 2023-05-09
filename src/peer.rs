@@ -15,7 +15,6 @@ pub struct Peer {
     pub to_peer_data: mpsc::UnboundedSender<DataPacket>,
     pub to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     pub overlay_ip: Ipv4Addr, 
-
     pub last_sent_hello_seqno: u16,
     pub link_cost: u16,
 }

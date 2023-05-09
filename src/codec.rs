@@ -221,14 +221,14 @@ impl Decoder for ControlPacketCodec {
 
         let body = match tlv_type {
             BabelTLVType::Hello => {
-                let flags = buf.get_u16();
                 let seqno = buf.get_u16();
                 let interval = buf.get_u16();
-                Some(BabelPacketBody {
+                let body = BabelPacketBody {
                     tlv_type,
                     length,
-                    body: BabelTLV::Hello { flags, seqno, interval },
-                })
+                    tlv: BabelTLV::Hello { seqno, interval },
+                };
+                body
             }
             BabelTLVType::IHU => {
                 let _address_encoding = buf.get_u8();
@@ -236,15 +236,16 @@ impl Decoder for ControlPacketCodec {
                 let rxcost = buf.get_u16();
                 let interval = buf.get_u16();
                 let address = IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8()));
-                Some(BabelPacketBody {
+                let body = BabelPacketBody {
                     tlv_type,
                     length,
-                    body: BabelTLV::IHU { rxcost, interval, address },
-                })
+                    tlv: BabelTLV::IHU { rxcost, interval, address },
+                };
+                body
             }
             BabelTLVType::Update => {
                 let address_encoding = buf.get_u8();
-                let prefix_length = buf.get_u8();
+                let plen = buf.get_u8();
                 let interval = buf.get_u16();
                 let seqno = buf.get_u16();
                 let metric = buf.get_u16();
@@ -263,15 +264,18 @@ impl Decoder for ControlPacketCodec {
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address encoding")),
                 };
                 let router_id = buf.get_u64();
-                Some(BabelPacketBody {
+                let body = BabelPacketBody {
                     tlv_type,
                     length,
-                    body: BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix, router_id }
-                })
-                
+                    tlv: BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id }
+                };
+                body
             }
-            // Add decoding logic for other TLV types.
-            _ => None,
+            BabelTLVType::AckReq => todo!(),
+            BabelTLVType::Ack => todo!(),
+            BabelTLVType::NextHop => todo!(),
+            BabelTLVType::RouteReq => todo!(),
+            BabelTLVType::SeqnoReq => todo!(),
         };
 
         Ok(Some(ControlPacket { header, body }))
@@ -287,14 +291,12 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
         buf.put_u8(message.header.version);
         buf.put_u16(message.header.body_length);
 
-        if let Some(body) = message.body {
             // Write BabelPacketBody
-            buf.put_u8(body.tlv_type as u8);
-            buf.put_u8(body.length);
+            buf.put_u8(message.body.tlv_type as u8);
+            buf.put_u8(message.body.length);
 
-            match body.body {
-                BabelTLV::Hello { flags, seqno, interval } => {
-                    buf.put_u16(flags);
+            match message.body.tlv{
+                BabelTLV::Hello { seqno, interval } => {
                     buf.put_u16(seqno);
                     buf.put_u16(interval);
                 }
@@ -315,9 +317,8 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                         }
                     }
                 }
-                BabelTLV::Update { address_encoding, prefix_length, interval, seqno, metric, prefix , router_id} => {
-                    buf.put_u8(address_encoding);
-                    buf.put_u8(prefix_length);
+                BabelTLV::Update { plen , interval, seqno, metric, prefix , router_id} => {
+                    buf.put_u8(plen);
                     buf.put_u16(interval);
                     buf.put_u16(seqno);
                     buf.put_u16(metric);
@@ -329,14 +330,21 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                             buf.put_u8(ipv4.octets()[3]);
                         }
                         IpAddr::V6(_ipv6) => {
-                            println!("IPv6 not supported yet");
+                            buf.put_u16(_ipv6.segments()[0]);
+                            buf.put_u16(_ipv6.segments()[1]);
+                            buf.put_u16(_ipv6.segments()[2]);
+                            buf.put_u16(_ipv6.segments()[3]);
+                            buf.put_u16(_ipv6.segments()[4]);
+                            buf.put_u16(_ipv6.segments()[5]);
+                            buf.put_u16(_ipv6.segments()[6]);
+                            buf.put_u16(_ipv6.segments()[7]);
                         }
                     }
                     buf.put_u64(router_id);
                 }
                 // Add encoding logic for other TLV types.
                 _ => {}
-            }
+            
         }
 
         Ok(())

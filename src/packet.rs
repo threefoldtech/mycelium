@@ -39,24 +39,22 @@ pub struct ControlStruct {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ControlPacket {
     pub header: BabelPacketHeader,
-    pub body: Option<BabelPacketBody>,
-    // pub trailer: Option<BabelPacketTrailer>,
+    pub body: BabelPacketBody,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BabelPacketHeader {
     pub magic: u8,
     pub version: u8,
-    pub body_length: u16,
+    pub body_length: u16, // length of the whole BabelPacketBody (tlv_type, length and body)
 }
 
 // A BabelPacketBody describes exactly one TLV
-// TODO: According to the protocol the body of a Babel packet can contain multiple subsequent TLV's
 #[derive(Debug, PartialEq, Clone)]
 pub struct BabelPacketBody {
     pub tlv_type: BabelTLVType,
-    pub length: u8,
-    pub body: BabelTLV, 
+    pub length: u8, // length of the tlv (only the tlv, not tlv_type and length itself) 
+    pub tlv: BabelTLV, 
 }
 
 impl ControlStruct {
@@ -79,31 +77,75 @@ impl BabelPacketHeader {
 
 
 impl ControlPacket {
-    pub fn new_ihu(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
+
+    pub fn new_hello(seqno: u16, interval: u16) -> Self {
+        let header_length = (BabelTLVType::Hello.get_tlv_length(false) + 2) as u16;
         Self {
-            header: BabelPacketHeader::new(10), 
-            body: Some(BabelPacketBody { 
+            header: BabelPacketHeader::new(header_length), 
+            body: BabelPacketBody { 
+                tlv_type: BabelTLVType::Hello, 
+                length: BabelTLVType::Hello.get_tlv_length(false), 
+                tlv: BabelTLV::Hello { 
+                    seqno, 
+                    interval, 
+                } 
+            },
+        } 
+    }
+
+    pub fn new_ihu(rxcost: u16, interval: u16, dest_address: IpAddr) -> Self {
+        let uses_ipv6 = match dest_address {
+            IpAddr::V4(_) => false,
+            IpAddr::V6(_) => true,
+        };
+        let header_length = (BabelTLVType::IHU.get_tlv_length(uses_ipv6) + 2) as u16;
+        Self {
+            header: BabelPacketHeader::new(header_length), 
+            body: BabelPacketBody { 
                 tlv_type: BabelTLVType::IHU, 
-                length: 8, 
-                body: BabelTLV::IHU { 
+                length: BabelTLVType::IHU.get_tlv_length(uses_ipv6), 
+                tlv: BabelTLV::IHU { 
                     rxcost, 
                     interval, 
                     address: dest_address, 
                 } 
-            }),
+            },
+        }
+    }
+
+    pub fn new_update(plen: u8, interval: u16, seqno: u16, metric: u16, prefix: IpAddr, router_id: u64) -> Self {
+        let uses_ipv6 = match prefix {
+            IpAddr::V4(_) => false,
+            IpAddr::V6(_) => true,
+        };
+        let header_length = (BabelTLVType::Update.get_tlv_length(uses_ipv6) + 2) as u16;
+        Self {
+            header: BabelPacketHeader::new(header_length), 
+            body: BabelPacketBody { 
+                tlv_type: BabelTLVType::Update, 
+                length: BabelTLVType::Update.get_tlv_length(uses_ipv6), 
+                tlv: BabelTLV::Update { 
+                    plen, 
+                    interval, 
+                    seqno, 
+                    metric, 
+                    prefix, 
+                    router_id, 
+                } 
+            },
         }
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum BabelTLVType {
-    Pad1 = 0,
-    PadN = 1,
+    // Pad1 = 0,
+    // PadN = 1,
     AckReq = 2,
     Ack = 3,
     Hello = 4,
     IHU = 5,
-    RouterID = 6,
+    // RouterID = 6,
     NextHop = 7,
     Update = 8,
     RouteReq = 9,
@@ -127,7 +169,22 @@ impl BabelTLVType {
             _ => None,
         }
     }
+
+    pub fn get_tlv_length(self, uses_ipv6: bool) -> u8 {
+        let (ipv6, ipv4) = match self {
+            Self::AckReq => (4, 4),
+            Self::Ack => (2, 2),
+            Self::Hello => (4, 4),
+            Self::IHU => (20, 8),
+            Self::NextHop => (16, 4),
+            Self::Update => (28, 16),
+            Self::RouteReq => (17, 5),
+            Self::SeqnoReq => (21, 9),
+        };
+        if uses_ipv6 { ipv6 } else { ipv4 }
+    }
 }
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BabelTLV {
@@ -140,7 +197,6 @@ pub enum BabelTLV {
     },
     Ack { nonce: u16 },
     Hello { 
-        flags: u16,
         seqno: u16, 
         interval: u16,
     },
@@ -155,8 +211,7 @@ pub enum BabelTLV {
     // RouterID { router_id: u16 },
     NextHop { address: IpAddr },
     Update {
-        address_encoding: u8,
-        prefix_length: u8,
+        plen: u8,
         interval: u16,
         seqno: u16,
         metric: u16,
