@@ -231,9 +231,6 @@ impl Decoder for ControlPacketCodec {
                 body
             }
             BabelTLVType::IHU => {
-                let _address_encoding = buf.get_u8();
-                let _reserved = buf.get_u8();
-                let rxcost = buf.get_u16();
                 let interval = buf.get_u16();
                 let address = IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8()));
                 let body = BabelPacketBody {
@@ -244,24 +241,33 @@ impl Decoder for ControlPacketCodec {
                 body
             }
             BabelTLVType::Update => {
-                let address_encoding = buf.get_u8();
                 let plen = buf.get_u8();
                 let interval = buf.get_u16();
                 let seqno = buf.get_u16();
                 let metric = buf.get_u16();
-                let prefix = match address_encoding {
-                    0 => IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8())),
-                    1 => IpAddr::V6(Ipv6Addr::new(
-                        buf.get_u16(),
-                        buf.get_u16(),
-                        buf.get_u16(),
-                        buf.get_u16(),
-                        buf.get_u16(),
-                        buf.get_u16(),
-                        buf.get_u16(),
-                        buf.get_u16(),
-                    )),
-                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address encoding")),
+                // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
+                let prefix = match buf.remaining() {
+                    12 => { // 4 bytes IP + 8 bytes router_id
+                        IpAddr::V4(Ipv4Addr::new(
+                            buf.get_u8(),
+                            buf.get_u8(),
+                            buf.get_u8(),
+                            buf.get_u8(),
+                        ))
+                    },
+                    24 => { // 16 bytes IP + 8 bytes router_id
+                        IpAddr::V6(Ipv6Addr::new(
+                            buf.get_u16(),
+                            buf.get_u16(),
+                            buf.get_u16(),
+                            buf.get_u16(),
+                            buf.get_u16(),
+                            buf.get_u16(),
+                            buf.get_u16(),
+                            buf.get_u16(),
+                        ))
+                    },
+                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address length")),
                 };
                 let router_id = buf.get_u64();
                 let body = BabelPacketBody {

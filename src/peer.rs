@@ -6,8 +6,10 @@ use std::{
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::packet::{ControlPacket, DataPacket, ControlStruct};
+use crate::{packet::{ControlPacket, DataPacket, ControlStruct}, timer::Timer};
 use crate::{codec::PacketCodec, packet::Packet};
+
+const IHU_INTERVAL: u64 = 10;
 
 #[derive(Debug, Clone)]
 pub struct Peer {
@@ -17,6 +19,8 @@ pub struct Peer {
     pub overlay_ip: Ipv4Addr, 
     pub last_sent_hello_seqno: u16,
     pub link_cost: u16,
+
+    pub IHU_timer: Timer,
 }
 
 impl Peer {
@@ -43,6 +47,9 @@ impl Peer {
         let last_sent_hello_seqno = 0;
         // Initialize last_path_cost to infinity
         let link_cost = 65535;
+
+        // Intialize the timers
+        let IHU_timer = Timer::new_IHU_timer(IHU_INTERVAL);
 
         tokio::spawn(async move {
             loop {
@@ -115,6 +122,7 @@ impl Peer {
             overlay_ip,
             last_sent_hello_seqno,
             link_cost,
+            IHU_timer,
         })
     }
 

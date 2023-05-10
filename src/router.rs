@@ -12,6 +12,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
 };
+use rand::Rng;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
 
@@ -20,6 +21,7 @@ const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
 
 #[derive(Clone)]
 pub struct Router {
+    pub router_id: u64,
     // The peer interfaces are the known neighbors of this node
     peer_interfaces: Arc<Mutex<Vec<Peer>>>,
     pub router_control_tx: UnboundedSender<ControlStruct>,
@@ -40,6 +42,7 @@ impl Router {
         let (router_data_tx, router_data_rx) = mpsc::unbounded_channel::<DataPacket>();
 
         let router = Router {
+            router_id: rand::thread_rng().gen(),
             peer_interfaces: Arc::new(Mutex::new(Vec::new())),
             router_control_tx,
             router_data_tx,
@@ -51,20 +54,20 @@ impl Router {
         };
 
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
-        tokio::spawn(Router::handle_incoming_control_packet(router_control_rx));
+        tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
         tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
 
         router
     }
 
-    async fn handle_incoming_control_packet(mut router_control_rx: UnboundedReceiver<ControlStruct>) {
+    async fn handle_incoming_control_packet(self, mut router_control_rx: UnboundedReceiver<ControlStruct>) {
         loop {
             while let Some(control_struct) = router_control_rx.recv().await {
                 match control_struct.control_packet.body.tlv_type {
                     BabelTLVType::AckReq => todo!(),
                     BabelTLVType::Ack => todo!(),
                     BabelTLVType::Hello => Self::handle_incoming_hello(control_struct),
-                    BabelTLVType::IHU => todo!(),
+                    BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
                     BabelTLVType::NextHop => todo!(),
                     BabelTLVType::Update => todo!(),
                     BabelTLVType::RouteReq => todo!(),
@@ -80,40 +83,56 @@ impl Router {
         // If the destination IP doesn't match, we need to lookup if we have a matching peer instance
         // where the destination IP matches with the peer's overlay IP. If we do, we should forward the
         // data packet to the peer's to_peer_data channel.
+
+        let tun_addr = self.node_tun.address().unwrap();
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
                 let dest_ip = data_packet.dest_ip;
-                if dest_ip == self.node_tun.address().unwrap() {
-                    if let Err(e) = self.node_tun.send(&data_packet.raw_data).await {
-                        eprintln!("Error sending data packet to TUN interface: {:?}", e);
+
+                if dest_ip == tun_addr {
+                    match self.node_tun.send(&data_packet.raw_data).await {
+                        Ok(_) => {},
+                        Err(e) => eprintln!("Error sending data packet to TUN interface: {:?}", e),
                     }
                 } else {
-                    let matching_peer = self.get_peer_by_ip(dest_ip);
-                    if let Some(peer) = matching_peer {
-                        if let Err(e) = peer.to_peer_data.send(data_packet) {
-                            eprintln!("Error sending data packet to peer: {:?}", e);
-                        }
-                    } else {
-                        eprintln!("No matching peer found for data packet");
+                    match self.get_peer_by_ip(IpAddr::V4(dest_ip)) {
+                        Some(peer) => {
+                            match peer.to_peer_data.send(data_packet) {
+                                Ok(_) => {},
+                                Err(e) => eprintln!("Error sending data packet to peer: {:?}", e),
+                            }
+                        },
+                        None => eprintln!("No matching peer found for data packet"),
                     }
                 }
             }
         }
     }
 
+
     async fn start_periodic_hello_sender(self) {
-        for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
-            let hello = ControlPacket::new_hello(peer.last_sent_hello_seqno, HELLO_INTERVAL);
-            println!("Sending hello to peer: {:?}", peer.stream_ip);
-            if let Err(error) = peer.to_peer_control.send(hello) {
-                eprintln!("Error sending hello to peer: {}", error);
-            }
-        } 
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(HELLO_INTERVAL as u64)).await;
+            for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
+                let hello = ControlPacket::new_hello(peer.last_sent_hello_seqno, HELLO_INTERVAL);
+                println!("Sending hello to peer: {:?}", peer.overlay_ip);
+                if let Err(error) = peer.to_peer_control.send(hello) {
+                    eprintln!("Error sending hello to peer: {}", error);
+                }
+            } 
+        }
     }
 
     fn handle_incoming_hello(control_struct: ControlStruct) {
         let destination_ip = control_struct.src_overlay_ip;
         control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
+    }
+
+    fn handle_incoming_ihu(&self, control_struct: ControlStruct) {
+        // reset the IHU timer associated with the peer
+        let source_peer = self.get_source_peer_from_control_struct(control_struct);
+        source_peer.IHU_timer.reset(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
+        println!("IHU timer for peer {:?} reset", source_peer.overlay_ip);
     }
 
 
@@ -129,7 +148,7 @@ impl Router {
         self.peer_interfaces.lock().unwrap().clone()
     }
 
-    fn get_peer_by_ip(&self, peer_ip: Ipv4Addr) -> Option<Peer> {
+    fn get_peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
         let peers = self.get_peer_interfaces();
         let matching_peer = peers.iter().find(|peer| peer.overlay_ip == peer_ip);
 
@@ -137,6 +156,12 @@ impl Router {
             Some(peer) => Some(peer.clone()),
             None => None,
         }
+    }
+
+    fn get_source_peer_from_control_struct(&self, control_struct: ControlStruct) -> Peer {
+        let source = control_struct.src_overlay_ip;
+
+        self.get_peer_by_ip(source).unwrap()
     }
 }
 

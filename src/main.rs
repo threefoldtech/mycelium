@@ -12,6 +12,7 @@ mod peer_manager;
 mod router;
 mod routing_table;
 mod source_table;
+mod timer;
 
 const LINK_MTU: usize = 1500;
 
