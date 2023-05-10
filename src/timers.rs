@@ -3,6 +3,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tokio::sync::oneshot;
 
+use crate::router::Router;
+
 #[derive(Clone, Debug)]
 pub struct Timer {
     duration: Arc<Mutex<Duration>>,
@@ -55,6 +57,7 @@ impl Timer {
             tokio::spawn(async move {
                 timer.run(|| {
                     println!("IHU Timer expired!");
+                    // node should be assumed as dead
                     // on expiry the neighbour link should be set to 0xFFFF
                     // and the route selection process should be run
                 }).await;
@@ -65,5 +68,21 @@ impl Timer {
     }
 
     // add update timer
+    pub fn new_route_expiry_timer(update_interval: u64) -> Timer {
+        let timer = Timer::new(Duration::from_secs(update_interval));
+
+        {
+            let timer = timer.clone();
+
+            tokio::spawn(async move {
+                timer.run(|| {
+                    println!("Route timer expired! Sending routes...");
+                    // send update packet of that route to all peers
+                }).await;
+            });
+        }
+
+        timer
+    }
     // add ack timer
 }

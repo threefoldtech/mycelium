@@ -5,7 +5,7 @@ use crate::{
     },
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
-    source_table::{SourceKey, SourceTable, FeasibilityDistance},
+    source_table::{SourceKey, SourceTable, FeasibilityDistance}, timers::Timer,
 };
 use std::{
     collections::HashMap,
@@ -18,6 +18,7 @@ use tokio_tun::Tun;
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
+const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 
 #[derive(Clone)]
 pub struct Router {
@@ -27,7 +28,6 @@ pub struct Router {
     pub router_control_tx: UnboundedSender<ControlStruct>,
     pub router_data_tx: UnboundedSender<DataPacket>,
     pub node_tun: Arc<Tun>,
-    pub sent_hello_timestamps: Arc<Mutex<HashMap<IpAddr, tokio::time::Instant>>>,
     pub routing_table: Arc<Mutex<RoutingTable>>,
     pub source_table: Arc<Mutex<SourceTable>>,
     pub router_seqno: u16,
@@ -47,15 +47,14 @@ impl Router {
             router_control_tx,
             router_data_tx,
             node_tun,
-            sent_hello_timestamps: Arc::new(Mutex::new(HashMap::new())),
             routing_table: Arc::new(Mutex::new(RoutingTable::new())),
             source_table: Arc::new(Mutex::new(SourceTable::new())),
             router_seqno: 0,
         };
 
-        tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
         tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
         tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
+        tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
 
         router
     }
@@ -143,7 +142,6 @@ impl Router {
         println!("IHU timer for peer {:?} reset", source_peer.overlay_ip);
     }
 
-
     pub fn add_directly_connected_peer(&self, peer: Peer) {
         self.peer_interfaces.lock().unwrap().push(peer);
     }
@@ -156,7 +154,7 @@ impl Router {
         self.peer_interfaces.lock().unwrap().clone()
     }
 
-    fn get_peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
+    pub fn get_peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
         let peers = self.get_peer_interfaces();
         let matching_peer = peers.iter().find(|peer| peer.overlay_ip == peer_ip);
 

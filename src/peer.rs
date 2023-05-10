@@ -6,7 +6,7 @@ use std::{
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::{packet::{ControlPacket, DataPacket, ControlStruct}, timer::Timer};
+use crate::{packet::{ControlPacket, DataPacket, ControlStruct}, timers::Timer};
 use crate::{codec::PacketCodec, packet::Packet};
 
 const IHU_INTERVAL: u64 = 10;
@@ -47,7 +47,7 @@ impl Peer {
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = 0;
         // Initialize last_path_cost to infinity
-        let link_cost = 65535;
+        let link_cost = 100;
         // Initialize time_last_received_hello to now
         let time_last_received_hello = tokio::time::Instant::now();
 
@@ -65,9 +65,8 @@ impl Peer {
                             match packet {
                                 Packet::DataPacket(packet) => {
                                     if let Err(error) = router_data_tx.send(packet){
-                                     eprintln!("Error sending to to_routing_data: {}", error);
+                                        eprintln!("Error sending to to_routing_data: {}", error);
                                     }
-
                                 }
                                 Packet::ControlPacket(packet) => {
                                     // Parse the DataPacket into a ControlStruct as the to_routing_control channel expects 
@@ -79,8 +78,8 @@ impl Peer {
                                         // we set the src_overlay_ip to the overlay_ip of the peer
                                         // as we 'arrived' in the peer instance of representing the sending node on this current node
                                     };
-                                    if let Err(error) = router_control_tx.send(control_struct){
-                                     eprintln!("Error sending to to_routing_control: {}", error);
+                                    if let Err(error) = router_control_tx.send(control_struct) {
+                                        eprintln!("Error sending to to_routing_control: {}", error);
                                     }
 
                                 }
@@ -93,8 +92,8 @@ impl Peer {
                             println!("Stream is closed.");
                             return
                         }
-                        }
                     }
+                }
 
                 Some(packet) = from_routing_data.recv() => {
                     // Send it over the TCP stream

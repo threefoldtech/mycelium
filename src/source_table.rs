@@ -1,6 +1,6 @@
 use std::{net::IpAddr, collections::HashMap};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
     pub prefix: IpAddr,
     pub plen: u8,

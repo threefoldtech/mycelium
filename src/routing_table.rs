@@ -1,6 +1,10 @@
 use std::{net::IpAddr, collections::HashMap};
 
-use crate::{source_table::SourceKey, peer::Peer};
+use crate::{source_table::SourceKey, peer::Peer, timers::Timer};
+
+const HELLO_INTERVAL: u16 = 4;
+const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
+const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RouteKey {
@@ -17,8 +21,37 @@ pub struct RouteEntry {
     pub seqno: u16,
     pub next_hop: IpAddr, // This is the Peer's address
     pub selected: bool,
-    // route_timer
+    pub route_expiry_timer: Timer,
 }
+
+impl RouteEntry {
+    pub fn new(source: SourceKey, neighbor: Peer, metric: u16, seqno: u16, next_hop: IpAddr, selected: bool) -> Self {
+        Self {
+            source,
+            neighbor,
+            metric,
+            seqno,
+            next_hop,
+            selected,
+            route_expiry_timer: Timer::new_route_expiry_timer(UPDATE_INTERVAL as u64),
+        }
+    }
+
+    pub fn update(&mut self, metric: u16, seqno: u16, next_hop: IpAddr) {
+        self.metric = metric;
+        self.seqno = seqno;
+        self.next_hop = next_hop;
+    }
+
+    pub fn retracted(&mut self) {
+        self.metric = 0xFFFF;
+    }
+
+    pub fn is_retracted(&self) -> bool {
+        self.metric == 0xFFFF
+    } 
+}
+
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
