@@ -45,7 +45,7 @@ impl Timer {
         }
     }
 
-    pub fn new_IHU_timer(ihu_interval: u64) -> Timer{
+    pub fn new_ihu_timer(ihu_interval: u64) -> Timer{
 
         let timer = Timer::new(Duration::from_secs(ihu_interval));
 
@@ -63,4 +63,7 @@ impl Timer {
 
         timer
     }
+
+    // add update timer
+    // add ack timer
 }

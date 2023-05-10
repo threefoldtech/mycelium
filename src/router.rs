@@ -114,7 +114,11 @@ impl Router {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(HELLO_INTERVAL as u64)).await;
             for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
-                let hello = ControlPacket::new_hello(peer.last_sent_hello_seqno, HELLO_INTERVAL);
+                // create a new hello packet for this peer
+                let hello = ControlPacket::new_hello(peer, HELLO_INTERVAL);
+                // set the last hello timestamp for this peer
+                peer.time_last_received_hello = tokio::time::Instant::now();
+                // send the hello packet to the peer
                 println!("Sending hello to peer: {:?}", peer.overlay_ip);
                 if let Err(error) = peer.to_peer_control.send(hello) {
                     eprintln!("Error sending hello to peer: {}", error);
@@ -129,9 +133,13 @@ impl Router {
     }
 
     fn handle_incoming_ihu(&self, control_struct: ControlStruct) {
+        let mut source_peer = self.get_source_peer_from_control_struct(control_struct);
         // reset the IHU timer associated with the peer
-        let source_peer = self.get_source_peer_from_control_struct(control_struct);
-        source_peer.IHU_timer.reset(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
+        source_peer.ihu_timer.reset(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
+        // measure time between Hello and and IHU and set the link cost
+        source_peer.link_cost = tokio::time::Instant::now().duration_since(source_peer.time_last_received_hello).as_millis() as u16;
+        println!("Link cost for peer {:?} set to {}", source_peer.overlay_ip, source_peer.link_cost);
+
         println!("IHU timer for peer {:?} reset", source_peer.overlay_ip);
     }
 

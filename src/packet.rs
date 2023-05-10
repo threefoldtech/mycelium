@@ -1,6 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::sync::mpsc;
 
+use crate::peer::Peer;
+
 pub const BABEL_MAGIC: u8 = 42;
 pub const BABEL_VERSION: u8 = 2;
 
@@ -78,15 +80,16 @@ impl BabelPacketHeader {
 
 impl ControlPacket {
 
-    pub fn new_hello(seqno: u16, interval: u16) -> Self {
+    pub fn new_hello(dest_peer: &mut Peer, interval: u16) -> Self {
         let header_length = (BabelTLVType::Hello.get_tlv_length(false) + 2) as u16;
+        dest_peer.increase_hello_seqno();
         Self {
             header: BabelPacketHeader::new(header_length), 
             body: BabelPacketBody { 
                 tlv_type: BabelTLVType::Hello, 
                 length: BabelTLVType::Hello.get_tlv_length(false), 
                 tlv: BabelTLV::Hello { 
-                    seqno, 
+                    seqno: dest_peer.hello_seqno, 
                     interval, 
                 } 
             },

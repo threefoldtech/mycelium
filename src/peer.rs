@@ -17,10 +17,11 @@ pub struct Peer {
     pub to_peer_data: mpsc::UnboundedSender<DataPacket>,
     pub to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     pub overlay_ip: Ipv4Addr, 
-    pub last_sent_hello_seqno: u16,
+    pub hello_seqno: u16,
+    pub time_last_received_hello: tokio::time::Instant,
     pub link_cost: u16,
 
-    pub IHU_timer: Timer,
+    pub ihu_timer: Timer,
 }
 
 impl Peer {
@@ -44,12 +45,14 @@ impl Peer {
         let (control_reply_tx, mut control_reply_rx) = mpsc::unbounded_channel::<ControlPacket>();
 
         // Initialize last_sent_hello_seqno to 0
-        let last_sent_hello_seqno = 0;
+        let hello_seqno = 0;
         // Initialize last_path_cost to infinity
         let link_cost = 65535;
+        // Initialize time_last_received_hello to now
+        let time_last_received_hello = tokio::time::Instant::now();
 
         // Intialize the timers
-        let IHU_timer = Timer::new_IHU_timer(IHU_INTERVAL);
+        let ihu_timer = Timer::new_ihu_timer(IHU_INTERVAL);
 
         tokio::spawn(async move {
             loop {
@@ -120,14 +123,15 @@ impl Peer {
             to_peer_data,
             to_peer_control,
             overlay_ip,
-            last_sent_hello_seqno,
+            hello_seqno,
             link_cost,
-            IHU_timer,
+            ihu_timer,
+            time_last_received_hello,
         })
     }
 
     pub fn increase_hello_seqno(&mut self) {
-        self.last_sent_hello_seqno = self.last_sent_hello_seqno + 1;
-        println!("last hello seqno increasted to {}", self.last_sent_hello_seqno);
+        self.hello_seqno = self.hello_seqno + 1;
+        println!("last hello seqno increasted to {}", self.hello_seqno);
     }
 }
