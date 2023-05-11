@@ -163,7 +163,6 @@ impl Router {
 
 
                     let source_ip = update.src_overlay_ip;
-                    let source_peer = router.get_peer_by_ip(source_ip).unwrap();
 
                     // get RouteEntry for the source of the update
                     if let Some(route_entry) = routing_table.table.get_mut(&RouteKey { prefix, plen, neighbor: source_ip }) {

@@ -241,13 +241,14 @@ impl Decoder for ControlPacketCodec {
                 body
             }
             BabelTLVType::Update => {
+                let ae = buf.get_u8();
                 let plen = buf.get_u8();
                 let interval = buf.get_u16();
                 let seqno = buf.get_u16();
                 let metric = buf.get_u16();
                 // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
-                let prefix = match buf.remaining() {
-                    12 => { // 4 bytes IP + 8 bytes router_id
+                let prefix = match ae {
+                    0 => { // 4 bytes IP + 8 bytes router_id
                         IpAddr::V4(Ipv4Addr::new(
                             buf.get_u8(),
                             buf.get_u8(),
@@ -255,7 +256,7 @@ impl Decoder for ControlPacketCodec {
                             buf.get_u8(),
                         ))
                     },
-                    24 => { // 16 bytes IP + 8 bytes router_id
+                    1 => { // 16 bytes IP + 8 bytes router_id
                         IpAddr::V6(Ipv6Addr::new(
                             buf.get_u16(),
                             buf.get_u16(),
@@ -321,6 +322,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                     }
                 }
                 BabelTLV::Update { plen , interval, seqno, metric, prefix , router_id} => {
+                    buf.put_u8(if prefix.is_ipv4(){0} else {1});
                     buf.put_u8(plen);
                     buf.put_u16(interval);
                     buf.put_u16(seqno);
