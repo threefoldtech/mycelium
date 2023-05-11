@@ -46,8 +46,8 @@ impl Peer {
 
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = 0;
-        // Initialize last_path_cost to infinity
-        let link_cost = 100;
+        // Initialize last_path_cost to infinity - 1
+        let link_cost = u16::MAX -1;
         // Initialize time_last_received_hello to now
         let time_last_received_hello = tokio::time::Instant::now();
 
