@@ -45,7 +45,7 @@ impl Router {
             router_id: rand::thread_rng().gen(),
             peer_interfaces: Arc::new(Mutex::new(Vec::new())),
             router_control_tx,
-            router_data_tx,
+            router_data_tx: router_data_tx.clone(),
             node_tun,
             routing_table: Arc::new(Mutex::new(RoutingTable::new())),
             source_table: Arc::new(Mutex::new(SourceTable::new())),
@@ -53,7 +53,7 @@ impl Router {
         };
 
         tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
-        tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
+        tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx, router_data_tx.clone()));
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
 
         // loops over all peers and adds routing table entries for each peer
@@ -87,7 +87,7 @@ impl Router {
         } 
     }
 
-    async fn handle_incoming_data_packets(self, mut router_data_rx: UnboundedReceiver<DataPacket>) {
+    async fn handle_incoming_data_packets(self, mut router_data_rx: UnboundedReceiver<DataPacket>, router_data_tx: UnboundedSender<DataPacket>) {
         // If the destination IP of the data packet matches with the IP address of this node's TUN interface
         // we should forward the data packet towards the TUN interface.
         // If the destination IP doesn't match, we need to lookup if we have a matching peer instance
@@ -105,15 +105,7 @@ impl Router {
                         Err(e) => eprintln!("Error sending data packet to TUN interface: {:?}", e),
                     }
                 } else {
-                    match self.get_peer_by_ip(IpAddr::V4(dest_ip)) {
-                        Some(peer) => {
-                            match peer.to_peer_data.send(data_packet) {
-                                Ok(_) => {},
-                                Err(e) => eprintln!("Error sending data packet to peer: {:?}", e),
-                            }
-                        },
-                        None => eprintln!("No matching peer found for data packet"),
-                    }
+                    router_data_tx.send(data_packet).unwrap();
                 }
             }
         }
