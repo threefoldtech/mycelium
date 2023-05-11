@@ -1,6 +1,6 @@
 use std::{net::IpAddr, collections::HashMap};
 
-use crate::{source_table::SourceKey, peer::Peer, timers::Timer};
+use crate::{source_table::SourceKey, peer::Peer, timers::Timer, router::Router, packet::{ControlStruct, BabelTLV}};
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -21,11 +21,11 @@ pub struct RouteEntry {
     pub seqno: u16,
     pub next_hop: IpAddr, // This is the Peer's address
     pub selected: bool,
-    pub route_expiry_timer: Timer,
+    //pub route_expiry_timer: Timer,
 }
 
 impl RouteEntry {
-    pub fn new(source: SourceKey, neighbor: Peer, metric: u16, seqno: u16, next_hop: IpAddr, selected: bool) -> Self {
+    pub fn new(source: SourceKey, neighbor: Peer, metric: u16, seqno: u16, next_hop: IpAddr, selected: bool, router: Router) -> Self {
         Self {
             source,
             neighbor,
@@ -33,14 +33,26 @@ impl RouteEntry {
             seqno,
             next_hop,
             selected,
-            route_expiry_timer: Timer::new_route_expiry_timer(UPDATE_INTERVAL as u64),
         }
     }
 
-    pub fn update(&mut self, metric: u16, seqno: u16, next_hop: IpAddr) {
-        self.metric = metric;
-        self.seqno = seqno;
-        self.next_hop = next_hop;
+    // pub fn update(&mut self, metric: u16, seqno: u16, next_hop: IpAddr) {
+    //     self.metric = metric;
+    //     self.seqno = seqno;
+    //     self.next_hop = next_hop;
+    // }
+
+    pub fn update(&mut self, update: ControlStruct) {
+        // the update is assumed to be feasible here
+        match update.control_packet.body.tlv {
+            BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id } => {
+                self.metric = metric;
+                self.seqno = seqno; 
+            },
+            _ => {
+                println!("Received update with invalid TLV");
+            }
+        }
     }
 
     pub fn retracted(&mut self) {
@@ -67,7 +79,7 @@ impl RoutingTable {
 
     pub fn insert(&mut self, key: RouteKey, entry: RouteEntry) {
         self.table.insert(key, entry);
-        println!("Added route to routing table: {:?}", self.table);
+        //println!("Added route to routing table: {:?}", self.table);
     }
 
     pub fn remove(&mut self, key: &RouteKey) {

@@ -67,23 +67,4 @@ impl Timer {
         timer
     }
 
-    // add update timer
-    pub fn new_route_expiry_timer(update_interval: u64) -> Timer {
-        let timer = Timer::new(Duration::from_secs(update_interval));
-
-        {
-            let timer = timer.clone();
-
-            tokio::spawn(async move {
-                timer.run(|| {
-                    println!("Route timer expired! Sending routes...");
-                    // send update packet of that route to all peers
-                    
-                }).await;
-            });
-        }
-
-        timer
-    }
-    // add ack timer
 }

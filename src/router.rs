@@ -4,8 +4,8 @@ use crate::{
         DataPacket,
     },
     peer::Peer,
-    routing_table::{RouteEntry, RouteKey, RoutingTable},
-    source_table::{SourceKey, SourceTable, FeasibilityDistance}, timers::{Timer, self},
+    routing_table::{RouteEntry, RouteKey, RoutingTable, self},
+    source_table::{SourceKey, SourceTable, FeasibilityDistance, self}, timers::{Timer, self},
 };
 use std::{
     collections::HashMap,
@@ -59,6 +59,10 @@ impl Router {
         // loops over all peers and adds routing table entries for each peer
         tokio::spawn(Router::initialize_peer_route_entries(router.clone()));
 
+
+        // propagate routes
+        tokio::spawn(Router::propagate_routes(router.clone()));
+
         router
     }
 
@@ -70,8 +74,12 @@ impl Router {
                     BabelTLVType::Ack => todo!(),
                     BabelTLVType::Hello => Self::handle_incoming_hello(control_struct),
                     BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
-                    BabelTLVType::NextHop => todo!(),
-                    BabelTLVType::Update => todo!(),
+                    BabelTLVType::NextHop => todo!(), 
+                    BabelTLVType::Update => {
+                        let mut source_table = self.source_table.lock().unwrap();
+                        let mut routing_table = self.routing_table.lock().unwrap();
+                        Self::handle_incoming_update(self.clone(), &mut source_table, &mut routing_table, control_struct); 
+                    },
                     BabelTLVType::RouteReq => todo!(),
                     BabelTLVType::SeqnoReq => todo!(),
                 }
@@ -145,6 +153,32 @@ impl Router {
         println!("IHU timer for peer {:?} reset", source_peer.overlay_ip);
     }
 
+    fn handle_incoming_update(router: Router, source_table: &mut SourceTable, routing_table: &mut RoutingTable, update: ControlStruct) {
+        if source_table.is_feasible(&update) {
+            source_table.update(&update);
+
+            // get routing table entry for the source of the update
+            match update.control_packet.body.tlv {
+                BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id } => {
+
+
+                    let source_ip = update.src_overlay_ip;
+                    let source_peer = router.get_peer_by_ip(source_ip).unwrap();
+
+                    // get RouteEntry for the source of the update
+                    if let Some(route_entry) = routing_table.table.get_mut(&RouteKey { prefix, plen, neighbor: source_ip }) {
+                        route_entry.update(update);
+                    }
+                },
+                _ => {},
+            }
+
+        } else {
+            // received update is not feasible
+            // unselect to route if it was selected 
+        }
+    }
+
     pub fn add_directly_connected_peer(&self, peer: Peer) {
         self.peer_interfaces.lock().unwrap().push(peer);
     }
@@ -185,6 +219,8 @@ impl Router {
     // this is done by looking at the currently set link cost. as the cost gets initialized to 65535, we can use this to check if
     // the link cost has been set to a lower value, indicating that the peer is reachable and a routing table entry exits already
     pub async fn initialize_peer_route_entries(self) {
+        // we wait for 10 seconds before we start initializing the routing table entries
+        // possible optimization: only run this when necassary (e.g. when a new peer is added)
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
@@ -218,7 +254,6 @@ impl Router {
                         seqno: 0, // we set the seqno to 0 for now
                         next_hop: IpAddr::V4(peer.overlay_ip),
                         selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
-                        route_expiry_timer: Timer::new_route_expiry_timer(UPDATE_INTERVAL as u64),
                     };
                     // create the routing table entry
                     self.routing_table.lock().unwrap().insert(route_key, route_entry);
@@ -231,11 +266,30 @@ impl Router {
     // routing table updates are send periodically to all directly connected peers
     // updates are used to advertise new routes or the retract existing routes (retracting when the metric is set to 0xFFFF)
     // this function is run when the route_update timer expires
-    pub fn propagate_update(self) {
-        let router_table = self.routing_table.lock().unwrap();
+    pub async fn propagate_routes(self) {
+        
+        loop {
+            // routes are propagated every 10 secs
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
-        // loop over all directly connected peers
+            let router_table = self.routing_table.lock().unwrap();
+            let peers = self.peer_interfaces.lock().unwrap();
 
+            for (key, entry) in router_table.table.iter() {
+                for peer in peers.iter() {
+                    let update = ControlPacket::new_update (
+                        key.plen,
+                        UPDATE_INTERVAL as u16,
+                        entry.seqno,
+                        entry.metric,
+                        key.prefix,
+                        entry.source.router_id,
+                    );
+
+                    peer.to_peer_control.send(update).unwrap();
+                } 
+            }
+        }
     }
 }
 

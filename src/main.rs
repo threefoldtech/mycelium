@@ -52,50 +52,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Creating a new PeerManager instance
     let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(router.clone(), static_peers);
 
-
-    // create routing entry for this node
-    // for the moment we say that each node has a /24 subnet that it can route
-    // only IPv4 is supported for now
-        // {
-        //     // omit the last octet of the node_tun address to get the prefix
-        //     let tun_octects = node_tun.address().unwrap().octets();
-        //     let node_prefix = Ipv4Addr::new(tun_octects[0], tun_octects[1], tun_octects[2], 0);
-
-        //     // create a source key for the node
-        //     let source_key = SourceKey {
-        //         prefix: IpAddr::V4(node_prefix),
-        //         plen: 24,
-        //         router_id: router.router_id, 
-        //     };
-        //     // default metric value for own source is 0 
-        //     let feas_dist = FeasibilityDistance(0, 0);
-        //     // insert source into source table of router
-        //     router.source_table.lock().unwrap().insert(source_key, feas_dist);
-
-        //     // create a routing entry for the node
-        //     let route_key = RouteKey {
-        //         prefix: IpAddr::V4(node_prefix),
-        //         plen: 24,
-        //         neighbor: IpAddr::V4(node_tun.address().unwrap()),
-        //     };
-
-        //     // bit skuft: we create a dummy peer for this node itself as this is required for the route entry
-        //     let dummy_peer = Peer::new_dummy(node_tun.address().unwrap());
-
-        //     // creates a route entry for the node and also creates an update timer for the route
-        //     let route_entry = RouteEntry::new(
-        //         source_key.clone(), 
-        //         dummy_peer, 
-        //         0, // metric value for own route is 0
-        //         router.router_seqno, 
-        //         IpAddr::V4(node_tun.address().unwrap()),
-        //         true,
-        //     );
-
-        //     router.routing_table.lock().unwrap().insert(route_key, route_entry);
-
-        // }
-
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
     {
