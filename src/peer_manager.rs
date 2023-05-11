@@ -62,7 +62,6 @@ impl PeerManager {
                         received_overlay_ip,
                     ) {
                         self.router.add_directly_connected_peer(new_peer);
-                        self.router.initialize_peer_route_entries();
                     }
                 }
             }
@@ -99,7 +98,6 @@ impl PeerManager {
                     received_overlay_ip,
                 ) {
                     self.router.add_directly_connected_peer(new_peer);
-                    self.router.initialize_peer_route_entries();
                 }
             }
         }

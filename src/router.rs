@@ -56,6 +56,9 @@ impl Router {
         tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
 
+        // loops over all peers and adds routing table entries for each peer
+        tokio::spawn(Router::initialize_peer_route_entries(router.clone()));
+
         router
     }
 
@@ -181,44 +184,48 @@ impl Router {
     // loop over the directly connected peers and create routing table entries for them
     // this is done by looking at the currently set link cost. as the cost gets initialized to 65535, we can use this to check if
     // the link cost has been set to a lower value, indicating that the peer is reachable and a routing table entry exits already
-    pub fn initialize_peer_route_entries(&self) {
-        for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
-            // we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
-            if peer.link_cost == (u16::MAX - 1) {
-                // before we can create a routing table entry, we need to create a source table entry
-                let source_key = SourceKey {
-                    prefix: IpAddr::V4(peer.overlay_ip),
-                    plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
-                    router_id: 0, // we set all router ids to 0 temporarily
-                };
-                let feas_dist = FeasibilityDistance(peer.link_cost, 0); 
+    pub async fn initialize_peer_route_entries(self) {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
+                // we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
+                if peer.link_cost == (u16::MAX - 1) {
+                    // before we can create a routing table entry, we need to create a source table entry
+                    let source_key = SourceKey {
+                        prefix: IpAddr::V4(peer.overlay_ip),
+                        plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
+                        router_id: 0, // we set all router ids to 0 temporarily
+                    };
+                    let feas_dist = FeasibilityDistance(peer.link_cost, 0); 
 
-                // create the source table entry
-                let source_key_clone = source_key.clone();
-                self.source_table
-                    .lock()
-                    .unwrap()
-                    .insert(source_key, feas_dist);
+                    // create the source table entry
+                    let source_key_clone = source_key.clone();
+                    self.source_table
+                        .lock()
+                        .unwrap()
+                        .insert(source_key, feas_dist);
 
-                // now we can create the routing table entry
-                let route_key = RouteKey {
-                    prefix: IpAddr::V4(peer.overlay_ip),
-                    plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
-                    neighbor: IpAddr::V4(peer.overlay_ip),
-                };
-                let route_entry = RouteEntry {
-                    source: source_key_clone,
-                    neighbor: peer.clone(),
-                    metric: peer.link_cost,
-                    seqno: 0, // we set the seqno to 0 for now
-                    next_hop: IpAddr::V4(peer.overlay_ip),
-                    selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
-                    route_expiry_timer: Timer::new_route_expiry_timer(UPDATE_INTERVAL as u64),
-                };
-                // create the routing table entry
-                self.routing_table.lock().unwrap().insert(route_key, route_entry);
+                    // now we can create the routing table entry
+                    let route_key = RouteKey {
+                        prefix: IpAddr::V4(peer.overlay_ip),
+                        plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
+                        neighbor: IpAddr::V4(peer.overlay_ip),
+                    };
+                    let route_entry = RouteEntry {
+                        source: source_key_clone,
+                        neighbor: peer.clone(),
+                        metric: peer.link_cost,
+                        seqno: 0, // we set the seqno to 0 for now
+                        next_hop: IpAddr::V4(peer.overlay_ip),
+                        selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
+                        route_expiry_timer: Timer::new_route_expiry_timer(UPDATE_INTERVAL as u64),
+                    };
+                    // create the routing table entry
+                    self.routing_table.lock().unwrap().insert(route_key, route_entry);
+                }
             }
         }
+
     }
 
     // routing table updates are send periodically to all directly connected peers
