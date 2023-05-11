@@ -169,6 +169,14 @@ impl Router {
 
         self.get_peer_by_ip(source).unwrap()
     }
+
+    pub fn print_routes(&self) {
+        let routing_table = self.routing_table.lock().unwrap();
+        for route in routing_table.table.iter() {
+            println!("Route: {:?}/{:?} (with next-hop: {:?})", route.0.prefix, route.0.plen, route.1.next_hop);
+            println!("As advertised by: {:?}", route.1.source.router_id);
+        }
+    }
 }
 
 

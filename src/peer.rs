@@ -129,6 +129,19 @@ impl Peer {
         })
     }
 
+    pub fn new_dummy(overlay_ip: Ipv4Addr) -> Peer {
+        Peer {
+            stream_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            to_peer_data: mpsc::unbounded_channel::<DataPacket>().0,
+            to_peer_control: mpsc::unbounded_channel::<ControlPacket>().0,
+            overlay_ip, 
+            hello_seqno: 0,
+            link_cost: 100,
+            ihu_timer: Timer::new_ihu_timer(u64::MAX),
+            time_last_received_hello: tokio::time::Instant::now(),
+        }
+    }
+
     pub fn increase_hello_seqno(&mut self) {
         self.hello_seqno = self.hello_seqno + 1;
         println!("last hello seqno increasted to {}", self.hello_seqno);
