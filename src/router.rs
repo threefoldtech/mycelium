@@ -191,7 +191,7 @@ impl Router {
 
                         let route_entry = RouteEntry {
                             source: source_key,
-                            metric: metric + peer.link_cost,
+                            metric: metric, // + peer.link_cost, --> TODO!!!
                             seqno: seqno, 
                             neighbor: peer, 
                             next_hop: update.src_overlay_ip,
