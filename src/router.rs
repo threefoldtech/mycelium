@@ -55,7 +55,6 @@ impl Router {
         tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
         tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx));
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
-        tokio::spawn(Router::initialize_peer_route_entries(router.clone()));
 
         router
     }
@@ -227,6 +226,9 @@ impl Router {
     // this function is run when the route_update timer expires
     pub fn propagate_update(self) {
         let router_table = self.routing_table.lock().unwrap();
+
+        // loop over all directly connected peers
+
     }
 }
 
