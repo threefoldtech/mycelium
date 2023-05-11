@@ -155,7 +155,9 @@ impl Router {
 
     fn handle_incoming_update(router: Router, source_table: &mut SourceTable, routing_table: &mut RoutingTable, update: ControlStruct) {
         if source_table.is_feasible(&update) {
+            println!("incoming update is feasible");
             source_table.update(&update);
+
 
             // get routing table entry for the source of the update
             match update.control_packet.body.tlv {
@@ -167,12 +169,43 @@ impl Router {
                     // get RouteEntry for the source of the update
                     if let Some(route_entry) = routing_table.table.get_mut(&RouteKey { prefix, plen, neighbor: source_ip }) {
                         route_entry.update(update);
+                    } else {
+                        let source_key = SourceKey {
+                            prefix,
+                            plen, 
+                            router_id, 
+                        };
+                        let feas_dist = FeasibilityDistance(metric, seqno); 
+    
+                        // create the source table entry
+                        source_table.insert(source_key.clone(), feas_dist);
+    
+                        // now we can create the routing table entry
+                        let route_key = RouteKey {
+                            prefix, // prefix is peer that ANNOUNCED the route
+                            plen, 
+                            neighbor: update.src_overlay_ip,
+                        };
+
+                        let peer = router.get_peer_by_ip(update.src_overlay_ip).unwrap();
+
+                        let route_entry = RouteEntry {
+                            source: source_key,
+                            metric: metric + peer.link_cost,
+                            seqno: seqno, 
+                            neighbor: peer, 
+                            next_hop: update.src_overlay_ip,
+                            selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
+                        };
+                        // create the routing table entry
+                        routing_table.insert(route_key, route_entry);
                     }
                 },
                 _ => {},
             }
 
         } else {
+            println!("incoming update is NOT feasible");
             // received update is not feasible
             // unselect to route if it was selected 
         }
@@ -234,11 +267,10 @@ impl Router {
                     let feas_dist = FeasibilityDistance(peer.link_cost, 0); 
 
                     // create the source table entry
-                    let source_key_clone = source_key.clone();
                     self.source_table
                         .lock()
                         .unwrap()
-                        .insert(source_key, feas_dist);
+                        .insert(source_key.clone(), feas_dist);
 
                     // now we can create the routing table entry
                     let route_key = RouteKey {
@@ -247,7 +279,7 @@ impl Router {
                         neighbor: IpAddr::V4(peer.overlay_ip),
                     };
                     let route_entry = RouteEntry {
-                        source: source_key_clone,
+                        source: source_key,
                         neighbor: peer.clone(),
                         metric: peer.link_cost,
                         seqno: 0, // we set the seqno to 0 for now

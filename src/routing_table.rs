@@ -50,7 +50,7 @@ impl RouteEntry {
                 self.seqno = seqno; 
             },
             _ => {
-                println!("Received update with invalid TLV");
+                panic!("Received update with invalid TLV");
             }
         }
     }
