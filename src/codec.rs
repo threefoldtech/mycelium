@@ -41,7 +41,7 @@ impl Decoder for PacketCodec {
                 1 => PacketType::ControlPacket,
                 _ => {
                     println!("buffer: {:?}", &src[..src.remaining()]);
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid packet type")),
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid packet type"));
                 }
             };
 
