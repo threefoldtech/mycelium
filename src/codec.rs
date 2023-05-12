@@ -180,11 +180,15 @@ impl Encoder<DataPacket> for DataPacketCodec {
 }
 
 /* ****************************CONTROL PACKET******************************** */
-pub struct ControlPacketCodec {}
+pub struct ControlPacketCodec {
+    header: Option<BabelPacketHeader>,
+}
 
 impl ControlPacketCodec {
     pub fn new() -> Self {
-        ControlPacketCodec {}
+        ControlPacketCodec {
+            header: None,
+        }
     }
 }
 
@@ -194,27 +198,37 @@ impl Decoder for ControlPacketCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if buf.remaining() < 4 {
-            return Ok(None);
-        }
 
-        let magic = buf.get_u8();
-        let version = buf.get_u8();
-        let body_length = buf.get_u16();
+        let header = if let Some(header) = self.header.take() {
+            header
+        } else {
+            if buf.remaining() < 4 {
+                return Ok(None);
+            }
 
-        if buf.remaining() < body_length as usize {
-            return Ok(None);
-        }
+            let magic = buf.get_u8();
+            let version = buf.get_u8();
+            let body_length = buf.get_u16();
 
-        let header = BabelPacketHeader {
-            magic,
-            version,
-            body_length,
+            BabelPacketHeader {
+                magic,
+                version,
+                body_length,
+            }
         };
+        
+
+
+        if buf.remaining() < header.body_length as usize {
+            // here the self.header is actually always None (due to take function)
+            // so assign it again to Some(header)
+            self.header = Some(header);
+            return Ok(None);
+        }
 
         let tlv_type = match BabelTLVType::from_u8(buf.get_u8()) {
-            Some(t) => t,
-            None => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid TLV type")),
+             Some(t) => t,
+             None => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid TLV type")),
         };
 
         let length = buf.get_u8();
