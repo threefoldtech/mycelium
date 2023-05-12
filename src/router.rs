@@ -286,6 +286,7 @@ impl Router {
     pub fn print_routes(&self) {
         let routing_table = self.routing_table.lock().unwrap();
         for route in routing_table.table.iter() {
+            println!("Route key: {:?}", route.0);
             println!(
                 "Route: {:?}/{:?} (with next-hop: {:?}, metric: {})",
                 route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric
