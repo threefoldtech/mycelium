@@ -178,7 +178,8 @@ impl Router {
         source_peer.set_link_cost(time_diff as u16);
         println!(
             "Link cost for peer {:?} set to {}",
-            source_peer.overlay_ip(), source_peer.link_cost()
+            source_peer.overlay_ip(),
+            source_peer.link_cost()
         );
 
         println!("IHU timer for peer {:?} reset", source_peer.overlay_ip());
@@ -190,6 +191,7 @@ impl Router {
         routing_table: &mut RoutingTable,
         update: ControlStruct,
     ) {
+        println!("Received update {:?}", update);
         if source_table.is_feasible(&update) {
             println!("incoming update is feasible");
             source_table.update(&update);
@@ -198,12 +200,13 @@ impl Router {
             match update.control_packet.body.tlv {
                 BabelTLV::Update {
                     plen,
-                    interval,
+                    interval: _,
                     seqno,
                     metric,
                     prefix,
                     router_id,
                 } => {
+                    println!("Received update from {} for {:?} with seqno {}", router_id, prefix, seqno);
                     let source_ip = update.src_overlay_ip;
 
                     // get RouteEntry for the source of the update
@@ -233,18 +236,16 @@ impl Router {
 
                         let peer = router.get_peer_by_ip(update.src_overlay_ip).unwrap();
 
-
-                        let current_link_cost = peer.link_cost();
                         let route_entry = RouteEntry::new(
                             source_key,
-                            peer.clone(), 
-                            if current_link_cost > u16::MAX - metric - 1 { u16::MAX-1 } else { current_link_cost + metric },
-                            seqno, 
-                            update.src_overlay_ip, 
-                            true, 
-                            router
+                            peer.clone(),
+                            metric,
+                            seqno,
+                            update.src_overlay_ip,
+                            true,
+                            router,
                         );
-                        
+
                         // create the routing table entry
                         routing_table.insert(route_key, route_entry);
                     }
@@ -351,10 +352,11 @@ impl Router {
             // routes are propagated every 10 secs
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-            let router_table = self.routing_table.lock().unwrap();
+            let mut router_table = self.routing_table.lock().unwrap();
             let peers = self.peer_interfaces.lock().unwrap();
 
-            for (key, entry) in router_table.table.iter() {
+            for (key, entry) in router_table.table.iter_mut() {
+                entry.seqno += 1;
                 for peer in peers.iter() {
                     let update = ControlPacket::new_update(
                         key.plen,

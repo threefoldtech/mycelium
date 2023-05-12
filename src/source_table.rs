@@ -82,7 +82,7 @@ impl SourceTable {
         match update.control_packet.body.tlv {
             BabelTLV::Update {
                 plen,
-                interval,
+                interval: _,
                 seqno,
                 metric,
                 prefix,
@@ -99,13 +99,9 @@ impl SourceTable {
                         let metric_2 = source_entry.0;
                         let seqno_2 = source_entry.1;
 
-                        if seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2) {
-                            return true;
-                        } else {
-                            return false;
-                        }
+                        seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2)
                     }
-                    None => return true,
+                    None => true,
                 }
             }
             _ => {

@@ -59,16 +59,11 @@ impl RouteEntry {
     pub fn update(&mut self, update: ControlStruct) {
         // the update is assumed to be feasible here
         match update.control_packet.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
+            BabelTLV::Update { seqno, metric, .. } => {
+                println!("Update starting, entry is now {:?}", self);
                 self.metric = metric;
                 self.seqno = seqno;
+                println!("Update finished, entry is now {:?}", self);
             }
             _ => {
                 panic!("Received update with invalid TLV");

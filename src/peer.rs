@@ -49,14 +49,17 @@ impl Peer {
         println!("current seqno: {}", self.inner.read().unwrap().hello_seqno);
         // TODO: Validate this works
         self.inner.write().unwrap().hello_seqno += 1;
-        println!("after increment seqno: {}", self.inner.read().unwrap().hello_seqno);
+        println!(
+            "after increment seqno: {}",
+            self.inner.read().unwrap().hello_seqno
+        );
     }
 
     pub fn time_last_received_hello(&self) -> tokio::time::Instant {
         // TODO: Validate this works
         self.inner.read().unwrap().time_last_received_hello
     }
-    
+
     pub fn set_time_last_received_hello(&self, time: tokio::time::Instant) {
         self.inner.write().unwrap().time_last_received_hello = time
     }
