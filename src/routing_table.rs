@@ -91,14 +91,5 @@ impl RoutingTable {
     }
 }
 
-// TODO: add support of suprious starvation detection
-pub fn select_best_route(routes: &[RouteEntry]) -> Option<&RouteEntry> {
-    //routes.iter().min_by_key(|route| (route.metric, route.router_id))
-    todo!("select_best_route")
-}
-
-
-
-
 
 

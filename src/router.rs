@@ -98,6 +98,7 @@ impl Router {
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
                 let dest_ip = data_packet.dest_ip;
+                println!("Received data packet: {:?}", data_packet);
 
                 if dest_ip == tun_addr {
                     match self.node_tun.send(&data_packet.raw_data).await {
@@ -105,7 +106,13 @@ impl Router {
                         Err(e) => eprintln!("Error sending data packet to TUN interface: {:?}", e),
                     }
                 } else {
-                    router_data_tx.send(data_packet).unwrap();
+                    // router_data_tx.send(data_packet).unwrap();
+                    // DO BABEL route selection
+                    // kijke nr next-hop en gwn sturenn naar de peer die daarmee overeenkomt
+                    
+                    // select the best route towards the destination
+                    let best_route = self.select_best_route(IpAddr::V4(dest_ip));
+                    println!("Best route: {:?}", best_route);
                 }
             }
         }
@@ -312,6 +319,36 @@ impl Router {
                     peer.to_peer_control.send(update).unwrap();
                 } 
             }
+        }
+    }
+
+    pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry>{
+        // first look in the routing table for all routekeys where prefix == dest_ip
+        let routing_table = self.routing_table.lock().unwrap();
+        let mut matching_routes: Vec<&RouteEntry> = Vec::new();
+
+        for route in routing_table.table.iter() {
+            if route.0.prefix == dest_ip { // NOTE -- this is not correct, we need to check if the dest_ip is in the prefix range
+                matching_routes.push(route.1);
+                println!("Found matching route: {:?}", route.1);
+            }
+        }
+
+        // now we have all routes that match the destination ip
+        // we need to select the route with the lowest metric
+        let mut best_route: Option<&RouteEntry> = None;
+        let mut best_metric: u16 = u16::MAX;
+
+        for route in matching_routes.iter() {
+            if route.metric < best_metric {
+                best_route = Some(route);
+                best_metric = route.metric;
+            }
+        }
+
+        match best_route {
+            Some(route) => Some(route.clone()),
+            None => None,
         }
     }
 }
