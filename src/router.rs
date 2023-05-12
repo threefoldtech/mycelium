@@ -233,10 +233,12 @@ impl Router {
 
                         let peer = router.get_peer_by_ip(update.src_overlay_ip).unwrap();
 
+
+                        let current_link_cost = peer.link_cost();
                         let route_entry = RouteEntry::new(
                             source_key,
                             peer.clone(), 
-                            peer.link_cost() + metric, 
+                            if current_link_cost > u16::MAX - metric - 1 { u16::MAX-1 } else { current_link_cost + metric },
                             seqno, 
                             update.src_overlay_ip, 
                             true, 
@@ -299,7 +301,7 @@ impl Router {
         // we wait for 10 seconds before we start initializing the routing table entries
         // possible optimization: only run this when necassary (e.g. when a new peer is added)
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
                 // we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
                 if peer.link_cost() == (u16::MAX - 1) {
@@ -347,7 +349,7 @@ impl Router {
     pub async fn propagate_routes(self) {
         loop {
             // routes are propagated every 10 secs
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             let router_table = self.routing_table.lock().unwrap();
             let peers = self.peer_interfaces.lock().unwrap();
@@ -362,6 +364,8 @@ impl Router {
                         key.prefix,
                         entry.source.router_id,
                     );
+
+                    println!("sending udpate packet");
 
                     if peer.send_control_packet(update).is_err() {
                         println!("route update packet dropped");

@@ -46,8 +46,10 @@ impl Peer {
 
     /// Adds 1 to the sequence number of this peer .
     pub fn increment_hello_seqno(&self) {
+        println!("current seqno: {}", self.inner.read().unwrap().hello_seqno);
         // TODO: Validate this works
-        self.inner.write().unwrap().hello_seqno += 1
+        self.inner.write().unwrap().hello_seqno += 1;
+        println!("after increment seqno: {}", self.inner.read().unwrap().hello_seqno);
     }
 
     pub fn time_last_received_hello(&self) -> tokio::time::Instant {
@@ -230,10 +232,5 @@ impl PeerInner {
                 time_last_received_hello: tokio::time::Instant::now(),
             })),
         }
-    }
-
-    pub fn increase_hello_seqno(&mut self) {
-        self.hello_seqno = self.hello_seqno + 1;
-        println!("last hello seqno increasted to {}", self.hello_seqno);
     }
 }
