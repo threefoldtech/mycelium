@@ -21,6 +21,23 @@ const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
 const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 
+#[derive(Debug,Clone, Copy)]
+pub struct StaticRoute {
+    plen: u8,
+    prefix: IpAddr,
+    seqno: u16,
+}
+
+impl StaticRoute {
+    pub fn new(prefix: IpAddr) -> Self {
+        Self {
+    plen: 32,
+    prefix,
+    seqno: 0,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Router {
     pub router_id: u64,
@@ -32,10 +49,11 @@ pub struct Router {
     pub routing_table: Arc<Mutex<RoutingTable>>,
     pub source_table: Arc<Mutex<SourceTable>>,
     pub router_seqno: u16,
+    static_routes: Arc<Mutex<Vec<StaticRoute>>>,
 }
 
 impl Router {
-    pub fn new(node_tun: Arc<Tun>) -> Self {
+    pub fn new(node_tun: Arc<Tun>, static_routes: Vec<StaticRoute>) -> Self {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
@@ -50,6 +68,7 @@ impl Router {
             routing_table: Arc::new(Mutex::new(RoutingTable::new())),
             source_table: Arc::new(Mutex::new(SourceTable::new())),
             router_seqno: 0,
+            static_routes: Arc::new(Mutex::new(static_routes)),
         };
 
         tokio::spawn(Router::handle_incoming_control_packet(
@@ -64,7 +83,7 @@ impl Router {
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
 
         // loops over all peers and adds routing table entries for each peer
-        tokio::spawn(Router::initialize_peer_route_entries(router.clone()));
+        //tokio::spawn(Router::initialize_peer_route_entries(router.clone()));
 
         // propagate routes
         tokio::spawn(Router::propagate_routes(router.clone()));
@@ -205,7 +224,10 @@ impl Router {
                     prefix,
                     router_id,
                 } => {
-                    println!("Received update from {} for {:?} with seqno {}", router_id, prefix, seqno);
+                    println!(
+                        "Received update from {} for {:?} with seqno {}",
+                        router_id, prefix, seqno
+                    );
                     let source_ip = update.src_overlay_ip;
 
                     // get RouteEntry for the source of the update
@@ -298,55 +320,58 @@ impl Router {
     // loop over the directly connected peers and create routing table entries for them
     // this is done by looking at the currently set link cost. as the cost gets initialized to 65535, we can use this to check if
     // the link cost has been set to a lower value, indicating that the peer is reachable and a routing table entry exits already
-    pub async fn initialize_peer_route_entries(self) {
-        // we wait for 10 seconds before we start initializing the routing table entries
-        // possible optimization: only run this when necassary (e.g. when a new peer is added)
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-            for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
-                // we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
-                //if peer.link_cost() == u16::MAX - 1 {
-                    // before we can create a routing table entry, we need to create a source table entry
-                    let source_key = SourceKey {
-                        prefix: peer.overlay_ip(),
-                        plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
-                        router_id: 0, // we set all router ids to 0 temporarily
-                    };
-                    let feas_dist = FeasibilityDistance(peer.link_cost(), 0);
+    //pub async fn initialize_peer_route_entries(self) {
+        //// we wait for 10 seconds before we start initializing the routing table entries
+        //// possible optimization: only run this when necassary (e.g. when a new peer is added)
+        //loop {
+            //tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            //for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
+                //// we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
+                ////if peer.link_cost() == u16::MAX - 1 {
+                //// before we can create a routing table entry, we need to create a source table entry
+                //let source_key = SourceKey {
+                    //prefix: peer.overlay_ip(),
+                    //plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
+                    //router_id: 0, // we set all router ids to 0 temporarily
+                //};
+                //let feas_dist = FeasibilityDistance(peer.link_cost(), 0);
 
-                    // create the source table entry
-                    self.source_table
-                        .lock()
-                        .unwrap()
-                        .insert(source_key.clone(), feas_dist);
+                //// create the source table entry
+                //self.source_table
+                    //.lock()
+                    //.unwrap()
+                    //.insert(source_key.clone(), feas_dist);
 
-                    // now we can create the routing table entry
-                    let route_key = RouteKey {
-                        prefix: peer.overlay_ip(),
-                        plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
-                        neighbor: peer.overlay_ip(),
-                    };
+                //// now we can create the routing table entry
+                //let route_key = RouteKey {
+                    //prefix: peer.overlay_ip(),
+                    //plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
+                    //neighbor: peer.overlay_ip(),
+                //};
 
-                    let seqno = if let Some(re) = self.routing_table.lock().unwrap().remove(&route_key) {
-                        re.seqno
-                    } else { 0 };
-                    let route_entry = RouteEntry {
-                        source: source_key,
-                        neighbor: peer.clone(),
-                        metric: peer.link_cost(),
-                        seqno: seqno, // we set the seqno to 0 for now
-                        next_hop: peer.overlay_ip(),
-                        selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
-                    };
-                    // create the routing table entry
-                    self.routing_table
-                        .lock()
-                        .unwrap()
-                        .insert(route_key, route_entry);
-                //}
-            }
-        }
-    }
+                //let seqno = if let Some(re) = self.routing_table.lock().unwrap().remove(&route_key)
+                //{
+                    //re.seqno
+                //} else {
+                    //0
+                //};
+                //let route_entry = RouteEntry {
+                    //source: source_key,
+                    //neighbor: peer.clone(),
+                    //metric: peer.link_cost(),
+                    //seqno: seqno, // we set the seqno to 0 for now
+                    //next_hop: peer.overlay_ip(),
+                    //selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
+                //};
+                //// create the routing table entry
+                //self.routing_table
+                    //.lock()
+                    //.unwrap()
+                    //.insert(route_key, route_entry);
+                ////}
+            //}
+        //}
+    //}
 
     // routing table updates are send periodically to all directly connected peers
     // updates are used to advertise new routes or the retract existing routes (retracting when the metric is set to 0xFFFF)
@@ -357,19 +382,40 @@ impl Router {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             let mut router_table = self.routing_table.lock().unwrap();
+            let mut static_routes = self.static_routes.lock().unwrap();
             let peers = self.peer_interfaces.lock().unwrap();
+
+            for route in static_routes.iter_mut() {
+                route.seqno += 1;
+                for peer in peers.iter() {
+                    let update = ControlPacket::new_update(
+                        route.plen,
+                        UPDATE_INTERVAL as u16,
+                        route.seqno,
+                        peer.link_cost(),
+                        route.prefix,
+                        self.router_id,
+                    );
+
+                    if peer.send_control_packet(update).is_err() {
+                        println!("could not send static route to peer");
+                }
+                    }
+            }
 
             for (key, entry) in router_table.table.iter_mut() {
                 entry.seqno += 1;
-                let link_cost = entry.neighbor.link_cost();
                 for peer in peers.iter() {
+                    let link_cost = peer.link_cost();
                     let update = ControlPacket::new_update(
                         key.plen,
                         UPDATE_INTERVAL as u16,
                         entry.seqno,
-                        if entry.metric >  u16::MAX - 1 - link_cost {
-                            u16::MAX -1
-                        } else { entry.metric + link_cost},
+                        if entry.metric > u16::MAX - 1 - link_cost {
+                            u16::MAX - 1
+                        } else {
+                            entry.metric + link_cost
+                        },
                         key.prefix,
                         entry.source.router_id,
                     );
