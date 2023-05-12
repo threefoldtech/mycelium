@@ -9,7 +9,7 @@ use futures::stream::TryStreamExt;
 
 pub const TUN_NAME: &str = "tun0";
 pub const TUN_ROUTE_DEST: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 0);
-pub const TUN_ROUTE_PREFIX: u8 = 24;
+pub const TUN_ROUTE_PREFIX: u8 = 16;
 
 // Create a TUN interface
 pub fn create_tun_interface(int_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
