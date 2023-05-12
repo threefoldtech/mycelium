@@ -48,6 +48,8 @@ impl Decoder for PacketCodec {
             packet_type
         };
 
+        self.packet_type = Some(packet_type);
+
         // Decode packet based on determined packet_type
         match packet_type {
             PacketType::DataPacket => {
