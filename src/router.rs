@@ -360,12 +360,15 @@ impl Router {
 
             for (key, entry) in router_table.table.iter_mut() {
                 entry.seqno += 1;
+                let link_cost = entry.neighbor.link_cost();
                 for peer in peers.iter() {
                     let update = ControlPacket::new_update(
                         key.plen,
                         UPDATE_INTERVAL as u16,
                         entry.seqno,
-                        entry.metric + entry.neighbor.link_cost(),
+                        if entry.metric >  u16::MAX - 1 - link_cost {
+                            u16::MAX -1
+                        } else { entry.metric + link_cost},
                         key.prefix,
                         entry.source.router_id,
                     );
