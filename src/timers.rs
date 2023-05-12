@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::time::sleep;
 use tokio::sync::oneshot;
+use tokio::time::sleep;
 
 use crate::router::Router;
 
@@ -26,11 +26,11 @@ impl Timer {
         }
         *self.duration.lock().unwrap() = duration;
     }
-    
-    // on_expire is of a type that implements the Fn trait, which means it's a function or a closure. 
-    // The + Send + 'static part means this function must also satisfy the Send trait (meaning it can be sent between threads safely) 
-    // and have a 'static lifetime (meaning it doesn't capture any non-'static (i.e., temporary) values from its environment). 
-    // This is necessary because the function could be called at any point in the future, 
+
+    // on_expire is of a type that implements the Fn trait, which means it's a function or a closure.
+    // The + Send + 'static part means this function must also satisfy the Send trait (meaning it can be sent between threads safely)
+    // and have a 'static lifetime (meaning it doesn't capture any non-'static (i.e., temporary) values from its environment).
+    // This is necessary because the function could be called at any point in the future,
     // potentially long after the context it was created in has gone away.
 
     async fn run(&self, on_expire: impl Fn() + Send + 'static) {
@@ -47,24 +47,24 @@ impl Timer {
         }
     }
 
-    pub fn new_ihu_timer(ihu_interval: u64) -> Timer{
-
+    pub fn new_ihu_timer(ihu_interval: u64) -> Timer {
         let timer = Timer::new(Duration::from_secs(ihu_interval));
 
         {
             let timer = timer.clone();
 
             tokio::spawn(async move {
-                timer.run(|| {
-                    println!("IHU Timer expired!");
-                    // node should be assumed as dead
-                    // on expiry the neighbour link should be set to 0xFFFF
-                    // and the route selection process should be run
-                }).await;
+                timer
+                    .run(|| {
+                        println!("IHU Timer expired!");
+                        // node should be assumed as dead
+                        // on expiry the neighbour link should be set to 0xFFFF
+                        // and the route selection process should be run
+                    })
+                    .await;
             });
         }
 
         timer
     }
-
 }

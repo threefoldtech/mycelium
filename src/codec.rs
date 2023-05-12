@@ -1,7 +1,13 @@
-use std::{io, net::{IpAddr, Ipv4Addr, Ipv6Addr}};
-use bytes::{BufMut, BytesMut, Buf};
-use tokio_util::codec::{Encoder, Decoder};
-use crate::packet::{Packet, ControlPacket, DataPacket, PacketType, BabelTLVType, BabelPacketBody, BabelTLV, BabelPacketHeader};
+use crate::packet::{
+    BabelPacketBody, BabelPacketHeader, BabelTLV, BabelTLVType, ControlPacket, DataPacket, Packet,
+    PacketType,
+};
+use bytes::{Buf, BufMut, BytesMut};
+use std::{
+    io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
+use tokio_util::codec::{Decoder, Encoder};
 
 /* ********************************PAKCET*********************************** */
 pub struct PacketCodec {
@@ -25,7 +31,6 @@ impl Decoder for PacketCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-
         // Determine the packet_type
         let packet_type = if let Some(packet_type) = self.packet_type {
             packet_type
@@ -41,15 +46,17 @@ impl Decoder for PacketCodec {
                 1 => PacketType::ControlPacket,
                 _ => {
                     println!("buffer: {:?}", &src[..src.remaining()]);
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid packet type"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid packet type",
+                    ));
                 }
             };
-            
+
             self.packet_type = Some(packet_type);
 
             packet_type
         };
-
 
         // Decode packet based on determined packet_type
         match packet_type {
@@ -58,7 +65,7 @@ impl Decoder for PacketCodec {
                     Ok(Some(p)) => {
                         self.packet_type = None; // Reset state
                         Ok(Some(Packet::DataPacket(p)))
-                    },
+                    }
                     Ok(None) => Ok(None),
                     Err(e) => Err(e),
                 }
@@ -68,7 +75,7 @@ impl Decoder for PacketCodec {
                     Ok(Some(p)) => {
                         self.packet_type = None; // Reset state
                         Ok(Some(Packet::ControlPacket(p)))
-                    },
+                    }
                     Ok(None) => Ok(None),
                     Err(e) => Err(e),
                 }
@@ -114,7 +121,6 @@ impl Decoder for DataPacketCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-
         // Determine the length of the data
         let data_len = if let Some(data_len) = self.len {
             data_len
@@ -192,9 +198,7 @@ pub struct ControlPacketCodec {
 
 impl ControlPacketCodec {
     pub fn new() -> Self {
-        ControlPacketCodec {
-            header: None,
-        }
+        ControlPacketCodec { header: None }
     }
 }
 
@@ -204,7 +208,6 @@ impl Decoder for ControlPacketCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-
         let header = if let Some(header) = self.header.take() {
             header
         } else {
@@ -222,8 +225,6 @@ impl Decoder for ControlPacketCodec {
                 body_length,
             }
         };
-        
-
 
         if buf.remaining() < header.body_length as usize {
             // here the self.header is actually always None (due to take function)
@@ -233,8 +234,13 @@ impl Decoder for ControlPacketCodec {
         }
 
         let tlv_type = match BabelTLVType::from_u8(buf.get_u8()) {
-             Some(t) => t,
-             None => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid TLV type")),
+            Some(t) => t,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid TLV type",
+                ))
+            }
         };
 
         let length = buf.get_u8();
@@ -252,7 +258,12 @@ impl Decoder for ControlPacketCodec {
             }
             BabelTLVType::IHU => {
                 let interval = buf.get_u16();
-                let address = IpAddr::V4(Ipv4Addr::new(buf.get_u8(), buf.get_u8(), buf.get_u8(), buf.get_u8()));
+                let address = IpAddr::V4(Ipv4Addr::new(
+                    buf.get_u8(),
+                    buf.get_u8(),
+                    buf.get_u8(),
+                    buf.get_u8(),
+                ));
                 let body = BabelPacketBody {
                     tlv_type,
                     length,
@@ -268,15 +279,17 @@ impl Decoder for ControlPacketCodec {
                 let metric = buf.get_u16();
                 // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
                 let prefix = match ae {
-                    0 => { // 4 bytes IP + 8 bytes router_id
+                    0 => {
+                        // 4 bytes IP + 8 bytes router_id
                         IpAddr::V4(Ipv4Addr::new(
                             buf.get_u8(),
                             buf.get_u8(),
                             buf.get_u8(),
                             buf.get_u8(),
                         ))
-                    },
-                    1 => { // 16 bytes IP + 8 bytes router_id
+                    }
+                    1 => {
+                        // 16 bytes IP + 8 bytes router_id
                         IpAddr::V6(Ipv6Addr::new(
                             buf.get_u16(),
                             buf.get_u16(),
@@ -287,14 +300,26 @@ impl Decoder for ControlPacketCodec {
                             buf.get_u16(),
                             buf.get_u16(),
                         ))
-                    },
-                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid address length")),
+                    }
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Invalid address length",
+                        ))
+                    }
                 };
                 let router_id = buf.get_u64();
                 let body = BabelPacketBody {
                     tlv_type,
                     length,
-                    tlv: BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id }
+                    tlv: BabelTLV::Update {
+                        plen,
+                        interval,
+                        seqno,
+                        metric,
+                        prefix,
+                        router_id,
+                    },
                 };
                 body
             }
@@ -318,58 +343,64 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
         buf.put_u8(message.header.version);
         buf.put_u16(message.header.body_length);
 
-            // Write BabelPacketBody
-            buf.put_u8(message.body.tlv_type as u8);
-            buf.put_u8(message.body.length);
+        // Write BabelPacketBody
+        buf.put_u8(message.body.tlv_type as u8);
+        buf.put_u8(message.body.length);
 
-            match message.body.tlv{
-                BabelTLV::Hello { seqno, interval } => {
-                    buf.put_u16(seqno);
-                    buf.put_u16(interval);
-                }
-                BabelTLV::IHU { interval, address } => {
-                    buf.put_u16(interval);
-                    match address {
-                        IpAddr::V4(ipv4) => {
-                            buf.put_u8(ipv4.octets()[0]);
-                            buf.put_u8(ipv4.octets()[1]);
-                            buf.put_u8(ipv4.octets()[2]);
-                            buf.put_u8(ipv4.octets()[3]);
-                        }
-                        IpAddr::V6(_ipv6) => {
-                            println!("IPv6 not supported yet");
-                        }
+        match message.body.tlv {
+            BabelTLV::Hello { seqno, interval } => {
+                buf.put_u16(seqno);
+                buf.put_u16(interval);
+            }
+            BabelTLV::IHU { interval, address } => {
+                buf.put_u16(interval);
+                match address {
+                    IpAddr::V4(ipv4) => {
+                        buf.put_u8(ipv4.octets()[0]);
+                        buf.put_u8(ipv4.octets()[1]);
+                        buf.put_u8(ipv4.octets()[2]);
+                        buf.put_u8(ipv4.octets()[3]);
+                    }
+                    IpAddr::V6(_ipv6) => {
+                        println!("IPv6 not supported yet");
                     }
                 }
-                BabelTLV::Update { plen , interval, seqno, metric, prefix , router_id} => {
-                    buf.put_u8(if prefix.is_ipv4(){0} else {1});
-                    buf.put_u8(plen);
-                    buf.put_u16(interval);
-                    buf.put_u16(seqno);
-                    buf.put_u16(metric);
-                    match prefix {
-                        IpAddr::V4(ipv4) => {
-                            buf.put_u8(ipv4.octets()[0]);
-                            buf.put_u8(ipv4.octets()[1]);
-                            buf.put_u8(ipv4.octets()[2]);
-                            buf.put_u8(ipv4.octets()[3]);
-                        }
-                        IpAddr::V6(_ipv6) => {
-                            buf.put_u16(_ipv6.segments()[0]);
-                            buf.put_u16(_ipv6.segments()[1]);
-                            buf.put_u16(_ipv6.segments()[2]);
-                            buf.put_u16(_ipv6.segments()[3]);
-                            buf.put_u16(_ipv6.segments()[4]);
-                            buf.put_u16(_ipv6.segments()[5]);
-                            buf.put_u16(_ipv6.segments()[6]);
-                            buf.put_u16(_ipv6.segments()[7]);
-                        }
+            }
+            BabelTLV::Update {
+                plen,
+                interval,
+                seqno,
+                metric,
+                prefix,
+                router_id,
+            } => {
+                buf.put_u8(if prefix.is_ipv4() { 0 } else { 1 });
+                buf.put_u8(plen);
+                buf.put_u16(interval);
+                buf.put_u16(seqno);
+                buf.put_u16(metric);
+                match prefix {
+                    IpAddr::V4(ipv4) => {
+                        buf.put_u8(ipv4.octets()[0]);
+                        buf.put_u8(ipv4.octets()[1]);
+                        buf.put_u8(ipv4.octets()[2]);
+                        buf.put_u8(ipv4.octets()[3]);
                     }
-                    buf.put_u64(router_id);
+                    IpAddr::V6(_ipv6) => {
+                        buf.put_u16(_ipv6.segments()[0]);
+                        buf.put_u16(_ipv6.segments()[1]);
+                        buf.put_u16(_ipv6.segments()[2]);
+                        buf.put_u16(_ipv6.segments()[3]);
+                        buf.put_u16(_ipv6.segments()[4]);
+                        buf.put_u16(_ipv6.segments()[5]);
+                        buf.put_u16(_ipv6.segments()[6]);
+                        buf.put_u16(_ipv6.segments()[7]);
+                    }
                 }
-                // Add encoding logic for other TLV types.
-                _ => {}
-            
+                buf.put_u64(router_id);
+            }
+            // Add encoding logic for other TLV types.
+            _ => {}
         }
 
         Ok(())

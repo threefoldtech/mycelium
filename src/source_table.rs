@@ -1,6 +1,6 @@
-use std::{net::IpAddr, collections::HashMap};
+use std::{collections::HashMap, net::IpAddr};
 
-use crate::packet::{ControlStruct, BabelTLV};
+use crate::packet::{BabelTLV, ControlStruct};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
@@ -37,10 +37,15 @@ impl SourceTable {
     }
 
     pub fn update(&mut self, update: &ControlStruct) {
-
         match update.control_packet.body.tlv {
-            BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id } => {
-                
+            BabelTLV::Update {
+                plen,
+                interval,
+                seqno,
+                metric,
+                prefix,
+                router_id,
+            } => {
                 // first check if the update is feasible
                 if !self.is_feasible(update) {
                     return;
@@ -49,19 +54,21 @@ impl SourceTable {
                 let key = SourceKey {
                     prefix: prefix,
                     plen: plen,
-                    router_id: router_id
+                    router_id: router_id,
                 };
 
                 let new_distance = FeasibilityDistance(metric, seqno);
-                let old_distance = self.table.get(&key).cloned();        
+                let old_distance = self.table.get(&key).cloned();
                 match old_distance {
                     Some(old_distance) => {
                         if new_distance.0 < old_distance.0 {
-                            self.table.insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
+                            self.table
+                                .insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
                         }
                     }
                     None => {
-                        self.table.insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
+                        self.table
+                            .insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
                     }
                 }
             }
@@ -70,28 +77,32 @@ impl SourceTable {
             }
         }
     }
-    
 
     pub fn is_feasible(&self, update: &ControlStruct) -> bool {
-
         match update.control_packet.body.tlv {
-            BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id } => {
+            BabelTLV::Update {
+                plen,
+                interval,
+                seqno,
+                metric,
+                prefix,
+                router_id,
+            } => {
                 let key = SourceKey {
                     prefix: prefix,
                     plen: plen,
-                    router_id: router_id
+                    router_id: router_id,
                 };
 
                 match self.table.get(&key) {
                     Some(&source_entry) => {
-
-                        let metric_2= source_entry.0;
+                        let metric_2 = source_entry.0;
                         let seqno_2 = source_entry.1;
 
                         if seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2) {
-                            return true
+                            return true;
                         } else {
-                            return false
+                            return false;
                         }
                     }
                     None => return true,

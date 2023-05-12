@@ -1,11 +1,7 @@
-use tokio_tun::{Tun, TunBuilder};
-use std::{
-    sync::Arc,
-    net::Ipv4Addr,
-    error::Error,
-};
-use rtnetlink::Handle;
 use futures::stream::TryStreamExt;
+use rtnetlink::Handle;
+use std::{error::Error, net::Ipv4Addr, sync::Arc};
+use tokio_tun::{Tun, TunBuilder};
 
 pub const TUN_NAME: &str = "tun0";
 pub const TUN_ROUTE_DEST: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 0);
@@ -63,7 +59,6 @@ pub async fn setup_node(tun_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> 
     add_route(handle.clone()).await?;
 
     println!("Static route created");
-    
+
     Ok(tun)
 }
-

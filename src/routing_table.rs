@@ -1,6 +1,12 @@
-use std::{net::IpAddr, collections::HashMap};
+use std::{collections::HashMap, net::IpAddr};
 
-use crate::{source_table::SourceKey, peer::Peer, timers::Timer, router::Router, packet::{ControlStruct, BabelTLV}};
+use crate::{
+    packet::{BabelTLV, ControlStruct},
+    peer::Peer,
+    router::Router,
+    source_table::SourceKey,
+    timers::Timer,
+};
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -25,7 +31,15 @@ pub struct RouteEntry {
 }
 
 impl RouteEntry {
-    pub fn new(source: SourceKey, neighbor: Peer, metric: u16, seqno: u16, next_hop: IpAddr, selected: bool, router: Router) -> Self {
+    pub fn new(
+        source: SourceKey,
+        neighbor: Peer,
+        metric: u16,
+        seqno: u16,
+        next_hop: IpAddr,
+        selected: bool,
+        router: Router,
+    ) -> Self {
         Self {
             source,
             neighbor,
@@ -45,10 +59,17 @@ impl RouteEntry {
     pub fn update(&mut self, update: ControlStruct) {
         // the update is assumed to be feasible here
         match update.control_packet.body.tlv {
-            BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id } => {
+            BabelTLV::Update {
+                plen,
+                interval,
+                seqno,
+                metric,
+                prefix,
+                router_id,
+            } => {
                 self.metric = metric;
-                self.seqno = seqno; 
-            },
+                self.seqno = seqno;
+            }
             _ => {
                 panic!("Received update with invalid TLV");
             }
@@ -61,9 +82,8 @@ impl RouteEntry {
 
     pub fn is_retracted(&self) -> bool {
         self.metric == 0xFFFF
-    } 
+    }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
@@ -90,6 +110,3 @@ impl RoutingTable {
         self.table.get(key)
     }
 }
-
-
-

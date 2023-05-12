@@ -4,15 +4,16 @@ use crate::{
         DataPacket,
     },
     peer::Peer,
-    routing_table::{RouteEntry, RouteKey, RoutingTable, self},
-    source_table::{SourceKey, SourceTable, FeasibilityDistance, self}, timers::{Timer, self},
+    routing_table::{self, RouteEntry, RouteKey, RoutingTable},
+    source_table::{self, FeasibilityDistance, SourceKey, SourceTable},
+    timers::{self, Timer},
 };
+use rand::Rng;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
 };
-use rand::Rng;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
 
@@ -35,7 +36,6 @@ pub struct Router {
 
 impl Router {
     pub fn new(node_tun: Arc<Tun>) -> Self {
-
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
@@ -52,13 +52,19 @@ impl Router {
             router_seqno: 0,
         };
 
-        tokio::spawn(Router::handle_incoming_control_packet(router.clone(), router_control_rx));
-        tokio::spawn(Router::handle_incoming_data_packets(router.clone(), router_data_rx, router_data_tx.clone()));
+        tokio::spawn(Router::handle_incoming_control_packet(
+            router.clone(),
+            router_control_rx,
+        ));
+        tokio::spawn(Router::handle_incoming_data_packets(
+            router.clone(),
+            router_data_rx,
+            router_data_tx.clone(),
+        ));
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
 
         // loops over all peers and adds routing table entries for each peer
         tokio::spawn(Router::initialize_peer_route_entries(router.clone()));
-
 
         // propagate routes
         tokio::spawn(Router::propagate_routes(router.clone()));
@@ -66,7 +72,10 @@ impl Router {
         router
     }
 
-    async fn handle_incoming_control_packet(self, mut router_control_rx: UnboundedReceiver<ControlStruct>) {
+    async fn handle_incoming_control_packet(
+        self,
+        mut router_control_rx: UnboundedReceiver<ControlStruct>,
+    ) {
         loop {
             while let Some(control_struct) = router_control_rx.recv().await {
                 match control_struct.control_packet.body.tlv_type {
@@ -74,20 +83,29 @@ impl Router {
                     BabelTLVType::Ack => todo!(),
                     BabelTLVType::Hello => Self::handle_incoming_hello(control_struct),
                     BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
-                    BabelTLVType::NextHop => todo!(), 
+                    BabelTLVType::NextHop => todo!(),
                     BabelTLVType::Update => {
                         let mut source_table = self.source_table.lock().unwrap();
                         let mut routing_table = self.routing_table.lock().unwrap();
-                        Self::handle_incoming_update(self.clone(), &mut source_table, &mut routing_table, control_struct); 
-                    },
+                        Self::handle_incoming_update(
+                            self.clone(),
+                            &mut source_table,
+                            &mut routing_table,
+                            control_struct,
+                        );
+                    }
                     BabelTLVType::RouteReq => todo!(),
                     BabelTLVType::SeqnoReq => todo!(),
                 }
             }
-        } 
+        }
     }
 
-    async fn handle_incoming_data_packets(self, mut router_data_rx: UnboundedReceiver<DataPacket>, router_data_tx: UnboundedSender<DataPacket>) {
+    async fn handle_incoming_data_packets(
+        self,
+        mut router_data_rx: UnboundedReceiver<DataPacket>,
+        router_data_tx: UnboundedSender<DataPacket>,
+    ) {
         // If the destination IP of the data packet matches with the IP address of this node's TUN interface
         // we should forward the data packet towards the TUN interface.
         // If the destination IP doesn't match, we need to lookup if we have a matching peer instance
@@ -98,31 +116,33 @@ impl Router {
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
                 let dest_ip = data_packet.dest_ip;
-                println!("Received data packet with destination: {}", data_packet.dest_ip);
+                println!(
+                    "Received data packet with destination: {}",
+                    data_packet.dest_ip
+                );
 
                 if dest_ip == tun_addr {
                     match self.node_tun.send(&data_packet.raw_data).await {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => eprintln!("Error sending data packet to TUN interface: {:?}", e),
                     }
                 } else {
                     // router_data_tx.send(data_packet).unwrap();
                     // DO BABEL route selection
                     // kijke nr next-hop en gwn sturenn naar de peer die daarmee overeenkomt
-                    
+
                     // select the best route towards the destination
                     let best_route = self.select_best_route(IpAddr::V4(dest_ip));
 
                     // get the peer corresponding to the best the best route
                     let peer = self.get_peer_by_ip(best_route.unwrap().next_hop).unwrap();
-                    if let Err(e) = peer.to_peer_data.send(data_packet) {
+                    if let Err(e) = peer.send_data_packet(data_packet) {
                         eprintln!("Error sending data packet to peer: {:?}", e);
                     }
                 }
             }
         }
     }
-
 
     async fn start_periodic_hello_sender(self) {
         loop {
@@ -131,13 +151,13 @@ impl Router {
                 // create a new hello packet for this peer
                 let hello = ControlPacket::new_hello(peer, HELLO_INTERVAL);
                 // set the last hello timestamp for this peer
-                peer.time_last_received_hello = tokio::time::Instant::now();
+                peer.set_time_last_received_hello(tokio::time::Instant::now());
                 // send the hello packet to the peer
-                println!("Sending hello to peer: {:?}", peer.overlay_ip);
-                if let Err(error) = peer.to_peer_control.send(hello) {
+                println!("Sending hello to peer: {:?}", peer.overlay_ip());
+                if let Err(error) = peer.send_control_packet(hello) {
                     eprintln!("Error sending hello to peer: {}", error);
                 }
-            } 
+            }
         }
     }
 
@@ -149,69 +169,90 @@ impl Router {
     fn handle_incoming_ihu(&self, control_struct: ControlStruct) {
         let mut source_peer = self.get_source_peer_from_control_struct(control_struct);
         // reset the IHU timer associated with the peer
-        source_peer.ihu_timer.reset(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
+        source_peer.reset_ihu_timer(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
         // measure time between Hello and and IHU and set the link cost
-        source_peer.link_cost = tokio::time::Instant::now().duration_since(source_peer.time_last_received_hello).as_millis() as u16;
-        println!("Link cost for peer {:?} set to {}", source_peer.overlay_ip, source_peer.link_cost);
+        let time_diff = tokio::time::Instant::now()
+            .duration_since(source_peer.time_last_received_hello())
+            .as_millis();
 
-        println!("IHU timer for peer {:?} reset", source_peer.overlay_ip);
+        source_peer.set_link_cost(time_diff as u16);
+        println!(
+            "Link cost for peer {:?} set to {}",
+            source_peer.overlay_ip(), source_peer.link_cost()
+        );
+
+        println!("IHU timer for peer {:?} reset", source_peer.overlay_ip());
     }
 
-    fn handle_incoming_update(router: Router, source_table: &mut SourceTable, routing_table: &mut RoutingTable, update: ControlStruct) {
+    fn handle_incoming_update(
+        router: Router,
+        source_table: &mut SourceTable,
+        routing_table: &mut RoutingTable,
+        update: ControlStruct,
+    ) {
         if source_table.is_feasible(&update) {
             println!("incoming update is feasible");
             source_table.update(&update);
 
-
             // get routing table entry for the source of the update
             match update.control_packet.body.tlv {
-                BabelTLV::Update { plen, interval, seqno, metric, prefix, router_id } => {
-
-
+                BabelTLV::Update {
+                    plen,
+                    interval,
+                    seqno,
+                    metric,
+                    prefix,
+                    router_id,
+                } => {
                     let source_ip = update.src_overlay_ip;
 
                     // get RouteEntry for the source of the update
-                    if let Some(route_entry) = routing_table.table.get_mut(&RouteKey { prefix, plen, neighbor: source_ip }) {
+                    if let Some(route_entry) = routing_table.table.get_mut(&RouteKey {
+                        prefix,
+                        plen,
+                        neighbor: source_ip,
+                    }) {
                         route_entry.update(update);
                     } else {
                         let source_key = SourceKey {
                             prefix,
-                            plen, 
-                            router_id, 
+                            plen,
+                            router_id,
                         };
-                        let feas_dist = FeasibilityDistance(metric, seqno); 
-    
+                        let feas_dist = FeasibilityDistance(metric, seqno);
+
                         // create the source table entry
                         source_table.insert(source_key.clone(), feas_dist);
-    
+
                         // now we can create the routing table entry
                         let route_key = RouteKey {
                             prefix, // prefix is peer that ANNOUNCED the route
-                            plen, 
+                            plen,
                             neighbor: update.src_overlay_ip,
                         };
 
                         let peer = router.get_peer_by_ip(update.src_overlay_ip).unwrap();
 
-                        let route_entry = RouteEntry {
-                            source: source_key,
-                            metric: metric, // + peer.link_cost, --> TODO!!!
-                            seqno: seqno, 
-                            neighbor: peer, 
-                            next_hop: update.src_overlay_ip,
-                            selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
-                        };
+                        let route_entry = RouteEntry::new(
+                            source_key,
+                            peer.clone(), 
+                            peer.link_cost() + metric, 
+                            seqno, 
+                            update.src_overlay_ip, 
+                            true, 
+                            router
+                        );
+                        
                         // create the routing table entry
                         routing_table.insert(route_key, route_entry);
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             }
-
         } else {
             println!("incoming update is NOT feasible");
             // received update is not feasible
-            // unselect to route if it was selected 
+            // unselect to route if it was selected
         }
     }
 
@@ -219,8 +260,8 @@ impl Router {
         self.peer_interfaces.lock().unwrap().push(peer);
     }
 
-    pub fn get_node_tun_address(&self) -> Ipv4Addr {
-        self.node_tun.address().unwrap()
+    pub fn get_node_tun_address(&self) -> IpAddr {
+        self.node_tun.address().unwrap().into()
     }
 
     pub fn get_peer_interfaces(&self) -> Vec<Peer> {
@@ -229,12 +270,9 @@ impl Router {
 
     pub fn get_peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
         let peers = self.get_peer_interfaces();
-        let matching_peer = peers.iter().find(|peer| peer.overlay_ip == peer_ip);
+        let matching_peer = peers.iter().find(|peer| peer.overlay_ip() == peer_ip);
 
-        match matching_peer {
-            Some(peer) => Some(peer.clone()),
-            None => None,
-        }
+        matching_peer.map(Clone::clone)
     }
 
     fn get_source_peer_from_control_struct(&self, control_struct: ControlStruct) -> Peer {
@@ -246,7 +284,10 @@ impl Router {
     pub fn print_routes(&self) {
         let routing_table = self.routing_table.lock().unwrap();
         for route in routing_table.table.iter() {
-            println!("Route: {:?}/{:?} (with next-hop: {:?}, metric: {})", route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric);
+            println!(
+                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {})",
+                route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric
+            );
             println!("As advertised by: {:?}", route.1.source.router_id);
         }
     }
@@ -261,14 +302,14 @@ impl Router {
             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
                 // we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
-                if peer.link_cost == (u16::MAX - 1) {
+                if peer.link_cost() == (u16::MAX - 1) {
                     // before we can create a routing table entry, we need to create a source table entry
                     let source_key = SourceKey {
-                        prefix: IpAddr::V4(peer.overlay_ip),
+                        prefix: peer.overlay_ip(),
                         plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
                         router_id: 0, // we set all router ids to 0 temporarily
                     };
-                    let feas_dist = FeasibilityDistance(peer.link_cost, 0); 
+                    let feas_dist = FeasibilityDistance(peer.link_cost(), 0);
 
                     // create the source table entry
                     self.source_table
@@ -278,31 +319,32 @@ impl Router {
 
                     // now we can create the routing table entry
                     let route_key = RouteKey {
-                        prefix: IpAddr::V4(peer.overlay_ip),
+                        prefix: peer.overlay_ip(),
                         plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
-                        neighbor: IpAddr::V4(peer.overlay_ip),
+                        neighbor: peer.overlay_ip(),
                     };
                     let route_entry = RouteEntry {
                         source: source_key,
                         neighbor: peer.clone(),
-                        metric: peer.link_cost,
+                        metric: peer.link_cost(),
                         seqno: 0, // we set the seqno to 0 for now
-                        next_hop: IpAddr::V4(peer.overlay_ip),
+                        next_hop: peer.overlay_ip(),
                         selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
                     };
                     // create the routing table entry
-                    self.routing_table.lock().unwrap().insert(route_key, route_entry);
+                    self.routing_table
+                        .lock()
+                        .unwrap()
+                        .insert(route_key, route_entry);
                 }
             }
         }
-
     }
 
     // routing table updates are send periodically to all directly connected peers
     // updates are used to advertise new routes or the retract existing routes (retracting when the metric is set to 0xFFFF)
     // this function is run when the route_update timer expires
     pub async fn propagate_routes(self) {
-        
         loop {
             // routes are propagated every 10 secs
             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -312,7 +354,7 @@ impl Router {
 
             for (key, entry) in router_table.table.iter() {
                 for peer in peers.iter() {
-                    let update = ControlPacket::new_update (
+                    let update = ControlPacket::new_update(
                         key.plen,
                         UPDATE_INTERVAL as u16,
                         entry.seqno,
@@ -321,21 +363,22 @@ impl Router {
                         entry.source.router_id,
                     );
 
-                    if peer.to_peer_control.send(update).is_err() {
+                    if peer.send_control_packet(update).is_err() {
                         println!("route update packet dropped");
                     }
-                } 
+                }
             }
         }
     }
 
-    pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry>{
+    pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
         // first look in the routing table for all routekeys where prefix == dest_ip
         let routing_table = self.routing_table.lock().unwrap();
         let mut matching_routes: Vec<&RouteEntry> = Vec::new();
 
         for route in routing_table.table.iter() {
-            if route.0.prefix == dest_ip { // NOTE -- this is not correct, we need to check if the dest_ip is in the prefix range
+            if route.0.prefix == dest_ip {
+                // NOTE -- this is not correct, we need to check if the dest_ip is in the prefix range
                 matching_routes.push(route.1);
                 println!("Found matching route with next-hop: {:?}", route.1.next_hop);
             }
@@ -359,5 +402,3 @@ impl Router {
         }
     }
 }
-
-

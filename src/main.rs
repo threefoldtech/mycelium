@@ -4,9 +4,13 @@ use etherparse::{IpHeader, PacketHeaders};
 use packet::DataPacket;
 use router::Router;
 use routing_table::{RouteEntry, RouteKey};
-use source_table::{SourceKey, FeasibilityDistance};
+use source_table::{FeasibilityDistance, SourceKey};
+use std::{
+    error::Error,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 use tokio::io::AsyncBufReadExt;
-use std::{error::Error, net::{Ipv4Addr, SocketAddr, IpAddr}, sync::Arc};
 
 use crate::peer::Peer;
 
@@ -20,7 +24,7 @@ mod routing_table;
 mod source_table;
 mod timers;
 
-const LINK_MTU: usize = 1500;
+const LINK_MTU: usize = 1420;
 
 #[derive(Parser)]
 struct Cli {
@@ -44,31 +48,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
             panic!("Error setting up node: {}", e);
         }
     };
-    
+
     let static_peers = cli.static_peers;
-    
-    // Creating a new Router instance 
+
+    // Creating a new Router instance
     let router = Arc::new(router::Router::new(node_tun.clone()));
     // Creating a new PeerManager instance
-    let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(router.clone(), static_peers);
+    let _peer_manager: peer_manager::PeerManager =
+        peer_manager::PeerManager::new(router.clone(), static_peers);
 
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
     {
         let node_tun = node_tun.clone();
         let router = router.clone();
-    
+
         tokio::spawn(async move {
             loop {
                 let mut buf = BytesMut::zeroed(LINK_MTU);
-                if let Err(e) = node_tun.recv(&mut buf).await {
-                    eprintln!("Error reading from TUN: {}", e);
-                    continue;
+
+                match node_tun.recv(&mut buf).await {
+                    Ok(n) => {
+                        buf.truncate(n);
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading from TUN: {}", e);
+                        continue;
+                    }
                 }
-    
-                let n = buf.len();
-                buf.truncate(n);
-    
+
                 let packet = match PacketHeaders::from_ip_slice(&buf) {
                     Ok(packet) => packet,
                     Err(e) => {
@@ -77,11 +85,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                 };
-    
+
                 if let Some(IpHeader::Version4(header, _)) = packet.ip {
                     let dest_addr = Ipv4Addr::from(header.destination);
                     println!("Destination IPv4 address: {}", dest_addr);
-    
+
                     let data_packet = DataPacket {
                         dest_ip: dest_addr,
                         raw_data: buf.to_vec(),
@@ -95,7 +103,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         });
     }
-    
+
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut line = String::new();
     let router = router.clone();
@@ -113,7 +121,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.get_peer_interfaces() {
-                        println!("Peer: {:?}, with link cost: {}", p.overlay_ip, p.link_cost);
+                        println!("Peer: {:?}, with link cost: {}", p.overlay_ip(), p.link_cost());
                     }
 
                     println!("\n\n");
@@ -138,4 +146,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-

@@ -2,7 +2,7 @@ use crate::peer::Peer;
 use crate::router::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr, IpAddr, Ipv6Addr};
 use std::sync::{Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::{net::TcpStream};
@@ -41,17 +41,38 @@ impl PeerManager {
 
             for peer_addr in config.peers {
                 if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
-                    let mut buffer = [0u8; 4];
+                    let mut buffer = [0u8; 17];
                     peer_stream.read_exact(&mut buffer).await.unwrap();
-                    let received_overlay_ip = Ipv4Addr::from(buffer);
+                    let received_overlay_ip = match buffer[0] {
+                        0 => {
+                            IpAddr::from(<&[u8] as TryInto<[u8;4]>>::try_into(&buffer[1..5]).unwrap())
+                        },
+                        1 => {
+                            IpAddr::from(<&[u8] as TryInto<[u8;16]>>::try_into(&buffer[1..]).unwrap())
+                        }
+                        _ => {
+                            eprintln!("Invalid address encoding byte");
+                            continue
+                        }
+                    };
 
                     println!(
                         "Received overlay IP from other node: {:?}",
                         received_overlay_ip
                     );
 
-                    let ip_bytes = self.router.get_node_tun_address().octets();
-                    peer_stream.write_all(&ip_bytes).await.unwrap();
+                    let mut buf = [0u8; 17];
+                    match self.router.get_node_tun_address() {
+                        IpAddr::V4(tun_addr) => {
+                            buf[0] = 0;
+                            buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+                        },
+                        IpAddr::V6(tun_addr) => {
+                            buf[0] = 1;
+                            buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+                        }
+                    }
+                    peer_stream.write_all(&buf).await.unwrap();
 
                     let peer_stream_ip = peer_addr.ip();
                     if let Ok(new_peer) = Peer::new(
@@ -77,17 +98,39 @@ impl PeerManager {
             if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
                 println!("stream established");
 
-                let mut buffer = [0u8; 4];
+                let mut buffer = [0u8; 17];
                 peer_stream.read_exact(&mut buffer).await.unwrap();
-                let received_overlay_ip = Ipv4Addr::from(buffer);
-
+                let received_overlay_ip = match buffer[0] {
+                    0 => {
+                        IpAddr::from(<&[u8] as TryInto<[u8;4]>>::try_into(&buffer[1..5]).unwrap())
+                    },
+                    1 => {
+                        IpAddr::from(<&[u8] as TryInto<[u8;16]>>::try_into(&buffer[1..]).unwrap())
+                    }
+                    _ => {
+                        eprintln!("Invalid address encoding byte");
+                        continue
+                    }
+                };
                 println!(
                     "3: Received overlay IP from other node: {:?}",
                     received_overlay_ip
                 );
 
-                let ip_bytes = self.router.get_node_tun_address().octets();
-                peer_stream.write_all(&ip_bytes).await.unwrap();
+                let mut buf = [0u8; 17];
+
+                match self.router.get_node_tun_address() {
+                    IpAddr::V4(tun_addr) => {
+                        buf[0] = 0;
+                        buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+                    },
+                    IpAddr::V6(tun_addr) => {
+                        buf[0] = 1;
+                        buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+                    }
+                }
+
+                peer_stream.write_all(&buf).await.unwrap();
 
                 let peer_stream_ip = peer_addr.ip();
                 if let Ok(new_peer) = Peer::new(
@@ -126,14 +169,41 @@ impl PeerManager {
 
     async fn start_reverse_peer_exchange(mut stream: TcpStream, router: Arc<Router>) {
 
+        // Steps:
         // 1. Send own TUN address over the stream
-        let ip_bytes = router.get_node_tun_address().octets();
-        stream.write_all(&ip_bytes).await.unwrap();
-
         // 2. Read other node's TUN address from the stream
-        let mut buffer = [0u8; 4];
-        stream.read_exact(&mut buffer).await.unwrap();
-        let received_overlay_ip = Ipv4Addr::from(buffer);
+
+
+        let mut buf = [0u8; 17];
+
+        match router.get_node_tun_address() {
+            IpAddr::V4(tun_addr) => {
+                buf[0] = 0;
+                buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+            },
+            IpAddr::V6(tun_addr) => {
+                buf[0] = 1;
+                buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+            }
+        }
+
+        stream.write_all(&buf).await.unwrap();
+
+
+
+        stream.read_exact(&mut buf).await.unwrap();
+        let received_overlay_ip = match buf[0] {
+            0 => {
+                IpAddr::from(<&[u8] as TryInto<[u8;4]>>::try_into(&buf[1..5]).unwrap())
+            },
+            1 => {
+                IpAddr::from(<&[u8] as TryInto<[u8;16]>>::try_into(&buf[1..]).unwrap())
+            }
+            _ => {
+                eprintln!("Invalid address encoding byte");
+                return; 
+            }
+        };
         println!("Received overlay IP from other node: {:?}", received_overlay_ip);
 
         // Create new Peer instance
