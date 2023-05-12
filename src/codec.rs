@@ -39,7 +39,10 @@ impl Decoder for PacketCodec {
             let packet_type = match packet_type_byte {
                 0 => PacketType::DataPacket,
                 1 => PacketType::ControlPacket,
-                _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid packet type")),
+                _ => {
+                    println!("buffer: {:?}", &src[..src.remaining()]);
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid packet type")),
+                }
             };
 
             packet_type

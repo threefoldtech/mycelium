@@ -321,7 +321,9 @@ impl Router {
                         entry.source.router_id,
                     );
 
-                    peer.to_peer_control.send(update).unwrap();
+                    if peer.to_peer_control.send(update).is_err() {
+                        println!("route update packet dropped");
+                    }
                 } 
             }
         }
