@@ -60,10 +60,8 @@ impl RouteEntry {
         // the update is assumed to be feasible here
         match update.control_packet.body.tlv {
             BabelTLV::Update { seqno, metric, .. } => {
-                println!("Update starting, entry is now {:?}", self);
                 self.metric = metric;
                 self.seqno = seqno;
-                println!("Update finished, entry is now {:?}", self);
             }
             _ => {
                 panic!("Received update with invalid TLV");
@@ -97,8 +95,8 @@ impl RoutingTable {
         //println!("Added route to routing table: {:?}", self.table);
     }
 
-    pub fn remove(&mut self, key: &RouteKey) {
-        self.table.remove(key);
+    pub fn remove(&mut self, key: &RouteKey) -> Option<RouteEntry> {
+        self.table.remove(key)
     }
 
     pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {

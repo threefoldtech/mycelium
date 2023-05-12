@@ -191,7 +191,6 @@ impl Router {
         routing_table: &mut RoutingTable,
         update: ControlStruct,
     ) {
-        println!("Received update {:?}", update);
         if source_table.is_feasible(&update) {
             println!("incoming update is feasible");
             source_table.update(&update);
@@ -305,7 +304,7 @@ impl Router {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             for peer in self.peer_interfaces.lock().unwrap().iter_mut() {
                 // we check for the u16::MAX - 1 value, as this is the value that the link cost is initialized to
-                if peer.link_cost() == (u16::MAX - 1) {
+                //if peer.link_cost() == u16::MAX - 1 {
                     // before we can create a routing table entry, we need to create a source table entry
                     let source_key = SourceKey {
                         prefix: peer.overlay_ip(),
@@ -326,11 +325,15 @@ impl Router {
                         plen: 32, // we set the prefix length to 32 for now, this means that each peer is a /32 network (so only route to the peer itself)
                         neighbor: peer.overlay_ip(),
                     };
+
+                    let seqno = if let Some(re) = self.routing_table.lock().unwrap().remove(&route_key) {
+                        re.seqno
+                    } else { 0 };
                     let route_entry = RouteEntry {
                         source: source_key,
                         neighbor: peer.clone(),
                         metric: peer.link_cost(),
-                        seqno: 0, // we set the seqno to 0 for now
+                        seqno: seqno, // we set the seqno to 0 for now
                         next_hop: peer.overlay_ip(),
                         selected: true, // set selected always to true for now as we have manually decided the topology to only have p2p links
                     };
@@ -339,7 +342,7 @@ impl Router {
                         .lock()
                         .unwrap()
                         .insert(route_key, route_entry);
-                }
+                //}
             }
         }
     }
@@ -362,12 +365,10 @@ impl Router {
                         key.plen,
                         UPDATE_INTERVAL as u16,
                         entry.seqno,
-                        entry.metric,
+                        entry.metric + entry.neighbor.link_cost(),
                         key.prefix,
                         entry.source.router_id,
                     );
-
-                    println!("sending udpate packet");
 
                     if peer.send_control_packet(update).is_err() {
                         println!("route update packet dropped");
