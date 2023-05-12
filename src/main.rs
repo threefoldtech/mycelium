@@ -108,10 +108,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(_) => {
                     // Remove trailing newline
                     line.pop();
-                    println!("Current routes \n: {}", line);
+                    println!("----------- Current routes -----------{}\n", line);
                     router.print_routes();
 
-                    println!("Current peers: \n: {:?}", router.get_peer_interfaces());
+                    println!("\n----------- Current peers: -----------");
+                    for p in router.get_peer_interfaces() {
+                        println!("Peer: {:?}", p.overlay_ip);
+                    }
+
+                    println!("\n\n");
                 }
                 Err(e) => {
                     eprintln!("Error reading line: {}", e);

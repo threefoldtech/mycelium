@@ -98,7 +98,7 @@ impl Router {
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
                 let dest_ip = data_packet.dest_ip;
-                println!("Received data packet: {:?}", data_packet);
+                println!("Received data packet with destination: {}", data_packet.dest_ip);
 
                 if dest_ip == tun_addr {
                     match self.node_tun.send(&data_packet.raw_data).await {
@@ -112,7 +112,12 @@ impl Router {
                     
                     // select the best route towards the destination
                     let best_route = self.select_best_route(IpAddr::V4(dest_ip));
-                    println!("Best route: {:?}", best_route);
+
+                    // get the peer corresponding to the best the best route
+                    let peer = self.get_peer_by_ip(best_route.unwrap().next_hop).unwrap();
+                    if let Err(e) = peer.to_peer_data.send(data_packet) {
+                        eprintln!("Error sending data packet to peer: {:?}", e);
+                    }
                 }
             }
         }
@@ -330,7 +335,7 @@ impl Router {
         for route in routing_table.table.iter() {
             if route.0.prefix == dest_ip { // NOTE -- this is not correct, we need to check if the dest_ip is in the prefix range
                 matching_routes.push(route.1);
-                println!("Found matching route: {:?}", route.1);
+                println!("Found matching route with next-hop: {:?}", route.1.next_hop);
             }
         }
 
