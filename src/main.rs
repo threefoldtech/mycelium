@@ -52,7 +52,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let static_peers = cli.static_peers;
 
     // Creating a new Router instance
-    let router = Arc::new(router::Router::new(node_tun.clone(), vec![StaticRoute::new(cli.tun_addr.into())]));
+    let router = Arc::new(router::Router::new(
+        node_tun.clone(),
+        vec![StaticRoute::new(cli.tun_addr.into())],
+    ));
     // Creating a new PeerManager instance
     let _peer_manager: peer_manager::PeerManager =
         peer_manager::PeerManager::new(router.clone(), static_peers);
