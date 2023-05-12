@@ -179,7 +179,7 @@ impl BabelTLVType {
             Self::Hello => (4, 4),
             Self::IHU => (18, 6),
             Self::NextHop => (16, 4),
-            Self::Update => (28+1, 16+1), // +1 for ae
+            Self::Update => (31+1, 19+1), // +1 for ae
             Self::RouteReq => (17, 5),
             Self::SeqnoReq => (21, 9),
         };
