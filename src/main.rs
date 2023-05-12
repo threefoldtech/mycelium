@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.get_peer_interfaces() {
-                        println!("Peer: {:?}", p.overlay_ip);
+                        println!("Peer: {:?}, with link cost: {}", p.overlay_ip, p.link_cost);
                     }
 
                     println!("\n\n");

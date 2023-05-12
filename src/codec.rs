@@ -44,11 +44,12 @@ impl Decoder for PacketCodec {
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid packet type"));
                 }
             };
+            
+            self.packet_type = Some(packet_type);
 
             packet_type
         };
 
-        self.packet_type = Some(packet_type);
 
         // Decode packet based on determined packet_type
         match packet_type {
