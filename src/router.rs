@@ -293,7 +293,7 @@ impl Router {
         } else {
             let route_entry = routing_table.table.get_mut(&route_key).unwrap();
             println!("current metric: {}, new metric: {}", route_entry.metric, new_metric);
-            if route_entry.metric < new_metric {
+            if route_entry.metric > new_metric {
                return false
             }
             return true
