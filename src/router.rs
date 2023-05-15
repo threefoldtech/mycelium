@@ -256,10 +256,7 @@ impl Router {
                         };
 
                         let peer = router.get_peer_by_ip(update.src_overlay_ip).unwrap();
-
                         let should_be_selected = Router::set_incoming_update_selected(routing_table, route_key.clone(), metric);                 
-
-
                         let mut route_entry = RouteEntry::new(
                             source_key,
                             peer.clone(),
@@ -286,12 +283,18 @@ impl Router {
     
     // this function shoud check if an incoming update should be selected or not
     pub fn set_incoming_update_selected(routing_table: &mut RoutingTable, route_key: RouteKey, new_metric: u16) -> bool {
-        let route_entry = routing_table.table.get_mut(&route_key).unwrap();
-        println!("current metric: {}, new metric: {}", route_entry.metric, new_metric);
-        if route_entry.metric < new_metric {
-           return false
+
+        // first check if the routing table has an entry for that key or not, if it has no entry return true
+        if !routing_table.table.contains_key(&route_key) {
+            return true
+        } else {
+            let route_entry = routing_table.table.get_mut(&route_key).unwrap();
+            println!("current metric: {}, new metric: {}", route_entry.metric, new_metric);
+            if route_entry.metric < new_metric {
+               return false
+            }
+            return true
         }
-        return true
     }
 
 
