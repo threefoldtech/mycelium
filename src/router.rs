@@ -73,14 +73,6 @@ impl Router {
         Ok(router)
     }
 
-    // pub fn source_table(&self) -> SourceTable {
-    //     self.inner.read().unwrap().source_table
-    // }
-
-    // pub fn routing_table(&self) -> RoutingTable {
-    //     self.inner.read().unwrap().routing_table
-    // }
-
     pub fn router_id(&self) -> u64 {
         self.inner.read().unwrap().router_id
     }
@@ -128,10 +120,7 @@ impl Router {
     // }
 
     pub fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
-        let peers = self.peer_interfaces();
-        let matching_peer = peers.iter().find(|peer| peer.overlay_ip() == peer_ip);
-
-        matching_peer.map(Clone::clone)
+        self.inner.read().unwrap().peer_by_ip(peer_ip)
     }
 
     pub fn source_peer_from_control_struct(&self, control_struct: ControlStruct) -> Option<Peer> {
@@ -177,11 +166,7 @@ impl Router {
         }
     }
 
-    pub fn add_static_route(&self, static_route: StaticRoute) {
-        let mut static_routes = self.inner.write().unwrap().static_routes.clone();
-        static_routes.push(static_route);
-        self.inner.write().unwrap().static_routes = static_routes;
-    }
+
 
     pub fn print_routes(&self) {
 
@@ -226,7 +211,7 @@ impl Router {
     }
 
     fn handle_incoming_ihu(&self, control_struct: ControlStruct) {
-        if let Some(mut source_peer) = self.source_peer_from_control_struct(control_struct) {
+        if let Some(source_peer) = self.source_peer_from_control_struct(control_struct) {
             // reset the IHU timer associated with the peer
             source_peer.reset_ihu_timer(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
             // measure time between Hello and and IHU and set the link cost
@@ -294,8 +279,8 @@ impl Router {
                             neighbor: update.src_overlay_ip,
                         };
 
-                        let peer = self.peer_by_ip(update.src_overlay_ip).unwrap();
-                        let mut route_entry = RouteEntry::new(
+                        let peer = inner.peer_by_ip(update.src_overlay_ip).unwrap();
+                        let route_entry = RouteEntry::new(
                             source_key,
                             peer.clone(),
                             metric,
@@ -342,12 +327,13 @@ impl Router {
     async fn handle_incoming_data_packet(self, mut router_data_rx: UnboundedReceiver<DataPacket>) {
         // If destination IP of packet is same as TUN interface IP, send to TUN interface
         // If destination IP of packet is not same as TUN interface IP, send to peer with matching overlay IP
-        let node_tun_addr = self.node_tun_addr();
+        let node_tun = self.node_tun();
+        let node_tun_addr = node_tun.address().unwrap();
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
                 match data_packet.dest_ip {
                     x if x == node_tun_addr => {
-                        match self.node_tun().send(&data_packet.raw_data).await {
+                        match node_tun.send(&data_packet.raw_data).await {
                             Ok(_) => {}
                             Err(e) => {
                                 eprintln!("Error sending data packet to TUN interface: {:?}", e)
@@ -378,6 +364,7 @@ impl Router {
 
             let mut inner = self.inner.write().unwrap();
 
+            let router_id = inner.router_id;
             let peers = inner.peer_interfaces.clone();
             for route in inner.static_routes.iter_mut() {
                 route.seqno += 1;
@@ -388,7 +375,7 @@ impl Router {
                         route.seqno,
                         peer.link_cost(),
                         route.prefix,
-                        self.router_id(),
+                        router_id,
                     );
 
                     if peer.send_control_packet(update).is_err() {
@@ -489,5 +476,11 @@ impl RouterInner {
         };
 
         Ok(router_inner)
+    }
+
+    fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
+        let matching_peer = self.peer_interfaces.iter().find(|peer| peer.overlay_ip() == peer_ip);
+
+        matching_peer.map(Clone::clone)
     }
 }
