@@ -225,19 +225,22 @@ impl Router {
                     router_id,
                 } => {
                     println!(
-                        "Received update from {} for {:?} with seqno {}",
-                        router_id, prefix, seqno
+                        "Received update from {} for {:?} with seqno {} and metric {}",
+                        router_id, prefix, seqno, metric
                     );
                     let source_ip = update.src_overlay_ip;
 
                     // get RouteEntry for the source of the update
-                    if let Some(route_entry) = routing_table.table.get_mut(&RouteKey {
+                    let route_key = &RouteKey {
                         prefix,
                         plen,
                         neighbor: source_ip,
-                    }) {
-                        route_entry.update(update);
-                    } else {
+                    };
+                    if let Some(route_entry) = routing_table.clone().table.get_mut(route_key) {
+                        let should_be_selected = Router::set_incoming_update_selected(routing_table, route_key.clone(), metric);
+                        route_entry.update(update, should_be_selected);
+                    }
+                    else {
                         let source_key = SourceKey {
                             prefix,
                             plen,
@@ -256,14 +259,13 @@ impl Router {
                         };
 
                         let peer = router.get_peer_by_ip(update.src_overlay_ip).unwrap();
-                        let should_be_selected = Router::set_incoming_update_selected(routing_table, route_key.clone(), metric);                 
                         let mut route_entry = RouteEntry::new(
                             source_key,
                             peer.clone(),
                             metric,
                             seqno,
                             update.src_overlay_ip,
-                            should_be_selected,
+                            true, // for new entries the route is always selected
                             router,
                         );
 
@@ -286,6 +288,7 @@ impl Router {
 
         // first check if the routing table has an entry for that key or not, if it has no entry return true
         if !routing_table.table.contains_key(&route_key) {
+            println!("no entry for this route key, returning true");
             return true
         } else {
             let route_entry = routing_table.table.get_mut(&route_key).unwrap();
