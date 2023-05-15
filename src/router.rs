@@ -310,8 +310,8 @@ impl Router {
         for route in routing_table.table.iter() {
             println!("Route key: {:?}", route.0);
             println!(
-                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {})",
-                route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric
+                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
+                route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
             );
             println!("As advertised by: {:?}", route.1.source.router_id);
         }
@@ -378,7 +378,7 @@ impl Router {
     // this function is run when the route_update timer expires
     pub async fn propagate_routes(self) {
         loop {
-            // routes are propagated every 10 secs
+            // routes are propagated every 3 secs
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             let mut router_table = self.routing_table.lock().unwrap();
@@ -403,12 +403,13 @@ impl Router {
                 }
             }
 
-            for (key, entry) in router_table.table.iter_mut().filter(|(key, _)| {
-                for sr in static_routes.iter() {
-                    if key.prefix == sr.prefix && key.plen == sr.plen {
-                        return false;
+            for (key, entry) in router_table.table.iter_mut()
+                .filter(|(key, _)| { // Filter out the static routes
+                    for sr in static_routes.iter() {
+                        if key.prefix == sr.prefix && key.plen == sr.plen {
+                            return false;
+                        }
                     }
-                }
                 true
             }) {
                 entry.seqno += 1;
@@ -432,6 +433,9 @@ impl Router {
                     }
                 }
             }
+
+
+            // FILTER VOOR SELECTED ROUTE NODIG --> we sturen nu alle routes maar eignelijk moeten we enkel de selected routes gaan propagaten
         }
     }
 

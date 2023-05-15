@@ -8,10 +8,6 @@ use crate::{
     timers::Timer,
 };
 
-const HELLO_INTERVAL: u16 = 4;
-const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
-const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RouteKey {
     pub prefix: IpAddr,
@@ -49,12 +45,6 @@ impl RouteEntry {
             selected,
         }
     }
-
-    // pub fn update(&mut self, metric: u16, seqno: u16, next_hop: IpAddr) {
-    //     self.metric = metric;
-    //     self.seqno = seqno;
-    //     self.next_hop = next_hop;
-    // }
 
     pub fn update(&mut self, update: ControlStruct) {
         // the update is assumed to be feasible here
