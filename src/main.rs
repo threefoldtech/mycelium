@@ -52,10 +52,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let static_peers = cli.static_peers;
 
     // Creating a new Router instance
-    let router = Arc::new(router::Router::new(
-        node_tun.clone(),
-        vec![StaticRoute::new(cli.tun_addr.into())],
-    ));
+    let router = match router::Router::new(node_tun.clone(), vec![StaticRoute::new(cli.tun_addr.into())]) {
+        Ok(router) => {
+            println!("Router created");
+            router
+        }
+        Err(e) => {
+            panic!("Error creating router: {}", e);
+        }
+    };
+
+
     // Creating a new PeerManager instance
     let _peer_manager: peer_manager::PeerManager =
         peer_manager::PeerManager::new(router.clone(), static_peers);
@@ -63,8 +70,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
     {
-        let node_tun = node_tun.clone();
         let router = router.clone();
+        let node_tun = node_tun.clone();
 
         tokio::spawn(async move {
             loop {
@@ -97,7 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         dest_ip: dest_addr,
                         raw_data: buf.to_vec(),
                     };
-                    if router.router_data_tx.send(data_packet).is_err() {
+                    if router.router_data_tx().send(data_packet).is_err() {
                         eprintln!("Failed to send data_packet");
                     }
                 } else {
@@ -109,7 +116,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut line = String::new();
-    let router = router.clone();
 
     let read_handle = tokio::spawn(async move {
         loop {
@@ -123,7 +129,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     router.print_routes();
 
                     println!("\n----------- Current peers: -----------");
-                    for p in router.get_peer_interfaces() {
+                    for p in router.peer_interfaces() {
                         println!(
                             "Peer: {:?}, with link cost: {}",
                             p.overlay_ip(),

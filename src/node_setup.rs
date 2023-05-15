@@ -1,5 +1,6 @@
 use futures::stream::TryStreamExt;
 use rtnetlink::Handle;
+use core::fmt;
 use std::{error::Error, net::Ipv4Addr, sync::Arc};
 use tokio_tun::{Tun, TunBuilder};
 

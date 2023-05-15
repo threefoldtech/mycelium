@@ -16,11 +16,11 @@ struct PeersConfig {
 
 #[derive(Clone)]
 pub struct PeerManager {
-    pub router: Arc<Router>,
+    pub router: Router,
 }
 
 impl PeerManager {
-    pub fn new(router: Arc<Router>, static_peers_sockets: Vec<SocketAddr>) -> Self {
+    pub fn new(router: Router, static_peers_sockets: Vec<SocketAddr>) -> Self {
         let peer_manager = PeerManager { router };
 
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
@@ -63,7 +63,7 @@ impl PeerManager {
                     );
 
                     let mut buf = [0u8; 17];
-                    match self.router.get_node_tun_address() {
+                    match self.router.node_tun_addr() {
                         IpAddr::V4(tun_addr) => {
                             buf[0] = 0;
                             buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
@@ -78,12 +78,12 @@ impl PeerManager {
                     let peer_stream_ip = peer_addr.ip();
                     if let Ok(new_peer) = Peer::new(
                         peer_stream_ip,
-                        self.router.router_data_tx.clone(),
-                        self.router.router_control_tx.clone(),
+                        self.router.router_data_tx(),
+                        self.router.router_control_tx(),
                         peer_stream,
                         received_overlay_ip,
                     ) {
-                        self.router.add_directly_connected_peer(new_peer);
+                        self.router.add_peer_interface(new_peer);
                     }
                 }
             }
@@ -120,7 +120,7 @@ impl PeerManager {
 
                 let mut buf = [0u8; 17];
 
-                match self.router.get_node_tun_address() {
+                match self.router.node_tun_addr() {
                     IpAddr::V4(tun_addr) => {
                         buf[0] = 0;
                         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
@@ -136,12 +136,12 @@ impl PeerManager {
                 let peer_stream_ip = peer_addr.ip();
                 if let Ok(new_peer) = Peer::new(
                     peer_stream_ip,
-                    self.router.router_data_tx.clone(),
-                    self.router.router_control_tx.clone(),
+                    self.router.router_data_tx(),
+                    self.router.router_control_tx(),
                     peer_stream,
                     received_overlay_ip,
                 ) {
-                    self.router.add_directly_connected_peer(new_peer);
+                    self.router.add_peer_interface(new_peer);
                 }
             }
         }
@@ -165,14 +165,14 @@ impl PeerManager {
         }
     }
 
-    async fn start_reverse_peer_exchange(mut stream: TcpStream, router: Arc<Router>) {
+    async fn start_reverse_peer_exchange(mut stream: TcpStream, router: Router) {
         // Steps:
         // 1. Send own TUN address over the stream
         // 2. Read other node's TUN address from the stream
 
         let mut buf = [0u8; 17];
 
-        match router.get_node_tun_address() {
+        match router.node_tun_addr() {
             IpAddr::V4(tun_addr) => {
                 buf[0] = 0;
                 buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
@@ -203,14 +203,14 @@ impl PeerManager {
         let peer_stream_ip = stream.peer_addr().unwrap().ip();
         let new_peer = Peer::new(
             peer_stream_ip,
-            router.router_data_tx.clone(),
-            router.router_control_tx.clone(),
+            router.router_data_tx(),
+            router.router_control_tx(),
             stream,
             received_overlay_ip,
         );
         match new_peer {
             Ok(new_peer) => {
-                router.add_directly_connected_peer(new_peer);
+                router.add_peer_interface(new_peer);
             }
             Err(e) => {
                 eprintln!("Error creating peer: {}", e);

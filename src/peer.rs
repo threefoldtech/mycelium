@@ -106,6 +106,14 @@ impl Peer {
     }
 }
 
+impl PartialEq for Peer {
+    fn eq(&self, other: &Self) -> bool {
+        self.overlay_ip() == other.overlay_ip()
+    }
+}
+
+
+
 #[derive(Debug)]
 struct PeerInner {
     stream_ip: IpAddr,

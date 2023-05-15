@@ -13,6 +13,8 @@ pub struct SourceKey {
 pub struct FeasibilityDistance(pub u16, pub u16); // (metric, seqno)
 
 // Store (prefix, plen, router_id) -> feasibility distance mapping
+
+#[derive(Debug)]
 pub struct SourceTable {
     pub table: HashMap<SourceKey, FeasibilityDistance>,
 }

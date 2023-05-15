@@ -34,7 +34,6 @@ impl RouteEntry {
         seqno: u16,
         next_hop: IpAddr,
         selected: bool,
-        router: Router,
     ) -> Self {
         Self {
             source,
@@ -46,13 +45,12 @@ impl RouteEntry {
         }
     }
 
-    pub fn update(&mut self, update: ControlStruct, should_be_selected: bool) {
+    pub fn update(&mut self, update: ControlStruct) {
         // the update is assumed to be feasible here
         match update.control_packet.body.tlv {
             BabelTLV::Update { seqno, metric, .. } => {
                 self.metric = metric;
                 self.seqno = seqno;
-                self.selected = should_be_selected;
             }
             _ => {
                 panic!("Received update with invalid TLV");
