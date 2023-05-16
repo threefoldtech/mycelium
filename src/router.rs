@@ -69,7 +69,7 @@ impl Router {
             router_data_rx,
         ));
         tokio::spawn(Router::propagate_static_route(router.clone()));
-        //tokio::spawn(Router::propagate_routes(router.clone()));
+        tokio::spawn(Router::propagate_selected_routes(router.clone()));
 
         Ok(router)
     }
@@ -394,71 +394,14 @@ impl Router {
         }
     }
 
-    pub async fn propagate_routes(self) {
+    pub async fn propagate_selected_routes(self) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             let mut inner = self.inner.write().unwrap();
-            inner.propagate_routes();
+            inner.propagate_selected_routes();
         }
     }
-
-    // routing table updates are send periodically to all directly connected peers
-    // updates are used to advertise new routes or the retract existing routes (retracting when the metric is set to 0xFFFF)
-    // this function is run when the route_update timer expires
-    // pub async fn propagate_selected_routes(self) {
-
-    //     loop {
-    //         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-    //         let mut inner = self.inner.write().unwrap();
-
-    //         let router_id = inner.router_id;
-    //         let router_seqno = inner.router_seqno;
-
-    //         let static_routes = inner.static_routes.clone();
-    //         for (key, entry) in inner.routing_table.table.iter_mut().filter(|(key, _)| {
-    //             // Filter out the static routes
-    //             for sr in static_routes.iter() {
-    //                 if key.prefix == sr.prefix && key.plen == sr.plen {
-    //                     return false;
-    //                 }
-    //             }
-    //             true
-    //         }) {
-    //             entry.seqno += 1;
-    //             for peer in peers.iter() {
-    //                 let link_cost = peer.link_cost();
-
-    //                 // DEBUG purposes
-    //                 if entry.metric > u16::MAX - 1 - link_cost {
-    //                     println!("SENDING UPDATE WITH METRIC: {}", u16::MAX - 1);
-    //                 } else {
-    //                     println!("SENDING UPDATE WITH METRIC: {}", entry.metric + link_cost);
-    //                 }
-
-    //                 let update = ControlPacket::new_update(
-    //                     key.plen,
-    //                     UPDATE_INTERVAL as u16,
-    //                     entry.seqno,
-    //                     if entry.metric > u16::MAX - 1 - link_cost {
-    //                         u16::MAX - 1
-    //                     } else {
-    //                         entry.metric + link_cost
-    //                     },
-    //                     key.prefix,
-    //                     entry.source.router_id,
-    //                 );
-
-    //                 if peer.send_control_packet(update).is_err() {
-    //                     println!("route update packet dropped");
-    //                 }
-    //             }
-    //         }
-
-    //         // FILTER VOOR SELECTED ROUTE NODIG --> we sturen nu alle routes maar eignelijk moeten we enkel de selected routes gaan propagaten
-    //     }
-    // }
 
     async fn start_periodic_hello_sender(self) {
         loop {
@@ -592,5 +535,27 @@ impl RouterInner {
         }
     }
 
-    fn propagate_routes(&self) {}
+    fn propagate_selected_routes(&mut self) {
+
+        let mut updates = vec![];
+        for sr in self.selected_routing_table.table.iter() {
+            for peer in self.peer_interfaces.iter() {
+                let update = ControlPacket::new_update(
+                    sr.0.plen, 
+                    UPDATE_INTERVAL as u16,
+                    self.router_seqno, // updates receive the seqno of the router
+                    peer.link_cost() + sr.1.metric, 
+                    sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
+                    self.router_id,
+                );
+
+                println!("Propagting selected route update: {:?}", update);
+                updates.push((peer.clone(), update));
+            }
+        }
+
+        for (peer, update) in updates {
+            self.send_update(&peer, update);
+        }
+    }
 }
