@@ -274,7 +274,7 @@ impl Router {
                         };
                         let route_entry = RouteEntry {
                             source: SourceKey { prefix, plen, router_id }, // CHECK IF THIS MEANS WE ALSO NEED TO CREATE A NEW SOURCE ENTRY
-                            neighbor: self.peer_by_ip(neighbor_ip).unwrap(),
+                            neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
                             metric,
                             seqno,
                             next_hop: neighbor_ip, // CHECK IF THIS IS CORRECT!!!
