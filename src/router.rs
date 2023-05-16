@@ -544,7 +544,7 @@ impl RouterInner {
                     sr.0.plen, 
                     UPDATE_INTERVAL as u16,
                     self.router_seqno, // updates receive the seqno of the router
-                    if sr.1.metric == u16::MAX - 1 { u16::MAX } else { sr.1.metric + peer.link_cost() }, 
+                    sr.1.metric.checked_add(peer.link_cost()).unwrap_or(u16::MAX - 1),
                     sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
                     self.router_id,
                 );
