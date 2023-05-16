@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::{HashMap, BTreeMap}, net::IpAddr};
 
 use crate::{
     packet::{BabelTLV, ControlStruct},
@@ -8,12 +8,13 @@ use crate::{
     timers::Timer,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RouteKey {
     pub prefix: IpAddr,
     pub plen: u8,
     pub neighbor: IpAddr,
 }
+
 
 #[derive(Debug, Clone)]
 pub struct RouteEntry {
@@ -45,18 +46,18 @@ impl RouteEntry {
         }
     }
 
-    pub fn update(&mut self, update: ControlStruct) {
-        // the update is assumed to be feasible here
-        match update.control_packet.body.tlv {
-            BabelTLV::Update { seqno, metric, .. } => {
-                self.metric = metric;
-                self.seqno = seqno;
-            }
-            _ => {
-                panic!("Received update with invalid TLV");
-            }
-        }
-    }
+    // pub fn update(&mut self, update: ControlStruct) {
+    //     // the update is assumed to be feasible here
+    //     match update.control_packet.body.tlv {
+    //         BabelTLV::Update { seqno, metric, .. } => {
+    //             self.metric = metric;
+    //             self.seqno = seqno;
+    //         }
+    //         _ => {
+    //             panic!("Received update with invalid TLV");
+    //         }
+    //     }
+    // }
 
     pub fn retracted(&mut self) {
         self.metric = 0xFFFF;
@@ -65,17 +66,29 @@ impl RouteEntry {
     pub fn is_retracted(&self) -> bool {
         self.metric == 0xFFFF
     }
+
+    pub fn update_metric(&mut self, metric: u16) {
+        self.metric = metric;
+    }
+
+    pub fn update_seqno(&mut self, seqno: u16) {
+        self.seqno = seqno;
+    }
+
+    pub fn update_router_id(&mut self, router_id: u64) {
+        self.source.router_id = router_id;
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
-    pub table: HashMap<RouteKey, RouteEntry>,
+    pub table: BTreeMap<RouteKey, RouteEntry>,
 }
 
 impl RoutingTable {
     pub fn new() -> Self {
         Self {
-            table: HashMap::new(),
+            table: BTreeMap::new(),
         }
     }
 

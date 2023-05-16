@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Creating a new Router instance
     let router = match router::Router::new(node_tun.clone(), vec![StaticRoute::new(cli.tun_addr.into())]) {
         Ok(router) => {
-            println!("Router created");
+            println!("Router created. ID: {}", router.router_id());
             router
         }
         Err(e) => {
@@ -125,8 +125,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(_) => {
                     // Remove trailing newline
                     line.pop();
-                    println!("----------- Current routes -----------{}\n", line);
-                    router.print_routes();
+                    println!("----------- Current selected routes -----------{}\n", line);
+                    router.print_selected_routes();
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.peer_interfaces() {
@@ -136,6 +136,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             p.link_cost()
                         );
                     }
+
+
+                    println!("\n----------- Current source table: -----------");
+                    router.print_source_table(); 
 
                     println!("\n\n");
                 }

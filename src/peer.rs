@@ -7,7 +7,7 @@ use std::{
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::{codec::PacketCodec, packet::Packet};
+use crate::{codec::PacketCodec, packet::{Packet, BabelTLV}};
 use crate::{
     packet::{ControlPacket, ControlStruct, DataPacket},
     timers::Timer,
@@ -46,13 +46,7 @@ impl Peer {
 
     /// Adds 1 to the sequence number of this peer .
     pub fn increment_hello_seqno(&self) {
-        println!("current seqno: {}", self.inner.read().unwrap().hello_seqno);
-        // TODO: Validate this works
         self.inner.write().unwrap().hello_seqno += 1;
-        println!(
-            "after increment seqno: {}",
-            self.inner.read().unwrap().hello_seqno
-        );
     }
 
     pub fn time_last_received_hello(&self) -> tokio::time::Instant {
@@ -85,6 +79,7 @@ impl Peer {
     /// It's send over the to_peer_control channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
     pub fn send_control_packet(&self, control_packet: ControlPacket) -> Result<(), Box<dyn Error>> {
+
         Ok(self
             .inner
             .write()

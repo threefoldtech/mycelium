@@ -10,7 +10,16 @@ pub struct SourceKey {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FeasibilityDistance(pub u16, pub u16); // (metric, seqno)
+pub struct FeasibilityDistance {
+    pub metric: u16,
+    pub seqno: u16,
+}
+
+impl FeasibilityDistance {
+    pub fn new(metric: u16, seqno: u16) -> Self {
+        FeasibilityDistance { metric, seqno }
+    }
+}
 
 // Store (prefix, plen, router_id) -> feasibility distance mapping
 
@@ -38,77 +47,77 @@ impl SourceTable {
         self.table.get(key)
     }
 
-    pub fn update(&mut self, update: &ControlStruct) {
-        match update.control_packet.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
-                // first check if the update is feasible
-                if !self.is_feasible(update) {
-                    return;
-                }
+    // pub fn update(&mut self, update: &ControlStruct) {
+    //     match update.control_packet.body.tlv {
+    //         BabelTLV::Update {
+    //             plen,
+    //             interval,
+    //             seqno,
+    //             metric,
+    //             prefix,
+    //             router_id,
+    //         } => {
+    //             // first check if the update is feasible
+    //             if !self.is_feasible(update) {
+    //                 return;
+    //             }
 
-                let key = SourceKey {
-                    prefix: prefix,
-                    plen: plen,
-                    router_id: router_id,
-                };
+    //             let key = SourceKey {
+    //                 prefix: prefix,
+    //                 plen: plen,
+    //                 router_id: router_id,
+    //             };
 
-                let new_distance = FeasibilityDistance(metric, seqno);
-                let old_distance = self.table.get(&key).cloned();
-                match old_distance {
-                    Some(old_distance) => {
-                        if new_distance.0 < old_distance.0 {
-                            self.table
-                                .insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
-                        }
-                    }
-                    None => {
-                        self.table
-                            .insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
-                    }
-                }
-            }
-            _ => {
-                panic!("not an update");
-            }
-        }
-    }
+    //             let new_distance = FeasibilityDistance(metric, seqno);
+    //             let old_distance = self.table.get(&key).cloned();
+    //             match old_distance {
+    //                 Some(old_distance) => {
+    //                     if new_distance.0 < old_distance.0 {
+    //                         self.table
+    //                             .insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
+    //                     }
+    //                 }
+    //                 None => {
+    //                     self.table
+    //                         .insert(key, FeasibilityDistance(new_distance.0, new_distance.1));
+    //                 }
+    //             }
+    //         }
+    //         _ => {
+    //             panic!("not an update");
+    //         }
+    //     }
+    // }
 
-    pub fn is_feasible(&self, update: &ControlStruct) -> bool {
-        match update.control_packet.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval: _,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
-                let key = SourceKey {
-                    prefix: prefix,
-                    plen: plen,
-                    router_id: router_id,
-                };
+    // pub fn is_feasible(&self, update: &ControlStruct) -> bool {
+    //     match update.control_packet.body.tlv {
+    //         BabelTLV::Update {
+    //             plen,
+    //             interval: _,
+    //             seqno,
+    //             metric,
+    //             prefix,
+    //             router_id,
+    //         } => {
+    //             let key = SourceKey {
+    //                 prefix: prefix,
+    //                 plen: plen,
+    //                 router_id: router_id,
+    //             };
 
-                match self.table.get(&key) {
-                    Some(&source_entry) => {
-                        let metric_2 = source_entry.0;
-                        let seqno_2 = source_entry.1;
+    //             match self.table.get(&key) {
+    //                 Some(&source_entry) => {
+    //                     let metric_2 = source_entry.0;
+    //                     let seqno_2 = source_entry.1;
 
-                        seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2)
-                    }
-                    None => true,
-                }
-            }
-            _ => {
-                panic!("not an update");
-            }
-        }
-    }
+    //                     seqno > seqno_2 || (seqno == seqno_2 && metric < metric_2)
+    //                 }
+    //                 None => true,
+    //             }
+    //         }
+    //         _ => {
+    //             panic!("not an update");
+    //         }
+    //     }
+    // }
 }
