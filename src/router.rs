@@ -244,6 +244,12 @@ impl Router {
                     prefix,
                 };
 
+                // used later to filter out static route 
+                let route_key_is_from_static_route = self.route_key_is_from_static_route(&route_key_from_update);
+                if route_key_is_from_static_route {
+                    println!("Found route key that matches that of the static route");
+                }
+
                 let mut inner = self.inner.write().unwrap();
 
                 // check if a route entry with the same route key exists in both routing tables
@@ -261,7 +267,8 @@ impl Router {
                 // if no entry exists
                 if !route_entry_exists {
                     // if the update is unfeasible, or the metric is inifinite, we ignore the update
-                    if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
+                    // we also ignore the update it's announcing it's own static route entry
+                    if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) || route_key_is_from_static_route {
                         return;
                     }
                     else {
@@ -286,6 +293,12 @@ impl Router {
                             selected: true,
                         };
                         // if no entry exists, it should be added to the selected routing table as new entries are always selected
+
+                        // ADD ADDITIONAL CHECK TO INSERT INTO SELECTED_ROUTING_TABLE OR FALLBACK_ROUTING_TABLE
+                        // ADD A FILTER TO NOT ADD THE STATIC ROUTE
+
+
+
                         inner.selected_routing_table.table.insert(route_key, route_entry);
 
                     }
@@ -323,6 +336,17 @@ impl Router {
             }
         }
 
+    }
+
+    fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
+        let inner = self.inner.read().unwrap();
+
+        for sr in inner.static_routes.iter() {
+            if sr.plen == route_key.plen && sr.prefix == route_key.prefix {
+                return true;
+            }
+        }
+        return false;
     }
 
     // we gebruiken self niet in de functie --> daarop functie eigenllijk beter op de source table implementeren
