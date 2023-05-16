@@ -133,37 +133,37 @@ impl Router {
         matching_peer.map(Clone::clone)
     }
 
-    // pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
+    // pub fn select_best_route(&self, dest_ip: ipaddr) -> option<routeentry> {
 
     //     let inner = self.inner.read().unwrap();
 
     //     // first look in the routing table for all routekeys where prefix == dest_ip
     //     let routing_table = &inner.routing_table;
-    //     let mut matching_routes: Vec<&RouteEntry> = Vec::new();
+    //     let mut matching_routes: vec<&routeentry> = vec::new();
 
     //     for route in routing_table.table.iter() {
     //         if route.0.prefix == dest_ip {
-    //             // NOTE -- this is not correct, we need to check if the dest_ip is in the prefix range
+    //             // note -- this is not correct, we need to check if the dest_ip is in the prefix range
     //             matching_routes.push(route.1);
-    //             println!("Found matching route with next-hop: {:?}", route.1.next_hop);
+    //             println!("found matching route with next-hop: {:?}", route.1.next_hop);
     //         }
     //     }
 
     //     // now we have all routes that match the destination ip
     //     // we need to select the route with the lowest metric
-    //     let mut best_route: Option<&RouteEntry> = None;
-    //     let mut best_metric: u16 = u16::MAX;
+    //     let mut best_route: option<&routeentry> = none;
+    //     let mut best_metric: u16 = u16::max;
 
     //     for route in matching_routes.iter() {
     //         if route.metric < best_metric {
-    //             best_route = Some(route);
+    //             best_route = some(route);
     //             best_metric = route.metric;
     //         }
     //     }
 
     //     match best_route {
-    //         Some(route) => Some(route.clone()),
-    //         None => None,
+    //         some(route) => some(route.clone()),
+    //         none => none,
     //     }
     // }
 
@@ -230,7 +230,7 @@ impl Router {
 
     // incoming update can only be received by a Peer this node has a direct link to
     fn handle_incoming_update(&self, update: ControlStruct) {
-
+        println!("entering handle_incoming_update");
 
         match update.control_packet.body.tlv {
             BabelTLV::Update { plen, interval: _, seqno, metric, prefix, router_id } => {
@@ -244,30 +244,24 @@ impl Router {
                     prefix,
                 };
 
-                let inner = self.inner.read().unwrap();
-                let source_table = &inner.source_table;
-                let fallback_routing_table = &inner.fallback_routing_table; 
-                let selected_routing_table = &inner.selected_routing_table;
+                let mut inner = self.inner.write().unwrap();
 
                 // check if a route entry with the same route key exists in both routing tables
                 let mut route_entry_exists = false;
-                for (route_key, _) in selected_routing_table
+                for (route_key, _) in inner.selected_routing_table
                     .table
                     .iter()
-                    .zip(fallback_routing_table.table.iter())
+                    .zip(inner.fallback_routing_table.table.iter())
                 {
                     if route_key.0 == &route_key_from_update {
                         route_entry_exists = true;
                     }
                 }
 
-                let mut inner = self.inner.write().unwrap();
-                let selected_routing_table = &mut inner.selected_routing_table;
-                
                 // if no entry exists
                 if !route_entry_exists {
                     // if the update is unfeasible, or the metric is inifinite, we ignore the update
-                    if metric == u16::MAX || !self.update_feasible(&update, &source_table) {
+                    if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
                         return;
                     }
                     else {
@@ -287,7 +281,7 @@ impl Router {
                             selected: true,
                         };
                         // if no entry exists, it should be added to the selected routing table as new entries are always selected
-                        selected_routing_table.table.insert(route_key, route_entry);
+                        inner.selected_routing_table.table.insert(route_key, route_entry);
 
                     }
                 }
@@ -297,7 +291,7 @@ impl Router {
                     // to the router-id of the entry, then we ignore the update
                     if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
                         let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
-                        if !self.update_feasible(&update, &source_table) && route_entry.source.router_id == router_id {
+                        if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
                             return;
                         }
                     }
@@ -309,7 +303,7 @@ impl Router {
                         route_entry.update_metric(metric);
                         route_entry.update_router_id(router_id);
 
-                        if !self.update_feasible(&update, &source_table) {
+                        if !self.update_feasible(&update, &inner.source_table) {
                             // if the update is unfeasible, we remove the entry from the selected routing table
                             inner.selected_routing_table.table.remove(&route_key_from_update);
                             // TODO: if the updated caused the router ID of the entry to change, we should also sent triggered update
@@ -359,107 +353,6 @@ impl Router {
             }
         }
     }
-
-    // fn handle_incoming_update(&self, update: ControlStruct) {
-
-    //     let mut inner = self.inner.write().unwrap();
-
-    //     if inner.source_table.is_feasible(&update) {
-    //         println!("incoming update is feasible");
-    //         inner.source_table.update(&update);
-
-    //         // get routing table entry for the source of the update
-    //         match update.control_packet.body.tlv {
-    //             BabelTLV::Update {
-    //                 plen,
-    //                 interval: _,
-    //                 seqno,
-    //                 metric,
-    //                 prefix,
-    //                 router_id,
-    //             } => {
-    //                 println!(
-    //                     "Received update from {} for {:?} with seqno {} and metric {}",
-    //                     router_id, prefix, seqno, metric
-    //                 );
-    //                 let source_ip = update.src_overlay_ip;
-
-    //                 // get RouteEntry for the source of the update
-    //                 let route_key = &RouteKey {
-    //                     prefix,
-    //                     plen,
-    //                     neighbor: source_ip,
-    //                 };
-    //                 if let Some(route_entry) = inner.routing_table.clone().table.get_mut(route_key)
-    //                 {
-    //                     // let should_be_selected = Router::set_incoming_update_selected(
-    //                     //     routing_table,
-    //                     //     route_key.clone(),
-    //                     //     metric,
-    //                     // );
-    //                     route_entry.update(update);
-    //                 } else {
-    //                     let source_key = SourceKey {
-    //                         prefix,
-    //                         plen,
-    //                         router_id,
-    //                     };
-    //                     let feas_dist = FeasibilityDistance(metric, seqno);
-
-    //                     // create the source table entry
-    //                     inner.source_table.insert(source_key.clone(), feas_dist);
-
-    //                     // now we can create the routing table entry
-    //                     let route_key = RouteKey {
-    //                         prefix, // prefix is peer that ANNOUNCED the route
-    //                         plen,
-    //                         neighbor: update.src_overlay_ip,
-    //                     };
-
-    //                     let peer = inner.peer_by_ip(update.src_overlay_ip).unwrap();
-    //                     let route_entry = RouteEntry::new(
-    //                         source_key,
-    //                         peer.clone(),
-    //                         metric,
-    //                         seqno,
-    //                         update.src_overlay_ip,
-    //                         true, // for new entries the route is always selected
-    //                     );
-
-    //                     // create the routing table entry
-    //                     inner.routing_table.insert(route_key, route_entry);
-    //                 }
-    //             }
-    //             _ => {}
-    //         }
-    //     } else {
-    //         println!("incoming update is NOT feasible");
-    //         // received update is not feasible
-    //         // unselect to route if it was selected
-    //     }
-    // }
-
-    // fn set_incoming_update_selected(
-    //     routing_table: &mut RoutingTable,
-    //     route_key: RouteKey,
-    //     new_metric: u16,
-    // ) -> bool {
-    //     // first check if the routing table has an entry for that key or not, if it has no entry return true
-    //     if !routing_table.table.contains_key(&route_key) {
-    //         println!("no entry for this route key, returning true");
-    //         return true;
-    //     } else {
-    //         let route_entry = routing_table.table.get_mut(&route_key).unwrap();
-    //         println!(
-    //             "current metric: {}, new metric: {}",
-    //             route_entry.metric, new_metric
-    //         );
-    //         if route_entry.metric < new_metric {
-    //             return false;
-    //         }
-    //         return true;
-    //     }
-    // }
 
     async fn handle_incoming_data_packet(self, mut router_data_rx: UnboundedReceiver<DataPacket>) {
         // If destination IP of packet is same as TUN interface IP, send to TUN interface
