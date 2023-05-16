@@ -266,14 +266,19 @@ impl Router {
                     }
                     else {
                         // this means that the update is feasible and the metric is not infinite
-                        // create a new route entry and add it to the routing table
+                        // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
+
+                        let source_key = SourceKey { prefix, plen, router_id };
+                        let fd = FeasibilityDistance{ metric, seqno };
+                        inner.source_table.insert(source_key, fd);
+
                         let route_key = RouteKey {
                             prefix,
                             plen,
                             neighbor: neighbor_ip,
                         };
                         let route_entry = RouteEntry {
-                            source: SourceKey { prefix, plen, router_id }, // CHECK IF THIS MEANS WE ALSO NEED TO CREATE A NEW SOURCE ENTRY
+                            source: source_key,
                             neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
                             metric,
                             seqno,
