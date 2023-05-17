@@ -152,6 +152,20 @@ impl Router {
         }
     }
 
+    pub fn print_fallback_routes(&self) {
+        let inner = self.inner.read().unwrap();
+
+        let routing_table = &inner.fallback_routing_table;
+        for route in routing_table.table.iter() {
+            println!("Route key: {:?}", route.0);
+            println!(
+                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
+                route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
+            );
+            println!("As advertised by: {:?}", route.1.source.router_id);
+        }
+    }
+
     pub fn print_source_table(&self) {
         let inner = self.inner.read().unwrap();
 
@@ -296,9 +310,8 @@ impl Router {
                 };
 
                 // used later to filter out static route 
-                let route_key_is_from_static_route = self.route_key_is_from_static_route(&route_key_from_update);
-                if route_key_is_from_static_route {
-                    println!("Found route key that matches that of the static route");
+                if self.route_key_is_from_static_route(&route_key_from_update) {
+                    return; 
                 }
 
                 let mut inner = self.inner.write().unwrap();
@@ -309,8 +322,7 @@ impl Router {
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
                     // if the update is unfeasible, or the metric is inifinite, we ignore the update
-                    // we also ignore the update it's announcing it's own static route entry
-                    if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) || route_key_is_from_static_route {
+                    if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
                         return;
                     }
                     else {
@@ -390,6 +402,11 @@ impl Router {
                         if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
                             return;
                         }
+                        // update the entry's seqno, metric and router-id
+                        let route_entry = inner.selected_routing_table.table.get_mut(&route_key_from_update).unwrap();
+                        route_entry.update_seqno(seqno);
+                        route_entry.update_metric(metric);
+                        route_entry.update_router_id(router_id);
                     }
                     // otherwise
                     else {
@@ -446,9 +463,6 @@ impl Router {
                 };
                 match source_table.get(&source_key) {
                     Some(&entry) => {
-                        // debug purposes
-                        if metric == 0xFFFF {
-                        }
                         return (seqno > entry.seqno|| (seqno == entry.seqno && metric < entry.metric)) || metric == 0xFFFF;
                     }
                     None => return true,

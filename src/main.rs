@@ -127,6 +127,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     line.pop();
                     println!("----------- Current selected routes -----------{}\n", line);
                     router.print_selected_routes();
+                    println!("----------- Current fallback routes -----------{}\n", line);
+                    router.print_fallback_routes();
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.peer_interfaces() {
