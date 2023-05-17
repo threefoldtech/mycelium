@@ -95,10 +95,9 @@ impl Peer {
         self.inner.write().unwrap().link_cost = link_cost
     }
 
-    // pub fn reset_ihu_timer(&self, duration: tokio::time::Duration) {
-    //     self.inner.write().unwrap().ihu_timer.reset(duration)
-    // }
-
+    pub fn underlay_ip(&self) -> IpAddr {
+        self.inner.read().unwrap().stream_ip
+    }
 
     pub fn time_last_received_ihu(&self) -> tokio::time::Instant {
         self.inner.read().unwrap().time_last_received_ihu

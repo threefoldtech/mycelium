@@ -122,7 +122,11 @@ impl Router {
 
     pub fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
         self.inner.read().unwrap().peer_by_ip(peer_ip)
-   }
+    }
+
+    pub fn peer_exists(&self, peer_underlay_ip: IpAddr) -> bool {
+        self.inner.read().unwrap().peer_exists(peer_underlay_ip)
+    }
 
     pub fn source_peer_from_control_struct(&self, control_struct: ControlStruct) -> Option<Peer> {
         let peers = self.peer_interfaces();
@@ -375,7 +379,6 @@ impl Router {
 
                     // check if update is a retraction
                     if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
-                        println!("RECEIVED RETRACTION UPDATE!!!!!!!!!!!!!");
                         // if the update is a retraction, we remove the entry from the routing tables
                         // we also remove the corresponding source entry???
                         if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
@@ -390,14 +393,11 @@ impl Router {
 
                         return;
                     }
-
-                    println!("received update where entry already exists");
                     // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
                     // to the router-id of the entry, then we ignore the update
                     if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
                         let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
                         if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
-                            println!("Received update for exisiting entry with same router_id but worse metric");
                             return;
                         }
                     }
@@ -412,14 +412,10 @@ impl Router {
                         if !self.update_feasible(&update, &inner.source_table) {
                             // if the update is unfeasible, we remove the entry from the selected routing table
                             inner.selected_routing_table.table.remove(&route_key_from_update);
-                            println!("\n\n\n\n\n\n\nremoved entry from selected routing table");
                             // should we remove it from the selected and add it to fallback here???
-                            // TODO: if the updated caused the router ID of the entry to change, we should also sent triggered update
                         }
                     }
                 }
-                // RUN ROUTE SELECTION?
-                
             },
             _ => {
                 panic!("Received update with wrong TLV type");
@@ -462,7 +458,6 @@ impl Router {
                     Some(&entry) => {
                         // debug purposes
                         if metric == 0xFFFF {
-                            println!("metric is 0xFFFF, so update is a RETRACTION");
                         }
                         return (seqno > entry.seqno|| (seqno == entry.seqno && metric < entry.metric)) || metric == 0xFFFF;
                     }
@@ -704,5 +699,11 @@ impl RouterInner {
         for (peer, update) in updates {
             self.send_update(&peer, update);
         }
+    }
+
+    fn peer_exists(&self, peer_underlay_ip: IpAddr) -> bool {
+        self.peer_interfaces
+            .iter()
+            .any(|peer| peer.underlay_ip() == peer_underlay_ip)        
     }
 }
