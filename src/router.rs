@@ -168,10 +168,10 @@ impl Router {
 
         loop {
 
-            let inner = self.inner.read().unwrap();
-
             // check for dead peers every second
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+            let inner = self.inner.read().unwrap();
 
             // a peer is assumed dead when the peer's last sent ihu exceeds a threshold
             for peer in inner.peer_interfaces.iter() {
@@ -181,7 +181,7 @@ impl Router {
                     println!("Peer {:?} is dead", peer.overlay_ip());
                     // remove the peer from the peer_interfaces
                   //  self.remove_peer_interface(peer.clone());
-                    // remove the peer's routes from the routing table
+                    // remove the peer's routes from the routing table (= all the peers that use the peer as next-hop)
                 }
             } 
 
