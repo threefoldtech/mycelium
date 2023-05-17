@@ -304,16 +304,7 @@ impl Router {
                 let mut inner = self.inner.write().unwrap();
 
                 // check if a route entry with the same route key exists in both routing tables
-                let mut route_entry_exists = false;
-                for (route_key, _) in inner.selected_routing_table
-                    .table
-                    .iter()
-                    .zip(inner.fallback_routing_table.table.iter())
-                {
-                    if route_key.0 == &route_key_from_update {
-                        route_entry_exists = true;
-                    }
-                }
+                let route_entry_exists = inner.selected_routing_table.table.contains_key(&route_key_from_update) || inner.fallback_routing_table.table.contains_key(&route_key_from_update);
 
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
@@ -355,7 +346,7 @@ impl Router {
                                     to_remove.push(r.0.clone());
                                     break; // we can break, as there will be max 1 better route in selected table at any point in time (hence 'selected')
                                 // metric of update is greater than entry's metric
-                                } else if metric > r.1.metric {
+                                } else if metric >= r.1.metric {
                                     // this means that there is already a better route in our selected routing table,
                                     // so we should add it to fallback instead 
                                     inner.fallback_routing_table.table.insert(route_key.clone(), route_entry.clone());
@@ -376,7 +367,6 @@ impl Router {
                 }
                 // entry exists
                 else {
-
                     // check if update is a retraction
                     if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
                         // if the update is a retraction, we remove the entry from the routing tables
@@ -680,15 +670,17 @@ impl RouterInner {
     }
 
     fn propagate_selected_routes(&mut self) {
-
         let mut updates = vec![];
         for sr in self.selected_routing_table.table.iter() {
             for peer in self.peer_interfaces.iter() {
+
+                let peer_link_cost = peer.link_cost();
+
                 let update = ControlPacket::new_update(
                     sr.0.plen, 
                     UPDATE_INTERVAL as u16,
                     self.router_seqno, // updates receive the seqno of the router
-                    sr.1.metric.checked_add(peer.link_cost()).unwrap_or(u16::MAX - 1),
+                    if sr.1.metric > u16::MAX -1 - peer_link_cost {u16::MAX - 1 } else { sr.1.metric + peer_link_cost }, // the cost of the route is the cost of the route + the cost of the link to the peer
                     sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
                     self.router_id,
                 );
