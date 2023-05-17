@@ -133,39 +133,7 @@ impl Router {
         matching_peer.map(Clone::clone)
     }
 
-    // pub fn select_best_route(&self, dest_ip: ipaddr) -> option<routeentry> {
-
-    //     let inner = self.inner.read().unwrap();
-
-    //     // first look in the routing table for all routekeys where prefix == dest_ip
-    //     let routing_table = &inner.routing_table;
-    //     let mut matching_routes: vec<&routeentry> = vec::new();
-
-    //     for route in routing_table.table.iter() {
-    //         if route.0.prefix == dest_ip {
-    //             // note -- this is not correct, we need to check if the dest_ip is in the prefix range
-    //             matching_routes.push(route.1);
-    //             println!("found matching route with next-hop: {:?}", route.1.next_hop);
-    //         }
-    //     }
-
-    //     // now we have all routes that match the destination ip
-    //     // we need to select the route with the lowest metric
-    //     let mut best_route: option<&routeentry> = none;
-    //     let mut best_metric: u16 = u16::max;
-
-    //     for route in matching_routes.iter() {
-    //         if route.metric < best_metric {
-    //             best_route = some(route);
-    //             best_metric = route.metric;
-    //         }
-    //     }
-
-    //     match best_route {
-    //         some(route) => some(route.clone()),
-    //         none => none,
-    //     }
-    // }
+   
 
     pub fn print_selected_routes(&self) {
         let inner = self.inner.read().unwrap();
@@ -230,8 +198,6 @@ impl Router {
 
     // incoming update can only be received by a Peer this node has a direct link to
     fn handle_incoming_update(&self, update: ControlStruct) {
-        println!("entering handle_incoming_update");
-
         match update.control_packet.body.tlv {
             BabelTLV::Update { plen, interval: _, seqno, metric, prefix, router_id } => {
                     
@@ -264,7 +230,7 @@ impl Router {
                     }
                 }
 
-                // if no entry exists (not skipping neighbor field)
+                // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
                     // if the update is unfeasible, or the metric is inifinite, we ignore the update
                     // we also ignore the update it's announcing it's own static route entry
@@ -325,11 +291,13 @@ impl Router {
                 }
                 // entry exists
                 else {
+                    println!("received update where entry alread exists");
                     // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
                     // to the router-id of the entry, then we ignore the update
                     if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
                         let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
                         if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
+                            println!("Received update for exisiting entry with same router_id but worse metric");
                             return;
                         }
                     }
@@ -350,7 +318,7 @@ impl Router {
                         }
                     }
                 }
-                // RUN ROUTE SELECTION
+                // RUN ROUTE SELECTION?
                 
             },
             _ => {
@@ -420,15 +388,47 @@ impl Router {
                         }
                     },
                     _ => {
-                        // let best_route = self.select_best_route(IpAddr::V4(data_packet.dest_ip));
-                        // let peer = self.peer_by_ip(best_route.unwrap().next_hop).unwrap();
-                        // if let Err(e) = peer.send_data_packet(data_packet) {
-                        //     eprintln!("Error sending data packet to peer: {:?}", e);
-                        // }
+                        let best_route = self.select_best_route(IpAddr::V4(data_packet.dest_ip));
+                        match best_route {
+                            Some (route_entry) => {
+                                let peer = self.peer_by_ip(route_entry.next_hop).unwrap();
+                                if let Err(e) = peer.send_data_packet(data_packet) {
+                                    eprintln!("Error sending data packet to peer: {:?}", e);
+                                }
+                            },
+                            None => {
+                                eprintln!("Error sending data packet, no route found");
+                            }
+                        }
                     }
                 }
             }
         }
+    } 
+
+    pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
+
+        let inner = self.inner.read().unwrap();
+        let mut best_route = None;
+        // first look in the selected routing table for a match on the prefix of dest_ip
+        for (route_key, route_entry) in inner.selected_routing_table.table.iter() {
+            if route_key.prefix == dest_ip {
+                best_route = Some(route_entry.clone()); 
+            }
+        }
+        // if no match was found, look in the fallback routing table
+        if best_route.is_none() {
+            println!("no match in selected routing table, looking in fallback routing table");
+            for (route_key, route_entry) in inner.fallback_routing_table.table.iter() {
+                if route_key.prefix == dest_ip {
+                    best_route = Some(route_entry.clone()); 
+                }
+            }
+        }
+
+        println!("\n\n best route towards {}: {:?}", dest_ip, best_route);
+
+        return best_route
     }
 
     pub async fn propagate_static_route(self) {

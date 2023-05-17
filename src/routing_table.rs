@@ -46,19 +46,6 @@ impl RouteEntry {
         }
     }
 
-    // pub fn update(&mut self, update: ControlStruct) {
-    //     // the update is assumed to be feasible here
-    //     match update.control_packet.body.tlv {
-    //         BabelTLV::Update { seqno, metric, .. } => {
-    //             self.metric = metric;
-    //             self.seqno = seqno;
-    //         }
-    //         _ => {
-    //             panic!("Received update with invalid TLV");
-    //         }
-    //     }
-    // }
-
     pub fn retracted(&mut self) {
         self.metric = 0xFFFF;
     }
