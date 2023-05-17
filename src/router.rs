@@ -384,6 +384,10 @@ impl Router {
                         if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
                             inner.fallback_routing_table.remove(&route_key_from_update);
                         }
+                        // remove the corresponding source entry
+                        let source_key = SourceKey { prefix, plen, router_id };
+                        inner.source_table.remove(&source_key);
+
                         return;
                     }
 
