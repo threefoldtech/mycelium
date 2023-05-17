@@ -33,6 +33,8 @@ impl PeerManager {
             static_peers_sockets,
         ));
 
+        tokio::spawn(PeerManager::check_peer_connections(peer_manager.clone()));
+
         peer_manager
     }
 
@@ -217,4 +219,9 @@ impl PeerManager {
             }
         }
     }
+
+    async fn check_peer_connections(self) {
+        // TODO: Check if peer connections are still alive
+    }
+
 }

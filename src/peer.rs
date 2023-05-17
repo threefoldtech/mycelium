@@ -50,7 +50,6 @@ impl Peer {
     }
 
     pub fn time_last_received_hello(&self) -> tokio::time::Instant {
-        // TODO: Validate this works
         self.inner.read().unwrap().time_last_received_hello
     }
 
@@ -96,9 +95,19 @@ impl Peer {
         self.inner.write().unwrap().link_cost = link_cost
     }
 
-    pub fn reset_ihu_timer(&self, duration: tokio::time::Duration) {
-        self.inner.write().unwrap().ihu_timer.reset(duration)
+    // pub fn reset_ihu_timer(&self, duration: tokio::time::Duration) {
+    //     self.inner.write().unwrap().ihu_timer.reset(duration)
+    // }
+
+
+    pub fn time_last_received_ihu(&self) -> tokio::time::Instant {
+        self.inner.read().unwrap().time_last_received_ihu
     }
+
+    pub fn set_time_last_received_ihu(&self, time: tokio::time::Instant) {
+        self.inner.write().unwrap().time_last_received_ihu = time
+    }
+
 }
 
 impl PartialEq for Peer {
@@ -118,7 +127,7 @@ struct PeerInner {
     hello_seqno: u16,
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
-    ihu_timer: Timer,
+    time_last_received_ihu: tokio::time::Instant, 
 }
 
 impl PeerInner {
@@ -146,9 +155,11 @@ impl PeerInner {
         let link_cost = u16::MAX - 1;
         // Initialize time_last_received_hello to now
         let time_last_received_hello = tokio::time::Instant::now();
+        // Initialiwe time_last_send_ihu
+        let time_last_received_ihu = tokio::time::Instant::now();
 
         // Intialize the timers
-        let ihu_timer = Timer::new_ihu_timer(IHU_INTERVAL);
+        // let ihu_timer = Timer::new_ihu_timer(IHU_INTERVAL);
 
         tokio::spawn(async move {
             loop {
@@ -220,23 +231,8 @@ impl PeerInner {
             overlay_ip,
             hello_seqno,
             link_cost,
-            ihu_timer,
+            time_last_received_ihu,
             time_last_received_hello,
         })
-    }
-
-    pub fn new_dummy(overlay_ip: IpAddr) -> Peer {
-        Peer {
-            inner: Arc::new(RwLock::new(PeerInner {
-                stream_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                to_peer_data: mpsc::unbounded_channel::<DataPacket>().0,
-                to_peer_control: mpsc::unbounded_channel::<ControlPacket>().0,
-                overlay_ip,
-                hello_seqno: 0,
-                link_cost: 100,
-                ihu_timer: Timer::new_ihu_timer(u64::MAX),
-                time_last_received_hello: tokio::time::Instant::now(),
-            })),
-        }
     }
 }

@@ -71,6 +71,8 @@ impl Router {
         tokio::spawn(Router::propagate_static_route(router.clone()));
         tokio::spawn(Router::propagate_selected_routes(router.clone()));
 
+        tokio::spawn(Router::check_for_dead_peers(router.clone()));
+
         Ok(router)
     }
 
@@ -122,7 +124,7 @@ impl Router {
 
     pub fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
         self.inner.read().unwrap().peer_by_ip(peer_ip)
-    }
+   }
 
     pub fn source_peer_from_control_struct(&self, control_struct: ControlStruct) -> Option<Peer> {
         let peers = self.peer_interfaces();
@@ -159,6 +161,32 @@ impl Router {
             println!("\n");
         }
     }
+    
+    async fn check_for_dead_peers(self) {
+
+        let ihu_threshold = tokio::time::Duration::from_secs(8);
+
+        loop {
+
+            let inner = self.inner.read().unwrap();
+
+            // check for dead peers every second
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+            // a peer is assumed dead when the peer's last sent ihu exceeds a threshold
+            for peer in inner.peer_interfaces.iter() {
+                // check if the peer's last_received_ihu is greater than the threshold
+                if peer.time_last_received_ihu().elapsed() > ihu_threshold {
+                    // peer is dead
+                    println!("Peer {:?} is dead", peer.overlay_ip());
+                    // remove the peer from the peer_interfaces
+                  //  self.remove_peer_interface(peer.clone());
+                    // remove the peer's routes from the routing table
+                }
+            } 
+
+        }
+    }
 
     async fn handle_incoming_control_packet(
         self,
@@ -168,7 +196,7 @@ impl Router {
             match control_struct.control_packet.body.tlv_type {
                 BabelTLVType::AckReq => todo!(),
                 BabelTLVType::Ack => todo!(),
-                BabelTLVType::Hello => Self::handle_incoming_hello(control_struct),
+                BabelTLVType::Hello => Self::handle_incoming_hello(&self, control_struct),
                 BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
                 BabelTLVType::NextHop => todo!(),
                 BabelTLVType::Update => Self::handle_incoming_update(&self, control_struct),
@@ -178,21 +206,38 @@ impl Router {
         }
     }
 
-    fn handle_incoming_hello(control_struct: ControlStruct) {
-        let destination_ip = control_struct.src_overlay_ip;
-        control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
+    fn handle_incoming_hello(&self, control_struct: ControlStruct) {
+        // let destination_ip = control_struct.src_overlay_ip;
+        // control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
+    
+        // Upon receiving and Hello message from a peer, this node has to send a IHU back
+        if let Some(source_peer) = self.source_peer_from_control_struct(control_struct) {
+            let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.overlay_ip());
+            match source_peer.send_control_packet(ihu) {
+                Ok(()) => {
+                },
+                Err(e) => {
+                    eprintln!("Error sending IHU to peer: {e}");
+                }
+            }
+        }
     }
 
     fn handle_incoming_ihu(&self, control_struct: ControlStruct) {
         if let Some(source_peer) = self.source_peer_from_control_struct(control_struct) {
             // reset the IHU timer associated with the peer
-            source_peer.reset_ihu_timer(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
+            // source_peer.reset_ihu_timer(tokio::time::Duration::from_secs(IHU_INTERVAL as u64));
             // measure time between Hello and and IHU and set the link cost
             let time_diff = tokio::time::Instant::now()
                 .duration_since(source_peer.time_last_received_hello())
                 .as_millis();
 
             source_peer.set_link_cost(time_diff as u16);
+
+
+
+            // set the last_received_ihu for this peer
+            source_peer.set_time_last_received_ihu(tokio::time::Instant::now());
         }
     }
 
