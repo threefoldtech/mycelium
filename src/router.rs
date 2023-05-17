@@ -113,9 +113,7 @@ impl Router {
     }
 
     pub fn remove_peer_interface(&self, peer: Peer) {
-        let mut peer_interfaces = self.inner.write().unwrap().peer_interfaces.clone();
-        peer_interfaces.retain(|p| p != &peer);
-        self.inner.write().unwrap().peer_interfaces = peer_interfaces;
+        self.inner.write().unwrap().remove_peer_interface(peer);
     }
 
     pub fn static_routes(&self) -> Vec<StaticRoute> {
@@ -135,7 +133,6 @@ impl Router {
         matching_peer.map(Clone::clone)
     }
 
-   
 
     pub fn print_selected_routes(&self) {
         let inner = self.inner.read().unwrap();
@@ -165,28 +162,67 @@ impl Router {
     async fn check_for_dead_peers(self) {
 
         let ihu_threshold = tokio::time::Duration::from_secs(8);
-
+    
         loop {
-
+    
             // check for dead peers every second
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            let mut inner = self.inner.write().unwrap();
 
-            let inner = self.inner.read().unwrap();
-
-            // a peer is assumed dead when the peer's last sent ihu exceeds a threshold
-            for peer in inner.peer_interfaces.iter() {
-                // check if the peer's last_received_ihu is greater than the threshold
-                if peer.time_last_received_ihu().elapsed() > ihu_threshold {
-                    // peer is dead
-                    println!("Peer {:?} is dead", peer.overlay_ip());
-                    // remove the peer from the peer_interfaces
-                  //  self.remove_peer_interface(peer.clone());
-                    // remove the peer's routes from the routing table (= all the peers that use the peer as next-hop)
+            let dead_peers = {
+                // a peer is assumed dead when the peer's last sent ihu exceeds a threshold
+                let mut dead_peers = Vec::new();
+                for peer in inner.peer_interfaces.iter() {
+                    // check if the peer's last_received_ihu is greater than the threshold
+                    if peer.time_last_received_ihu().elapsed() > ihu_threshold {
+                        // peer is dead
+                        println!("Peer {:?} is dead", peer.overlay_ip());
+                        dead_peers.push(peer.clone());
+                    }
                 }
-            } 
+                dead_peers
+            };
+
+            // vec to store retraction update that need to be sent
+            let mut retraction_updates = Vec::<ControlPacket>::new();
+    
+            // remove the peer from the peer_interfaces and the routes
+            for dead_peer in dead_peers {
+                inner.remove_peer_interface(dead_peer.clone());
+                // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
+                inner.selected_routing_table.table.retain(|_, route_entry| {
+                    route_entry.next_hop != dead_peer.overlay_ip()
+                });
+                inner.fallback_routing_table.table.retain(|_, route_entry| {
+                    route_entry.next_hop != dead_peer.overlay_ip()
+                });
+
+                // create retraction update for each dead peer 
+                let retraction_update = ControlPacket::new_update(
+                    32, 
+                    UPDATE_INTERVAL as u16, 
+                    inner.router_seqno, 
+                    0xFFFF, 
+                    dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP 
+                    inner.router_id,
+                );
+                retraction_updates.push(retraction_update);
+            }
+
+            // send retraction update for the dead peer
+            // when other nodes receive this update (with metric 0XFFFF), they should also remove the routing tables entries with that peer as neighbor
+            for peer in inner.peer_interfaces.iter() {
+                for ru in retraction_updates.iter() {
+                    if let Err(e) = peer.send_control_packet(ru.clone()) {
+                        eprintln!("Error sending retraction update to peer");
+                    }
+                }
+            }
 
         }
     }
+    
+    
 
     async fn handle_incoming_control_packet(
         self,
@@ -336,7 +372,22 @@ impl Router {
                 }
                 // entry exists
                 else {
-                    println!("received update where entry alread exists");
+
+                    // check if update is a retraction
+                    if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
+                        println!("RECEIVED RETRACTION UPDATE!!!!!!!!!!!!!");
+                        // if the update is a retraction, we remove the entry from the routing tables
+                        // we also remove the corresponding source entry???
+                        if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
+                            inner.selected_routing_table.remove(&route_key_from_update);
+                        }
+                        if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
+                            inner.fallback_routing_table.remove(&route_key_from_update);
+                        }
+                        return;
+                    }
+
+                    println!("received update where entry already exists");
                     // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
                     // to the router-id of the entry, then we ignore the update
                     if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
@@ -405,8 +456,11 @@ impl Router {
                 };
                 match source_table.get(&source_key) {
                     Some(&entry) => {
-                        return seqno > entry.seqno
-                            || (seqno == entry.seqno && metric < entry.metric);
+                        // debug purposes
+                        if metric == 0xFFFF {
+                            println!("metric is 0xFFFF, so update is a RETRACTION");
+                        }
+                        return (seqno > entry.seqno|| (seqno == entry.seqno && metric < entry.metric)) || metric == 0xFFFF;
                     }
                     None => return true,
                 }
@@ -544,6 +598,9 @@ impl RouterInner {
         };
 
         Ok(router_inner)
+    }
+    fn remove_peer_interface(&mut self, peer: Peer) {
+        self.peer_interfaces.retain(|p| p != &peer);
     }
 
     fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
