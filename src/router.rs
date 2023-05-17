@@ -293,41 +293,19 @@ impl Router {
                             selected: true,
                         };
 
-
-                        // first check if there exists a routing entry for the same prefix, plen (skipping neighbor field) in selected
-                        // if the metric of the update is lower, we should remove the entry from selected and add it to fallback
-                        // if the metric of the update is higher, we should add it to fallback 
-
-                        /* MORE CLEAR BUT GIVES IDIOT ERROR */ 
-                        // for r in inner.selected_routing_table.table.iter_mut() {
-                        //     if r.0.plen == plen && r.0.prefix == prefix {
-                        //         if metric < r.1.metric {
-                        //             let old_selected = inner.selected_routing_table.remove(r.0);
-                        //             if old_selected.is_some() { 
-                        //                 let rk = RouteKey { prefix: r.0.prefix, plen: r.0.plen, neighbor: r.0.neighbor };
-                        //                 inner.fallback_routing_table.insert(rk, old_selected.unwrap());
-                        //                 break; // we can break out of the for, as there will be max one better route in the selected at any point in time
-                        //             }
-                        //         }
-                        //         else if metric > r.1.metric {
-                        //             // this means that there is already a better route in our selected routing table, so we should add it to fallback instead 
-                        //             inner.fallback_routing_table.table.insert(route_key, route_entry);
-                        //             return; // quit the function, work is done here
-                        //         }
-                        //     }
-                        // }
-                        // // insert the route into selected (we might he placed one other route, that was previously the best, in the fallback)
-                        // inner.selected_routing_table.table.insert(route_key, route_entry);
-
-                        /* LESS CLEAR BUT NO IDIOT ERROR */ 
                         // Collect keys of routes to be removed
                         let mut to_remove = Vec::new();
                         for r in inner.selected_routing_table.table.iter() {
+                            // filter based on prefix and plen, skipping neighbor
                             if r.0.plen == plen && r.0.prefix == prefix {
+                                // metric of update is smaller than entry's metric
                                 if metric < r.1.metric {
+                                    // this means we should remove the entry from the selected routing table
                                     to_remove.push(r.0.clone());
+                                    break; // we can break, as there will be max 1 better route in selected table at any point in time (hence 'selected')
+                                // metric of update is greater than entry's metric
                                 } else if metric > r.1.metric {
-                                    // This means that there is already a better route in our selected routing table,
+                                    // this means that there is already a better route in our selected routing table,
                                     // so we should add it to fallback instead 
                                     inner.fallback_routing_table.table.insert(route_key.clone(), route_entry.clone());
                                     return; // quit the function, work is done here
@@ -342,8 +320,6 @@ impl Router {
                         }
                         // insert the route into selected (we might have placed one other route, that was previously the best, in the fallback)
                         inner.selected_routing_table.table.insert(route_key, route_entry);
-
-
 
                     }
                 }
