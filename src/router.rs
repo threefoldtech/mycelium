@@ -672,12 +672,9 @@ impl RouterInner {
                     sr.prefix, // the prefix of a static route corresponds to the TUN addr of the node
                     self.router_id,
                 );
-
-                println!("Propagting static route update: {:?}", update);
                 updates.push((peer.clone(), update));
             }
         }
-
         for (peer, update) in updates {
             self.send_update(&peer, update);
         }
@@ -696,8 +693,6 @@ impl RouterInner {
                     sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
                     self.router_id,
                 );
-
-                println!("Propagting selected route update: {:?}", update);
                 updates.push((peer.clone(), update));
             }
         }
