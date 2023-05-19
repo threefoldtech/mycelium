@@ -1,19 +1,14 @@
 use futures::{SinkExt, StreamExt};
 use std::{
     error::Error,
-    net::{IpAddr, Ipv4Addr},
+    net::IpAddr,
     sync::{Arc, RwLock},
 };
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::{codec::PacketCodec, packet::{Packet, BabelTLV}};
-use crate::{
-    packet::{ControlPacket, ControlStruct, DataPacket},
-    timers::Timer,
-};
-
-const IHU_INTERVAL: u64 = 10;
+use crate::packet::{ControlPacket, ControlStruct, DataPacket};
+use crate::{codec::PacketCodec, packet::Packet};
 
 #[derive(Debug, Clone)]
 pub struct Peer {
@@ -57,11 +52,6 @@ impl Peer {
         self.inner.write().unwrap().time_last_received_hello = time
     }
 
-    /// Get stream IP (linked to underlay IP) for this peer
-    pub fn stream_ip(&self) -> IpAddr {
-        self.inner.read().unwrap().stream_ip
-    }
-
     /// Get overlay IP for this peer
     pub fn overlay_ip(&self) -> IpAddr {
         self.inner.read().unwrap().overlay_ip
@@ -78,7 +68,6 @@ impl Peer {
     /// It's send over the to_peer_control channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
     pub fn send_control_packet(&self, control_packet: ControlPacket) -> Result<(), Box<dyn Error>> {
-
         Ok(self
             .inner
             .write()
@@ -106,7 +95,6 @@ impl Peer {
     pub fn set_time_last_received_ihu(&self, time: tokio::time::Instant) {
         self.inner.write().unwrap().time_last_received_ihu = time
     }
-
 }
 
 impl PartialEq for Peer {
@@ -114,8 +102,6 @@ impl PartialEq for Peer {
         self.overlay_ip() == other.overlay_ip()
     }
 }
-
-
 
 #[derive(Debug)]
 struct PeerInner {
@@ -126,7 +112,7 @@ struct PeerInner {
     hello_seqno: u16,
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
-    time_last_received_ihu: tokio::time::Instant, 
+    time_last_received_ihu: tokio::time::Instant,
 }
 
 impl PeerInner {

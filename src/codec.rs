@@ -36,7 +36,7 @@ impl Decoder for PacketCodec {
             packet_type
         } else {
             // Check we can read the packet type (1 byte)
-            if src.len() < 1 {
+            if src.is_empty() {
                 return Ok(None);
             }
 
@@ -249,12 +249,12 @@ impl Decoder for ControlPacketCodec {
             BabelTLVType::Hello => {
                 let seqno = buf.get_u16();
                 let interval = buf.get_u16();
-                let body = BabelPacketBody {
+
+                BabelPacketBody {
                     tlv_type,
                     length,
                     tlv: BabelTLV::Hello { seqno, interval },
-                };
-                body
+                }
             }
             BabelTLVType::IHU => {
                 let interval = buf.get_u16();
@@ -264,12 +264,12 @@ impl Decoder for ControlPacketCodec {
                     buf.get_u8(),
                     buf.get_u8(),
                 ));
-                let body = BabelPacketBody {
+
+                BabelPacketBody {
                     tlv_type,
                     length,
                     tlv: BabelTLV::IHU { interval, address },
-                };
-                body
+                }
             }
             BabelTLVType::Update => {
                 let ae = buf.get_u8();
@@ -309,7 +309,8 @@ impl Decoder for ControlPacketCodec {
                     }
                 };
                 let router_id = buf.get_u64();
-                let body = BabelPacketBody {
+
+                BabelPacketBody {
                     tlv_type,
                     length,
                     tlv: BabelTLV::Update {
@@ -320,8 +321,7 @@ impl Decoder for ControlPacketCodec {
                         prefix,
                         router_id,
                     },
-                };
-                body
+                }
             }
             BabelTLVType::AckReq => todo!(),
             BabelTLVType::Ack => todo!(),
@@ -398,9 +398,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                     }
                 }
                 buf.put_u64(router_id);
-            }
-            // Add encoding logic for other TLV types.
-            _ => {}
+            } // Add encoding logic for other TLV types.
         }
 
         Ok(())
