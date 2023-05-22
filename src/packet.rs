@@ -108,7 +108,7 @@ impl ControlPacket {
         seqno: u16,
         metric: u16,
         prefix: IpAddr,
-        router_id: u64,
+        router_id: PublicKey,
     ) -> Self {
         let uses_ipv6 = prefix.is_ipv6();
         let header_length = (BabelTLVType::Update.get_tlv_length(uses_ipv6) + 2) as u16;
@@ -201,6 +201,6 @@ pub enum BabelTLV {
         seqno: u16,
         metric: u16,
         prefix: IpAddr,
-        router_id: u64,
+        router_id: PublicKey,
     },
 }

@@ -1,10 +1,12 @@
 use std::{collections::HashMap, net::IpAddr};
 
+use x25519_dalek::PublicKey;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
     pub prefix: IpAddr,
     pub plen: u8,
-    pub router_id: u64, // We temporarily use 100 for all router IDs
+    pub router_id: PublicKey, 
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -20,7 +22,6 @@ impl FeasibilityDistance {
 }
 
 // Store (prefix, plen, router_id) -> feasibility distance mapping
-
 #[derive(Debug)]
 pub struct SourceTable {
     pub table: HashMap<SourceKey, FeasibilityDistance>,

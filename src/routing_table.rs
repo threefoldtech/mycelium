@@ -1,3 +1,5 @@
+use x25519_dalek::PublicKey;
+
 use crate::{peer::Peer, source_table::SourceKey};
 use std::{collections::BTreeMap, net::IpAddr};
 
@@ -55,7 +57,7 @@ impl RouteEntry {
         self.seqno = seqno;
     }
 
-    pub fn update_router_id(&mut self, router_id: u64) {
+    pub fn update_router_id(&mut self, router_id: PublicKey) {
         self.source.router_id = router_id;
     }
 }

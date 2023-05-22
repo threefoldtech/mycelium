@@ -5,6 +5,7 @@ use crate::{
     source_table::{self, FeasibilityDistance, SourceKey, SourceTable},
 };
 use rand::Rng;
+use x25519_dalek::{StaticSecret, PublicKey};
 use std::{
     error::Error,
     fmt::Debug,
@@ -44,6 +45,7 @@ impl Router {
     pub fn new(
         node_tun: Arc<Tun>,
         static_routes: Vec<StaticRoute>,
+        node_keypair: (StaticSecret, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
@@ -56,6 +58,7 @@ impl Router {
                 static_routes,
                 router_data_tx,
                 router_control_tx,
+                node_keypair,
             )?)),
         };
 
@@ -76,8 +79,8 @@ impl Router {
         Ok(router)
     }
 
-    pub fn router_id(&self) -> u64 {
-        self.inner.read().unwrap().router_id
+    pub fn router_id(&self) -> PublicKey { 
+        self.node_public_key()
     }
 
     pub fn router_control_tx(&self) -> UnboundedSender<ControlStruct> {
@@ -137,6 +140,9 @@ impl Router {
         matching_peer.map(Clone::clone)
     }
 
+    pub fn node_public_key(&self) -> PublicKey {
+        self.inner.read().unwrap().node_keypair.1
+    }
 
     pub fn print_selected_routes(&self) {
         let inner = self.inner.read().unwrap();
@@ -484,6 +490,7 @@ impl Router {
             while let Some(data_packet) = router_data_rx.recv().await {
                 match data_packet.dest_ip {
                     x if x == node_tun_addr => match node_tun.send(&data_packet.raw_data).await {
+                        // als packet voor onzelf is, decrypt uw raw-data en stuur naar tun interface
                         Ok(_) => {}
                         Err(e) => {
                             eprintln!("Error sending data packet to TUN interface: {:?}", e)
@@ -568,7 +575,7 @@ impl Router {
 }
 
 pub struct RouterInner {
-    pub router_id: u64,
+    pub router_id: PublicKey,
     peer_interfaces: Vec<Peer>,
     router_control_tx: UnboundedSender<ControlStruct>,
     router_data_tx: UnboundedSender<DataPacket>,
@@ -578,6 +585,7 @@ pub struct RouterInner {
     source_table: SourceTable,
     router_seqno: u16,
     static_routes: Vec<StaticRoute>,
+    node_keypair: (StaticSecret, PublicKey),
 }
 
 impl RouterInner {
@@ -586,9 +594,10 @@ impl RouterInner {
         static_routes: Vec<StaticRoute>,
         router_data_tx: UnboundedSender<DataPacket>,
         router_control_tx: UnboundedSender<ControlStruct>,
+        node_keypair: (StaticSecret, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
-            router_id: rand::thread_rng().gen(),
+            router_id: node_keypair.1,
             peer_interfaces: Vec::new(),
             router_control_tx,
             router_data_tx,
@@ -598,6 +607,7 @@ impl RouterInner {
             source_table: SourceTable::new(),
             router_seqno: 0,
             static_routes: static_routes,
+            node_keypair: node_keypair,
         };
 
         Ok(router_inner)

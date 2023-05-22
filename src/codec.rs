@@ -201,7 +201,7 @@ impl Encoder<DataPacket> for DataPacketCodec {
     type Error = std::io::Error;
 
     fn encode(&mut self, item: DataPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(item.raw_data.len() + 6);
+        dst.reserve(item.raw_data.len() + 6 + 32);
         // Write the length of the data
         dst.put_u16(item.raw_data.len() as u16);
         // Write the destination IP
@@ -304,7 +304,7 @@ impl Decoder for ControlPacketCodec {
                 // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
                 let prefix = match ae {
                     0 => {
-                        // 4 bytes IP + 8 bytes router_id
+                        // 4 bytes IP + 4 bytes router_id
                         IpAddr::V4(Ipv4Addr::new(
                             buf.get_u8(),
                             buf.get_u8(),
@@ -313,7 +313,7 @@ impl Decoder for ControlPacketCodec {
                         ))
                     }
                     1 => {
-                        // 16 bytes IP + 8 bytes router_id
+                        // 16 bytes IP + 4 bytes router_id
                         IpAddr::V6(Ipv6Addr::new(
                             buf.get_u16(),
                             buf.get_u16(),
@@ -332,7 +332,13 @@ impl Decoder for ControlPacketCodec {
                         ))
                     }
                 };
-                let router_id = buf.get_u64();
+
+                let mut router_id_bytes = [0u8; 32];
+                router_id_bytes.copy_from_slice(&buf[..32]);
+                buf.advance(32);
+
+                let router_id = PublicKey::from(router_id_bytes);
+                
 
                 BabelPacketBody {
                     tlv_type,
@@ -421,8 +427,9 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                         buf.put_u16(_ipv6.segments()[7]);
                     }
                 }
-                buf.put_u64(router_id);
-            } // Add encoding logic for other TLV types.
+
+                buf.put_slice(&router_id.to_bytes());
+            } 
         }
 
         Ok(())

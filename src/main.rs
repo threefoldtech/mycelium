@@ -18,6 +18,7 @@ mod peer_manager;
 mod router;
 mod routing_table;
 mod source_table;
+mod x25519;
 
 const LINK_MTU: usize = 1420;
 
@@ -44,15 +45,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    // Generate a new keypair for this node, panic if it fails
+    let node_keypair = x25519::get_keypair().unwrap();
+
+
+    println!("Node public key: {:?}", node_keypair.1);
+
     let static_peers = cli.static_peers;
 
     // Creating a new Router instance
     let router = match router::Router::new(
         node_tun.clone(),
         vec![StaticRoute::new(cli.tun_addr.into())],
+        node_keypair
     ) {
         Ok(router) => {
-            println!("Router created. ID: {}", router.router_id());
+            println!("Router created. Pubkey: {:?}", router.node_public_key());
             router
         }
         Err(e) => {
@@ -102,26 +110,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 };
 
-                // read the next 32 bytes from the buffer to obtain the pubkey
-                let pubkey_bytes = &buf[20..52];
-                if pubkey_bytes.len() >= 32 {
-                    let pubkey_bytes_32: [u8; 32] = pubkey_bytes[..32].try_into().unwrap();
-                    let pubkey = PublicKey::from(pubkey_bytes_32);
+                // inject own pubkey
 
-                    let data_packet = DataPacket {
-                        dest_ip: dest_addr,
-                        pubkey,
-                        raw_data: buf.to_vec(),
-                    };
+                // and fix this
+                /* 
+                let data_packet = DataPacket {
+                    dest_ip: dest_addr,
+                    pubkey,
+                    raw_data: buf.to_vec(), // this needs to be encrypted
+                };
+                
 
-                    if router.router_data_tx().send(data_packet).is_err() {
-                        eprintln!("Failed to send data_packet");
-                    }
-
-                } else {
-                    // Handle the case where pubkey_bytes is less than 32 bytes.
-                    eprintln!("pubkey_bytes is less than 32 bytes");
+                if router.router_data_tx().send(data_packet).is_err() {
+                    eprintln!("Failed to send data_packet");
                 }
+                */
             }
         });
     }
