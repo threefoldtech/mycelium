@@ -1,15 +1,11 @@
-use tokio_tun::{Tun, TunBuilder};
-use std::{
-    sync::Arc,
-    net::Ipv4Addr,
-    error::Error,
-};
-use rtnetlink::Handle;
 use futures::stream::TryStreamExt;
+use rtnetlink::Handle;
+use std::{error::Error, net::Ipv4Addr, sync::Arc};
+use tokio_tun::{Tun, TunBuilder};
 
 pub const TUN_NAME: &str = "tun0";
 pub const TUN_ROUTE_DEST: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 0);
-pub const TUN_ROUTE_PREFIX: u8 = 24;
+pub const TUN_ROUTE_PREFIX: u8 = 16;
 
 // Create a TUN interface
 pub fn create_tun_interface(int_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
@@ -54,31 +50,15 @@ pub async fn add_route(handle: Handle) -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn setup_node(tun_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
-    match create_tun_interface(tun_addr) {
-        Ok(tun) => {
-            println!("Interface '{}' ({}) created", TUN_NAME, tun_addr);
-            match rtnetlink::new_connection() {
-                Ok((conn, handle, _)) => {
-                    tokio::spawn(conn);
-                    match add_route(handle.clone()).await {
-                        Ok(_) => {
-                            println!("Static route created");
-                        },
-                        Err(e) => {
-                            panic!("Error adding route: {}", e);
-                        }
-                    }
-                },
-                Err(e) => {
-                    panic!("Error creating new handle: {}", e);
-                }
-            }
+    let tun = create_tun_interface(tun_addr)?;
+    println!("Interface '{}' ({}) created", TUN_NAME, tun_addr);
 
-            
-            Ok(tun)
-        }, 
-        Err(e) => {
-            panic!("Error creating TUN: {}", e);
-        }
-    }
+    let (conn, handle, _) = rtnetlink::new_connection()?;
+    tokio::spawn(conn);
+
+    add_route(handle.clone()).await?;
+
+    println!("Static route created");
+
+    Ok(tun)
 }
