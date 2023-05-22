@@ -111,12 +111,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
 
                 // inject own pubkey
-
-                // and fix this
-                /* 
                 let data_packet = DataPacket {
                     dest_ip: dest_addr,
-                    pubkey,
+                    pubkey: router.node_public_key(),
                     raw_data: buf.to_vec(), // this needs to be encrypted
                 };
                 
@@ -124,7 +121,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if router.router_data_tx().send(data_packet).is_err() {
                     eprintln!("Failed to send data_packet");
                 }
-                */
             }
         });
     }
