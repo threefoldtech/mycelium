@@ -1,18 +1,13 @@
+use crate::packet::DataPacket;
+use crate::router::StaticRoute;
 use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
-use packet::DataPacket;
-use router::Router;
-use routing_table::{RouteEntry, RouteKey};
-use source_table::{FeasibilityDistance, SourceKey};
 use std::{
     error::Error,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
+    net::{Ipv4Addr, SocketAddr},
 };
 use tokio::io::AsyncBufReadExt;
-
-use crate::{peer::Peer, router::StaticRoute};
 
 mod codec;
 mod node_setup;
@@ -22,7 +17,6 @@ mod peer_manager;
 mod router;
 mod routing_table;
 mod source_table;
-mod timers;
 
 const LINK_MTU: usize = 1420;
 
@@ -52,7 +46,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let static_peers = cli.static_peers;
 
     // Creating a new Router instance
-    let router = match router::Router::new(node_tun.clone(), vec![StaticRoute::new(cli.tun_addr.into())]) {
+    let router = match router::Router::new(
+        node_tun.clone(),
+        vec![StaticRoute::new(cli.tun_addr.into())],
+    ) {
         Ok(router) => {
             println!("Router created. ID: {}", router.router_id());
             router
@@ -61,7 +58,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             panic!("Error creating router: {}", e);
         }
     };
-
 
     // Creating a new PeerManager instance
     let _peer_manager: peer_manager::PeerManager =
@@ -139,9 +135,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         );
                     }
 
-
                     println!("\n----------- Current source table: -----------");
-                    router.print_source_table(); 
+                    router.print_source_table();
 
                     println!("\n\n");
                 }

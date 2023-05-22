@@ -1,12 +1,5 @@
-use std::{collections::{HashMap, BTreeMap}, net::IpAddr};
-
-use crate::{
-    packet::{BabelTLV, ControlStruct},
-    peer::Peer,
-    router::Router,
-    source_table::SourceKey,
-    timers::Timer,
-};
+use crate::{peer::Peer, source_table::SourceKey};
+use std::{collections::BTreeMap, net::IpAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RouteKey {
@@ -14,7 +7,6 @@ pub struct RouteKey {
     pub plen: u8,
     pub neighbor: IpAddr,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct RouteEntry {
@@ -28,6 +20,7 @@ pub struct RouteEntry {
 }
 
 impl RouteEntry {
+    /*
     pub fn new(
         source: SourceKey,
         neighbor: Peer,
@@ -53,7 +46,7 @@ impl RouteEntry {
     pub fn is_retracted(&self) -> bool {
         self.metric == 0xFFFF
     }
-
+    */
     pub fn update_metric(&mut self, metric: u16) {
         self.metric = metric;
     }
@@ -86,9 +79,5 @@ impl RoutingTable {
 
     pub fn remove(&mut self, key: &RouteKey) -> Option<RouteEntry> {
         self.table.remove(key)
-    }
-
-    pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {
-        self.table.get(key)
     }
 }

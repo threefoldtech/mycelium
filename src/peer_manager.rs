@@ -1,8 +1,7 @@
 use crate::peer::Peer;
 use crate::router::Router;
 use serde::Deserialize;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Arc;
+use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
@@ -22,10 +21,10 @@ pub struct PeerManager {
 
 impl PeerManager {
     pub fn new(router: Router, static_peers_sockets: Vec<SocketAddr>) -> Self {
-        let peer_manager = PeerManager { 
-                router,
-                initial_peers: static_peers_sockets.clone(), 
-            };
+        let peer_manager = PeerManager {
+            router,
+            initial_peers: static_peers_sockets.clone(),
+        };
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
         tokio::spawn(PeerManager::start_listener(peer_manager.clone()));
         // Reads the nodeconfig.toml file and connects to the peers in the file.
@@ -36,7 +35,9 @@ impl PeerManager {
             static_peers_sockets,
         ));
 
-        tokio::spawn(PeerManager::reconnect_to_initial_peers(peer_manager.clone()));
+        tokio::spawn(PeerManager::reconnect_to_initial_peers(
+            peer_manager.clone(),
+        ));
 
         peer_manager
     }
@@ -154,7 +155,6 @@ impl PeerManager {
 
     // this is used to reconnect to the provided static peers in case the connection is lost
     async fn reconnect_to_initial_peers(self) {
-
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
@@ -207,9 +207,8 @@ impl PeerManager {
                         }
                     }
                 }
-            } 
+            }
         }
-        
     }
 
     async fn start_listener(self) {
@@ -282,5 +281,4 @@ impl PeerManager {
             }
         }
     }
-
 }

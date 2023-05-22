@@ -1,7 +1,5 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use crate::packet::{BabelTLV, ControlStruct};
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
     pub prefix: IpAddr,

@@ -86,10 +86,7 @@ impl ControlPacket {
     }
 
     pub fn new_ihu(interval: u16, dest_address: IpAddr) -> Self {
-        let uses_ipv6 = match dest_address {
-            IpAddr::V4(_) => false,
-            IpAddr::V6(_) => true,
-        };
+        let uses_ipv6 = dest_address.is_ipv6();
         let header_length = (BabelTLVType::IHU.get_tlv_length(uses_ipv6) + 2) as u16;
         Self {
             header: BabelPacketHeader::new(header_length),
@@ -112,10 +109,7 @@ impl ControlPacket {
         prefix: IpAddr,
         router_id: u64,
     ) -> Self {
-        let uses_ipv6 = match prefix {
-            IpAddr::V4(_) => false,
-            IpAddr::V6(_) => true,
-        };
+        let uses_ipv6 = prefix.is_ipv6();
         let header_length = (BabelTLVType::Update.get_tlv_length(uses_ipv6) + 2) as u16;
         Self {
             header: BabelPacketHeader::new(header_length),
@@ -192,26 +186,12 @@ pub enum BabelTLV {
     // These TLVs are not implemented as they are used for padding when sending multiple TLVs in one packet.
     // Pad1,
     // PadN(u8),
-    AckReq {
-        nonce: u16,
-        interval: u16,
-    },
-    Ack {
-        nonce: u16,
-    },
     Hello {
         seqno: u16,
         interval: u16,
     },
     IHU {
         interval: u16,
-        address: IpAddr,
-    },
-    // RouterID TLVs are sent just before Update TLVs and server the purpose of identifying the router that sent the Update TLV.
-    // This is used when multiple Update TLVs are sent where a prefix is included in the first Update TLV and omitted in the subsequent Update TLVs.
-    // As we do not support ommitted prefixes, we do not need to implement this TLV. We pass the router_id as a parameter to the Update TLV instead.
-    // RouterID { router_id: u16 },
-    NextHop {
         address: IpAddr,
     },
     Update {
@@ -221,15 +201,5 @@ pub enum BabelTLV {
         metric: u16,
         prefix: IpAddr,
         router_id: u64,
-    },
-    RouteReq {
-        prefix: IpAddr,
-        plen: u8,
-    },
-    SeqnoReq {
-        prefix: IpAddr,
-        plen: u8,
-        seqno: u16,
-        router_id: u16,
     },
 }
