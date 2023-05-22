@@ -8,6 +8,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 use tokio::io::AsyncBufReadExt;
+use x25519_dalek::PublicKey;
 
 mod codec;
 mod node_setup;
@@ -92,19 +93,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 };
 
-                if let Some(IpHeader::Version4(header, _)) = packet.ip {
+                let dest_addr = if let Some(IpHeader::Version4(header, _)) = packet.ip {
                     let dest_addr = Ipv4Addr::from(header.destination);
                     println!("Destination IPv4 address: {}", dest_addr);
+                    dest_addr
+                } else {
+                    println!("Non-IPv4 packet received, ignoring...");
+                    continue;
+                };
+
+                // read the next 32 bytes from the buffer to obtain the pubkey
+                let pubkey_bytes = &buf[20..52];
+                if pubkey_bytes.len() >= 32 {
+                    let pubkey_bytes_32: [u8; 32] = pubkey_bytes[..32].try_into().unwrap();
+                    let pubkey = PublicKey::from(pubkey_bytes_32);
 
                     let data_packet = DataPacket {
                         dest_ip: dest_addr,
+                        pubkey,
                         raw_data: buf.to_vec(),
                     };
+
                     if router.router_data_tx().send(data_packet).is_err() {
                         eprintln!("Failed to send data_packet");
                     }
+
                 } else {
-                    println!("Non-IPv4 packet received, ignoring...");
+                    // Handle the case where pubkey_bytes is less than 32 bytes.
+                    eprintln!("pubkey_bytes is less than 32 bytes");
                 }
             }
         });

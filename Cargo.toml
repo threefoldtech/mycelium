@@ -17,3 +17,4 @@ serde = { version = "1.0.158", features = ["derive"] }
 rand = "0.8.5"
 bytes = "1.4.0"
 etherparse = "0.13.0"
+x25519-dalek = "1.2.0"

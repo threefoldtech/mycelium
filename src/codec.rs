@@ -8,6 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 use tokio_util::codec::{Decoder, Encoder};
+use x25519_dalek::PublicKey;
 
 /* ********************************PAKCET*********************************** */
 pub struct PacketCodec {
@@ -105,6 +106,7 @@ impl Encoder<Packet> for PacketCodec {
 pub struct DataPacketCodec {
     len: Option<u16>,
     dest_ip: Option<std::net::Ipv4Addr>,
+    pubkey: Option<PublicKey>,
 }
 
 impl DataPacketCodec {
@@ -112,6 +114,7 @@ impl DataPacketCodec {
         DataPacketCodec {
             len: None,
             dest_ip: None,
+            pubkey: None,
         }
     }
 }
@@ -154,6 +157,23 @@ impl Decoder for DataPacketCodec {
             dest_ip
         };
 
+        // Determine the pubkey
+        let pubkey = if let Some(pubkey) = self.pubkey {
+            pubkey
+        } else {
+            if src.len() < 32 {
+                return Ok(None);
+            }
+
+            let mut pubkey_bytes = [0u8; 32];
+            pubkey_bytes.copy_from_slice(&src[..32]);
+            let pubkey = PublicKey::from(pubkey_bytes);
+            src.advance(32);
+
+            self.pubkey = Some(pubkey);
+            pubkey
+        };
+
         // Check we have enough data to decode
         if src.len() < data_len {
             return Ok(None);
@@ -167,10 +187,12 @@ impl Decoder for DataPacketCodec {
         // Reset state
         self.len = None;
         self.dest_ip = None;
+        self.pubkey = None;
 
         Ok(Some(DataPacket {
             raw_data: data,
             dest_ip,
+            pubkey,
         }))
     }
 }
@@ -184,6 +206,8 @@ impl Encoder<DataPacket> for DataPacketCodec {
         dst.put_u16(item.raw_data.len() as u16);
         // Write the destination IP
         dst.put_slice(&item.dest_ip.octets());
+        // Write the public key
+        dst.put_slice(&item.pubkey.to_bytes());
         // Write the data
         dst.extend_from_slice(&item.raw_data);
 
