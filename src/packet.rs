@@ -34,7 +34,6 @@ impl DataPacket {}
 #[derive(Debug, Clone)]
 pub struct ControlStruct {
     pub control_packet: ControlPacket,
-    pub control_reply_tx: mpsc::UnboundedSender<ControlPacket>,
     pub src_overlay_ip: IpAddr,
 }
 
@@ -57,14 +56,6 @@ pub struct BabelPacketBody {
     pub tlv_type: BabelTLVType,
     pub length: u8, // length of the tlv (only the tlv, not tlv_type and length itself)
     pub tlv: BabelTLV,
-}
-
-impl ControlStruct {
-    pub fn reply(self, control_packet: ControlPacket) {
-        if let Err(e) = self.control_reply_tx.send(control_packet) {
-            eprintln!("Error reply: {:?}", e);
-        }
-    }
 }
 
 impl BabelPacketHeader {

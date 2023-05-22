@@ -178,7 +178,6 @@ impl PeerInner {
                                     // Parse the DataPacket into a ControlStruct as the to_routing_control channel expects
                                     let control_struct = ControlStruct {
                                         control_packet: packet,
-                                        control_reply_tx: control_reply_tx.clone(),
                                         src_overlay_ip: overlay_ip,
                                         // Note: although this control packet is received from the TCP stream
                                         // we set the src_overlay_ip to the overlay_ip of the peer
