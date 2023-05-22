@@ -131,8 +131,6 @@ impl PeerInner {
         // Control channel for peer
         let (to_peer_control, mut from_routing_control) =
             mpsc::unbounded_channel::<ControlPacket>();
-        // Control reply channel for peer
-        let (control_reply_tx, mut control_reply_rx) = mpsc::unbounded_channel::<ControlPacket>();
 
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = 0;
@@ -149,7 +147,6 @@ impl PeerInner {
         tokio::spawn(async move {
             loop {
                 select! {
-
                 // Received over the TCP stream
                 frame = framed.next() => {
                     match frame {
@@ -194,12 +191,6 @@ impl PeerInner {
                 }
 
                 Some(packet) = from_routing_control.recv() => {
-                    // Send it over the TCP stream
-                    if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
-                        eprintln!("Error writing to stream: {}", e);
-                    }
-                }
-                Some(packet) = control_reply_rx.recv() => {
                     // Send it over the TCP stream
                     if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
                         eprintln!("Error writing to stream: {}", e);
