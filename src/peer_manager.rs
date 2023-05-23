@@ -69,18 +69,6 @@ impl PeerManager {
                     );
 
                     let mut buf = [0u8; 17];
-                    // old:
-                    // match self.router.node_tun_addr() {
-                    //     IpAddr::V4(tun_addr) => {
-                    //         buf[0] = 0;
-                    //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-                    //     }
-                    //     IpAddr::V6(tun_addr) => {
-                    //         buf[0] = 1;
-                    //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-                    //     }
-                    // }
-                    // new:
                     // only using IPv6
                     buf[0] = 1;
                     buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
@@ -106,11 +94,9 @@ impl PeerManager {
 
     async fn get_peers_from_cli(self, socket_addresses: Vec<SocketAddr>) {
         for peer_addr in socket_addresses {
-            println!("connecting to: {}", peer_addr);
+            println!("Connecting to: {}", peer_addr);
 
             if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
-                println!("stream established");
-
                 let mut buffer = [0u8; 17];
                 peer_stream.read_exact(&mut buffer).await.unwrap();
                 let received_overlay_ip = match buffer[0] {
@@ -125,24 +111,8 @@ impl PeerManager {
                         continue;
                     }
                 };
-                println!(
-                    "3: Received overlay IP from other node: {:?}",
-                    received_overlay_ip
-                );
 
                 let mut buf = [0u8; 17];
-                // old:
-                // match self.router.node_tun_addr() {
-                //     IpAddr::V4(tun_addr) => {
-                //         buf[0] = 0;
-                //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-                //     }
-                //     IpAddr::V6(tun_addr) => {
-                //         buf[0] = 1;
-                //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-                //     }
-                // }
-                // new:
                 // only using IPv6
                 buf[0] = 1;
                 buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
@@ -187,24 +157,7 @@ impl PeerManager {
                             }
                         };
 
-                        println!(
-                            "Received overlay IP from other node: {:?}",
-                            received_overlay_ip
-                        );
-
                         let mut buf = [0u8; 17];
-                        // old:
-                        // match self.router.node_tun_addr() {
-                        //     IpAddr::V4(tun_addr) => {
-                        //         buf[0] = 0;
-                        //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-                        //     }
-                        //     IpAddr::V6(tun_addr) => {
-                        //         buf[0] = 1;
-                        //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-                        //     }
-                        // }
-                        // new:
                         // only using IPv6
                         buf[0] = 1;
                         buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
@@ -251,24 +204,13 @@ impl PeerManager {
         // 2. Read other node's TUN address from the stream
 
         let mut buf = [0u8; 17];
-        // old:
-        // match self.router.node_tun_addr() {
-        //     IpAddr::V4(tun_addr) => {
-        //         buf[0] = 0;
-        //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-        //     }
-        //     IpAddr::V6(tun_addr) => {
-        //         buf[0] = 1;
-        //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-        //     }
-        // }
-        // new:
         // only using IPv6
         buf[0] = 1;
         buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
 
+        // Step 1
         stream.write_all(&buf).await.unwrap();
-
+        // Step 2
         stream.read_exact(&mut buf).await.unwrap();
         let received_overlay_ip = match buf[0] {
             0 => IpAddr::from(<&[u8] as TryInto<[u8; 4]>>::try_into(&buf[1..5]).unwrap()),
@@ -278,10 +220,6 @@ impl PeerManager {
                 return;
             }
         };
-        println!(
-            "Received overlay IP from other node: {:?}",
-            received_overlay_ip
-        );
 
         // Create new Peer instance
         let peer_stream_ip = stream.peer_addr().unwrap().ip();
