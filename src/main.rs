@@ -78,15 +78,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
-    // filter out packets that are not destined for 200::/7
     {
         let router = router.clone();
         let node_tun = node_tun.clone();
-
+    
         tokio::spawn(async move {
             loop {
                 let mut buf = BytesMut::zeroed(LINK_MTU);
-
+    
                 match node_tun.recv(&mut buf).await {
                     Ok(n) => {
                         buf.truncate(n);
@@ -96,7 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                 }
-
+    
                 let packet = match PacketHeaders::from_ip_slice(&buf) {
                     Ok(packet) => packet,
                     Err(e) => {
@@ -105,7 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                 };
-
+    
                 let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
                     let dest_addr = Ipv6Addr::from(header.destination);
                     println!("Destination IPv6 address: {}", dest_addr);
@@ -114,7 +113,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     println!("Non-IPv6 packet received, ignoring...");
                     continue;
                 };
-
+    
+                // Check if destination address is in 200::/7 range
+                let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
+                if first_byte < 0x20 || first_byte > 0x3F {
+                    println!("Packet not destined for 200::/7 range, ignoring...");
+                    continue;
+                }
+    
                 // inject own pubkey
                 let data_packet = DataPacket {
                     dest_ip: dest_addr,
@@ -122,7 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     raw_data: buf.to_vec(), // this needs to be encrypted
                 };
                 
-
+    
                 if router.router_data_tx().send(data_packet).is_err() {
                     eprintln!("Failed to send data_packet");
                 }

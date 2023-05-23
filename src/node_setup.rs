@@ -37,6 +37,7 @@ pub async fn retrieve_tun_link_index(handle: Handle) -> Result<u32, Box<dyn std:
 }
 
 // Add address to TUN interface
+// this automatically creates a routing entry (for the /64 prefix)
 pub async fn add_address(handle: Handle, addr: Ipv6Addr, link_index: u32) -> Result<u32, Box<dyn std::error::Error>> {
     // add address to tun interface
     handle

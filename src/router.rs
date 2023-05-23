@@ -29,7 +29,7 @@ pub struct StaticRoute {
 impl StaticRoute {
     pub fn new(prefix: IpAddr) -> Self {
         Self {
-            plen: 32,
+            plen: 64,
             prefix,
             seqno: 0,
         }
