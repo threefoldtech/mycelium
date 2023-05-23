@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Generate the node's IPv6 address from its public key
     let node_addr = x25519::generate_addr_from_pubkey(&node_keypair.1);
+    println!("Node address: {}", node_addr);
 
     // Create TUN interface and add static route
     let node_tun = match node_setup::setup_node(node_addr).await {
@@ -77,6 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
+    // filter out packets that are not destined for 200::/7
     {
         let router = router.clone();
         let node_tun = node_tun.clone();

@@ -53,7 +53,7 @@ pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
     hasher.finalize_variable(&mut buf).unwrap();
 
     let ipv6_bytes: [u8; 16] = [
-        0x20, 0x00, // This prefix ensures the address falls into the 200::/7 range
+        0x02, 0x00, // This prefix ensures the address falls into the 200::/7 range
         buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10],
         buf[11], buf[12], buf[13],
     ];
