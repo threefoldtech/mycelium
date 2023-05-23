@@ -79,15 +79,14 @@ pub fn encrypt_raw_data(raw_data_without_nonce: Vec<u8>, shared_secret: SharedSe
 
     let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
     let nonce = Aes256Gcm::generate_nonce(&mut CryptOsRng);
-    let mut data = raw_data_without_nonce.to_vec();
+    println!("encryption nonce : {:?}", nonce);
 
     let cipher = Aes256Gcm::new(&key);
-    let encrypted_data = cipher.encrypt(&nonce, data.as_ref()).unwrap();
+    let mut encrypted_data = cipher.encrypt(&nonce, raw_data_without_nonce.as_ref()).unwrap();
 
-    data.extend_from_slice(encrypted_data.as_ref());
-    data.extend_from_slice(nonce.as_ref());
+    encrypted_data.extend_from_slice(nonce.as_ref());
 
-    data
+    encrypted_data 
 }
 
 // when a node receives a datapacket, it will decrypt it using the shared secret (generated from a public key) and a nonce
@@ -96,6 +95,7 @@ pub fn decrypt_raw_data(encrypted_raw_data: Vec<u8>, shared_secret: SharedSecret
 
     let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
     let nonce = &encrypted_raw_data[encrypted_raw_data.len() - 12..];
+    println!("decryption nonce : {:?}", nonce);
     let data = encrypted_raw_data[..encrypted_raw_data.len() - 12].to_vec();
 
     let cipher = Aes256Gcm::new(&key);
