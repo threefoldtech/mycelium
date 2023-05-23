@@ -99,7 +99,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let packet = match PacketHeaders::from_ip_slice(&buf) {
                     Ok(packet) => packet,
                     Err(e) => {
-                        println!("buffer: {:?}", buf);
                         eprintln!("Error from_ip_slice: {}", e);
                         continue;
                     }
@@ -107,17 +106,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
                 let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
                     let dest_addr = Ipv6Addr::from(header.destination);
-                    println!("Destination IPv6 address: {}", dest_addr);
                     dest_addr
                 } else {
-                    println!("Non-IPv6 packet received, ignoring...");
                     continue;
                 };
     
                 // Check if destination address is in 200::/7 range
                 let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
                 if first_byte < 0x20 || first_byte > 0x3F {
-                    println!("Packet not destined for 200::/7 range, ignoring...");
                     continue;
                 }
     
