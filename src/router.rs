@@ -9,7 +9,7 @@ use x25519_dalek::{StaticSecret, PublicKey};
 use std::{
     error::Error,
     fmt::Debug,
-    net::IpAddr,
+    net::{IpAddr, Ipv6Addr},
     sync::{Arc, RwLock},
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -44,6 +44,7 @@ pub struct Router {
 impl Router {
     pub fn new(
         node_tun: Arc<Tun>,
+        node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
         node_keypair: (StaticSecret, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
@@ -55,6 +56,7 @@ impl Router {
         let router = Router {
             inner: Arc::new(RwLock::new(RouterInner::new(
                 node_tun,
+                node_tun_addr,
                 static_routes,
                 router_data_tx,
                 router_control_tx,
@@ -91,8 +93,9 @@ impl Router {
         self.inner.read().unwrap().router_data_tx.clone()
     }
 
-    pub fn node_tun_addr(&self) -> IpAddr {
-        IpAddr::V6(self.inner.read().unwrap().node_tun.address().unwrap())
+    pub fn node_tun_addr(&self) -> Ipv6Addr {
+        // IpAddr::V6(self.inner.read().unwrap().node_tun.address().unwrap())
+        self.inner.read().unwrap().node_tun_addr
     }
 
     pub fn node_tun(&self) -> Arc<Tun> {
@@ -485,7 +488,7 @@ impl Router {
         // If destination IP of packet is same as TUN interface IP, send to TUN interface
         // If destination IP of packet is not same as TUN interface IP, send to peer with matching overlay IP
         let node_tun = self.node_tun();
-        let node_tun_addr = node_tun.address().unwrap();
+        let node_tun_addr = self.node_tun_addr();
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
                 match data_packet.dest_ip {
@@ -497,7 +500,7 @@ impl Router {
                         }
                     },
                     _ => {
-                        let best_route = self.select_best_route(IpAddr::V4(data_packet.dest_ip));
+                        let best_route = self.select_best_route(IpAddr::V6(data_packet.dest_ip));
                         match best_route {
                             Some (route_entry) => {
                                 let peer = self.peer_by_ip(route_entry.next_hop).unwrap();
@@ -580,6 +583,7 @@ pub struct RouterInner {
     router_control_tx: UnboundedSender<ControlStruct>,
     router_data_tx: UnboundedSender<DataPacket>,
     node_tun: Arc<Tun>,
+    node_tun_addr: Ipv6Addr,
     selected_routing_table: RoutingTable,
     fallback_routing_table: RoutingTable,
     source_table: SourceTable,
@@ -591,6 +595,7 @@ pub struct RouterInner {
 impl RouterInner {
     pub fn new(
         node_tun: Arc<Tun>,
+        node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
         router_data_tx: UnboundedSender<DataPacket>,
         router_control_tx: UnboundedSender<ControlStruct>,
@@ -608,6 +613,7 @@ impl RouterInner {
             router_seqno: 0,
             static_routes: static_routes,
             node_keypair: node_keypair,
+            node_tun_addr,
         };
 
         Ok(router_inner)

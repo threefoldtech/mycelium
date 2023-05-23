@@ -24,8 +24,6 @@ const LINK_MTU: usize = 1420;
 
 #[derive(Parser)]
 struct Cli {
-    #[arg(short = 'a', long = "tun-addr")]
-    tun_addr: Ipv6Addr,
     #[arg(short = 'p', long = "peers", num_args = 1..)]
     static_peers: Vec<SocketAddr>,
 }
@@ -34,8 +32,14 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
+    // Generate a new keypair for this node, panic if it fails
+    let node_keypair = x25519::get_keypair().unwrap();
+
+    // Generate the node's IPv6 address from its public key
+    let node_addr = x25519::generate_addr_from_pubkey(&node_keypair.1);
+
     // Create TUN interface and add static route
-    let node_tun = match node_setup::setup_node(cli.tun_addr).await {
+    let node_tun = match node_setup::setup_node(node_addr).await {
         Ok(tun) => {
             println!("Node setup complete");
             tun
@@ -45,8 +49,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // Generate a new keypair for this node, panic if it fails
-    let node_keypair = x25519::get_keypair().unwrap();
 
 
     println!("Node public key: {:?}", node_keypair.1);
@@ -56,7 +58,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Creating a new Router instance
     let router = match router::Router::new(
         node_tun.clone(),
-        vec![StaticRoute::new(cli.tun_addr.into())],
+        node_addr,
+        vec![StaticRoute::new(node_addr.into())],
         node_keypair
     ) {
         Ok(router) => {

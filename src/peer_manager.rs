@@ -69,16 +69,22 @@ impl PeerManager {
                     );
 
                     let mut buf = [0u8; 17];
-                    match self.router.node_tun_addr() {
-                        IpAddr::V4(tun_addr) => {
-                            buf[0] = 0;
-                            buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-                        }
-                        IpAddr::V6(tun_addr) => {
-                            buf[0] = 1;
-                            buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-                        }
-                    }
+                    // old:
+                    // match self.router.node_tun_addr() {
+                    //     IpAddr::V4(tun_addr) => {
+                    //         buf[0] = 0;
+                    //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+                    //     }
+                    //     IpAddr::V6(tun_addr) => {
+                    //         buf[0] = 1;
+                    //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+                    //     }
+                    // }
+                    // new:
+                    // only using IPv6
+                    buf[0] = 1;
+                    buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
+
                     peer_stream.write_all(&buf).await.unwrap();
 
                     let peer_stream_ip = peer_addr.ip();
@@ -125,17 +131,21 @@ impl PeerManager {
                 );
 
                 let mut buf = [0u8; 17];
-
-                match self.router.node_tun_addr() {
-                    IpAddr::V4(tun_addr) => {
-                        buf[0] = 0;
-                        buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-                    }
-                    IpAddr::V6(tun_addr) => {
-                        buf[0] = 1;
-                        buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-                    }
-                }
+                // old:
+                // match self.router.node_tun_addr() {
+                //     IpAddr::V4(tun_addr) => {
+                //         buf[0] = 0;
+                //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+                //     }
+                //     IpAddr::V6(tun_addr) => {
+                //         buf[0] = 1;
+                //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+                //     }
+                // }
+                // new:
+                // only using IPv6
+                buf[0] = 1;
+                buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
 
                 peer_stream.write_all(&buf).await.unwrap();
 
@@ -183,16 +193,22 @@ impl PeerManager {
                         );
 
                         let mut buf = [0u8; 17];
-                        match self.router.node_tun_addr() {
-                            IpAddr::V4(tun_addr) => {
-                                buf[0] = 0;
-                                buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-                            }
-                            IpAddr::V6(tun_addr) => {
-                                buf[0] = 1;
-                                buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-                            }
-                        }
+                        // old:
+                        // match self.router.node_tun_addr() {
+                        //     IpAddr::V4(tun_addr) => {
+                        //         buf[0] = 0;
+                        //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+                        //     }
+                        //     IpAddr::V6(tun_addr) => {
+                        //         buf[0] = 1;
+                        //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+                        //     }
+                        // }
+                        // new:
+                        // only using IPv6
+                        buf[0] = 1;
+                        buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
+
                         peer_stream.write_all(&buf).await.unwrap();
 
                         let peer_stream_ip = peer.ip();
@@ -216,7 +232,7 @@ impl PeerManager {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
-                        PeerManager::start_reverse_peer_exchange(stream, self.router.clone()).await;
+                        self.start_reverse_peer_exchange(stream).await;
                     }
                     Err(e) => {
                         eprintln!("Error accepting connection: {}", e);
@@ -229,23 +245,27 @@ impl PeerManager {
         }
     }
 
-    async fn start_reverse_peer_exchange(mut stream: TcpStream, router: Router) {
+    async fn start_reverse_peer_exchange(&self, mut stream: TcpStream) {
         // Steps:
         // 1. Send own TUN address over the stream
         // 2. Read other node's TUN address from the stream
 
         let mut buf = [0u8; 17];
-
-        match router.node_tun_addr() {
-            IpAddr::V4(tun_addr) => {
-                buf[0] = 0;
-                buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
-            }
-            IpAddr::V6(tun_addr) => {
-                buf[0] = 1;
-                buf[1..].copy_from_slice(&tun_addr.octets()[..]);
-            }
-        }
+        // old:
+        // match self.router.node_tun_addr() {
+        //     IpAddr::V4(tun_addr) => {
+        //         buf[0] = 0;
+        //         buf[1..5].copy_from_slice(&tun_addr.octets()[..]);
+        //     }
+        //     IpAddr::V6(tun_addr) => {
+        //         buf[0] = 1;
+        //         buf[1..].copy_from_slice(&tun_addr.octets()[..]);
+        //     }
+        // }
+        // new:
+        // only using IPv6
+        buf[0] = 1;
+        buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
 
         stream.write_all(&buf).await.unwrap();
 
@@ -267,14 +287,14 @@ impl PeerManager {
         let peer_stream_ip = stream.peer_addr().unwrap().ip();
         let new_peer = Peer::new(
             peer_stream_ip,
-            router.router_data_tx(),
-            router.router_control_tx(),
+            self.router.router_data_tx(),
+            self.router.router_control_tx(),
             stream,
             received_overlay_ip,
         );
         match new_peer {
             Ok(new_peer) => {
-                router.add_peer_interface(new_peer);
+                self.router.add_peer_interface(new_peer);
             }
             Err(e) => {
                 eprintln!("Error creating peer: {}", e);
