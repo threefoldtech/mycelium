@@ -63,11 +63,6 @@ impl PeerManager {
                         }
                     };
 
-                    println!(
-                        "Received overlay IP from other node: {:?}",
-                        received_overlay_ip
-                    );
-
                     let mut buf = [0u8; 17];
                     // only using IPv6
                     buf[0] = 1;
@@ -94,8 +89,6 @@ impl PeerManager {
 
     async fn get_peers_from_cli(self, socket_addresses: Vec<SocketAddr>) {
         for peer_addr in socket_addresses {
-            println!("Connecting to: {}", peer_addr);
-
             if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
                 let mut buffer = [0u8; 17];
                 peer_stream.read_exact(&mut buffer).await.unwrap();

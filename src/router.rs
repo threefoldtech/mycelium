@@ -277,8 +277,7 @@ impl Router {
         if let Some(source_peer) = self.source_peer_from_control_struct(control_struct) {
             let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.overlay_ip());
             match source_peer.send_control_packet(ihu) {
-                Ok(()) => {
-                },
+                Ok(()) => {},
                 Err(e) => {
                     eprintln!("Error sending IHU to peer: {e}");
                 }
@@ -491,6 +490,7 @@ impl Router {
         let node_tun_addr = self.node_tun_addr();
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
+                println!("Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})", data_packet.dest_ip, node_tun_addr);
                 match data_packet.dest_ip {
                     x if x == node_tun_addr => match node_tun.send(&data_packet.raw_data).await {
                         // als packet voor onzelf is, decrypt uw raw-data en stuur naar tun interface

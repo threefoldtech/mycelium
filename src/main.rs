@@ -110,10 +110,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     continue;
                 };
+
+                println!("Received packet from TUN with dest addr: {:?}", dest_addr);
     
                 // Check if destination address is in 200::/7 range
                 let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
-                if first_byte < 0x20 || first_byte > 0x3F {
+                if first_byte < 0x02 || first_byte > 0x3F {
                     continue;
                 }
     
@@ -145,8 +147,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     line.pop();
                     println!("----------- Current selected routes -----------{}\n", line);
                     router.print_selected_routes();
-                    println!("----------- Current fallback routes -----------{}\n", line);
-                    router.print_fallback_routes();
+                    //println!("----------- Current fallback routes -----------{}\n", line);
+                    //router.print_fallback_routes();
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.peer_interfaces() {
@@ -158,7 +160,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     println!("\n----------- Current source table: -----------");
-                    router.print_source_table();
+                    //router.print_source_table();
 
                     println!("\n\n");
                 }

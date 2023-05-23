@@ -74,7 +74,6 @@ pub async fn setup_node(addr: Ipv6Addr) -> Result<Arc<Tun>, Box<dyn std::error::
 
     let tun = match create_tun_interface() {
         Ok(tun) => {
-            println!("TUN interface created");
             tun
         }
         Err(e) => {
@@ -88,7 +87,6 @@ pub async fn setup_node(addr: Ipv6Addr) -> Result<Arc<Tun>, Box<dyn std::error::
 
     let tun_link_index = match retrieve_tun_link_index(handle.clone()).await {
         Ok(link_index) => {
-            println!("TUN interface link index retrieved");
             link_index
         }
         Err(e) => {
@@ -97,9 +95,7 @@ pub async fn setup_node(addr: Ipv6Addr) -> Result<Arc<Tun>, Box<dyn std::error::
     };
 
     match add_address(handle.clone(), addr, tun_link_index).await {
-        Ok(_) => {
-            println!("Address added to TUN interface");
-        }
+        Ok(_) => {}
         Err(e) => {
             panic!("Error adding address to TUN interface: {}", e);
         }
@@ -107,9 +103,7 @@ pub async fn setup_node(addr: Ipv6Addr) -> Result<Arc<Tun>, Box<dyn std::error::
 
     // add route for /7 (global scope for the overlay)
     match add_route(handle.clone(), tun_link_index).await {
-        Ok(_) => {
-            println!("Route added to TUN interface");
-        }
+        Ok(_) => {}
         Err(e) => {
             panic!("Error adding route to TUN interface: {}", e);
         }
