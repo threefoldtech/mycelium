@@ -105,7 +105,7 @@ impl Encoder<Packet> for PacketCodec {
 /* ******************************DATA PACKET********************************* */
 pub struct DataPacketCodec {
     len: Option<u16>,
-    dest_ip: Option<std::net::Ipv4Addr>,
+    dest_ip: Option<std::net::Ipv6Addr>,
     pubkey: Option<PublicKey>,
 }
 
@@ -143,14 +143,14 @@ impl Decoder for DataPacketCodec {
         let dest_ip = if let Some(dest_ip) = self.dest_ip {
             dest_ip
         } else {
-            if src.len() < 4 {
+            if src.len() < 16 {
                 return Ok(None);
             }
 
             // Decode octets
-            let mut ip_bytes = [0u8; 4];
-            ip_bytes.copy_from_slice(&src[..4]);
-            let dest_ip = Ipv4Addr::from(ip_bytes);
+            let mut ip_bytes = [0u8; 16];
+            ip_bytes.copy_from_slice(&src[..16]);
+            let dest_ip = Ipv6Addr::from(ip_bytes);
             src.advance(4);
 
             self.dest_ip = Some(dest_ip);
@@ -282,11 +282,15 @@ impl Decoder for ControlPacketCodec {
             }
             BabelTLVType::IHU => {
                 let interval = buf.get_u16();
-                let address = IpAddr::V4(Ipv4Addr::new(
-                    buf.get_u8(),
-                    buf.get_u8(),
-                    buf.get_u8(),
-                    buf.get_u8(),
+                let address = IpAddr::V6(Ipv6Addr::new(
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
                 ));
 
                 BabelPacketBody {
@@ -304,6 +308,7 @@ impl Decoder for ControlPacketCodec {
                 // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
                 let prefix = match ae {
                     0 => {
+                        println!("IPv4 ae, this should be removed!!");
                         // 4 bytes IP + 4 bytes router_id
                         IpAddr::V4(Ipv4Addr::new(
                             buf.get_u8(),
@@ -391,8 +396,15 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                         buf.put_u8(ipv4.octets()[2]);
                         buf.put_u8(ipv4.octets()[3]);
                     }
-                    IpAddr::V6(_ipv6) => {
-                        println!("IPv6 not supported yet");
+                    IpAddr::V6(ipv6) => {
+                        buf.put_u16(ipv6.segments()[0]);
+                        buf.put_u16(ipv6.segments()[1]);
+                        buf.put_u16(ipv6.segments()[2]);
+                        buf.put_u16(ipv6.segments()[3]);
+                        buf.put_u16(ipv6.segments()[4]);
+                        buf.put_u16(ipv6.segments()[5]);
+                        buf.put_u16(ipv6.segments()[6]);
+                        buf.put_u16(ipv6.segments()[7]);
                     }
                 }
             }

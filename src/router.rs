@@ -92,7 +92,7 @@ impl Router {
     }
 
     pub fn node_tun_addr(&self) -> IpAddr {
-        IpAddr::V4(self.inner.read().unwrap().node_tun.address().unwrap())
+        IpAddr::V6(self.inner.read().unwrap().node_tun.address().unwrap())
     }
 
     pub fn node_tun(&self) -> Arc<Tun> {

@@ -1,21 +1,19 @@
 use futures::stream::TryStreamExt;
 use rtnetlink::Handle;
-use std::{error::Error, net::Ipv4Addr, sync::Arc};
+use std::{error::Error, net::{Ipv4Addr, Ipv6Addr}, sync::Arc};
 use tokio_tun::{Tun, TunBuilder};
 
 pub const TUN_NAME: &str = "tun0";
-pub const TUN_ROUTE_DEST: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 0);
+pub const TUN_ROUTE_DEST: Ipv6Addr = Ipv6Addr::new(0xfd, 0x00, 0, 0, 0, 0, 0, 0);
 pub const TUN_ROUTE_PREFIX: u8 = 16;
 
 // Create a TUN interface
-pub fn create_tun_interface(int_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
+pub fn create_tun_interface() -> Result<Arc<Tun>, Box<dyn Error>> {
     let tun = TunBuilder::new()
         .name(TUN_NAME)
         .tap(false)
         .mtu(1420)
         .packet_info(false)
-        .address(int_addr)
-        .broadcast(Ipv4Addr::new(255, 255, 255, 0))
         .up()
         .try_build()?;
 
@@ -49,7 +47,7 @@ pub async fn add_route(handle: Handle) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub async fn setup_node(tun_addr: Ipv4Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
+pub async fn setup_node(tun_addr: Ipv6Addr) -> Result<Arc<Tun>, Box<dyn Error>> {
     let tun = create_tun_interface(tun_addr)?;
     println!("Interface '{}' ({}) created", TUN_NAME, tun_addr);
 

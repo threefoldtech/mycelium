@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv6Addr};
 use x25519_dalek::PublicKey;
 
 use crate::peer::Peer;
@@ -24,7 +24,7 @@ pub enum PacketType {
 #[derive(Debug, Clone)]
 pub struct DataPacket {
     pub raw_data: Vec<u8>,
-    pub dest_ip: Ipv4Addr,
+    pub dest_ip: Ipv6Addr,
     pub pubkey: PublicKey,
 }
 

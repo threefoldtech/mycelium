@@ -5,7 +5,7 @@ use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
 use std::{
     error::Error,
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv6Addr, SocketAddr},
 };
 use tokio::io::AsyncBufReadExt;
 use x25519_dalek::PublicKey;
@@ -25,7 +25,7 @@ const LINK_MTU: usize = 1420;
 #[derive(Parser)]
 struct Cli {
     #[arg(short = 'a', long = "tun-addr")]
-    tun_addr: Ipv4Addr,
+    tun_addr: Ipv6Addr,
     #[arg(short = 'p', long = "peers", num_args = 1..)]
     static_peers: Vec<SocketAddr>,
 }
@@ -101,12 +101,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 };
 
-                let dest_addr = if let Some(IpHeader::Version4(header, _)) = packet.ip {
-                    let dest_addr = Ipv4Addr::from(header.destination);
-                    println!("Destination IPv4 address: {}", dest_addr);
+                let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
+                    let dest_addr = Ipv6Addr::from(header.destination);
+                    println!("Destination IPv6 address: {}", dest_addr);
                     dest_addr
                 } else {
-                    println!("Non-IPv4 packet received, ignoring...");
+                    println!("Non-IPv6 packet received, ignoring...");
                     continue;
                 };
 

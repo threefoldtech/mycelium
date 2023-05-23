@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
 use rand_core::OsRng;
-use x25519_dalek::{PublicKey, StaticSecret};
+use x25519_dalek::{PublicKey, StaticSecret, SharedSecret};
 
 
 // Read the secret key from a file if it exists, otherwise generate a new one and write it to a file
@@ -35,4 +35,8 @@ pub fn get_keypair() -> Result<(StaticSecret, PublicKey), Box<dyn std::error::Er
     };
 
     Ok((secret_key, public_key))
+}
+
+pub fn shared_secret_from_keypair(secret: StaticSecret, pubkey: PublicKey) -> SharedSecret {
+    secret.diffie_hellman(&pubkey)
 }
