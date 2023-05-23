@@ -151,7 +151,7 @@ impl Decoder for DataPacketCodec {
             let mut ip_bytes = [0u8; 16];
             ip_bytes.copy_from_slice(&src[..16]);
             let dest_ip = Ipv6Addr::from(ip_bytes);
-            src.advance(4);
+            src.advance(16);
 
             self.dest_ip = Some(dest_ip);
             dest_ip

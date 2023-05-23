@@ -1,5 +1,6 @@
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
+use digest::Key;
 use rand_core::OsRng;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -8,6 +9,12 @@ use std::{
     net::Ipv6Addr,
 };
 use x25519_dalek::{PublicKey, StaticSecret, SharedSecret};
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit, OsRng as CryptOsRng},
+    Aes256Gcm,
+    Key as AesKey, // Or `Aes128Gcm`
+    Nonce,
+};
 
 // Read the secret key from a file if it exists, otherwise generate a new one and write it to a file
 // Returns the secret key and the corresponding public key
@@ -42,8 +49,8 @@ pub fn get_keypair() -> Result<(StaticSecret, PublicKey), Box<dyn std::error::Er
     Ok((secret_key, public_key))
 }
 
-pub fn shared_secret_from_keypair(secret: StaticSecret, pubkey: PublicKey) -> SharedSecret {
-    secret.diffie_hellman(&pubkey)
+pub fn shared_secret_from_keypair(secret: &StaticSecret, pubkey: &PublicKey) -> SharedSecret {
+    secret.diffie_hellman(pubkey)
 }
 
 pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
@@ -62,4 +69,37 @@ pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
     println!("output buf : {:?}", addr);
 
     addr
+}
+
+
+// when a node sends a datapacket, it will encrypt it using the shared secret (generated from a public key) and a nonce
+// the publickey is sent in the clear, the nonce is appended to the end of the raw_data
+// note: the raw_data gets encrypted first, then the nonce is appended to the end of the encrypted data
+pub fn encrypt_raw_data(raw_data_without_nonce: Vec<u8>, shared_secret: SharedSecret) -> Vec<u8> {
+
+    let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
+    let nonce = Aes256Gcm::generate_nonce(&mut CryptOsRng);
+    let mut data = raw_data_without_nonce.to_vec();
+
+    let cipher = Aes256Gcm::new(&key);
+    let encrypted_data = cipher.encrypt(&nonce, data.as_ref()).unwrap();
+
+    data.extend_from_slice(encrypted_data.as_ref());
+    data.extend_from_slice(nonce.as_ref());
+
+    data
+}
+
+// when a node receives a datapacket, it will decrypt it using the shared secret (generated from a public key) and a nonce
+// the nonce is 96-bits in size and is located at the end of the packet
+pub fn decrypt_raw_data(encrypted_raw_data: Vec<u8>, shared_secret: SharedSecret) -> Vec<u8> {
+
+    let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
+    let nonce = &encrypted_raw_data[encrypted_raw_data.len() - 12..];
+    let data = encrypted_raw_data[..encrypted_raw_data.len() - 12].to_vec();
+
+    let cipher = Aes256Gcm::new(&key);
+    let decrypted_data = cipher.decrypt(nonce.into(), data.as_ref()).unwrap();
+
+    decrypted_data.to_vec()
 }

@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         node_tun.clone(),
         node_addr,
         vec![StaticRoute::new(node_addr.into())],
-        node_keypair
+        node_keypair.clone(),
     ) {
         Ok(router) => {
             println!("Router created. Pubkey: {:?}", router.node_public_key());
@@ -81,6 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let router = router.clone();
         let node_tun = node_tun.clone();
+        let own_secret = node_keypair.0;
     
         tokio::spawn(async move {
             loop {
@@ -118,12 +119,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if first_byte < 0x02 || first_byte > 0x3F {
                     continue;
                 }
+
+                
+                // create shared secret between node and dest_addr
+                let pubkey_recipient = router.get_pubkey_from_dest(dest_addr).unwrap();
+                let shared_secret = x25519::shared_secret_from_keypair(&own_secret, &pubkey_recipient);
+
     
                 // inject own pubkey
                 let data_packet = DataPacket {
                     dest_ip: dest_addr,
                     pubkey: router.node_public_key(),
-                    raw_data: buf.to_vec(), // this needs to be encrypted
+                    raw_data: x25519::encrypt_raw_data(buf.to_vec(), shared_secret), // this needs to be encrypted
                 };
                 
     

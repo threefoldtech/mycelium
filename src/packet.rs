@@ -23,7 +23,7 @@ pub enum PacketType {
 /* ******************************DATA PACKET********************************* */
 #[derive(Debug, Clone)]
 pub struct DataPacket {
-    pub raw_data: Vec<u8>,
+    pub raw_data: Vec<u8>, // eccrypte data isself then append the nonce
     pub dest_ip: Ipv6Addr,
     pub pubkey: PublicKey,
 }
