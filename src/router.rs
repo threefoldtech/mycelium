@@ -411,12 +411,13 @@ impl Router {
     
                             let mut to_remove = Vec::new();
                             let mut to_add_to_fallback = Vec::new();
+
                             for r in inner.selected_routing_table.table.iter() {
                                 if r.0.plen == plen && r.0.prefix == prefix {
                                     if metric < r.1.metric {
                                         to_remove.push(r.0.clone());
                                         break; 
-                                    } else if metric >= r.1.metric {
+                                    } else if metric >= r.1.metric && neighbor_ip != r.1.next_hop {
                                         to_add_to_fallback.push(route_entry.clone());
                                     }
                                 }
@@ -430,22 +431,9 @@ impl Router {
 
                             for mut re in to_add_to_fallback {
 
-                                // only add to fallback if the route with that prefix, plen, neighbor is not already in the selected routing table
-                                // and if the metric is not u16::MAX - 1
-                                let mut already_in_selected = false;
-                                for r in inner.selected_routing_table.table.iter() {
-                                    if r.0.plen == plen && r.0.prefix == prefix && r.0.neighbor == neighbor_ip && r.1.metric != u16::MAX - 1{
-                                        already_in_selected = true;
-                                        break;
-                                    }
-                                }
-                                if already_in_selected {
-                                    continue;
-                                }
-                                else {
                                     re.selected = false;
                                     inner.fallback_routing_table.table.insert(route_key.clone(), re);
-                                }
+                                    return;
                             }
 
                             inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
