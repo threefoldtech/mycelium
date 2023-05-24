@@ -361,20 +361,49 @@ impl Router {
                                 } else if metric >= r.1.metric {
                                     // this means that there is already a better route in our selected routing table,
                                     // so we should add it to fallback instead 
-                                    inner.fallback_routing_table.table.insert(route_key.clone(), route_entry.clone());
+                                    // we also need to set the selected field of the route entry to false
+                                    let mut fallback_route_entry = route_entry.clone();
+                                    fallback_route_entry.selected = false;
+                                    inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
                                     return; // quit the function, work is done here
                                 }
                             }
                         }
                         // Remove better routes from selected and insert into fallback
                         for rk in to_remove {
-                            if let Some(old_selected) = inner.selected_routing_table.remove(&rk) {
+                            if let Some(mut old_selected) = inner.selected_routing_table.remove(&rk) {
+                                // change the old selected route to have selected = false
+                                old_selected.selected = false;
                                 inner.fallback_routing_table.insert(rk, old_selected);
                             }
                         }
+                        //buggy:
                         // insert the route into selected (we might have placed one other route, that was previously the best, in the fallback)
-                        inner.selected_routing_table.table.insert(route_key, route_entry);
+                        // inner.selected_routing_table.table.insert(route_key, route_entry.clone());
 
+                        {
+                            let current_route_entry = inner.selected_routing_table.table.remove(&route_key);
+                            let fallback_route_entry = inner.fallback_routing_table.table.remove(&route_key);
+                        
+                            match (current_route_entry, fallback_route_entry) {
+                                (Some(mut current_route), Some(mut fallback_route)) => {
+                                    if fallback_route.metric < current_route.metric {
+                                        std::mem::swap(&mut current_route, &mut fallback_route);
+                                        current_route.selected = true;
+                                        fallback_route.selected = false;
+                                    }
+                                    inner.selected_routing_table.table.insert(route_key.clone(), current_route);
+                                    inner.fallback_routing_table.table.insert(route_key, fallback_route);
+                                }
+                                (Some(route), None) => {
+                                    inner.selected_routing_table.table.insert(route_key, route);
+                                }
+                                (None, Some(route)) => {
+                                    inner.fallback_routing_table.table.insert(route_key, route);
+                                }
+                                (None, None) => {}
+                            }
+                        }
                     }
                 }
                 // entry exists
