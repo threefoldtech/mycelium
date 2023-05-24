@@ -152,11 +152,6 @@ impl Router {
 
     pub fn add_dest_pubkey_map_entry(&self, dest: Ipv6Addr, pubkey: PublicKey) {
         self.inner.write().unwrap().dest_pubkey_map.insert(dest, pubkey);
-
-        println!(
-            "Added dest_pubkey_map entry: {:?} -> {:?}",
-            dest, pubkey
-        );
     }
 
 
