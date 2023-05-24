@@ -367,6 +367,7 @@ impl Router {
                     }
                 }
                 else {
+                    // check if the update is a retraction
                     if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
                         if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
                             inner.selected_routing_table.remove(&route_key_from_update);
@@ -378,57 +379,27 @@ impl Router {
                         inner.source_table.remove(&source_key);
                         return;
                     }
-
-                    // here, the route already exists in one of the routing tables
-                    // and we also know that the update is not a retraction
-
-                    // let's first check if the update is feasible: this checks the source table (based on prefix, plen, router_id)
-                    if !self.update_feasible(&update, &inner.source_table) {
-                        return;
-                    }
                     else {
-                        // the update is feasible (which means a newer or better route for that prefix,plen,router_id has never been annoucned), so we can update the source table
-                        let source_key = SourceKey { prefix, plen, router_id };
-                        let fd = FeasibilityDistance{ metric, seqno };
-                        inner.source_table.insert(source_key, fd); // this will overwrite the old entry if it exists
-
-                        // now we need to check if the update is better than the current route in the selected routing table
-                        // if this is the case, we need to move the current route to the fallback routing table and insert the new route into the selected routing table
-                        // if the update is not better than the current route in the selected routing table, we need add it to the fallback routing table
-                        if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
-                            let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
-                            if metric < route_entry.metric {
-                                // clone the route in the selected routing table and insert it into the fallback routing table
-                                let mut fallback_route_entry = route_entry.clone();
-                                fallback_route_entry.selected = false;
-                                inner.fallback_routing_table.table.insert(route_key_from_update.clone(), fallback_route_entry);
-                                // update the route in the selected routing table with the new information
-                                let route_entry = inner.selected_routing_table.table.get_mut(&route_key_from_update).unwrap();
-                                route_entry.update_seqno(seqno);
-                                route_entry.update_metric(metric);
-                                route_entry.update_router_id(router_id);
-                            }
-                            else {
-
-                                // but we should only insert it in the fallback routing table if it is not already there
-                                // and if it is there, we should update the seqno and metric if they are better
-                                if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
-                                    let fallback_route_entry = inner.fallback_routing_table.table.get_mut(&route_key_from_update).unwrap();
-                                    if metric < fallback_route_entry.metric {
-                                        fallback_route_entry.update_seqno(seqno);
-                                        fallback_route_entry.update_metric(metric);
-                                        fallback_route_entry.update_router_id(router_id);
-                                    }
-                                }
-                                else {
-                                    let mut fallback_route_entry = route_entry.clone();
-                                    fallback_route_entry.selected = false;
-                                    inner.fallback_routing_table.table.insert(route_key_from_update.clone(), fallback_route_entry);
-                                }
-                            }
+                        // here, the route already exists in one of the routing tables
+                        // and we also know that the update is not a retraction
+    
+                        // let's first check if the update is feasible: this checks the source table (based on prefix, plen, router_id)
+                        if !self.update_feasible(&update, &inner.source_table) {
+                            return;
                         }
                         else {
-                            // in this case, the route does not exist in the selected routing table, so we can just insert it
+                            // the update is feasible (which means a newer or better route for that prefix,plen,router_id has never been annoucned), so we can update the source table
+                            let source_key = SourceKey { prefix, plen, router_id };
+                            let fd = FeasibilityDistance{ metric, seqno };
+                            inner.source_table.insert(source_key, fd); // this will overwrite the old entry if it exists
+    
+                            // now we need to check if the update is better than the current route in the selected routing table
+                            // if this is the case, we need to move the current route to the fallback routing table and insert the new route into the selected routing table
+                            let route_key = RouteKey {
+                                prefix,
+                                plen,
+                                neighbor: neighbor_ip,
+                            };
                             let route_entry = RouteEntry {
                                 source: source_key,
                                 neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
@@ -437,11 +408,31 @@ impl Router {
                                 next_hop: neighbor_ip, 
                                 selected: true,
                             };
-                            inner.selected_routing_table.table.insert(route_key_from_update.clone(), route_entry.clone());
+    
+                            let mut to_remove = Vec::new();
+                            for r in inner.selected_routing_table.table.iter() {
+                                if r.0.plen == plen && r.0.prefix == prefix {
+                                    if metric < r.1.metric {
+                                        to_remove.push(r.0.clone());
+                                        break; 
+                                    } else if metric >= r.1.metric {
+                                        let mut fallback_route_entry = route_entry.clone();
+                                        fallback_route_entry.selected = false;
+                                        inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
+                                        return; 
+                                    }
+                                }
+                            }
+                            for rk in to_remove {
+                                if let Some(mut old_selected) = inner.selected_routing_table.remove(&rk) {
+                                    old_selected.selected = false;
+                                    inner.fallback_routing_table.insert(rk, old_selected);
+                                }
+                            }
+                            inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
                         }
-
-
                     }
+                }
 
 
                     // if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
@@ -472,7 +463,7 @@ impl Router {
                     //         }
                     //     }
                     // }
-                }
+                
             },
             _ => {
                 panic!("Received update with wrong TLV type");
