@@ -416,10 +416,15 @@ impl Router {
                                         to_remove.push(r.0.clone());
                                         break; 
                                     } else if metric >= r.1.metric {
-                                        let mut fallback_route_entry = route_entry.clone();
-                                        fallback_route_entry.selected = false;
-                                        inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
-                                        return; 
+
+                                        // we should only insert in the fallback table if the combinination of prefix, plen, router_id is not already in the selected table
+                                        // if it is, we should not insert in the fallback table
+                                        // this is because the fallback table is only used for routes that are not in the selected table
+                                        if !inner.selected_routing_table.table.contains_key(&route_key) {
+                                            let mut fallback_route_entry = route_entry.clone();
+                                            fallback_route_entry.selected = false;
+                                            inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
+                                        }
                                     }
                                 }
                             }
