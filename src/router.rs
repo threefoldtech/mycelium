@@ -410,21 +410,14 @@ impl Router {
                             };
     
                             let mut to_remove = Vec::new();
+                            let mut to_add_to_fallback = Vec::new();
                             for r in inner.selected_routing_table.table.iter() {
                                 if r.0.plen == plen && r.0.prefix == prefix {
                                     if metric < r.1.metric {
                                         to_remove.push(r.0.clone());
                                         break; 
-                                    } else if metric >= r.1.metric {
-
-                                        // we should only insert in the fallback table if the combinination of prefix, plen, router_id is not already in the selected table
-                                        // if it is, we should not insert in the fallback table
-                                        // this is because the fallback table is only used for routes that are not in the selected table
-                                        if !inner.selected_routing_table.table.contains_key(&route_key) {
-                                            let mut fallback_route_entry = route_entry.clone();
-                                            fallback_route_entry.selected = false;
-                                            inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
-                                        }
+                                    } else if metric >= r.1.metric  && r.1.next_hop != neighbor_ip {
+                                        to_add_to_fallback.push(route_entry.clone());
                                     }
                                 }
                             }
@@ -434,6 +427,12 @@ impl Router {
                                     inner.fallback_routing_table.insert(rk, old_selected);
                                 }
                             }
+
+                            for mut re in to_add_to_fallback {
+                                re.selected = false;
+                                inner.fallback_routing_table.table.insert(route_key.clone(), re);
+                            }
+
                             inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
                         }
                     }
