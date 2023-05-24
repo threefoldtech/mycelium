@@ -435,7 +435,7 @@ impl Router {
                                 // and if the metric is not u16::MAX - 1
                                 let mut already_in_selected = false;
                                 for r in inner.selected_routing_table.table.iter() {
-                                    if r.0.plen == plen && r.0.prefix == prefix && r.0.neighbor == neighbor_ip && r.1.metric != u16::MAX - 1{
+                                    if r.0.plen == plen && r.0.prefix == prefix && r.0.neighbor == neighbor_ip {
                                         already_in_selected = true;
                                         break;
                                     }
@@ -444,6 +444,10 @@ impl Router {
                                     continue;
                                 }
                                 else {
+                                    // additional check: only insert into fallback if the metric is not u16::MAX - 1
+                                    if re.metric == u16::MAX - 1 {
+                                        continue;
+                                    }
                                     re.selected = false;
                                     inner.fallback_routing_table.table.insert(route_key.clone(), re);
                                     return;
