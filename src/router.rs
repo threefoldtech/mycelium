@@ -379,7 +379,7 @@ impl Router {
                         }
                         //buggy:
                         // insert the route into selected (we might have placed one other route, that was previously the best, in the fallback)
-                        // inner.selected_routing_table.table.insert(route_key, route_entry.clone());
+                        inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
 
                         {
                             let current_route_entry = inner.selected_routing_table.table.remove(&route_key);
