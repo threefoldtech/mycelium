@@ -409,9 +409,22 @@ impl Router {
                                 route_entry.update_router_id(router_id);
                             }
                             else {
-                                let mut fallback_route_entry = route_entry.clone();
-                                fallback_route_entry.selected = false;
-                                inner.fallback_routing_table.table.insert(route_key_from_update.clone(), fallback_route_entry);
+
+                                // but we should only insert it in the fallback routing table if it is not already there
+                                // and if it is there, we should update the seqno and metric if they are better
+                                if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
+                                    let fallback_route_entry = inner.fallback_routing_table.table.get_mut(&route_key_from_update).unwrap();
+                                    if metric < fallback_route_entry.metric {
+                                        fallback_route_entry.update_seqno(seqno);
+                                        fallback_route_entry.update_metric(metric);
+                                        fallback_route_entry.update_router_id(router_id);
+                                    }
+                                }
+                                else {
+                                    let mut fallback_route_entry = route_entry.clone();
+                                    fallback_route_entry.selected = false;
+                                    inner.fallback_routing_table.table.insert(route_key_from_update.clone(), fallback_route_entry);
+                                }
                             }
                         }
                         else {
