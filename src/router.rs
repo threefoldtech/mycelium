@@ -250,6 +250,7 @@ impl Router {
         mut router_control_rx: UnboundedReceiver<ControlStruct>,
     ) {
         while let Some(control_struct) = router_control_rx.recv().await {
+            println!("received control packet from {:?}", control_struct.src_overlay_ip);
             match control_struct.control_packet.body.tlv_type {
                 BabelTLVType::Hello => Self::handle_incoming_hello(&self, control_struct),
                 BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
@@ -303,6 +304,7 @@ impl Router {
             } => {
                 // upon receiving and update, we should create a mapping that matches an overlay ip to a router id (which is a PublicKey)
                 if let IpAddr::V6(src_overlay_ip) = update.src_overlay_ip {
+                    println!("Adding overlay ip to router id mapping: {:?} -> {:?}", src_overlay_ip, router_id);
                     self.add_dest_pubkey_map_entry(src_overlay_ip, router_id);
                 }
 
@@ -759,20 +761,35 @@ impl RouterInner {
         for sr in self.selected_routing_table.table.iter() {
             for peer in self.peer_interfaces.iter() {
                 let peer_link_cost = peer.link_cost();
+                
+                // convert sr.0.prefix to ipv6 addr
+                if let IpAddr::V6(prefix) = sr.0.prefix {
+                    let og_sender_pubkey_option = self.dest_pubkey_map.get(&prefix);
+                    // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
+                    let og_sender_pubkey = match og_sender_pubkey_option {
+                        Some(pubkey) => *pubkey,
+                        None => self.router_id,
+                    };
 
-                let update = ControlPacket::new_update(
-                    sr.0.plen,
-                    UPDATE_INTERVAL as u16,
-                    self.router_seqno, // updates receive the seqno of the router
-                    if sr.1.metric > u16::MAX - 1 - peer_link_cost {
-                        u16::MAX - 1
-                    } else {
-                        sr.1.metric + peer_link_cost
-                    }, // the cost of the route is the cost of the route + the cost of the link to the peer
-                    sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
-                    self.router_id,
-                );
-                updates.push((peer.clone(), update));
+
+                    let update = ControlPacket::new_update(
+                        sr.0.plen,
+                        UPDATE_INTERVAL as u16,
+                        self.router_seqno, // updates receive the seqno of the router
+                        if sr.1.metric > u16::MAX - 1 - peer_link_cost {
+                            u16::MAX - 1
+                        } else {
+                            sr.1.metric + peer_link_cost
+                        }, // the cost of the route is the cost of the route + the cost of the link to the peer
+                        sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
+
+                        // we looked for the router_id, which is a public key, in the dest_pubkey_map
+                        // if the router_id is not in the map, then the route came from the node itself 
+                        og_sender_pubkey,
+                    );
+                    println!("\n\n\n\nPropagting route update to: {}\n {:?}\n\n", peer.overlay_ip(), update);
+                    updates.push((peer.clone(), update));
+                }
             }
         }
 

@@ -184,7 +184,7 @@ impl PeerInner {
                 }
 
                 Some(packet) = from_routing_data.recv() => {
-                    println!("Sending data packet to peer: {:?}", packet);
+                    // println!("Sending data packet to peer: {:?}", packet);
                     // Send it over the TCP stream
                     if let Err(e) = framed.send(Packet::DataPacket(packet)).await {
                         eprintln!("Error writing to stream: {}", e);
