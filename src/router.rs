@@ -295,44 +295,40 @@ impl Router {
         }
     }
 
-    // incoming update can only be received by a Peer this node has a direct link to
+
+
+
+
+
+
     fn handle_incoming_update(&self, update: ControlStruct) {
         match update.control_packet.body.tlv {
             BabelTLV::Update { plen, interval: _, seqno, metric, prefix, router_id } => {
                     
-                // create route key from incoming update control struct
-                // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
                 let neighbor_ip = update.src_overlay_ip;
                 let route_key_from_update = RouteKey { 
                     neighbor: neighbor_ip, 
                     plen, 
                     prefix,
                 };
-
-                // used later to filter out static route 
+    
                 if self.route_key_is_from_static_route(&route_key_from_update) {
                     return; 
                 }
-
+    
                 let mut inner = self.inner.write().unwrap();
-
-                // check if a route entry with the same route key exists in both routing tables
+    
                 let route_entry_exists = inner.selected_routing_table.table.contains_key(&route_key_from_update) || inner.fallback_routing_table.table.contains_key(&route_key_from_update);
-
-                // if no entry exists (based on prefix, plen AND neighbor field)
+    
                 if !route_entry_exists {
-                    // if the update is unfeasible, or the metric is inifinite, we ignore the update
                     if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
                         return;
                     }
                     else {
-                        // this means that the update is feasible and the metric is not infinite
-                        // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
-
                         let source_key = SourceKey { prefix, plen, router_id };
                         let fd = FeasibilityDistance{ metric, seqno };
                         inner.source_table.insert(source_key, fd);
-
+    
                         let route_key = RouteKey {
                             prefix,
                             plen,
@@ -346,90 +342,360 @@ impl Router {
                             next_hop: neighbor_ip, 
                             selected: true,
                         };
-
-                        // Collect keys of routes to be removed
+    
                         let mut to_remove = Vec::new();
                         for r in inner.selected_routing_table.table.iter() {
-                            // filter based on prefix and plen, skipping neighbor
                             if r.0.plen == plen && r.0.prefix == prefix {
-                                // metric of update is smaller than entry's metric
                                 if metric < r.1.metric {
-                                    // this means we should remove the entry from the selected routing table
                                     to_remove.push(r.0.clone());
-                                    break; // we can break, as there will be max 1 better route in selected table at any point in time (hence 'selected')
-                                // metric of update is greater than entry's metric
+                                    break; 
                                 } else if metric >= r.1.metric {
-                                    // this means that there is already a better route in our selected routing table,
-                                    // so we should add it to fallback instead 
-                                    inner.fallback_routing_table.table.insert(route_key.clone(), route_entry.clone());
-                                    return; // quit the function, work is done here
+                                    let mut fallback_route_entry = route_entry.clone();
+                                    fallback_route_entry.selected = false;
+                                    inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
+                                    return; 
                                 }
                             }
                         }
-                        // Remove better routes from selected and insert into fallback
                         for rk in to_remove {
-                            if let Some(old_selected) = inner.selected_routing_table.remove(&rk) {
+                            if let Some(mut old_selected) = inner.selected_routing_table.remove(&rk) {
+                                old_selected.selected = false;
                                 inner.fallback_routing_table.insert(rk, old_selected);
                             }
                         }
-                        // insert the route into selected (we might have placed one other route, that was previously the best, in the fallback)
-                        inner.selected_routing_table.table.insert(route_key, route_entry);
-
+                        inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
                     }
                 }
-                // entry exists
                 else {
-                    // check if update is a retraction
+                    // check if the update is a retraction
                     if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
-                        // if the update is a retraction, we remove the entry from the routing tables
-                        // we also remove the corresponding source entry???
                         if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
                             inner.selected_routing_table.remove(&route_key_from_update);
                         }
                         if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
                             inner.fallback_routing_table.remove(&route_key_from_update);
                         }
-                        // remove the corresponding source entry
                         let source_key = SourceKey { prefix, plen, router_id };
                         inner.source_table.remove(&source_key);
-
                         return;
                     }
-                    // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
-                    // to the router-id of the entry, then we ignore the update
-                    if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
-                        let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
-                        if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
+                    else {
+                        // here, the route already exists in one of the routing tables
+                        // and we also know that the update is not a retraction
+    
+                        // let's first check if the update is feasible: this checks the source table (based on prefix, plen, router_id)
+                        if !self.update_feasible(&update, &inner.source_table) {
                             return;
                         }
-                        // update the entry's seqno, metric and router-id
-                        let route_entry = inner.selected_routing_table.table.get_mut(&route_key_from_update).unwrap();
-                        route_entry.update_seqno(seqno);
-                        route_entry.update_metric(metric);
-                        route_entry.update_router_id(router_id);
-                    }
-                    // otherwise
-                    else {
-                        let route_entry = inner.fallback_routing_table.table.get_mut(&route_key_from_update).unwrap();
-                        // update the entry's seqno, metric and router-id
-                        route_entry.update_seqno(seqno);
-                        route_entry.update_metric(metric);
-                        route_entry.update_router_id(router_id);
+                        else {
+                            // the update is feasible (which means a newer or better route for that prefix,plen,router_id has never been annoucned), so we can update the source table
+                            let source_key = SourceKey { prefix, plen, router_id };
+                            let fd = FeasibilityDistance{ metric, seqno };
+                            inner.source_table.insert(source_key, fd); // this will overwrite the old entry if it exists
+    
+                            // now we need to check if the update is better than the current route in the selected routing table
+                            // if this is the case, we need to move the current route to the fallback routing table and insert the new route into the selected routing table
+                            let route_key = RouteKey {
+                                prefix,
+                                plen,
+                                neighbor: neighbor_ip,
+                            };
+                            let route_entry = RouteEntry {
+                                source: source_key,
+                                neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
+                                metric,
+                                seqno,
+                                next_hop: neighbor_ip, 
+                                selected: true,
+                            };
+    
+                            let mut to_remove = Vec::new();
+                            let mut to_add_to_fallback = Vec::new();
 
-                        if !self.update_feasible(&update, &inner.source_table) {
-                            // if the update is unfeasible, we remove the entry from the selected routing table
-                            inner.selected_routing_table.table.remove(&route_key_from_update);
-                            // should we remove it from the selected and add it to fallback here???
+                            for r in inner.selected_routing_table.table.iter() {
+                                if r.0.plen == plen && r.0.prefix == prefix {
+                                    if metric < r.1.metric {
+                                        to_remove.push(r.0.clone());
+                                        break; 
+                                    } else if metric >= r.1.metric && neighbor_ip != r.1.next_hop {
+                                        to_add_to_fallback.push(route_entry.clone());
+                                    }
+                                }
+                            }
+                            for rk in to_remove {
+                                if let Some(mut old_selected) = inner.selected_routing_table.remove(&rk) {
+                                    old_selected.selected = false;
+                                    inner.fallback_routing_table.insert(rk, old_selected);
+                                }
+                            }
+
+                            for mut re in to_add_to_fallback {
+
+                                // only add to fallback if the route with that prefix, plen, neighbor is not already in the selected routing table
+                                // and if the metric is not u16::MAX - 1
+                                let mut already_in_selected = false;
+                                for r in inner.selected_routing_table.table.iter() {
+                                    if r.0.plen == plen && r.0.prefix == prefix && r.0.neighbor == neighbor_ip {
+                                        already_in_selected = true;
+                                        break;
+                                    }
+                                }
+                                if already_in_selected {
+                                    continue;
+                                }
+                                else {
+                                    // additional check: only insert into fallback if the metric is not u16::MAX - 1
+                                    if re.metric == u16::MAX - 1 {
+                                        continue;
+                                    }
+                                    re.selected = false;
+                                    inner.fallback_routing_table.table.insert(route_key.clone(), re);
+                                    return;
+                                }
+                            }
+
+                            inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
                         }
                     }
                 }
+
+
+                    // if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
+                    //     let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
+                    //     if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
+                    //         return;
+                    //     }
+                    //     let route_entry = inner.selected_routing_table.table.get_mut(&route_key_from_update).unwrap();
+                    //     route_entry.update_seqno(seqno);
+                    //     route_entry.update_metric(metric);
+                    //     route_entry.update_router_id(router_id);
+                    // }
+                    // else {
+                    //     // CHANGE: Adjusted handling of existing entries in the fallback routing table
+                    //     if let Some(route_entry) = inner.fallback_routing_table.table.get_mut(&route_key_from_update) {
+                    //         route_entry.update_seqno(seqno);
+                    //         route_entry.update_metric(metric);
+                    //         route_entry.update_router_id(router_id);
+    
+                    //         if self.update_feasible(&update, &inner.source_table) {
+                    //             // if the update is feasible, we promote the entry to the selected routing table
+                    //             let selected_route_entry = inner.selected_routing_table.table.insert(route_key_from_update.clone(), route_entry.clone());
+                    //             if let Some(mut previous_route) = selected_route_entry {
+                    //                 // demote the previous selected route
+                    //                 previous_route.selected = false;
+                    //                 inner.fallback_routing_table.table.insert(route_key_from_update.clone(), previous_route);
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                
             },
             _ => {
                 panic!("Received update with wrong TLV type");
             }
         }
-
     }
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // // incoming update can only be received by a Peer this node has a direct link to
+    // fn handle_incoming_update(&self, update: ControlStruct) {
+    //     match update.control_packet.body.tlv {
+    //         BabelTLV::Update { plen, interval: _, seqno, metric, prefix, router_id } => {
+                    
+    //             // create route key from incoming update control struct
+    //             // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
+    //             let neighbor_ip = update.src_overlay_ip;
+    //             let route_key_from_update = RouteKey { 
+    //                 neighbor: neighbor_ip, 
+    //                 plen, 
+    //                 prefix,
+    //             };
+
+    //             // used later to filter out static route 
+    //             if self.route_key_is_from_static_route(&route_key_from_update) {
+    //                 return; 
+    //             }
+
+    //             let mut inner = self.inner.write().unwrap();
+
+    //             // check if a route entry with the same route key exists in both routing tables
+    //             let route_entry_exists = inner.selected_routing_table.table.contains_key(&route_key_from_update) || inner.fallback_routing_table.table.contains_key(&route_key_from_update);
+
+    //             // if no entry exists (based on prefix, plen AND neighbor field)
+    //             if !route_entry_exists {
+    //                 // if the update is unfeasible, or the metric is inifinite, we ignore the update
+    //                 if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
+    //                     return;
+    //                 }
+    //                 else {
+    //                     // this means that the update is feasible and the metric is not infinite
+    //                     // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
+
+    //                     let source_key = SourceKey { prefix, plen, router_id };
+    //                     let fd = FeasibilityDistance{ metric, seqno };
+    //                     inner.source_table.insert(source_key, fd);
+
+    //                     let route_key = RouteKey {
+    //                         prefix,
+    //                         plen,
+    //                         neighbor: neighbor_ip,
+    //                     };
+    //                     let route_entry = RouteEntry {
+    //                         source: source_key,
+    //                         neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
+    //                         metric,
+    //                         seqno,
+    //                         next_hop: neighbor_ip, 
+    //                         selected: true,
+    //                     };
+
+    //                     // Collect keys of routes to be removed
+    //                     let mut to_remove = Vec::new();
+    //                     for r in inner.selected_routing_table.table.iter() {
+    //                         // filter based on prefix and plen, skipping neighbor
+    //                         if r.0.plen == plen && r.0.prefix == prefix {
+    //                             // metric of update is smaller than entry's metric
+    //                             if metric < r.1.metric {
+    //                                 // this means we should remove the entry from the selected routing table
+    //                                 to_remove.push(r.0.clone());
+    //                                 break; // we can break, as there will be max 1 better route in selected table at any point in time (hence 'selected')
+    //                             // metric of update is greater than entry's metric
+    //                             } else if metric >= r.1.metric {
+    //                                 // this means that there is already a better route in our selected routing table,
+    //                                 // so we should add it to fallback instead 
+    //                                 // we also need to set the selected field of the route entry to false
+    //                                 let mut fallback_route_entry = route_entry.clone();
+    //                                 fallback_route_entry.selected = false;
+    //                                 inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
+    //                                 return; // quit the function, work is done here
+    //                             }
+    //                         }
+    //                     }
+    //                     // Remove better routes from selected and insert into fallback
+    //                     for rk in to_remove {
+    //                         if let Some(mut old_selected) = inner.selected_routing_table.remove(&rk) {
+    //                             // change the old selected route to have selected = false
+    //                             old_selected.selected = false;
+    //                             inner.fallback_routing_table.insert(rk, old_selected);
+    //                         }
+    //                     }
+    //                     //buggy:
+    //                     // insert the route into selected (we might have placed one other route, that was previously the best, in the fallback)
+    //                     inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
+
+    //                     {
+    //                         let current_route_entry = inner.selected_routing_table.table.remove(&route_key);
+    //                         let fallback_route_entry = inner.fallback_routing_table.table.remove(&route_key);
+                        
+    //                         match (current_route_entry, fallback_route_entry) {
+    //                             (Some(mut current_route), Some(mut fallback_route)) => {
+    //                                 if fallback_route.metric < current_route.metric {
+    //                                     std::mem::swap(&mut current_route, &mut fallback_route);
+    //                                     current_route.selected = true;
+    //                                     fallback_route.selected = false;
+    //                                 }
+    //                                 inner.selected_routing_table.table.insert(route_key.clone(), current_route);
+    //                                 inner.fallback_routing_table.table.insert(route_key, fallback_route);
+    //                             }
+    //                             (Some(route), None) => {
+    //                                 inner.selected_routing_table.table.insert(route_key, route);
+    //                             }
+    //                             (None, Some(route)) => {
+    //                                 inner.fallback_routing_table.table.insert(route_key, route);
+    //                             }
+    //                             (None, None) => {}
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             // entry exists
+    //             else {
+    //                 // check if update is a retraction
+    //                 if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
+    //                     // if the update is a retraction, we remove the entry from the routing tables
+    //                     // we also remove the corresponding source entry???
+    //                     if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
+    //                         inner.selected_routing_table.remove(&route_key_from_update);
+    //                     }
+    //                     if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
+    //                         inner.fallback_routing_table.remove(&route_key_from_update);
+    //                     }
+    //                     // remove the corresponding source entry
+    //                     let source_key = SourceKey { prefix, plen, router_id };
+    //                     inner.source_table.remove(&source_key);
+
+    //                     return;
+    //                 }
+    //                 // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
+    //                 // to the router-id of the entry, then we ignore the update
+    //                 if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
+    //                     let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
+    //                     if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
+    //                         return;
+    //                     }
+    //                     // update the entry's seqno, metric and router-id
+    //                     let route_entry = inner.selected_routing_table.table.get_mut(&route_key_from_update).unwrap();
+    //                     route_entry.update_seqno(seqno);
+    //                     route_entry.update_metric(metric);
+    //                     route_entry.update_router_id(router_id);
+    //                 }
+    //                 // otherwise
+    //                 else {
+    //                     let route_entry = inner.fallback_routing_table.table.get_mut(&route_key_from_update).unwrap();
+    //                     // update the entry's seqno, metric and router-id
+    //                     route_entry.update_seqno(seqno);
+    //                     route_entry.update_metric(metric);
+    //                     route_entry.update_router_id(router_id);
+
+    //                     if !self.update_feasible(&update, &inner.source_table) {
+    //                         // if the update is unfeasible, we remove the entry from the selected routing table
+    //                         inner.selected_routing_table.table.remove(&route_key_from_update);
+    //                         // should we remove it from the selected and add it to fallback here???
+    //                     }
+    //                 }
+    //             }
+    //         },
+    //         _ => {
+    //             panic!("Received update with wrong TLV type");
+    //         }
+    //     }
+
+    // }
 
     fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
         let inner = self.inner.read().unwrap();
