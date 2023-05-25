@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         node_keypair.clone(),
     ) {
         Ok(router) => {
-            println!("Router created. Pubkey: {:?}", router.node_public_key());
+            println!("Router created. Pubkey: {:x}", BytesMut::from( &router.node_public_key().as_bytes()[..]));
             router
         }
         Err(e) => {

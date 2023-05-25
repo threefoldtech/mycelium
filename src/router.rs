@@ -564,9 +564,17 @@ impl Router {
                     let best_route = self.select_best_route(IpAddr::V6(data_packet.dest_ip));
                     match best_route {
                         Some(route_entry) => {
-                            let peer = self.peer_by_ip(route_entry.next_hop).unwrap();
-                            if let Err(e) = peer.send_data_packet(data_packet) {
-                                eprintln!("Error sending data packet to peer: {:?}", e);
+                            let peer = self.peer_by_ip(route_entry.next_hop);
+                            // drop the packet if the peer is couldn't be found 
+                            match peer {
+                                Some(peer) => {
+                                    if let Err(e) = peer.send_data_packet(data_packet) {
+                                        eprintln!("Error sending data packet to peer: {:?}", e);
+                                    }
+                                }
+                                None => {
+                                    eprintln!("Error sending data packet, no peer found");
+                                }
                             }
                         }
                         None => {
