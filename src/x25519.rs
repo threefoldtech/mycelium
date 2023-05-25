@@ -58,27 +58,8 @@ pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
     hasher.update(pubkey.as_bytes());
     let mut buf = [0u8; 16];
     hasher.finalize_variable(&mut buf).unwrap();
-
-    let ipv6_bytes: [u8; 16] = [
-        0x20 | (buf[0] & 0x01), // This prefix ensures the address falls into the 200::/7 range with a random 8th bit
-        buf[1],
-        buf[2],
-        buf[3],
-        buf[4],
-        buf[5],
-        buf[6],
-        buf[7],
-        buf[8],
-        buf[9],
-        buf[10],
-        buf[11],
-        buf[12],
-        buf[13],
-        buf[14],
-        buf[15],
-    ];
-
-    let addr = Ipv6Addr::from(ipv6_bytes);
+    buf[0] = 0x02 | buf[0] & 0x01;
+    let addr = Ipv6Addr::from(buf);
     println!("output buf : {:?}", addr);
 
     addr
