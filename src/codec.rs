@@ -226,7 +226,6 @@ impl ControlPacketCodec {
     }
 }
 
-// TODO FUTURE-WISE --> HANDLE BUFFER READS THAT MIGHT NOT HAVE ARRIVED YET
 impl Decoder for ControlPacketCodec {
     type Item = ControlPacket;
     type Error = std::io::Error;
@@ -343,7 +342,6 @@ impl Decoder for ControlPacketCodec {
                 buf.advance(32);
 
                 let router_id = PublicKey::from(router_id_bytes);
-                
 
                 BabelPacketBody {
                     tlv_type,
@@ -358,11 +356,6 @@ impl Decoder for ControlPacketCodec {
                     },
                 }
             }
-            BabelTLVType::AckReq => todo!(),
-            BabelTLVType::Ack => todo!(),
-            BabelTLVType::NextHop => todo!(),
-            BabelTLVType::RouteReq => todo!(),
-            BabelTLVType::SeqnoReq => todo!(),
         };
 
         Ok(Some(ControlPacket { header, body }))
@@ -441,7 +434,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                 }
 
                 buf.put_slice(&router_id.to_bytes());
-            } 
+            }
         }
 
         Ok(())

@@ -132,47 +132,26 @@ impl ControlPacket {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum BabelTLVType {
-    // Pad1 = 0,
-    // PadN = 1,
-    AckReq = 2,
-    Ack = 3,
     Hello = 4,
     IHU = 5,
-    // RouterID = 6,
-    NextHop = 7,
     Update = 8,
-    RouteReq = 9,
-    SeqnoReq = 10,
 }
 
 impl BabelTLVType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
-            // 0 => Some(Self::Pad1),
-            // 1 => Some(Self::PadN),
-            2 => Some(Self::AckReq),
-            3 => Some(Self::Ack),
             4 => Some(Self::Hello),
             5 => Some(Self::IHU),
-            // 6 => Some(Self::RouterID),
-            7 => Some(Self::NextHop),
             8 => Some(Self::Update),
-            9 => Some(Self::RouteReq),
-            10 => Some(Self::SeqnoReq),
             _ => None,
         }
     }
 
     pub fn get_tlv_length(self, uses_ipv6: bool) -> u8 {
         let (ipv6, ipv4) = match self {
-            Self::AckReq => (4, 4),
-            Self::Ack => (2, 2),
             Self::Hello => (4, 4),
             Self::IHU => (18, 6),
-            Self::NextHop => (16, 4),
             Self::Update => (31 + 1, 19 + 1), // +1 for ae
-            Self::RouteReq => (17, 5),
-            Self::SeqnoReq => (21, 9),
         };
         if uses_ipv6 {
             ipv6
@@ -184,9 +163,6 @@ impl BabelTLVType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BabelTLV {
-    // These TLVs are not implemented as they are used for padding when sending multiple TLVs in one packet.
-    // Pad1,
-    // PadN(u8),
     Hello {
         seqno: u16,
         interval: u16,

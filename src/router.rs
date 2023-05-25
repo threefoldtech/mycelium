@@ -2,14 +2,15 @@ use crate::{
     packet::{BabelTLV, BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
-    source_table::{self, FeasibilityDistance, SourceKey, SourceTable}, x25519::{self, shared_secret_from_keypair},
+    source_table::{FeasibilityDistance, SourceKey, SourceTable},
+    x25519::{self, shared_secret_from_keypair},
 };
-use rand::Rng;
 use std::{
+    collections::HashMap,
     error::Error,
     fmt::Debug,
     net::{IpAddr, Ipv6Addr},
-    sync::{Arc, RwLock}, collections::HashMap,
+    sync::{Arc, RwLock},
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
@@ -23,7 +24,6 @@ const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 pub struct StaticRoute {
     plen: u8,
     prefix: IpAddr,
-    seqno: u16,
 }
 
 impl StaticRoute {
@@ -31,7 +31,6 @@ impl StaticRoute {
         Self {
             plen: 64,
             prefix,
-            seqno: 0,
         }
     }
 }
@@ -81,10 +80,6 @@ impl Router {
         Ok(router)
     }
 
-    pub fn router_id(&self) -> PublicKey {
-        self.node_public_key()
-    }
-
     pub fn router_control_tx(&self) -> UnboundedSender<ControlStruct> {
         self.inner.read().unwrap().router_control_tx.clone()
     }
@@ -101,28 +96,12 @@ impl Router {
         self.inner.read().unwrap().node_tun.clone()
     }
 
-    pub fn router_seqno(&self) -> u16 {
-        self.inner.read().unwrap().router_seqno
-    }
-
-    pub fn increment_router_seqno(&self) {
-        self.inner.write().unwrap().router_seqno += 1;
-    }
-
     pub fn peer_interfaces(&self) -> Vec<Peer> {
         self.inner.read().unwrap().peer_interfaces.clone()
     }
 
     pub fn add_peer_interface(&self, peer: Peer) {
         self.inner.write().unwrap().peer_interfaces.push(peer);
-    }
-
-    pub fn remove_peer_interface(&self, peer: Peer) {
-        self.inner.write().unwrap().remove_peer_interface(peer);
-    }
-
-    pub fn static_routes(&self) -> Vec<StaticRoute> {
-        self.inner.read().unwrap().static_routes.clone()
     }
 
     pub fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
@@ -151,9 +130,12 @@ impl Router {
     }
 
     pub fn add_dest_pubkey_map_entry(&self, dest: Ipv6Addr, pubkey: PublicKey) {
-        self.inner.write().unwrap().dest_pubkey_map.insert(dest, pubkey);
+        self.inner
+            .write()
+            .unwrap()
+            .dest_pubkey_map
+            .insert(dest, pubkey);
     }
-
 
     pub fn get_pubkey_from_dest(&self, dest: Ipv6Addr) -> Option<PublicKey> {
         let inner = self.inner.read().unwrap();
@@ -176,30 +158,30 @@ impl Router {
         }
     }
 
-    pub fn print_fallback_routes(&self) {
-        let inner = self.inner.read().unwrap();
+    // pub fn print_fallback_routes(&self) {
+    //     let inner = self.inner.read().unwrap();
 
-        let routing_table = &inner.fallback_routing_table;
-        for route in routing_table.table.iter() {
-            println!("Route key: {:?}", route.0);
-            println!(
-                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
-                route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
-            );
-            println!("As advertised by: {:?}", route.1.source.router_id);
-        }
-    }
+    //     let routing_table = &inner.fallback_routing_table;
+    //     for route in routing_table.table.iter() {
+    //         println!("Route key: {:?}", route.0);
+    //         println!(
+    //             "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
+    //             route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
+    //         );
+    //         println!("As advertised by: {:?}", route.1.source.router_id);
+    //     }
+    // }
 
-    pub fn print_source_table(&self) {
-        let inner = self.inner.read().unwrap();
+    // pub fn print_source_table(&self) {
+    //     let inner = self.inner.read().unwrap();
 
-        let source_table = &inner.source_table;
-        for (sk, se) in source_table.table.iter() {
-            println!("Source key: {:?}", sk);
-            println!("Source entry: {:?}", se);
-            println!("\n");
-        }
-    }
+    //     let source_table = &inner.source_table;
+    //     for (sk, se) in source_table.table.iter() {
+    //         println!("Source key: {:?}", sk);
+    //         println!("Source entry: {:?}", se);
+    //         println!("\n");
+    //     }
+    // }
 
     async fn check_for_dead_peers(self) {
         let ihu_threshold = tokio::time::Duration::from_secs(8);
@@ -256,7 +238,7 @@ impl Router {
             for peer in inner.peer_interfaces.iter() {
                 for ru in retraction_updates.iter() {
                     if let Err(e) = peer.send_control_packet(ru.clone()) {
-                        eprintln!("Error sending retraction update to peer");
+                        eprintln!("Error sending retraction update to peer: {e}");
                     }
                 }
             }
@@ -269,14 +251,9 @@ impl Router {
     ) {
         while let Some(control_struct) = router_control_rx.recv().await {
             match control_struct.control_packet.body.tlv_type {
-                BabelTLVType::AckReq => todo!(),
-                BabelTLVType::Ack => todo!(),
                 BabelTLVType::Hello => Self::handle_incoming_hello(&self, control_struct),
                 BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
-                BabelTLVType::NextHop => todo!(),
                 BabelTLVType::Update => Self::handle_incoming_update(&self, control_struct),
-                BabelTLVType::RouteReq => todo!(),
-                BabelTLVType::SeqnoReq => todo!(),
             }
         }
     }
@@ -324,12 +301,10 @@ impl Router {
                 prefix,
                 router_id,
             } => {
-
                 // upon receiving and update, we should create a mapping that matches an overlay ip to a router id (which is a PublicKey)
                 if let IpAddr::V6(src_overlay_ip) = update.src_overlay_ip {
                     self.add_dest_pubkey_map_entry(src_overlay_ip, router_id);
                 }
-
 
                 // create route key from incoming update control struct
                 // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
@@ -564,13 +539,13 @@ impl Router {
             while let Some(data_packet) = router_data_rx.recv().await {
                 println!("Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})", data_packet.dest_ip, node_tun_addr);
 
-
                 if data_packet.dest_ip == node_tun_addr {
                     // decrypt & send to TUN interface
                     let pubkey_sender = data_packet.pubkey;
-                    let own_secret = self.node_secret_key(); 
+                    let own_secret = self.node_secret_key();
                     let shared_secret = shared_secret_from_keypair(&own_secret, &pubkey_sender);
-                    let decrypted_raw_data = x25519::decrypt_raw_data(data_packet.raw_data, shared_secret);
+                    let decrypted_raw_data =
+                        x25519::decrypt_raw_data(data_packet.raw_data, shared_secret);
                     match node_tun.send(&decrypted_raw_data).await {
                         Ok(_) => {}
                         Err(e) => {

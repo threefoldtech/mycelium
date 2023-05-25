@@ -8,7 +8,6 @@ use std::{
     net::{Ipv6Addr, SocketAddr},
 };
 use tokio::io::AsyncBufReadExt;
-use x25519_dalek::PublicKey;
 
 mod codec;
 mod node_setup;
@@ -50,8 +49,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-
-
     println!("Node public key: {:?}", node_keypair.1);
 
     let static_peers = cli.static_peers;
@@ -82,11 +79,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let router = router.clone();
         let node_tun = node_tun.clone();
         let own_secret = node_keypair.0;
-    
+
         tokio::spawn(async move {
             loop {
                 let mut buf = BytesMut::zeroed(LINK_MTU);
-    
+
                 match node_tun.recv(&mut buf).await {
                     Ok(n) => {
                         buf.truncate(n);
@@ -96,7 +93,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                 }
-    
+
                 let packet = match PacketHeaders::from_ip_slice(&buf) {
                     Ok(packet) => packet,
                     Err(e) => {
@@ -104,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                 };
-    
+
                 let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
                     let dest_addr = Ipv6Addr::from(header.destination);
                     dest_addr
@@ -113,29 +110,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
 
                 println!("Received packet from TUN with dest addr: {:?}", dest_addr);
-    
+
                 // Check if destination address is in 200::/7 range
                 let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
                 if first_byte < 0x02 || first_byte > 0x3F {
                     continue;
                 }
 
-                
                 // create shared secret between node and dest_addr
                 let pubkey_recipient = router.get_pubkey_from_dest(dest_addr).unwrap();
-                let shared_secret = x25519::shared_secret_from_keypair(&own_secret, &pubkey_recipient);
+                let shared_secret =
+                    x25519::shared_secret_from_keypair(&own_secret, &pubkey_recipient);
 
-                println!("encryption with pubkey of recipient: {:?}", pubkey_recipient);
+                println!(
+                    "encryption with pubkey of recipient: {:?}",
+                    pubkey_recipient
+                );
                 println!("encryption with {:?}", shared_secret.as_bytes());
-    
+
                 // inject own pubkey
                 let data_packet = DataPacket {
                     dest_ip: dest_addr,
                     pubkey: router.node_public_key(),
-                    raw_data: x25519::encrypt_raw_data(buf.to_vec(), shared_secret), // this needs to be encrypted
+                    // encrypt data with shared secret
+                    raw_data: x25519::encrypt_raw_data(buf.to_vec(), shared_secret),
                 };
-                
-    
+
                 if router.router_data_tx().send(data_packet).is_err() {
                     eprintln!("Failed to send data_packet");
                 }
@@ -156,8 +156,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     line.pop();
                     println!("----------- Current selected routes -----------{}\n", line);
                     router.print_selected_routes();
-                    //println!("----------- Current fallback routes -----------{}\n", line);
-                    //router.print_fallback_routes();
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.peer_interfaces() {
@@ -167,9 +165,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             p.link_cost()
                         );
                     }
-
-                    println!("\n----------- Current source table: -----------");
-                    //router.print_source_table();
 
                     println!("\n\n");
                 }

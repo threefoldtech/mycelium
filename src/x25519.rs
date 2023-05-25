@@ -1,20 +1,16 @@
-use blake2::digest::{Update, VariableOutput};
-use blake2::Blake2bVar;
-use digest::Key;
-use rand_core::OsRng;
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
-use std::path::Path;
-use std::{
-    net::Ipv6Addr,
-};
-use x25519_dalek::{PublicKey, StaticSecret, SharedSecret};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng as CryptOsRng},
     Aes256Gcm,
     Key as AesKey, // Or `Aes128Gcm`
-    Nonce,
 };
+use blake2::digest::{Update, VariableOutput};
+use blake2::Blake2bVar;
+use rand_core::OsRng;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::net::Ipv6Addr;
+use std::path::Path;
+use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
 // Read the secret key from a file if it exists, otherwise generate a new one and write it to a file
 // Returns the secret key and the corresponding public key
@@ -69,23 +65,23 @@ pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
 // the publickey is sent in the clear, the nonce is appended to the end of the raw_data
 // note: the raw_data gets encrypted first, then the nonce is appended to the end of the encrypted data
 pub fn encrypt_raw_data(raw_data_without_nonce: Vec<u8>, shared_secret: SharedSecret) -> Vec<u8> {
-
     let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
     let nonce = Aes256Gcm::generate_nonce(&mut CryptOsRng);
     println!("encryption nonce : {:?}", nonce);
 
     let cipher = Aes256Gcm::new(&key);
-    let mut encrypted_data = cipher.encrypt(&nonce, raw_data_without_nonce.as_ref()).unwrap();
+    let mut encrypted_data = cipher
+        .encrypt(&nonce, raw_data_without_nonce.as_ref())
+        .unwrap();
 
     encrypted_data.extend_from_slice(nonce.as_ref());
 
-    encrypted_data 
+    encrypted_data
 }
 
 // when a node receives a datapacket, it will decrypt it using the shared secret (generated from a public key) and a nonce
 // the nonce is 96-bits in size and is located at the end of the packet
 pub fn decrypt_raw_data(encrypted_raw_data: Vec<u8>, shared_secret: SharedSecret) -> Vec<u8> {
-
     let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
     let nonce = &encrypted_raw_data[encrypted_raw_data.len() - 12..];
     println!("decryption nonce : {:?}", nonce);
