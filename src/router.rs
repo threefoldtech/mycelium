@@ -2,17 +2,19 @@ use crate::{
     packet::{BabelTLV, BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
-    source_table::{self, FeasibilityDistance, SourceKey, SourceTable},
+    source_table::{FeasibilityDistance, SourceKey, SourceTable},
+    x25519::{self, shared_secret_from_keypair},
 };
-use rand::Rng;
 use std::{
+    collections::HashMap,
     error::Error,
     fmt::Debug,
-    net::IpAddr,
+    net::{IpAddr, Ipv6Addr},
     sync::{Arc, RwLock},
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -22,16 +24,11 @@ const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 pub struct StaticRoute {
     plen: u8,
     prefix: IpAddr,
-    seqno: u16,
 }
 
 impl StaticRoute {
     pub fn new(prefix: IpAddr) -> Self {
-        Self {
-            plen: 32,
-            prefix,
-            seqno: 0,
-        }
+        Self { plen: 64, prefix }
     }
 }
 
@@ -43,7 +40,9 @@ pub struct Router {
 impl Router {
     pub fn new(
         node_tun: Arc<Tun>,
+        node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
+        node_keypair: (StaticSecret, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
@@ -53,9 +52,11 @@ impl Router {
         let router = Router {
             inner: Arc::new(RwLock::new(RouterInner::new(
                 node_tun,
+                node_tun_addr,
                 static_routes,
                 router_data_tx,
                 router_control_tx,
+                node_keypair,
             )?)),
         };
 
@@ -76,10 +77,6 @@ impl Router {
         Ok(router)
     }
 
-    pub fn router_id(&self) -> u64 {
-        self.inner.read().unwrap().router_id
-    }
-
     pub fn router_control_tx(&self) -> UnboundedSender<ControlStruct> {
         self.inner.read().unwrap().router_control_tx.clone()
     }
@@ -88,20 +85,12 @@ impl Router {
         self.inner.read().unwrap().router_data_tx.clone()
     }
 
-    pub fn node_tun_addr(&self) -> IpAddr {
-        IpAddr::V4(self.inner.read().unwrap().node_tun.address().unwrap())
+    pub fn node_tun_addr(&self) -> Ipv6Addr {
+        self.inner.read().unwrap().node_tun_addr
     }
 
     pub fn node_tun(&self) -> Arc<Tun> {
         self.inner.read().unwrap().node_tun.clone()
-    }
-
-    pub fn router_seqno(&self) -> u16 {
-        self.inner.read().unwrap().router_seqno
-    }
-
-    pub fn increment_router_seqno(&self) {
-        self.inner.write().unwrap().router_seqno += 1;
     }
 
     pub fn peer_interfaces(&self) -> Vec<Peer> {
@@ -110,14 +99,6 @@ impl Router {
 
     pub fn add_peer_interface(&self, peer: Peer) {
         self.inner.write().unwrap().peer_interfaces.push(peer);
-    }
-
-    pub fn remove_peer_interface(&self, peer: Peer) {
-        self.inner.write().unwrap().remove_peer_interface(peer);
-    }
-
-    pub fn static_routes(&self) -> Vec<StaticRoute> {
-        self.inner.read().unwrap().static_routes.clone()
     }
 
     pub fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
@@ -137,6 +118,28 @@ impl Router {
         matching_peer.map(Clone::clone)
     }
 
+    pub fn node_secret_key(&self) -> StaticSecret {
+        self.inner.read().unwrap().node_keypair.0.clone()
+    }
+
+    pub fn node_public_key(&self) -> PublicKey {
+        self.inner.read().unwrap().node_keypair.1
+    }
+
+    pub fn add_dest_pubkey_map_entry(&self, dest: Ipv6Addr, pubkey: PublicKey) {
+        self.inner
+            .write()
+            .unwrap()
+            .dest_pubkey_map
+            .insert(dest, pubkey);
+    }
+
+    pub fn get_pubkey_from_dest(&self, dest: Ipv6Addr) -> Option<PublicKey> {
+        let inner = self.inner.read().unwrap();
+
+        let map = &inner.dest_pubkey_map;
+        map.get(&dest).map(Clone::clone)
+    }
 
     pub fn print_selected_routes(&self) {
         let inner = self.inner.read().unwrap();
@@ -148,41 +151,39 @@ impl Router {
                 "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
                 route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
             );
-            println!("As advertised by: {:?}", route.1.source.router_id);
+            // println!("As advertised by: {:?}", route.1.source.router_id);
         }
     }
 
-    pub fn print_fallback_routes(&self) {
-        let inner = self.inner.read().unwrap();
+    // pub fn print_fallback_routes(&self) {
+    //     let inner = self.inner.read().unwrap();
 
-        let routing_table = &inner.fallback_routing_table;
-        for route in routing_table.table.iter() {
-            println!("Route key: {:?}", route.0);
-            println!(
-                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
-                route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
-            );
-            println!("As advertised by: {:?}", route.1.source.router_id);
-        }
-    }
+    //     let routing_table = &inner.fallback_routing_table;
+    //     for route in routing_table.table.iter() {
+    //         println!("Route key: {:?}", route.0);
+    //         println!(
+    //             "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
+    //             route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
+    //         );
+    //         println!("As advertised by: {:?}", route.1.source.router_id);
+    //     }
+    // }
 
-    pub fn print_source_table(&self) {
-        let inner = self.inner.read().unwrap();
+    // pub fn print_source_table(&self) {
+    //     let inner = self.inner.read().unwrap();
 
-        let source_table = &inner.source_table;
-        for (sk, se) in source_table.table.iter() {
-            println!("Source key: {:?}", sk);
-            println!("Source entry: {:?}", se);
-            println!("\n");
-        }
-    }
-    
+    //     let source_table = &inner.source_table;
+    //     for (sk, se) in source_table.table.iter() {
+    //         println!("Source key: {:?}", sk);
+    //         println!("Source entry: {:?}", se);
+    //         println!("\n");
+    //     }
+    // }
+
     async fn check_for_dead_peers(self) {
-
         let ihu_threshold = tokio::time::Duration::from_secs(8);
-    
+
         loop {
-    
             // check for dead peers every second
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             let mut inner = self.inner.write().unwrap();
@@ -203,25 +204,27 @@ impl Router {
 
             // vec to store retraction update that need to be sent
             let mut retraction_updates = Vec::<ControlPacket>::new();
-    
+
             // remove the peer from the peer_interfaces and the routes
             for dead_peer in dead_peers {
                 inner.remove_peer_interface(dead_peer.clone());
                 // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
-                inner.selected_routing_table.table.retain(|_, route_entry| {
-                    route_entry.next_hop != dead_peer.overlay_ip()
-                });
-                inner.fallback_routing_table.table.retain(|_, route_entry| {
-                    route_entry.next_hop != dead_peer.overlay_ip()
-                });
+                inner
+                    .selected_routing_table
+                    .table
+                    .retain(|_, route_entry| route_entry.next_hop != dead_peer.overlay_ip());
+                inner
+                    .fallback_routing_table
+                    .table
+                    .retain(|_, route_entry| route_entry.next_hop != dead_peer.overlay_ip());
 
-                // create retraction update for each dead peer 
+                // create retraction update for each dead peer
                 let retraction_update = ControlPacket::new_update(
-                    32, 
-                    UPDATE_INTERVAL as u16, 
-                    inner.router_seqno, 
-                    0xFFFF, 
-                    dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP 
+                    32,
+                    UPDATE_INTERVAL as u16,
+                    inner.router_seqno,
+                    0xFFFF,
+                    dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP
                     inner.router_id,
                 );
                 retraction_updates.push(retraction_update);
@@ -232,30 +235,26 @@ impl Router {
             for peer in inner.peer_interfaces.iter() {
                 for ru in retraction_updates.iter() {
                     if let Err(e) = peer.send_control_packet(ru.clone()) {
-                        eprintln!("Error sending retraction update to peer");
+                        eprintln!("Error sending retraction update to peer: {e}");
                     }
                 }
             }
-
         }
     }
-    
-    
 
     async fn handle_incoming_control_packet(
         self,
         mut router_control_rx: UnboundedReceiver<ControlStruct>,
     ) {
         while let Some(control_struct) = router_control_rx.recv().await {
+            // println!(
+            //     "received control packet from {:?}",
+            //     control_struct.src_overlay_ip
+            // );
             match control_struct.control_packet.body.tlv_type {
-                BabelTLVType::AckReq => todo!(),
-                BabelTLVType::Ack => todo!(),
                 BabelTLVType::Hello => Self::handle_incoming_hello(&self, control_struct),
                 BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
-                BabelTLVType::NextHop => todo!(),
                 BabelTLVType::Update => Self::handle_incoming_update(&self, control_struct),
-                BabelTLVType::RouteReq => todo!(),
-                BabelTLVType::SeqnoReq => todo!(),
             }
         }
     }
@@ -263,13 +262,12 @@ impl Router {
     fn handle_incoming_hello(&self, control_struct: ControlStruct) {
         // let destination_ip = control_struct.src_overlay_ip;
         // control_struct.reply(ControlPacket::new_ihu(IHU_INTERVAL, destination_ip));
-    
+
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
         if let Some(source_peer) = self.source_peer_from_control_struct(control_struct) {
             let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.overlay_ip());
             match source_peer.send_control_packet(ihu) {
-                Ok(()) => {
-                },
+                Ok(()) => {}
                 Err(e) => {
                     eprintln!("Error sending IHU to peer: {e}");
                 }
@@ -288,8 +286,6 @@ impl Router {
 
             source_peer.set_link_cost(time_diff as u16);
 
-
-
             // set the last_received_ihu for this peer
             source_peer.set_time_last_received_ihu(tokio::time::Instant::now());
         }
@@ -303,30 +299,60 @@ impl Router {
 
     fn handle_incoming_update(&self, update: ControlStruct) {
         match update.control_packet.body.tlv {
-            BabelTLV::Update { plen, interval: _, seqno, metric, prefix, router_id } => {
-                    
+            BabelTLV::Update {
+                plen,
+                interval: _,
+                seqno,
+                metric,
+                prefix,
+                router_id,
+            } => {
+                // convert prefix to ipv6 address
+                if let IpAddr::V6(prefix_as_ipv6addr) = prefix {
+                    // add it the mapping
+                    self.add_dest_pubkey_map_entry(prefix_as_ipv6addr, router_id);
+                }
+
+                // create route key from incoming update control struct
+                // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
                 let neighbor_ip = update.src_overlay_ip;
-                let route_key_from_update = RouteKey { 
-                    neighbor: neighbor_ip, 
-                    plen, 
+                let route_key_from_update = RouteKey {
+                    neighbor: neighbor_ip,
+                    plen,
                     prefix,
                 };
-    
+
+                // used later to filter out static route
                 if self.route_key_is_from_static_route(&route_key_from_update) {
-                    return; 
+                    return;
                 }
     
                 let mut inner = self.inner.write().unwrap();
-    
-                let route_entry_exists = inner.selected_routing_table.table.contains_key(&route_key_from_update) || inner.fallback_routing_table.table.contains_key(&route_key_from_update);
-    
+
+                // check if a route entry with the same route key exists in both routing tables
+                let route_entry_exists = inner
+                    .selected_routing_table
+                    .table
+                    .contains_key(&route_key_from_update)
+                    || inner
+                        .fallback_routing_table
+                        .table
+                        .contains_key(&route_key_from_update);
+
+                // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
                     if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
                         return;
-                    }
-                    else {
-                        let source_key = SourceKey { prefix, plen, router_id };
-                        let fd = FeasibilityDistance{ metric, seqno };
+                    } else {
+                        // this means that the update is feasible and the metric is not infinite
+                        // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
+
+                        let source_key = SourceKey {
+                            prefix,
+                            plen,
+                            router_id,
+                        };
+                        let fd = FeasibilityDistance { metric, seqno };
                         inner.source_table.insert(source_key, fd);
     
                         let route_key = RouteKey {
@@ -339,7 +365,7 @@ impl Router {
                             neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
                             metric,
                             seqno,
-                            next_hop: neighbor_ip, 
+                            next_hop: neighbor_ip,
                             selected: true,
                         };
     
@@ -348,12 +374,16 @@ impl Router {
                             if r.0.plen == plen && r.0.prefix == prefix {
                                 if metric < r.1.metric {
                                     to_remove.push(r.0.clone());
-                                    break; 
+                                    break; // we can break, as there will be max 1 better route in selected table at any point in time (hence 'selected')
+                                           // metric of update is greater than entry's metric
                                 } else if metric >= r.1.metric {
-                                    let mut fallback_route_entry = route_entry.clone();
-                                    fallback_route_entry.selected = false;
-                                    inner.fallback_routing_table.table.insert(route_key.clone(), fallback_route_entry);
-                                    return; 
+                                    // this means that there is already a better route in our selected routing table,
+                                    // so we should add it to fallback instead
+                                    inner
+                                        .fallback_routing_table
+                                        .table
+                                        .insert(route_key.clone(), route_entry.clone());
+                                    return; // quit the function, work is done here
                                 }
                             }
                         }
@@ -363,133 +393,91 @@ impl Router {
                                 inner.fallback_routing_table.insert(rk, old_selected);
                             }
                         }
-                        inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
+                        // insert the route into selected (we might have placed one other route, that was previously the best, in the fallback)
+                        inner
+                            .selected_routing_table
+                            .table
+                            .insert(route_key, route_entry);
                     }
                 }
                 else {
                     // check if the update is a retraction
                     if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
-                        if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
+                        // if the update is a retraction, we remove the entry from the routing tables
+                        // we also remove the corresponding source entry???
+                        if inner
+                            .selected_routing_table
+                            .table
+                            .contains_key(&route_key_from_update)
+                        {
                             inner.selected_routing_table.remove(&route_key_from_update);
                         }
-                        if inner.fallback_routing_table.table.contains_key(&route_key_from_update) {
+                        if inner
+                            .fallback_routing_table
+                            .table
+                            .contains_key(&route_key_from_update)
+                        {
                             inner.fallback_routing_table.remove(&route_key_from_update);
                         }
-                        let source_key = SourceKey { prefix, plen, router_id };
+                        // remove the corresponding source entry
+                        let source_key = SourceKey {
+                            prefix,
+                            plen,
+                            router_id,
+                        };
                         inner.source_table.remove(&source_key);
                         return;
                     }
-                    else {
-                        // here, the route already exists in one of the routing tables
-                        // and we also know that the update is not a retraction
-    
-                        // let's first check if the update is feasible: this checks the source table (based on prefix, plen, router_id)
-                        if !self.update_feasible(&update, &inner.source_table) {
+                    // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
+                    // to the router-id of the entry, then we ignore the update
+                    if inner
+                        .selected_routing_table
+                        .table
+                        .contains_key(&route_key_from_update)
+                    {
+                        let route_entry = inner
+                            .selected_routing_table
+                            .table
+                            .get(&route_key_from_update)
+                            .unwrap();
+                        if !self.update_feasible(&update, &inner.source_table)
+                            && route_entry.source.router_id == router_id
+                        {
                             return;
                         }
-                        else {
-                            // the update is feasible (which means a newer or better route for that prefix,plen,router_id has never been annoucned), so we can update the source table
-                            let source_key = SourceKey { prefix, plen, router_id };
-                            let fd = FeasibilityDistance{ metric, seqno };
-                            inner.source_table.insert(source_key, fd); // this will overwrite the old entry if it exists
-    
-                            // now we need to check if the update is better than the current route in the selected routing table
-                            // if this is the case, we need to move the current route to the fallback routing table and insert the new route into the selected routing table
-                            let route_key = RouteKey {
-                                prefix,
-                                plen,
-                                neighbor: neighbor_ip,
-                            };
-                            let route_entry = RouteEntry {
-                                source: source_key,
-                                neighbor: inner.peer_by_ip(neighbor_ip).unwrap(),
-                                metric,
-                                seqno,
-                                next_hop: neighbor_ip, 
-                                selected: true,
-                            };
-    
-                            let mut to_remove = Vec::new();
-                            let mut to_add_to_fallback = Vec::new();
+                        // update the entry's seqno, metric and router-id
+                        let route_entry = inner
+                            .selected_routing_table
+                            .table
+                            .get_mut(&route_key_from_update)
+                            .unwrap();
+                        route_entry.update_seqno(seqno);
+                        route_entry.update_metric(metric);
+                        route_entry.update_router_id(router_id);
+                    }
+                    // otherwise
+                    else {
+                        let route_entry = inner
+                            .fallback_routing_table
+                            .table
+                            .get_mut(&route_key_from_update)
+                            .unwrap();
+                        // update the entry's seqno, metric and router-id
+                        route_entry.update_seqno(seqno);
+                        route_entry.update_metric(metric);
+                        route_entry.update_router_id(router_id);
 
-                            for r in inner.selected_routing_table.table.iter() {
-                                if r.0.plen == plen && r.0.prefix == prefix {
-                                    if metric < r.1.metric {
-                                        to_remove.push(r.0.clone());
-                                        break; 
-                                    } else if metric >= r.1.metric && neighbor_ip != r.1.next_hop {
-                                        to_add_to_fallback.push(route_entry.clone());
-                                    }
-                                }
-                            }
-                            for rk in to_remove {
-                                if let Some(mut old_selected) = inner.selected_routing_table.remove(&rk) {
-                                    old_selected.selected = false;
-                                    inner.fallback_routing_table.insert(rk, old_selected);
-                                }
-                            }
-
-                            for mut re in to_add_to_fallback {
-
-                                // only add to fallback if the route with that prefix, plen, neighbor is not already in the selected routing table
-                                // and if the metric is not u16::MAX - 1
-                                let mut already_in_selected = false;
-                                for r in inner.selected_routing_table.table.iter() {
-                                    if r.0.plen == plen && r.0.prefix == prefix && r.0.neighbor == neighbor_ip {
-                                        already_in_selected = true;
-                                        break;
-                                    }
-                                }
-                                if already_in_selected {
-                                    continue;
-                                }
-                                else {
-                                    // additional check: only insert into fallback if the metric is not u16::MAX - 1
-                                    if re.metric == u16::MAX - 1 {
-                                        continue;
-                                    }
-                                    re.selected = false;
-                                    inner.fallback_routing_table.table.insert(route_key.clone(), re);
-                                    return;
-                                }
-                            }
-
-                            inner.selected_routing_table.table.insert(route_key.clone(), route_entry.clone());
+                        if !self.update_feasible(&update, &inner.source_table) {
+                            // if the update is unfeasible, we remove the entry from the selected routing table
+                            inner
+                                .selected_routing_table
+                                .table
+                                .remove(&route_key_from_update);
+                            // should we remove it from the selected and add it to fallback here???
                         }
                     }
                 }
-
-
-                    // if inner.selected_routing_table.table.contains_key(&route_key_from_update) {
-                    //     let route_entry = inner.selected_routing_table.table.get(&route_key_from_update).unwrap();
-                    //     if !self.update_feasible(&update, &inner.source_table) && route_entry.source.router_id == router_id {
-                    //         return;
-                    //     }
-                    //     let route_entry = inner.selected_routing_table.table.get_mut(&route_key_from_update).unwrap();
-                    //     route_entry.update_seqno(seqno);
-                    //     route_entry.update_metric(metric);
-                    //     route_entry.update_router_id(router_id);
-                    // }
-                    // else {
-                    //     // CHANGE: Adjusted handling of existing entries in the fallback routing table
-                    //     if let Some(route_entry) = inner.fallback_routing_table.table.get_mut(&route_key_from_update) {
-                    //         route_entry.update_seqno(seqno);
-                    //         route_entry.update_metric(metric);
-                    //         route_entry.update_router_id(router_id);
-    
-                    //         if self.update_feasible(&update, &inner.source_table) {
-                    //             // if the update is feasible, we promote the entry to the selected routing table
-                    //             let selected_route_entry = inner.selected_routing_table.table.insert(route_key_from_update.clone(), route_entry.clone());
-                    //             if let Some(mut previous_route) = selected_route_entry {
-                    //                 // demote the previous selected route
-                    //                 previous_route.selected = false;
-                    //                 inner.fallback_routing_table.table.insert(route_key_from_update.clone(), previous_route);
-                    //             }
-                    //         }
-                    //     }
-                    // }
-                
-            },
+            }
             _ => {
                 panic!("Received update with wrong TLV type");
             }
@@ -729,7 +717,9 @@ impl Router {
                 };
                 match source_table.get(&source_key) {
                     Some(&entry) => {
-                        return (seqno > entry.seqno|| (seqno == entry.seqno && metric < entry.metric)) || metric == 0xFFFF;
+                        return (seqno > entry.seqno
+                            || (seqno == entry.seqno && metric < entry.metric))
+                            || metric == 0xFFFF;
                     }
                     None => return true,
                 }
@@ -745,43 +735,58 @@ impl Router {
         // If destination IP of packet is same as TUN interface IP, send to TUN interface
         // If destination IP of packet is not same as TUN interface IP, send to peer with matching overlay IP
         let node_tun = self.node_tun();
-        let node_tun_addr = node_tun.address().unwrap();
+        let node_tun_addr = self.node_tun_addr();
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
-                match data_packet.dest_ip {
-                    x if x == node_tun_addr => match node_tun.send(&data_packet.raw_data).await {
+                println!("Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})", data_packet.dest_ip, node_tun_addr);
+
+                if data_packet.dest_ip == node_tun_addr {
+                    // decrypt & send to TUN interface
+                    let pubkey_sender = data_packet.pubkey;
+                    let own_secret = self.node_secret_key();
+                    let shared_secret = shared_secret_from_keypair(&own_secret, &pubkey_sender);
+                    let decrypted_raw_data =
+                        x25519::decrypt_raw_data(data_packet.raw_data, shared_secret);
+                    match node_tun.send(&decrypted_raw_data).await {
                         Ok(_) => {}
                         Err(e) => {
                             eprintln!("Error sending data packet to TUN interface: {:?}", e)
                         }
-                    },
-                    _ => {
-                        let best_route = self.select_best_route(IpAddr::V4(data_packet.dest_ip));
-                        match best_route {
-                            Some (route_entry) => {
-                                let peer = self.peer_by_ip(route_entry.next_hop).unwrap();
-                                if let Err(e) = peer.send_data_packet(data_packet) {
-                                    eprintln!("Error sending data packet to peer: {:?}", e);
+                    }
+                } else {
+                    // send to peer with matching overlay IP
+                    let best_route = self.select_best_route(IpAddr::V6(data_packet.dest_ip));
+                    match best_route {
+                        Some(route_entry) => {
+                            let peer = self.peer_by_ip(route_entry.next_hop);
+                            // drop the packet if the peer is couldn't be found 
+                            match peer {
+                                Some(peer) => {
+                                    if let Err(e) = peer.send_data_packet(data_packet) {
+                                        eprintln!("Error sending data packet to peer: {:?}", e);
+                                    }
                                 }
-                            },
-                            None => {
-                                eprintln!("Error sending data packet, no route found");
+                                None => {
+                                    eprintln!("Error sending data packet, no peer found");
+                                }
                             }
+                        }
+                        None => {
+                            eprintln!("Error sending data packet, no route found");
                         }
                     }
                 }
             }
         }
-    } 
+    }
 
     pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
-
         let inner = self.inner.read().unwrap();
         let mut best_route = None;
         // first look in the selected routing table for a match on the prefix of dest_ip
         for (route_key, route_entry) in inner.selected_routing_table.table.iter() {
             if route_key.prefix == dest_ip {
-                best_route = Some(route_entry.clone()); 
+                best_route = Some(route_entry.clone());
             }
         }
         // if no match was found, look in the fallback routing table
@@ -789,14 +794,14 @@ impl Router {
             println!("no match in selected routing table, looking in fallback routing table");
             for (route_key, route_entry) in inner.fallback_routing_table.table.iter() {
                 if route_key.prefix == dest_ip {
-                    best_route = Some(route_entry.clone()); 
+                    best_route = Some(route_entry.clone());
                 }
             }
         }
 
-        println!("\n\n best route towards {}: {:?}", dest_ip, best_route);
+        // println!("\n\n best route towards {}: {:?}", dest_ip, best_route);
 
-        return best_route
+        return best_route;
     }
 
     pub async fn propagate_static_route(self) {
@@ -834,27 +839,33 @@ impl Router {
 }
 
 pub struct RouterInner {
-    pub router_id: u64,
+    pub router_id: PublicKey,
     peer_interfaces: Vec<Peer>,
     router_control_tx: UnboundedSender<ControlStruct>,
     router_data_tx: UnboundedSender<DataPacket>,
     node_tun: Arc<Tun>,
+    node_tun_addr: Ipv6Addr,
     selected_routing_table: RoutingTable,
     fallback_routing_table: RoutingTable,
     source_table: SourceTable,
     router_seqno: u16,
     static_routes: Vec<StaticRoute>,
+    node_keypair: (StaticSecret, PublicKey),
+    // map that contains the overlay ips of peers and their respective public keys
+    dest_pubkey_map: HashMap<Ipv6Addr, PublicKey>,
 }
 
 impl RouterInner {
     pub fn new(
         node_tun: Arc<Tun>,
+        node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
         router_data_tx: UnboundedSender<DataPacket>,
         router_control_tx: UnboundedSender<ControlStruct>,
+        node_keypair: (StaticSecret, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
-            router_id: rand::thread_rng().gen(),
+            router_id: node_keypair.1,
             peer_interfaces: Vec::new(),
             router_control_tx,
             router_data_tx,
@@ -864,6 +875,9 @@ impl RouterInner {
             source_table: SourceTable::new(),
             router_seqno: 0,
             static_routes: static_routes,
+            node_keypair: node_keypair,
+            node_tun_addr,
+            dest_pubkey_map: HashMap::new(),
         };
 
         Ok(router_inner)
@@ -953,18 +967,38 @@ impl RouterInner {
         let mut updates = vec![];
         for sr in self.selected_routing_table.table.iter() {
             for peer in self.peer_interfaces.iter() {
-
                 let peer_link_cost = peer.link_cost();
 
-                let update = ControlPacket::new_update(
-                    sr.0.plen, 
-                    UPDATE_INTERVAL as u16,
-                    self.router_seqno, // updates receive the seqno of the router
-                    if sr.1.metric > u16::MAX -1 - peer_link_cost {u16::MAX - 1 } else { sr.1.metric + peer_link_cost }, // the cost of the route is the cost of the route + the cost of the link to the peer
-                    sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
-                    self.router_id,
-                );
-                updates.push((peer.clone(), update));
+                // convert sr.0.prefix to ipv6 addr
+                if let IpAddr::V6(prefix) = sr.0.prefix {
+                    let og_sender_pubkey_option = self.dest_pubkey_map.get(&prefix);
+                    // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
+                    let og_sender_pubkey = match og_sender_pubkey_option {
+                        Some(pubkey) => *pubkey,
+                        None => self.router_id,
+                    };
+
+                    let update = ControlPacket::new_update(
+                        sr.0.plen,
+                        UPDATE_INTERVAL as u16,
+                        self.router_seqno, // updates receive the seqno of the router
+                        if sr.1.metric > u16::MAX - 1 - peer_link_cost {
+                            u16::MAX - 1
+                        } else {
+                            sr.1.metric + peer_link_cost
+                        }, // the cost of the route is the cost of the route + the cost of the link to the peer
+                        sr.0.prefix, // the prefix of a static route corresponds to the TUN addr of the node
+                        // we looked for the router_id, which is a public key, in the dest_pubkey_map
+                        // if the router_id is not in the map, then the route came from the node itself
+                        og_sender_pubkey,
+                    );
+                    // println!(
+                    //     "\n\n\n\nPropagting route update to: {}\n {:?}\n\n",
+                    //     peer.overlay_ip(),
+                    //     update
+                    // );
+                    updates.push((peer.clone(), update));
+                }
             }
         }
 
@@ -976,6 +1010,6 @@ impl RouterInner {
     fn peer_exists(&self, peer_underlay_ip: IpAddr) -> bool {
         self.peer_interfaces
             .iter()
-            .any(|peer| peer.underlay_ip() == peer_underlay_ip)        
+            .any(|peer| peer.underlay_ip() == peer_underlay_ip)
     }
 }

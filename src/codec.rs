@@ -8,6 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 use tokio_util::codec::{Decoder, Encoder};
+use x25519_dalek::PublicKey;
 
 /* ********************************PAKCET*********************************** */
 pub struct PacketCodec {
@@ -104,7 +105,8 @@ impl Encoder<Packet> for PacketCodec {
 /* ******************************DATA PACKET********************************* */
 pub struct DataPacketCodec {
     len: Option<u16>,
-    dest_ip: Option<std::net::Ipv4Addr>,
+    dest_ip: Option<std::net::Ipv6Addr>,
+    pubkey: Option<PublicKey>,
 }
 
 impl DataPacketCodec {
@@ -112,6 +114,7 @@ impl DataPacketCodec {
         DataPacketCodec {
             len: None,
             dest_ip: None,
+            pubkey: None,
         }
     }
 }
@@ -140,18 +143,35 @@ impl Decoder for DataPacketCodec {
         let dest_ip = if let Some(dest_ip) = self.dest_ip {
             dest_ip
         } else {
-            if src.len() < 4 {
+            if src.len() < 16 {
                 return Ok(None);
             }
 
             // Decode octets
-            let mut ip_bytes = [0u8; 4];
-            ip_bytes.copy_from_slice(&src[..4]);
-            let dest_ip = Ipv4Addr::from(ip_bytes);
-            src.advance(4);
+            let mut ip_bytes = [0u8; 16];
+            ip_bytes.copy_from_slice(&src[..16]);
+            let dest_ip = Ipv6Addr::from(ip_bytes);
+            src.advance(16);
 
             self.dest_ip = Some(dest_ip);
             dest_ip
+        };
+
+        // Determine the pubkey
+        let pubkey = if let Some(pubkey) = self.pubkey {
+            pubkey
+        } else {
+            if src.len() < 32 {
+                return Ok(None);
+            }
+
+            let mut pubkey_bytes = [0u8; 32];
+            pubkey_bytes.copy_from_slice(&src[..32]);
+            let pubkey = PublicKey::from(pubkey_bytes);
+            src.advance(32);
+
+            self.pubkey = Some(pubkey);
+            pubkey
         };
 
         // Check we have enough data to decode
@@ -167,10 +187,12 @@ impl Decoder for DataPacketCodec {
         // Reset state
         self.len = None;
         self.dest_ip = None;
+        self.pubkey = None;
 
         Ok(Some(DataPacket {
             raw_data: data,
             dest_ip,
+            pubkey,
         }))
     }
 }
@@ -179,11 +201,13 @@ impl Encoder<DataPacket> for DataPacketCodec {
     type Error = std::io::Error;
 
     fn encode(&mut self, item: DataPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(item.raw_data.len() + 6);
+        dst.reserve(item.raw_data.len() + 16 + 32);
         // Write the length of the data
         dst.put_u16(item.raw_data.len() as u16);
         // Write the destination IP
         dst.put_slice(&item.dest_ip.octets());
+        // Write the public key
+        dst.put_slice(&item.pubkey.to_bytes());
         // Write the data
         dst.extend_from_slice(&item.raw_data);
 
@@ -202,7 +226,6 @@ impl ControlPacketCodec {
     }
 }
 
-// TODO FUTURE-WISE --> HANDLE BUFFER READS THAT MIGHT NOT HAVE ARRIVED YET
 impl Decoder for ControlPacketCodec {
     type Item = ControlPacket;
     type Error = std::io::Error;
@@ -258,11 +281,15 @@ impl Decoder for ControlPacketCodec {
             }
             BabelTLVType::IHU => {
                 let interval = buf.get_u16();
-                let address = IpAddr::V4(Ipv4Addr::new(
-                    buf.get_u8(),
-                    buf.get_u8(),
-                    buf.get_u8(),
-                    buf.get_u8(),
+                let address = IpAddr::V6(Ipv6Addr::new(
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
+                    buf.get_u16(),
                 ));
 
                 BabelPacketBody {
@@ -280,7 +307,8 @@ impl Decoder for ControlPacketCodec {
                 // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
                 let prefix = match ae {
                     0 => {
-                        // 4 bytes IP + 8 bytes router_id
+                        println!("IPv4 ae, this should be removed!!");
+                        // 4 bytes IP + 4 bytes router_id
                         IpAddr::V4(Ipv4Addr::new(
                             buf.get_u8(),
                             buf.get_u8(),
@@ -289,7 +317,7 @@ impl Decoder for ControlPacketCodec {
                         ))
                     }
                     1 => {
-                        // 16 bytes IP + 8 bytes router_id
+                        // 16 bytes IP + 4 bytes router_id
                         IpAddr::V6(Ipv6Addr::new(
                             buf.get_u16(),
                             buf.get_u16(),
@@ -308,7 +336,12 @@ impl Decoder for ControlPacketCodec {
                         ))
                     }
                 };
-                let router_id = buf.get_u64();
+
+                let mut router_id_bytes = [0u8; 32];
+                router_id_bytes.copy_from_slice(&buf[..32]);
+                buf.advance(32);
+
+                let router_id = PublicKey::from(router_id_bytes);
 
                 BabelPacketBody {
                     tlv_type,
@@ -323,11 +356,6 @@ impl Decoder for ControlPacketCodec {
                     },
                 }
             }
-            BabelTLVType::AckReq => todo!(),
-            BabelTLVType::Ack => todo!(),
-            BabelTLVType::NextHop => todo!(),
-            BabelTLVType::RouteReq => todo!(),
-            BabelTLVType::SeqnoReq => todo!(),
         };
 
         Ok(Some(ControlPacket { header, body }))
@@ -361,8 +389,15 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                         buf.put_u8(ipv4.octets()[2]);
                         buf.put_u8(ipv4.octets()[3]);
                     }
-                    IpAddr::V6(_ipv6) => {
-                        println!("IPv6 not supported yet");
+                    IpAddr::V6(ipv6) => {
+                        buf.put_u16(ipv6.segments()[0]);
+                        buf.put_u16(ipv6.segments()[1]);
+                        buf.put_u16(ipv6.segments()[2]);
+                        buf.put_u16(ipv6.segments()[3]);
+                        buf.put_u16(ipv6.segments()[4]);
+                        buf.put_u16(ipv6.segments()[5]);
+                        buf.put_u16(ipv6.segments()[6]);
+                        buf.put_u16(ipv6.segments()[7]);
                     }
                 }
             }
@@ -397,8 +432,9 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                         buf.put_u16(_ipv6.segments()[7]);
                     }
                 }
-                buf.put_u64(router_id);
-            } // Add encoding logic for other TLV types.
+
+                buf.put_slice(&router_id.to_bytes());
+            }
         }
 
         Ok(())

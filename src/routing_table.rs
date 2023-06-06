@@ -1,3 +1,5 @@
+use x25519_dalek::PublicKey;
+
 use crate::{peer::Peer, source_table::SourceKey};
 use std::{collections::BTreeMap, net::IpAddr};
 
@@ -16,37 +18,9 @@ pub struct RouteEntry {
     pub seqno: u16,
     pub next_hop: IpAddr, // This is the Peer's address
     pub selected: bool,
-    //pub route_expiry_timer: Timer,
 }
 
 impl RouteEntry {
-    /*
-    pub fn new(
-        source: SourceKey,
-        neighbor: Peer,
-        metric: u16,
-        seqno: u16,
-        next_hop: IpAddr,
-        selected: bool,
-    ) -> Self {
-        Self {
-            source,
-            neighbor,
-            metric,
-            seqno,
-            next_hop,
-            selected,
-        }
-    }
-
-    pub fn retracted(&mut self) {
-        self.metric = 0xFFFF;
-    }
-
-    pub fn is_retracted(&self) -> bool {
-        self.metric == 0xFFFF
-    }
-    */
     pub fn update_metric(&mut self, metric: u16) {
         self.metric = metric;
     }
@@ -55,7 +29,7 @@ impl RouteEntry {
         self.seqno = seqno;
     }
 
-    pub fn update_router_id(&mut self, router_id: u64) {
+    pub fn update_router_id(&mut self, router_id: PublicKey) {
         self.source.router_id = router_id;
     }
 }

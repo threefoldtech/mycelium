@@ -5,7 +5,7 @@ use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
 use std::{
     error::Error,
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv6Addr, SocketAddr},
 };
 use tokio::io::AsyncBufReadExt;
 
@@ -17,13 +17,12 @@ mod peer_manager;
 mod router;
 mod routing_table;
 mod source_table;
+mod x25519;
 
 const LINK_MTU: usize = 1420;
 
 #[derive(Parser)]
 struct Cli {
-    #[arg(short = 'a', long = "tun-addr")]
-    tun_addr: Ipv4Addr,
     #[arg(short = 'p', long = "peers", num_args = 1..)]
     static_peers: Vec<SocketAddr>,
 }
@@ -32,8 +31,15 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
+    // Generate a new keypair for this node, panic if it fails
+    let node_keypair = x25519::get_keypair().unwrap();
+
+    // Generate the node's IPv6 address from its public key
+    let node_addr = x25519::generate_addr_from_pubkey(&node_keypair.1);
+    println!("Node address: {}", node_addr);
+
     // Create TUN interface and add static route
-    let node_tun = match node_setup::setup_node(cli.tun_addr).await {
+    let node_tun = match node_setup::setup_node(node_addr).await {
         Ok(tun) => {
             println!("Node setup complete");
             tun
@@ -43,15 +49,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    println!("Node public key: {:?}", node_keypair.1);
+
     let static_peers = cli.static_peers;
 
     // Creating a new Router instance
     let router = match router::Router::new(
         node_tun.clone(),
-        vec![StaticRoute::new(cli.tun_addr.into())],
+        node_addr,
+        vec![StaticRoute::new(node_addr.into())],
+        node_keypair.clone(),
     ) {
         Ok(router) => {
-            println!("Router created. ID: {}", router.router_id());
+            println!("Router created. Pubkey: {:x}", BytesMut::from( &router.node_public_key().as_bytes()[..]));
             router
         }
         Err(e) => {
@@ -68,6 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let router = router.clone();
         let node_tun = node_tun.clone();
+        let own_secret = node_keypair.0;
 
         tokio::spawn(async move {
             loop {
@@ -86,25 +97,54 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let packet = match PacketHeaders::from_ip_slice(&buf) {
                     Ok(packet) => packet,
                     Err(e) => {
-                        println!("buffer: {:?}", buf);
                         eprintln!("Error from_ip_slice: {}", e);
                         continue;
                     }
                 };
 
-                if let Some(IpHeader::Version4(header, _)) = packet.ip {
-                    let dest_addr = Ipv4Addr::from(header.destination);
-                    println!("Destination IPv4 address: {}", dest_addr);
-
-                    let data_packet = DataPacket {
-                        dest_ip: dest_addr,
-                        raw_data: buf.to_vec(),
-                    };
-                    if router.router_data_tx().send(data_packet).is_err() {
-                        eprintln!("Failed to send data_packet");
-                    }
+                let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
+                    let dest_addr = Ipv6Addr::from(header.destination);
+                    dest_addr
                 } else {
-                    println!("Non-IPv4 packet received, ignoring...");
+                    continue;
+                };
+
+                println!("Received packet from TUN with dest addr: {:?}", dest_addr);
+
+                // Check if destination address is in 200::/7 range
+                let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
+                if first_byte < 0x02 || first_byte > 0x3F {
+                    continue;
+                }
+
+                // create shared secret between node and dest_addr
+                let pubkey_recipient = match router.get_pubkey_from_dest(dest_addr) {
+                    Some(pubkey) => pubkey,
+                    None => {
+                        eprintln!("No pubkey found for dest addr: {:?}", dest_addr);
+                        continue;
+                    }
+                };
+
+                let shared_secret =
+                    x25519::shared_secret_from_keypair(&own_secret, &pubkey_recipient);
+
+                // println!(
+                //     "encryption with pubkey of recipient: {:?}",
+                //     pubkey_recipient
+                // );
+                // println!("encryption with {:?}", shared_secret.as_bytes());
+
+                // inject own pubkey
+                let data_packet = DataPacket {
+                    dest_ip: dest_addr,
+                    pubkey: router.node_public_key(),
+                    // encrypt data with shared secret
+                    raw_data: x25519::encrypt_raw_data(buf.to_vec(), shared_secret),
+                };
+
+                if router.router_data_tx().send(data_packet).is_err() {
+                    eprintln!("Failed to send data_packet");
                 }
             }
         });
@@ -123,8 +163,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     line.pop();
                     println!("----------- Current selected routes -----------{}\n", line);
                     router.print_selected_routes();
-                    println!("----------- Current fallback routes -----------{}\n", line);
-                    router.print_fallback_routes();
 
                     println!("\n----------- Current peers: -----------");
                     for p in router.peer_interfaces() {
@@ -134,9 +172,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             p.link_cost()
                         );
                     }
-
-                    println!("\n----------- Current source table: -----------");
-                    router.print_source_table();
 
                     println!("\n\n");
                 }
