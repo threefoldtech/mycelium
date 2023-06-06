@@ -151,7 +151,7 @@ impl Router {
                 "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
                 route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
             );
-            println!("As advertised by: {:?}", route.1.source.router_id);
+            // println!("As advertised by: {:?}", route.1.source.router_id);
         }
     }
 
@@ -247,10 +247,10 @@ impl Router {
         mut router_control_rx: UnboundedReceiver<ControlStruct>,
     ) {
         while let Some(control_struct) = router_control_rx.recv().await {
-            println!(
-                "received control packet from {:?}",
-                control_struct.src_overlay_ip
-            );
+            // println!(
+            //     "received control packet from {:?}",
+            //     control_struct.src_overlay_ip
+            // );
             match control_struct.control_packet.body.tlv_type {
                 BabelTLVType::Hello => Self::handle_incoming_hello(&self, control_struct),
                 BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
@@ -302,11 +302,6 @@ impl Router {
                 prefix,
                 router_id,
             } => {
-                // upon receiving and update, we should create a mapping that matches an overlay ip to a router id (which is a PublicKey)
-                println!(
-                    "Adding overlay ip to router id mapping: {:?} -> {:?}",
-                    prefix, router_id
-                );
                 // convert prefix to ipv6 address
                 if let IpAddr::V6(prefix_as_ipv6addr) = prefix {
                     // add it the mapping
@@ -605,7 +600,7 @@ impl Router {
             }
         }
 
-        println!("\n\n best route towards {}: {:?}", dest_ip, best_route);
+        // println!("\n\n best route towards {}: {:?}", dest_ip, best_route);
 
         return best_route;
     }
@@ -798,11 +793,11 @@ impl RouterInner {
                         // if the router_id is not in the map, then the route came from the node itself
                         og_sender_pubkey,
                     );
-                    println!(
-                        "\n\n\n\nPropagting route update to: {}\n {:?}\n\n",
-                        peer.overlay_ip(),
-                        update
-                    );
+                    // println!(
+                    //     "\n\n\n\nPropagting route update to: {}\n {:?}\n\n",
+                    //     peer.overlay_ip(),
+                    //     update
+                    // );
                     updates.push((peer.clone(), update));
                 }
             }
