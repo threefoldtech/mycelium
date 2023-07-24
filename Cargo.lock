@@ -574,6 +574,7 @@ dependencies = [
  "etherparse",
  "futures",
  "getrandom 0.2.10",
+ "log",
  "rand",
  "rand_core 0.5.1",
  "rtnetlink",
