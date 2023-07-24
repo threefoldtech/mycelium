@@ -31,6 +31,8 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
+    pretty_env_logger::init();
+
     // Generate a new keypair for this node, panic if it fails
     let node_keypair = x25519::get_keypair().unwrap();
 
@@ -61,7 +63,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         node_keypair.clone(),
     ) {
         Ok(router) => {
-            println!("Router created. Pubkey: {:x}", BytesMut::from( &router.node_public_key().as_bytes()[..]));
+            println!(
+                "Router created. Pubkey: {:x}",
+                BytesMut::from(&router.node_public_key().as_bytes()[..])
+            );
             router
         }
         Err(e) => {
