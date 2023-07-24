@@ -3,34 +3,128 @@ use x25519_dalek::PublicKey;
 use crate::{peer::Peer, source_table::SourceKey};
 use std::{collections::BTreeMap, net::IpAddr};
 
+/// Metric indicating the route has been retracted.
+const METRIC_RETRACTED: u16 = 0xFFFF;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RouteKey {
-    pub prefix: IpAddr,
-    pub plen: u8,
-    pub neighbor: IpAddr,
+    prefix: IpAddr,
+    plen: u8,
+    neighbor: IpAddr,
 }
 
 #[derive(Debug, Clone)]
 pub struct RouteEntry {
-    pub source: SourceKey,
-    pub neighbor: Peer,
-    pub metric: u16, // If metric is 0xFFFF, the route has recently been retracted
-    pub seqno: u16,
-    pub next_hop: IpAddr, // This is the Peer's address
-    pub selected: bool,
+    source: SourceKey,
+    neighbor: Peer,
+    metric: u16, // If metric is 0xFFFF, the route has recently been retracted
+    seqno: u16,
+    next_hop: IpAddr, // This is the Peer's address
+    selected: bool,
+}
+
+impl RouteKey {
+    /// Create a new `RouteKey` with the given values.
+    #[inline]
+    pub const fn new(prefix: IpAddr, plen: u8, neighbor: IpAddr) -> Self {
+        Self {
+            prefix,
+            plen,
+            neighbor,
+        }
+    }
+
+    /// Returns the prefix associated with this `RouteKey`.
+    #[inline]
+    pub const fn prefix(&self) -> IpAddr {
+        self.prefix
+    }
+
+    /// Returns the plen associated with this `RouteKey`.
+    #[inline]
+    pub const fn plen(&self) -> u8 {
+        self.plen
+    }
+
+    #[inline]
+    /// Returns the neighbo associated with this `RouteKey`.
+    pub const fn neighbor(&self) -> IpAddr {
+        self.neighbor
+    }
 }
 
 impl RouteEntry {
+    /// Create a new `RouteEntry`.
+    pub const fn new(
+        source: SourceKey,
+        neighbor: Peer,
+        metric: u16,
+        seqno: u16,
+        next_hop: IpAddr,
+        selected: bool,
+    ) -> Self {
+        Self {
+            source,
+            neighbor,
+            metric,
+            seqno,
+            next_hop,
+            selected,
+        }
+    }
+    /// Returns the [`SourceKey`] associated with this `RouteEntry`.
+    pub const fn source(&self) -> SourceKey {
+        self.source
+    }
+
+    /// Returns the [`neighbor`](Peer) associated with this `RouteEntry`.
+    pub fn neighbor(&self) -> Peer {
+        self.neighbor.clone()
+    }
+
+    /// Returns the metric associated with this `RouteEntry`.
+    pub const fn metric(&self) -> u16 {
+        self.metric
+    }
+
+    /// Returns if the `RouteEntry` has recently been retracted.
+    pub const fn is_retracted(&self) -> bool {
+        self.metric == METRIC_RETRACTED
+    }
+
+    /// Return the sequence number associated with this `RouteEntry`
+    pub const fn seqno(&self) -> u16 {
+        self.seqno
+    }
+
+    /// Return the address of the next hop [`Peer`] associated with this `RouteEntry`.
+    pub const fn next_hop(&self) -> IpAddr {
+        self.next_hop
+    }
+
+    /// Indicates this `RouteEntry` is the selected route for the destination.
+    pub const fn selected(&self) -> bool {
+        self.selected
+    }
+
+    /// Updates the metric of this `RouteEntry` to the given value.
     pub fn update_metric(&mut self, metric: u16) {
         self.metric = metric;
     }
 
+    /// Updates the seqno of this `RouteEntry` to the given value.
     pub fn update_seqno(&mut self, seqno: u16) {
         self.seqno = seqno;
     }
 
+    /// Updates the source router id of this `RouteEntry` to the given value.
     pub fn update_router_id(&mut self, router_id: PublicKey) {
         self.source.router_id = router_id;
+    }
+
+    /// Sets whether or not this `RouteEntry` is the selected route for the associated [`Peer`].
+    pub fn set_selected(&mut self, selected: bool) {
+        self.selected = selected
     }
 }
 
