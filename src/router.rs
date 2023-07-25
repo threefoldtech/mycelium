@@ -341,12 +341,8 @@ impl Router {
                         // this means that the update is feasible and the metric is not infinite
                         // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
 
-                        let source_key = SourceKey {
-                            prefix,
-                            plen,
-                            router_id,
-                        };
-                        let fd = FeasibilityDistance { metric, seqno };
+                        let source_key = SourceKey::new(prefix, plen, router_id);
+                        let fd = FeasibilityDistance::new(metric, seqno);
                         inner.source_table.insert(source_key, fd);
 
                         let route_key = RouteKey::new(prefix, plen, neighbor_ip);
@@ -412,11 +408,7 @@ impl Router {
                             inner.fallback_routing_table.remove(&route_key_from_update);
                         }
                         // remove the corresponding source entry
-                        let source_key = SourceKey {
-                            prefix,
-                            plen,
-                            router_id,
-                        };
+                        let source_key = SourceKey::new(prefix, plen, router_id);
                         inner.source_table.remove(&source_key);
                         return;
                     }
@@ -433,7 +425,7 @@ impl Router {
                             .get(&route_key_from_update)
                             .unwrap();
                         if !self.update_feasible(&update, &inner.source_table)
-                            && route_entry.source().router_id == router_id
+                            && route_entry.source().router_id() == router_id
                         {
                             return;
                         }
@@ -666,15 +658,11 @@ impl Router {
                 prefix,
                 router_id,
             } => {
-                let source_key = SourceKey {
-                    prefix,
-                    plen,
-                    router_id,
-                };
+                let source_key = SourceKey::new(prefix, plen, router_id);
                 match source_table.get(&source_key) {
                     Some(&entry) => {
-                        return (seqno > entry.seqno
-                            || (seqno == entry.seqno && metric < entry.metric))
+                        return (seqno > entry.seqno())
+                            || (seqno == entry.seqno() && metric < entry.metric())
                             || metric == 0xFFFF;
                     }
                     None => return true,
@@ -863,23 +851,19 @@ impl RouterInner {
                 prefix,
                 router_id,
             } => {
-                let source_key = SourceKey {
-                    prefix,
-                    plen,
-                    router_id,
-                };
+                let source_key = SourceKey::new(prefix, plen, router_id);
 
                 if let Some(source_entry) = self.source_table.get(&source_key) {
                     // if seqno of the update is greater than the seqno in the source table, update the source table
-                    if seqno > source_entry.metric {
+                    if seqno > source_entry.metric() {
                         self.source_table
                             .insert(source_key, FeasibilityDistance::new(metric, seqno));
                     }
                     // if seqno of the update is equal to the seqno in the source table, update the source table if the metric (of the update) is lower
-                    else if seqno == source_entry.seqno && source_entry.metric > metric {
+                    else if seqno == source_entry.seqno() && source_entry.metric() > metric {
                         self.source_table.insert(
                             source_key,
-                            FeasibilityDistance::new(metric, source_entry.seqno),
+                            FeasibilityDistance::new(metric, source_entry.seqno()),
                         );
                     }
                 }

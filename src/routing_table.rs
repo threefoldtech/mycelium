@@ -119,7 +119,7 @@ impl RouteEntry {
 
     /// Updates the source router id of this `RouteEntry` to the given value.
     pub fn update_router_id(&mut self, router_id: PublicKey) {
-        self.source.router_id = router_id;
+        self.source.set_router_id(router_id);
     }
 
     /// Sets whether or not this `RouteEntry` is the selected route for the associated [`Peer`].
