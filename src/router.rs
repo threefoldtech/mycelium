@@ -5,6 +5,7 @@ use crate::{
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     x25519::{self, shared_secret_from_keypair},
 };
+use log::{debug, error, info, trace, warn};
 use std::{
     collections::HashMap,
     error::Error,
@@ -199,7 +200,7 @@ impl Router {
                     // check if the peer's last_received_ihu is greater than the threshold
                     if peer.time_last_received_ihu().elapsed() > ihu_threshold {
                         // peer is dead
-                        println!("Peer {:?} is dead", peer.overlay_ip());
+                        info!("Peer {:?} is dead", peer.overlay_ip());
                         dead_peers.push(peer.clone());
                     }
                 }
@@ -239,7 +240,7 @@ impl Router {
             for peer in inner.peer_interfaces.iter() {
                 for ru in retraction_updates.iter() {
                     if let Err(e) = peer.send_control_packet(ru.clone()) {
-                        eprintln!("Error sending retraction update to peer: {e}");
+                        error!("Error sending retraction update to peer: {e}");
                     }
                 }
             }
@@ -273,7 +274,7 @@ impl Router {
             match source_peer.send_control_packet(ihu) {
                 Ok(()) => {}
                 Err(e) => {
-                    eprintln!("Error sending IHU to peer: {e}");
+                    error!("Error sending IHU to peer: {e}");
                 }
             }
         }
@@ -680,7 +681,7 @@ impl Router {
                 }
             }
             _ => {
-                eprintln!("Error accepting update, control struct did not match update packet");
+                warn!("Error accepting update, control struct did not match update packet");
                 return false;
             }
         }
@@ -693,7 +694,7 @@ impl Router {
         let node_tun_addr = self.node_tun_addr();
         loop {
             while let Some(data_packet) = router_data_rx.recv().await {
-                println!("Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})", data_packet.dest_ip, node_tun_addr);
+                trace!("Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})", data_packet.dest_ip, node_tun_addr);
 
                 if data_packet.dest_ip == node_tun_addr {
                     // decrypt & send to TUN interface
@@ -705,7 +706,7 @@ impl Router {
                     match node_tun.send(&decrypted_raw_data).await {
                         Ok(_) => {}
                         Err(e) => {
-                            eprintln!("Error sending data packet to TUN interface: {:?}", e)
+                            error!("Error sending data packet to TUN interface: {:?}", e)
                         }
                     }
                 } else {
@@ -718,16 +719,17 @@ impl Router {
                             match peer {
                                 Some(peer) => {
                                     if let Err(e) = peer.send_data_packet(data_packet) {
-                                        eprintln!("Error sending data packet to peer: {:?}", e);
+                                        error!("Error sending data packet to peer: {:?}", e);
                                     }
                                 }
                                 None => {
-                                    eprintln!("Error sending data packet, no peer found");
+                                    // route but no peer
+                                    warn!("Dropping data packet, no peer found");
                                 }
                             }
                         }
                         None => {
-                            eprintln!("Error sending data packet, no route found");
+                            trace!("Error sending data packet, no route found");
                         }
                     }
                 }
@@ -746,7 +748,7 @@ impl Router {
         }
         // if no match was found, look in the fallback routing table
         if best_route.is_none() {
-            println!("no match in selected routing table, looking in fallback routing table");
+            trace!("no match in selected routing table, looking in fallback routing table");
             for (route_key, route_entry) in inner.fallback_routing_table.table.iter() {
                 if route_key.prefix() == dest_ip {
                     best_route = Some(route_entry.clone());
@@ -786,7 +788,7 @@ impl Router {
                 peer.set_time_last_received_hello(tokio::time::Instant::now());
 
                 if let Err(error) = peer.send_control_packet(hello) {
-                    eprintln!("Error sending hello to peer: {}", error);
+                    error!("Error sending hello to peer: {}", error);
                 }
             }
         }
@@ -889,7 +891,7 @@ impl RouterInner {
 
                 // send the update to the peer
                 if let Err(e) = peer.send_control_packet(update) {
-                    println!("Error sending update to peer: {:?}", e);
+                    error!("Error sending update to peer: {:?}", e);
                 }
             }
             _ => {

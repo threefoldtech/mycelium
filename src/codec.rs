@@ -3,6 +3,7 @@ use crate::packet::{
     PacketType,
 };
 use bytes::{Buf, BufMut, BytesMut};
+use log::{debug, warn};
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
@@ -46,7 +47,7 @@ impl Decoder for PacketCodec {
                 0 => PacketType::DataPacket,
                 1 => PacketType::ControlPacket,
                 _ => {
-                    println!("buffer: {:?}", &src[..src.remaining()]);
+                    debug!("buffer: {:?}", &src[..src.remaining()]);
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         "Invalid packet type",
@@ -307,7 +308,7 @@ impl Decoder for ControlPacketCodec {
                 // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
                 let prefix = match ae {
                     0 => {
-                        println!("IPv4 ae, this should be removed!!");
+                        warn!("IPv4 ae, this should be removed!!");
                         // 4 bytes IP + 4 bytes router_id
                         IpAddr::V4(Ipv4Addr::new(
                             buf.get_u8(),

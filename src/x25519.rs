@@ -5,6 +5,7 @@ use aes_gcm::{
 };
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
+use log::debug;
 use rand_core::OsRng;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -56,7 +57,7 @@ pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
     hasher.finalize_variable(&mut buf).unwrap();
     buf[0] = 0x02 | buf[0] & 0x01;
     let addr = Ipv6Addr::from(buf);
-    println!("output buf : {:?}", addr);
+    debug!("output buf : {:?}", addr);
 
     addr
 }
@@ -67,7 +68,7 @@ pub fn generate_addr_from_pubkey(pubkey: &PublicKey) -> Ipv6Addr {
 pub fn encrypt_raw_data(raw_data_without_nonce: Vec<u8>, shared_secret: SharedSecret) -> Vec<u8> {
     let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
     let nonce = Aes256Gcm::generate_nonce(&mut CryptOsRng);
-    println!("encryption nonce : {:?}", nonce);
+    debug!("encryption nonce : {:?}", nonce);
 
     let cipher = Aes256Gcm::new(&key);
     let mut encrypted_data = cipher
@@ -84,7 +85,7 @@ pub fn encrypt_raw_data(raw_data_without_nonce: Vec<u8>, shared_secret: SharedSe
 pub fn decrypt_raw_data(encrypted_raw_data: Vec<u8>, shared_secret: SharedSecret) -> Vec<u8> {
     let key: AesKey<Aes256Gcm> = (*shared_secret.as_bytes()).into();
     let nonce = &encrypted_raw_data[encrypted_raw_data.len() - 12..];
-    println!("decryption nonce : {:?}", nonce);
+    debug!("decryption nonce : {:?}", nonce);
     let data = encrypted_raw_data[..encrypted_raw_data.len() - 12].to_vec();
 
     let cipher = Aes256Gcm::new(&key);

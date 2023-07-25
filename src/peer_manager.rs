@@ -1,5 +1,6 @@
 use crate::peer::Peer;
 use crate::router::Router;
+use log::{debug, error};
 use serde::Deserialize;
 use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -58,7 +59,7 @@ impl PeerManager {
                             <&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap(),
                         ),
                         _ => {
-                            eprintln!("Invalid address encoding byte");
+                            debug!("Invalid address encoding byte");
                             continue;
                         }
                     };
@@ -83,7 +84,7 @@ impl PeerManager {
                 }
             }
         } else {
-            eprintln!("Error reading nodeconfig.toml file");
+            error!("Error reading nodeconfig.toml file");
         }
     }
 
@@ -100,7 +101,7 @@ impl PeerManager {
                         IpAddr::from(<&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap())
                     }
                     _ => {
-                        eprintln!("Invalid address encoding byte");
+                        error!("Invalid address encoding byte");
                         continue;
                     }
                 };
@@ -145,7 +146,7 @@ impl PeerManager {
                                 <&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap(),
                             ),
                             _ => {
-                                eprintln!("Invalid address encoding byte");
+                                error!("Invalid address encoding byte");
                                 continue;
                             }
                         };
@@ -181,12 +182,12 @@ impl PeerManager {
                         self.start_reverse_peer_exchange(stream).await;
                     }
                     Err(e) => {
-                        eprintln!("Error accepting connection: {}", e);
+                        error!("Error accepting connection: {}", e);
                     }
                 }
             },
             Err(e) => {
-                eprintln!("Error starting listener: {}", e);
+                error!("Error starting listener: {}", e);
             }
         }
     }
@@ -209,7 +210,7 @@ impl PeerManager {
             0 => IpAddr::from(<&[u8] as TryInto<[u8; 4]>>::try_into(&buf[1..5]).unwrap()),
             1 => IpAddr::from(<&[u8] as TryInto<[u8; 16]>>::try_into(&buf[1..]).unwrap()),
             _ => {
-                eprintln!("Invalid address encoding byte");
+                error!("Invalid address encoding byte");
                 return;
             }
         };
@@ -228,7 +229,7 @@ impl PeerManager {
                 self.router.add_peer_interface(new_peer);
             }
             Err(e) => {
-                eprintln!("Error creating peer: {}", e);
+                error!("Error creating peer: {}", e);
             }
         }
     }

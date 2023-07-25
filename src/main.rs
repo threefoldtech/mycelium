@@ -3,6 +3,7 @@ use crate::router::StaticRoute;
 use bytes::BytesMut;
 use clap::Parser;
 use etherparse::{IpHeader, PacketHeaders};
+use log::{debug, error, info, trace};
 use std::{
     error::Error,
     net::{Ipv6Addr, SocketAddr},
@@ -38,20 +39,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Generate the node's IPv6 address from its public key
     let node_addr = x25519::generate_addr_from_pubkey(&node_keypair.1);
-    println!("Node address: {}", node_addr);
+    info!("Node address: {}", node_addr);
 
     // Create TUN interface and add static route
     let node_tun = match node_setup::setup_node(node_addr).await {
         Ok(tun) => {
-            println!("Node setup complete");
+            info!("Node setup complete");
             tun
         }
         Err(e) => {
-            panic!("Error setting up node: {}", e);
+            error!("Error setting up node: {e}");
+            panic!("Eror setting up node: {e}")
         }
     };
 
-    println!("Node public key: {:?}", node_keypair.1);
+    debug!("Node public key: {:?}", node_keypair.1);
 
     let static_peers = cli.static_peers;
 
@@ -63,14 +65,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         node_keypair.clone(),
     ) {
         Ok(router) => {
-            println!(
+            info!(
                 "Router created. Pubkey: {:x}",
                 BytesMut::from(&router.node_public_key().as_bytes()[..])
             );
             router
         }
         Err(e) => {
-            panic!("Error creating router: {}", e);
+            error!("Error creating router: {e}");
+            panic!("Error creating router: {e}");
         }
     };
 
@@ -94,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         buf.truncate(n);
                     }
                     Err(e) => {
-                        eprintln!("Error reading from TUN: {}", e);
+                        error!("Error reading from TUN: {e}");
                         continue;
                     }
                 }
@@ -102,7 +105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let packet = match PacketHeaders::from_ip_slice(&buf) {
                     Ok(packet) => packet,
                     Err(e) => {
-                        eprintln!("Error from_ip_slice: {}", e);
+                        eprintln!("Error from_ip_slice: {e}");
                         continue;
                     }
                 };
@@ -114,7 +117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 };
 
-                println!("Received packet from TUN with dest addr: {:?}", dest_addr);
+                trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
 
                 // Check if destination address is in 200::/7 range
                 let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
@@ -149,7 +152,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
 
                 if router.router_data_tx().send(data_packet).is_err() {
-                    eprintln!("Failed to send data_packet");
+                    error!("Failed to send data_packet, router is gone");
                 }
             }
         });
