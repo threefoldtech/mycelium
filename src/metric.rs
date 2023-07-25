@@ -4,8 +4,8 @@
 use core::fmt;
 use std::ops::Add;
 
-/// Metric indicating the route has been retracted.
-const METRIC_RETRACTED: u16 = 0xFFFF;
+/// Value of the infinite metric.
+const METRIC_INFINITE: u16 = 0xFFFF;
 
 /// A `Metric` is used to indicate the cost associated with a route. A lower Metric means a route
 /// is more favorable.
@@ -15,12 +15,12 @@ pub struct Metric(u16);
 impl Metric {
     /// Creates a new infinite `Metric`.
     pub const fn infinite() -> Self {
-        Metric(METRIC_RETRACTED)
+        Metric(METRIC_INFINITE)
     }
 
     /// Checks if this metric indicates a retracted route.
-    pub const fn is_retracted(&self) -> bool {
-        self.0 == METRIC_RETRACTED
+    pub const fn is_infinite(&self) -> bool {
+        self.0 == METRIC_INFINITE
     }
 }
 

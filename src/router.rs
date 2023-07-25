@@ -336,7 +336,7 @@ impl Router {
 
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
-                    if metric.is_retracted() || !inner.source_table.is_update_feasible(&update) {
+                    if metric.is_infinite() || !inner.source_table.is_update_feasible(&update) {
                         return;
                     } else {
                         // this means that the update is feasible and the metric is not infinite
@@ -391,7 +391,7 @@ impl Router {
                     }
                 } else {
                     // check if the update is a retraction
-                    if inner.source_table.is_update_feasible(&update) && metric.is_retracted() {
+                    if inner.source_table.is_update_feasible(&update) && metric.is_infinite() {
                         // if the update is a retraction, we remove the entry from the routing tables
                         // we also remove the corresponding source entry???
                         if inner

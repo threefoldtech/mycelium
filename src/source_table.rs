@@ -112,7 +112,7 @@ impl SourceTable {
                     Some(&entry) => {
                         return (seqno > entry.seqno())
                             || (seqno == entry.seqno() && metric < entry.metric())
-                            || metric.is_retracted();
+                            || metric.is_infinite();
                     }
                     None => return true,
                 }

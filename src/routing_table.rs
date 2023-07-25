@@ -86,7 +86,7 @@ impl RouteEntry {
 
     /// Returns if the `RouteEntry` has recently been retracted.
     pub const fn is_retracted(&self) -> bool {
-        self.metric.is_retracted()
+        self.metric.is_infinite()
     }
 
     /// Return the sequence number associated with this `RouteEntry`
