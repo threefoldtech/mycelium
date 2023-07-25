@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv6Addr};
 use x25519_dalek::PublicKey;
 
-use crate::peer::Peer;
+use crate::{metric::Metric, peer::Peer};
 
 pub const BABEL_MAGIC: u8 = 42;
 pub const BABEL_VERSION: u8 = 2;
@@ -106,7 +106,7 @@ impl ControlPacket {
         plen: u8,
         interval: u16,
         seqno: u16,
-        metric: u16,
+        metric: Metric,
         prefix: IpAddr,
         router_id: PublicKey,
     ) -> Self {
@@ -175,7 +175,7 @@ pub enum BabelTLV {
         plen: u8,
         interval: u16,
         seqno: u16,
-        metric: u16,
+        metric: Metric,
         prefix: IpAddr,
         router_id: PublicKey,
     },

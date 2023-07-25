@@ -1,4 +1,5 @@
 use crate::{
+    metric::Metric,
     packet::{BabelTLV, BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
@@ -228,7 +229,7 @@ impl Router {
                     32,
                     UPDATE_INTERVAL as u16,
                     inner.router_seqno,
-                    0xFFFF,
+                    Metric::infinite(),
                     dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP
                     inner.router_id,
                 );
@@ -335,7 +336,7 @@ impl Router {
 
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
-                    if metric == u16::MAX || !inner.source_table.is_update_feasible(&update) {
+                    if metric.is_retracted() || !inner.source_table.is_update_feasible(&update) {
                         return;
                     } else {
                         // this means that the update is feasible and the metric is not infinite
@@ -390,7 +391,7 @@ impl Router {
                     }
                 } else {
                     // check if the update is a retraction
-                    if inner.source_table.is_update_feasible(&update) && metric == u16::MAX {
+                    if inner.source_table.is_update_feasible(&update) && metric.is_retracted() {
                         // if the update is a retraction, we remove the entry from the routing tables
                         // we also remove the corresponding source entry???
                         if inner
@@ -861,7 +862,7 @@ impl RouterInner {
                     sr.plen, // static routes have plen 32
                     UPDATE_INTERVAL as u16,
                     self.router_seqno, // updates receive the seqno of the router
-                    peer.link_cost(), // direct connection to other peer, so the only cost is the cost towards the peer
+                    peer.link_cost().into(), // direct connection to other peer, so the only cost is the cost towards the peer
                     sr.prefix, // the prefix of a static route corresponds to the TUN addr of the node
                     self.router_id,
                 );
@@ -892,11 +893,8 @@ impl RouterInner {
                         sr.0.plen(),
                         UPDATE_INTERVAL as u16,
                         self.router_seqno, // updates receive the seqno of the router
-                        if sr.1.metric() > u16::MAX - 1 - peer_link_cost {
-                            u16::MAX - 1
-                        } else {
-                            sr.1.metric() + peer_link_cost
-                        }, // the cost of the route is the cost of the route + the cost of the link to the peer
+                        sr.1.metric() + Metric::from(peer_link_cost),
+                        // the cost of the route is the cost of the route + the cost of the link to the peer
                         sr.0.prefix(), // the prefix of a static route corresponds to the TUN addr of the node
                         // we looked for the router_id, which is a public key, in the dest_pubkey_map
                         // if the router_id is not in the map, then the route came from the node itself

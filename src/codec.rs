@@ -1,6 +1,9 @@
-use crate::packet::{
-    BabelPacketBody, BabelPacketHeader, BabelTLV, BabelTLVType, ControlPacket, DataPacket, Packet,
-    PacketType,
+use crate::{
+    metric::Metric,
+    packet::{
+        BabelPacketBody, BabelPacketHeader, BabelTLV, BabelTLVType, ControlPacket, DataPacket,
+        Packet, PacketType,
+    },
 };
 use bytes::{Buf, BufMut, BytesMut};
 use log::{debug, warn};
@@ -351,7 +354,7 @@ impl Decoder for ControlPacketCodec {
                         plen,
                         interval,
                         seqno,
-                        metric,
+                        metric: Metric::from(metric),
                         prefix,
                         router_id,
                     },
@@ -414,7 +417,7 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
                 buf.put_u8(plen);
                 buf.put_u16(interval);
                 buf.put_u16(seqno);
-                buf.put_u16(metric);
+                buf.put_u16(metric.into());
                 match prefix {
                     IpAddr::V4(ipv4) => {
                         buf.put_u8(ipv4.octets()[0]);

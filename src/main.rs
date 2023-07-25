@@ -11,6 +11,7 @@ use std::{
 use tokio::io::AsyncBufReadExt;
 
 mod codec;
+mod metric;
 mod node_setup;
 mod packet;
 mod peer;

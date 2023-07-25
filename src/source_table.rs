@@ -3,7 +3,10 @@ use std::{collections::HashMap, net::IpAddr};
 use log::error;
 use x25519_dalek::PublicKey;
 
-use crate::packet::{BabelTLV, ControlStruct};
+use crate::{
+    metric::Metric,
+    packet::{BabelTLV, ControlStruct},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
@@ -14,7 +17,7 @@ pub struct SourceKey {
 
 #[derive(Debug, Clone, Copy)]
 pub struct FeasibilityDistance {
-    metric: u16,
+    metric: Metric,
     seqno: u16,
 }
 
@@ -25,12 +28,12 @@ pub struct SourceTable {
 }
 
 impl FeasibilityDistance {
-    pub fn new(metric: u16, seqno: u16) -> Self {
+    pub fn new(metric: Metric, seqno: u16) -> Self {
         FeasibilityDistance { metric, seqno }
     }
 
     /// Returns the metric for this `FeasibilityDistance`.
-    pub const fn metric(&self) -> u16 {
+    pub const fn metric(&self) -> Metric {
         self.metric
     }
 
@@ -109,7 +112,7 @@ impl SourceTable {
                     Some(&entry) => {
                         return (seqno > entry.seqno())
                             || (seqno == entry.seqno() && metric < entry.metric())
-                            || metric == 0xFFFF;
+                            || metric.is_retracted();
                     }
                     None => return true,
                 }

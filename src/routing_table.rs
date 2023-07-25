@@ -1,10 +1,7 @@
 use x25519_dalek::PublicKey;
 
-use crate::{peer::Peer, source_table::SourceKey};
+use crate::{metric::Metric, peer::Peer, source_table::SourceKey};
 use std::{collections::BTreeMap, net::IpAddr};
-
-/// Metric indicating the route has been retracted.
-const METRIC_RETRACTED: u16 = 0xFFFF;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RouteKey {
@@ -17,7 +14,7 @@ pub struct RouteKey {
 pub struct RouteEntry {
     source: SourceKey,
     neighbor: Peer,
-    metric: u16, // If metric is 0xFFFF, the route has recently been retracted
+    metric: Metric, // If metric is 0xFFFF, the route has recently been retracted
     seqno: u16,
     next_hop: IpAddr, // This is the Peer's address
     selected: bool,
@@ -58,7 +55,7 @@ impl RouteEntry {
     pub const fn new(
         source: SourceKey,
         neighbor: Peer,
-        metric: u16,
+        metric: Metric,
         seqno: u16,
         next_hop: IpAddr,
         selected: bool,
@@ -83,13 +80,13 @@ impl RouteEntry {
     }
 
     /// Returns the metric associated with this `RouteEntry`.
-    pub const fn metric(&self) -> u16 {
+    pub const fn metric(&self) -> Metric {
         self.metric
     }
 
     /// Returns if the `RouteEntry` has recently been retracted.
     pub const fn is_retracted(&self) -> bool {
-        self.metric == METRIC_RETRACTED
+        self.metric.is_retracted()
     }
 
     /// Return the sequence number associated with this `RouteEntry`
@@ -108,7 +105,7 @@ impl RouteEntry {
     }
 
     /// Updates the metric of this `RouteEntry` to the given value.
-    pub fn update_metric(&mut self, metric: u16) {
+    pub fn update_metric(&mut self, metric: Metric) {
         self.metric = metric;
     }
 
