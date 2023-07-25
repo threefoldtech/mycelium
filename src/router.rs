@@ -824,7 +824,7 @@ impl RouterInner {
 
                 if let Some(source_entry) = self.source_table.get(&source_key) {
                     // if seqno of the update is greater than the seqno in the source table, update the source table
-                    if seqno > source_entry.metric() {
+                    if seqno > source_entry.seqno() {
                         self.source_table
                             .insert(source_key, FeasibilityDistance::new(metric, seqno));
                     }
