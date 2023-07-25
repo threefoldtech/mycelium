@@ -1,6 +1,9 @@
 use std::{collections::HashMap, net::IpAddr};
 
+use log::error;
 use x25519_dalek::PublicKey;
+
+use crate::packet::{BabelTLV, ControlStruct};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
@@ -85,5 +88,36 @@ impl SourceTable {
 
     pub fn get(&self, key: &SourceKey) -> Option<&FeasibilityDistance> {
         self.table.get(key)
+    }
+
+    /// Indicates if an update is feasible in the context of the current `SoureTable`.
+    pub fn is_update_feasible(&self, update: &ControlStruct) -> bool {
+        // Before an update is accepted it should be checked against the feasbility condition
+        // If an entry in the source table with the same source key exists, we perform the feasbility check
+        // If no entry exists yet, the update is accepted as there is no better alternative available (yet)
+        match update.control_packet.body.tlv {
+            BabelTLV::Update {
+                plen,
+                interval: _,
+                seqno,
+                metric,
+                prefix,
+                router_id,
+            } => {
+                let source_key = SourceKey::new(prefix, plen, router_id);
+                match self.get(&source_key) {
+                    Some(&entry) => {
+                        return (seqno > entry.seqno())
+                            || (seqno == entry.seqno() && metric < entry.metric())
+                            || metric == 0xFFFF;
+                    }
+                    None => return true,
+                }
+            }
+            _ => {
+                error!("Error accepting update, control struct did not match update packet");
+                return false;
+            }
+        }
     }
 }

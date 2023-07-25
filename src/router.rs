@@ -335,7 +335,7 @@ impl Router {
 
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
-                    if metric == u16::MAX || !self.update_feasible(&update, &inner.source_table) {
+                    if metric == u16::MAX || !inner.source_table.is_update_feasible(&update) {
                         return;
                     } else {
                         // this means that the update is feasible and the metric is not infinite
@@ -390,7 +390,7 @@ impl Router {
                     }
                 } else {
                     // check if the update is a retraction
-                    if self.update_feasible(&update, &inner.source_table) && metric == u16::MAX {
+                    if inner.source_table.is_update_feasible(&update) && metric == u16::MAX {
                         // if the update is a retraction, we remove the entry from the routing tables
                         // we also remove the corresponding source entry???
                         if inner
@@ -424,7 +424,7 @@ impl Router {
                             .table
                             .get(&route_key_from_update)
                             .unwrap();
-                        if !self.update_feasible(&update, &inner.source_table)
+                        if !inner.source_table.is_update_feasible(&update)
                             && route_entry.source().router_id() == router_id
                         {
                             return;
@@ -451,7 +451,7 @@ impl Router {
                         route_entry.update_metric(metric);
                         route_entry.update_router_id(router_id);
 
-                        if !self.update_feasible(&update, &inner.source_table) {
+                        if !inner.source_table.is_update_feasible(&update) {
                             // if the update is unfeasible, we remove the entry from the selected routing table
                             inner
                                 .selected_routing_table
@@ -642,37 +642,6 @@ impl Router {
             }
         }
         return false;
-    }
-
-    // we gebruiken self niet in de functie --> daarop functie eigenllijk beter op de source table implementeren
-    fn update_feasible(&self, update: &ControlStruct, source_table: &SourceTable) -> bool {
-        // Before an update is accepted it should be checked against the feasbility condition
-        // If an entry in the source table with the same source key exists, we perform the feasbility check
-        // If no entry exists yet, the update is accepted as there is no better alternative available (yet)
-        match update.control_packet.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval: _,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
-                let source_key = SourceKey::new(prefix, plen, router_id);
-                match source_table.get(&source_key) {
-                    Some(&entry) => {
-                        return (seqno > entry.seqno())
-                            || (seqno == entry.seqno() && metric < entry.metric())
-                            || metric == 0xFFFF;
-                    }
-                    None => return true,
-                }
-            }
-            _ => {
-                warn!("Error accepting update, control struct did not match update packet");
-                return false;
-            }
-        }
     }
 
     async fn handle_incoming_data_packet(self, mut router_data_rx: UnboundedReceiver<DataPacket>) {
