@@ -9,7 +9,7 @@ use core::ops::{Add, AddAssign};
 const SEQNO_COMPARE_TRESHOLD: u16 = 32_768;
 
 /// A sequence number on a route.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeqNo(u16);
 
 impl SeqNo {
@@ -37,12 +37,6 @@ impl SeqNo {
 impl fmt::Display for SeqNo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{}", self.0))
-    }
-}
-
-impl Default for SeqNo {
-    fn default() -> Self {
-        SeqNo(0)
     }
 }
 

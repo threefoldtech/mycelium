@@ -1,6 +1,8 @@
 //! Dedicated logic for
 //! [metrics](https://datatracker.ietf.org/doc/html/rfc8966#metric-computation).
 
+#![allow(clippy::suspicious_arithmetic_impl)]
+
 use core::fmt;
 use std::ops::Add;
 

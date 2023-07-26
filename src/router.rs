@@ -7,7 +7,7 @@ use crate::{
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     x25519::{self, shared_secret_from_keypair},
 };
-use log::{debug, error, info, trace, warn};
+use log::{error, info, trace, warn};
 use std::{
     collections::HashMap,
     error::Error,
@@ -228,7 +228,7 @@ impl Router {
                 // create retraction update for each dead peer
                 let retraction_update = ControlPacket::new_update(
                     32,
-                    UPDATE_INTERVAL as u16,
+                    UPDATE_INTERVAL,
                     inner.router_seqno,
                     Metric::infinite(),
                     dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP
@@ -338,7 +338,6 @@ impl Router {
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
                     if metric.is_infinite() || !inner.source_table.is_update_feasible(&update) {
-                        return;
                     } else {
                         // this means that the update is feasible and the metric is not infinite
                         // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
@@ -643,7 +642,7 @@ impl Router {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     async fn handle_incoming_data_packet(self, mut router_data_rx: UnboundedReceiver<DataPacket>) {
@@ -717,7 +716,7 @@ impl Router {
 
         // println!("\n\n best route towards {}: {:?}", dest_ip, best_route);
 
-        return best_route;
+        best_route
     }
 
     pub async fn propagate_static_route(self) {
@@ -785,13 +784,13 @@ impl RouterInner {
             peer_interfaces: Vec::new(),
             router_control_tx,
             router_data_tx,
-            node_tun: node_tun,
+            node_tun,
             selected_routing_table: RoutingTable::new(),
             fallback_routing_table: RoutingTable::new(),
             source_table: SourceTable::new(),
             router_seqno: SeqNo::default(),
-            static_routes: static_routes,
-            node_keypair: node_keypair,
+            static_routes,
+            node_keypair,
             node_tun_addr,
             dest_pubkey_map: HashMap::new(),
         };
@@ -861,7 +860,7 @@ impl RouterInner {
             for peer in self.peer_interfaces.iter() {
                 let update = ControlPacket::new_update(
                     sr.plen, // static routes have plen 32
-                    UPDATE_INTERVAL as u16,
+                    UPDATE_INTERVAL,
                     self.router_seqno, // updates receive the seqno of the router
                     peer.link_cost().into(), // direct connection to other peer, so the only cost is the cost towards the peer
                     sr.prefix, // the prefix of a static route corresponds to the TUN addr of the node
@@ -892,7 +891,7 @@ impl RouterInner {
 
                     let update = ControlPacket::new_update(
                         sr.0.plen(),
-                        UPDATE_INTERVAL as u16,
+                        UPDATE_INTERVAL,
                         self.router_seqno, // updates receive the seqno of the router
                         sr.1.metric() + Metric::from(peer_link_cost),
                         // the cost of the route is the cost of the route + the cost of the link to the peer

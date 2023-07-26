@@ -113,8 +113,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
 
                 let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
-                    let dest_addr = Ipv6Addr::from(header.destination);
-                    dest_addr
+                    Ipv6Addr::from(header.destination)
                 } else {
                     continue;
                 };
@@ -123,7 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // Check if destination address is in 200::/7 range
                 let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
-                if first_byte < 0x02 || first_byte > 0x3F {
+                if !(0x02..=0x3F).contains(&first_byte) {
                     continue;
                 }
 

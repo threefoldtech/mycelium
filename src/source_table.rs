@@ -111,16 +111,16 @@ impl SourceTable {
                 let source_key = SourceKey::new(prefix, plen, router_id);
                 match self.get(&source_key) {
                     Some(&entry) => {
-                        return (!seqno.lt(&entry.seqno()))
+                        (!seqno.lt(&entry.seqno()))
                             || (seqno == entry.seqno() && metric < entry.metric())
-                            || metric.is_infinite();
+                            || metric.is_infinite()
                     }
-                    None => return true,
+                    None => true,
                 }
             }
             _ => {
                 error!("Error accepting update, control struct did not match update packet");
-                return false;
+                false
             }
         }
     }
