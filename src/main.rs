@@ -192,14 +192,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let sleep_handle = tokio::spawn(async move {
-        // Just die after 1 day, you've probably leaked memory by then anyway
-        tokio::time::sleep(tokio::time::Duration::from_secs(60 * 60 * 24)).await;
-    });
+    let quit_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
         _ = read_handle => { /* The read task completed (this should never happen) */ }
-        _ = sleep_handle => { /* The sleep task completed (the program should exit here) */ }
+        _ = quit_signal => { /* The user pressed ctrl+c (the program should exit here) */ }
     }
 
     Ok(())
