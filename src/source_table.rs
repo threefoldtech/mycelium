@@ -6,6 +6,7 @@ use x25519_dalek::PublicKey;
 use crate::{
     metric::Metric,
     packet::{BabelTLV, ControlStruct},
+    sequence_number::SeqNo,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
@@ -18,7 +19,7 @@ pub struct SourceKey {
 #[derive(Debug, Clone, Copy)]
 pub struct FeasibilityDistance {
     metric: Metric,
-    seqno: u16,
+    seqno: SeqNo,
 }
 
 // Store (prefix, plen, router_id) -> feasibility distance mapping
@@ -28,7 +29,7 @@ pub struct SourceTable {
 }
 
 impl FeasibilityDistance {
-    pub fn new(metric: Metric, seqno: u16) -> Self {
+    pub fn new(metric: Metric, seqno: SeqNo) -> Self {
         FeasibilityDistance { metric, seqno }
     }
 
@@ -38,7 +39,7 @@ impl FeasibilityDistance {
     }
 
     /// Returns the sequence number for this `FeasibilityDistance`.
-    pub const fn seqno(&self) -> u16 {
+    pub const fn seqno(&self) -> SeqNo {
         self.seqno
     }
 }

@@ -3,6 +3,7 @@ use crate::{
     packet::{BabelTLV, BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
+    sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     x25519::{self, shared_secret_from_keypair},
 };
@@ -763,7 +764,7 @@ pub struct RouterInner {
     selected_routing_table: RoutingTable,
     fallback_routing_table: RoutingTable,
     source_table: SourceTable,
-    router_seqno: u16,
+    router_seqno: SeqNo,
     static_routes: Vec<StaticRoute>,
     node_keypair: (StaticSecret, PublicKey),
     // map that contains the overlay ips of peers and their respective public keys
@@ -788,7 +789,7 @@ impl RouterInner {
             selected_routing_table: RoutingTable::new(),
             fallback_routing_table: RoutingTable::new(),
             source_table: SourceTable::new(),
-            router_seqno: 0,
+            router_seqno: SeqNo::default(),
             static_routes: static_routes,
             node_keypair: node_keypair,
             node_tun_addr,

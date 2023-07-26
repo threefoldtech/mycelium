@@ -8,8 +8,11 @@ use std::{
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::packet::{ControlPacket, ControlStruct, DataPacket};
 use crate::{codec::PacketCodec, packet::Packet};
+use crate::{
+    packet::{ControlPacket, ControlStruct, DataPacket},
+    sequence_number::SeqNo,
+};
 
 #[derive(Debug, Clone)]
 pub struct Peer {
@@ -36,7 +39,7 @@ impl Peer {
     }
 
     /// Get current sequence number for this peer.
-    pub fn hello_seqno(&self) -> u16 {
+    pub fn hello_seqno(&self) -> SeqNo {
         self.inner.read().unwrap().hello_seqno
     }
 
@@ -110,7 +113,7 @@ struct PeerInner {
     to_peer_data: mpsc::UnboundedSender<DataPacket>,
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     overlay_ip: IpAddr,
-    hello_seqno: u16,
+    hello_seqno: SeqNo,
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
     time_last_received_ihu: tokio::time::Instant,
@@ -134,7 +137,7 @@ impl PeerInner {
             mpsc::unbounded_channel::<ControlPacket>();
 
         // Initialize last_sent_hello_seqno to 0
-        let hello_seqno = 0;
+        let hello_seqno = SeqNo::default();
         // Initialize last_path_cost to infinity - 1
         let link_cost = u16::MAX - 1;
         // Initialize time_last_received_hello to now

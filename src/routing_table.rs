@@ -1,6 +1,6 @@
 use x25519_dalek::PublicKey;
 
-use crate::{metric::Metric, peer::Peer, source_table::SourceKey};
+use crate::{metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey};
 use std::{collections::BTreeMap, net::IpAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -15,7 +15,7 @@ pub struct RouteEntry {
     source: SourceKey,
     neighbor: Peer,
     metric: Metric, // If metric is 0xFFFF, the route has recently been retracted
-    seqno: u16,
+    seqno: SeqNo,
     next_hop: IpAddr, // This is the Peer's address
     selected: bool,
 }
@@ -56,7 +56,7 @@ impl RouteEntry {
         source: SourceKey,
         neighbor: Peer,
         metric: Metric,
-        seqno: u16,
+        seqno: SeqNo,
         next_hop: IpAddr,
         selected: bool,
     ) -> Self {
@@ -90,7 +90,7 @@ impl RouteEntry {
     }
 
     /// Return the sequence number associated with this `RouteEntry`
-    pub const fn seqno(&self) -> u16 {
+    pub const fn seqno(&self) -> SeqNo {
         self.seqno
     }
 
@@ -110,7 +110,7 @@ impl RouteEntry {
     }
 
     /// Updates the seqno of this `RouteEntry` to the given value.
-    pub fn update_seqno(&mut self, seqno: u16) {
+    pub fn update_seqno(&mut self, seqno: SeqNo) {
         self.seqno = seqno;
     }
 
