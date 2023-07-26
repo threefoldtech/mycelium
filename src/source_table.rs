@@ -111,7 +111,7 @@ impl SourceTable {
                 let source_key = SourceKey::new(prefix, plen, router_id);
                 match self.get(&source_key) {
                     Some(&entry) => {
-                        return (seqno > entry.seqno())
+                        return (!seqno.lt(&entry.seqno()))
                             || (seqno == entry.seqno() && metric < entry.metric())
                             || metric.is_infinite();
                     }
