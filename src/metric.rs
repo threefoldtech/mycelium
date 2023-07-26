@@ -26,7 +26,11 @@ impl Metric {
 
 impl fmt::Display for Metric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{}", self.0))
+        if self.is_infinite() {
+            f.pad("Infinite")
+        } else {
+            f.write_fmt(format_args!("{}", self.0))
+        }
     }
 }
 
