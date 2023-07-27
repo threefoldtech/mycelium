@@ -1,15 +1,5 @@
 use super::{hello::Hello, ihu::Ihu, update::Update};
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum TlvType {
-    /// Hello TLV type as defind in https://datatracker.ietf.org/doc/html/rfc8966#name-hello.
-    Hello = 4,
-    /// IHU Tlv as defined in https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.6.
-    IHU = 5,
-    /// An update TLV as defined https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.9.
-    Update = 8,
-}
-
 /// A single `Tlv` in a babel packet body.
 pub enum Tlv {
     /// Hello Tlv type.
@@ -18,4 +8,34 @@ pub enum Tlv {
     Ihu(Ihu),
     /// Hello Tlv type.
     Update(Update),
+}
+
+impl Tlv {
+    /// Calculate the size on the wire for this `Tlv`. This DOES NOT included the TLV header size
+    /// (2 bytes).
+    pub fn wire_size(&self) -> u16 {
+        match self {
+            Self::Hello(hello) => hello.wire_size(),
+            Self::Ihu(ihu) => ihu.wire_size(),
+            Self::Update(update) => update.wire_size(),
+        }
+    }
+}
+
+impl From<Update> for Tlv {
+    fn from(v: Update) -> Self {
+        Self::Update(v)
+    }
+}
+
+impl From<Ihu> for Tlv {
+    fn from(v: Ihu) -> Self {
+        Self::Ihu(v)
+    }
+}
+
+impl From<Hello> for Tlv {
+    fn from(v: Hello) -> Self {
+        Self::Hello(v)
+    }
 }

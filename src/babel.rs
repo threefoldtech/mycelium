@@ -4,7 +4,15 @@
 //! our specific use case. For reference, the implementation is based on [this
 //! RFC](https://datatracker.ietf.org/doc/html/rfc8966).
 
-use self::tlv::TlvType;
+use std::io;
+
+use bytes::{Buf, BufMut};
+use log::trace;
+use tokio_util::codec::{Decoder, Encoder};
+
+use self::{hello::Hello, ihu::Ihu, update::Update};
+
+pub use self::tlv::Tlv;
 
 mod hello;
 mod ihu;
@@ -16,17 +24,41 @@ const BABEL_MAGIC: u8 = 42;
 /// The version of the protocol we are currently using.
 const BABEL_VERSION: u8 = 2;
 
-/// Address encoding in the babel protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AddressEncoding {
-    /// Wildcard address, the value is empty (0 bytes length).
-    Wildcard = 0,
-    /// IPv4 address, the value is _at most_ 4 bytes long.
-    IPv4 = 1,
-    /// IPv6 address, the value is _at most_ 16 bytes long.
-    IPv6 = 2,
-    /// Link-local IPv6 address, the value is 8 bytes long. This implies a `fe80::/64` prefix.
-    IPv6LL = 3,
+/// Size of a babel header on the wire.
+const HEADER_WIRE_SIZE: usize = 4;
+
+/// TLV type for the [`Hello`] tlv
+const TLV_TYPE_HELLO: u8 = 4;
+/// TLV type for the [`Ihu`] tlv
+const TLV_TYPE_IHU: u8 = 5;
+/// TLV type for the [`Update`] tlv
+const TLV_TYPE_UPDATE: u8 = 8;
+
+/// Wildcard address, the value is empty (0 bytes length).
+const AE_WILDCARD: u8 = 0;
+/// IPv4 address, the value is _at most_ 4 bytes long.
+const AE_IPV4: u8 = 1;
+/// IPv6 address, the value is _at most_ 16 bytes long.
+const AE_IPV6: u8 = 2;
+/// Link-local IPv6 address, the value is 8 bytes long. This implies a `fe80::/64` prefix.
+const AE_IPV6_LL: u8 = 3;
+
+/// A codec which can send and receive whole babel packets on the wire.
+#[derive(Debug, Clone)]
+pub struct Codec {
+    header: Option<Header>,
+}
+
+impl Codec {
+    /// Create a new `BabelCodec`.
+    pub fn new() -> Self {
+        Self { header: None }
+    }
+
+    /// Resets the `BabelCodec` to its default state.
+    pub fn reset(&mut self) {
+        self.header = None;
+    }
 }
 
 /// The header for a babel packet. This follows the definition of the header [in the
@@ -34,6 +66,7 @@ enum AddressEncoding {
 /// contains only hard-coded fields and the length of an encoded body, there is no need for users
 /// to manually construct this. In fact, it exists only to make our lives slightly easier in
 /// reading/writing the header on the wire.
+#[derive(Debug, Clone)]
 struct Header {
     magic: u8,
     version: u8,
@@ -42,12 +75,83 @@ struct Header {
     body_length: u16,
 }
 
-/// The header for a babel packet. This follows the definition of the body [in the
-/// RFC](https://datatracker.ietf.org/doc/html/rfc8966#name-packet-format). Since the body fields
-/// are derived from the actual TLV('s), there is no need for users to manually construct this. In
-/// fact, it exists only to make our lives slightly easier in reading/writing the body on the wire.
-struct Body {
-    tlv_type: TlvType,
-    length: u8, // length of the tlv (only the tlv, not tlv_type and length itself)
-    tlv: crate::packet::BabelTLV,
+impl Decoder for Codec {
+    type Item = Tlv;
+
+    type Error = io::Error;
+
+    fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        // Read a header if we don't have one yet.
+        let header = if let Some(header) = self.header.take() {
+            trace!("Continue from stored header");
+            header
+        } else {
+            if src.remaining() < HEADER_WIRE_SIZE {
+                trace!("Insufficient bytes to read a babel header");
+                return Ok(None);
+            }
+
+            trace!("Read babel header");
+
+            Header {
+                magic: src.get_u8(),
+                version: src.get_u8(),
+                body_length: src.get_u16(),
+            }
+        };
+
+        if src.remaining() < header.body_length as usize {
+            trace!("Insufficient bytes to read babel body");
+            self.header = Some(header);
+            return Ok(None);
+        }
+
+        // Siltently ignore packets which don't have the correct values set, as defined in the
+        // spec. Note that we consume the amount of bytes indentified so we leave the parser in the
+        // correct state for the next packet.
+        if header.magic != BABEL_MAGIC || header.version != BABEL_VERSION {
+            trace!("Dropping babel packet with wrong magic or version");
+            src.advance(header.body_length as usize);
+            self.reset();
+            return Ok(None);
+        }
+
+        // at this point we have a whole body loaded in the buffer. We currently don't support sub
+        // TLV's
+
+        trace!("Read babel TLV body");
+
+        // TODO: Technically we need to loop here as we can have multiple TLVs.
+
+        // TLV header
+        let tlv_type = src.get_u8();
+        let body_len = src.get_u8();
+        // TLV payload
+        let tlv = match tlv_type {
+            TLV_TYPE_HELLO => Some(Hello::from_bytes(src).into()),
+            TLV_TYPE_IHU => Ihu::from_bytes(src, body_len).map(From::from),
+            TLV_TYPE_UPDATE => Update::from_bytes(src, body_len).map(From::from),
+            _ => {
+                // unrecoginized body type, silently drop
+                src.advance(header.body_length as usize - 1);
+                self.reset();
+                return Ok(None);
+            }
+        };
+
+        Ok(tlv)
+    }
+}
+
+impl Encoder<Tlv> for Codec {
+    type Error = io::Error;
+
+    fn encode(&mut self, item: Tlv, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
+        // Write header
+        dst.put_u8(BABEL_MAGIC);
+        dst.put_u8(BABEL_VERSION);
+        dst.put_u16(item.wire_size() + 2); // tlv payload + tlv header
+
+        todo!()
+    }
 }

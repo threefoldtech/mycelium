@@ -1,9 +1,19 @@
 //! The babel [Hello TLV](https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.5).
 
+use std::io;
+
+use bytes::Buf;
+
 use crate::sequence_number::SeqNo;
 
 /// Flag bit indicating a [`Hello`] is sent as unicast hello.
 const HELLO_FLAG_UNICAST: u16 = 0x8000;
+
+/// Mask to apply to [`Hello`] flags, leaving only valid flags.
+const FLAG_MASK: u16 = 0b10000000_00000000;
+
+/// Wire size of a [`Hello`] TLV without TLV header.
+const HELLO_WIRE_SIZE: u16 = 6;
 
 /// Hello TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.5.
 #[derive(Debug, Clone)]
@@ -38,5 +48,28 @@ impl Hello {
     /// Indicates if this is a unicast `Hello`.
     pub fn is_unicast(&self) -> bool {
         self.flags & HELLO_FLAG_UNICAST != 0
+    }
+
+    /// Calculates the size on the wire of this `Hello`.
+    pub fn wire_size(&self) -> u16 {
+        HELLO_WIRE_SIZE
+    }
+
+    /// Construct a `Hello` from wire bytes.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if there are insufficient bytes present in the provided buffer to
+    /// decode a complete `Hello`.
+    pub fn from_bytes(src: &mut bytes::BytesMut) -> Self {
+        let flags = src.get_u16() & FLAG_MASK;
+        let seqno = src.get_u16().into();
+        let interval = src.get_u16();
+
+        Self {
+            flags,
+            seqno,
+            interval,
+        }
     }
 }
