@@ -10,6 +10,7 @@ use std::{
 };
 use tokio::io::AsyncBufReadExt;
 
+mod babel;
 mod codec;
 mod metric;
 mod node_setup;
