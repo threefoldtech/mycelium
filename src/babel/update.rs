@@ -2,6 +2,8 @@
 
 use std::net::IpAddr;
 
+use x25519_dalek::PublicKey;
+
 use crate::{metric::Metric, sequence_number::SeqNo};
 
 /// Flag bit indicating an [`Update`] TLV establishes a new default prefix.
@@ -26,6 +28,9 @@ pub struct Update {
     metric: Metric,
     /// Prefix being advertised. Size of the field is plen/8 - omitted
     prefix: IpAddr,
+    /// Router id of the sender. Importantly this is not part of the update itself, though we do
+    /// transmit it for now as such.
+    router_id: PublicKey,
 }
 
 impl Update {
@@ -37,6 +42,7 @@ impl Update {
         seqno: SeqNo,
         metric: Metric,
         prefix: IpAddr,
+        router_id: PublicKey,
     ) -> Self {
         Self {
             // No flags used for now
@@ -47,6 +53,7 @@ impl Update {
             seqno,
             metric,
             prefix,
+            router_id,
         }
     }
 
