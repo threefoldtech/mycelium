@@ -122,8 +122,6 @@ mod tests {
             interval: 513,
         };
 
-        hello.write_bytes(&mut buf);
-
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
 
         let mut buf = bytes::BytesMut::from(&[0b00000000u8, 0b00000000, 1, 19, 200, 100][..]);
@@ -133,8 +131,6 @@ mod tests {
             seqno: 275.into(),
             interval: 51300,
         };
-
-        hello.write_bytes(&mut buf);
 
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
     }
