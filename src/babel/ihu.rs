@@ -125,3 +125,127 @@ impl Ihu {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use bytes::Buf;
+
+    #[test]
+    fn encoding() {
+        let mut buf = bytes::BytesMut::new();
+
+        let ihu = super::Ihu {
+            rx_cost: 25.into(),
+            interval: 400,
+            address: Some(Ipv4Addr::new(1, 1, 1, 1).into()),
+        };
+
+        ihu.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 10);
+        assert_eq!(buf[..10], [1, 0, 0, 25, 1, 144, 1, 1, 1, 1]);
+
+        let mut buf = bytes::BytesMut::new();
+
+        let ihu = super::Ihu {
+            rx_cost: 100.into(),
+            interval: 4000,
+            address: Some(Ipv6Addr::new(2, 0, 1234, 2345, 3456, 4567, 5678, 1).into()),
+        };
+
+        ihu.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 22);
+        assert_eq!(
+            buf[..22],
+            [2, 0, 0, 100, 15, 160, 0, 2, 0, 0, 4, 210, 9, 41, 13, 128, 17, 215, 22, 46, 0, 1]
+        );
+    }
+
+    #[test]
+    fn decoding() {
+        let mut buf = bytes::BytesMut::from(&[0, 0, 0, 1, 1, 44][..]);
+
+        let ihu = super::Ihu {
+            rx_cost: 1.into(),
+            interval: 300,
+            address: None,
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+
+        let mut buf = bytes::BytesMut::from(&[1, 0, 0, 2, 0, 44, 3, 4, 5, 6][..]);
+
+        let ihu = super::Ihu {
+            rx_cost: 2.into(),
+            interval: 44,
+            address: Some(Ipv4Addr::new(3, 4, 5, 6).into()),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+
+        let mut buf = bytes::BytesMut::from(
+            &[
+                2, 0, 0, 2, 0, 44, 2, 0, 0, 0, 0, 5, 0, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+            ][..],
+        );
+
+        let ihu = super::Ihu {
+            rx_cost: 2.into(),
+            interval: 44,
+            address: Some(Ipv6Addr::new(0x200, 0, 5, 6, 0x708, 0x90a, 0xb0c, 0xd0e).into()),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+
+        let mut buf = bytes::BytesMut::from(&[3, 0, 1, 2, 0, 42, 7, 8, 9, 10, 11, 12, 13, 14][..]);
+
+        let ihu = super::Ihu {
+            rx_cost: 258.into(),
+            interval: 42,
+            address: Some(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x708, 0x90a, 0xb0c, 0xd0e).into()),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+    }
+
+    #[test]
+    fn decode_ignores_invalid_ae_encoding() {
+        // AE 4 as it is the first one which should be used in protocol extension, causing this
+        // test to fail if we forget to update something
+        let mut buf = bytes::BytesMut::from(
+            &[
+                4, 0, 0, 2, 0, 44, 2, 0, 0, 0, 0, 5, 0, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+            ][..],
+        );
+
+        let buf_len = buf.len();
+
+        assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), None);
+        // Decode function should still consume the required amount of bytes to leave parser in a
+        // good state (assuming the length in the tlv preamble is good).
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn roundtrip() {
+        let mut buf = bytes::BytesMut::new();
+
+        let hello_src = super::Ihu::new(
+            16.into(),
+            400,
+            Some(Ipv6Addr::new(156, 5646, 4164, 1236, 872, 960, 10, 844).into()),
+        );
+        hello_src.write_bytes(&mut buf);
+        let buf_len = buf.len();
+        let decoded = super::Ihu::from_bytes(&mut buf, buf_len as u8);
+
+        assert_eq!(Some(hello_src), decoded);
+    }
+}
