@@ -80,3 +80,100 @@ impl Hello {
         dst.put_u16(self.interval);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn encoding() {
+        let mut buf = bytes::BytesMut::new();
+
+        let hello = super::Hello {
+            flags: 0,
+            seqno: 25.into(),
+            interval: 400,
+        };
+
+        hello.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 6);
+        assert_eq!(buf[..6], [0, 0, 0, 25, 1, 144]);
+
+        let mut buf = bytes::BytesMut::new();
+
+        let hello = super::Hello {
+            flags: super::HELLO_FLAG_UNICAST,
+            seqno: 16.into(),
+            interval: 4000,
+        };
+
+        hello.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 6);
+        assert_eq!(buf[..6], [128, 0, 0, 16, 15, 160]);
+    }
+
+    #[test]
+    fn decoding() {
+        let mut buf = bytes::BytesMut::from(&[0b10000000u8, 0b00000000, 0, 19, 2, 1][..]);
+
+        let hello = super::Hello {
+            flags: super::HELLO_FLAG_UNICAST,
+            seqno: 19.into(),
+            interval: 513,
+        };
+
+        hello.write_bytes(&mut buf);
+
+        assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+
+        let mut buf = bytes::BytesMut::from(&[0b00000000u8, 0b00000000, 1, 19, 200, 100][..]);
+
+        let hello = super::Hello {
+            flags: 0,
+            seqno: 275.into(),
+            interval: 51300,
+        };
+
+        hello.write_bytes(&mut buf);
+
+        assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+    }
+
+    #[test]
+    fn decode_ignores_invalid_flag_bits() {
+        let mut buf = bytes::BytesMut::from(&[0b10001001u8, 0b00000000, 0, 100, 1, 144][..]);
+
+        let hello = super::Hello {
+            flags: super::HELLO_FLAG_UNICAST,
+            seqno: 100.into(),
+            interval: 400,
+        };
+
+        hello.write_bytes(&mut buf);
+
+        assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+
+        let mut buf = bytes::BytesMut::from(&[0b00001001u8, 0b00000000, 0, 100, 1, 144][..]);
+
+        let hello = super::Hello {
+            flags: 0,
+            seqno: 100.into(),
+            interval: 400,
+        };
+
+        hello.write_bytes(&mut buf);
+
+        assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+    }
+
+    #[test]
+    fn roundtrip() {
+        let mut buf = bytes::BytesMut::new();
+
+        let hello_src = super::Hello::new_unicast(16.into(), 400);
+        hello_src.write_bytes(&mut buf);
+        let decoded = super::Hello::from_bytes(&mut buf);
+
+        assert_eq!(hello_src, decoded);
+    }
+}
