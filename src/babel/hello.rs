@@ -2,7 +2,7 @@
 
 use std::io;
 
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 
 use crate::sequence_number::SeqNo;
 
@@ -13,10 +13,10 @@ const HELLO_FLAG_UNICAST: u16 = 0x8000;
 const FLAG_MASK: u16 = 0b10000000_00000000;
 
 /// Wire size of a [`Hello`] TLV without TLV header.
-const HELLO_WIRE_SIZE: u16 = 6;
+const HELLO_WIRE_SIZE: u8 = 6;
 
 /// Hello TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.5.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Hello {
     flags: u16,
     seqno: SeqNo,
@@ -51,7 +51,7 @@ impl Hello {
     }
 
     /// Calculates the size on the wire of this `Hello`.
-    pub fn wire_size(&self) -> u16 {
+    pub fn wire_size(&self) -> u8 {
         HELLO_WIRE_SIZE
     }
 
@@ -71,5 +71,12 @@ impl Hello {
             seqno,
             interval,
         }
+    }
+
+    /// Encode this `Hello` tlv as part of a packet.
+    pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
+        dst.put_u16(self.flags);
+        dst.put_u16(self.seqno.into());
+        dst.put_u16(self.interval);
     }
 }

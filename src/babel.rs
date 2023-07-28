@@ -150,7 +150,17 @@ impl Encoder<Tlv> for Codec {
         // Write header
         dst.put_u8(BABEL_MAGIC);
         dst.put_u8(BABEL_VERSION);
-        dst.put_u16(item.wire_size() + 2); // tlv payload + tlv header
+        dst.put_u16(item.wire_size() as u16 + 2); // tlv payload + tlv header
+
+        // Write TLV's, TODO: currently only 1 TLV/body
+
+        // TLV header
+        match item {
+            Tlv::Hello(_) => dst.put_u8(TLV_TYPE_HELLO),
+            Tlv::Ihu(_) => dst.put_u8(TLV_TYPE_IHU),
+            Tlv::Update(_) => dst.put_u8(TLV_TYPE_UPDATE),
+        }
+        dst.put_u8(item.wire_size());
 
         todo!()
     }

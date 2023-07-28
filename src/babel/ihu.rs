@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 use log::trace;
 
 use crate::metric::Metric;
@@ -10,10 +10,10 @@ use crate::metric::Metric;
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
 /// Base wire size of an [`Ihu`] without variable lenght address encoding.
-const IHU_BASE_WIRE_SIZE: u16 = 6;
+const IHU_BASE_WIRE_SIZE: u8 = 6;
 
 /// IHU TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-ihu.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Ihu {
     rx_cost: Metric,
     interval: u16,
@@ -51,7 +51,7 @@ impl Ihu {
     }
 
     /// Calculates the size on the wire of this `Ihu`.
-    pub fn wire_size(&self) -> u16 {
+    pub fn wire_size(&self) -> u8 {
         IHU_BASE_WIRE_SIZE
             + match self.address {
                 None => 0,
@@ -76,34 +76,22 @@ impl Ihu {
         let address = match ae {
             AE_WILDCARD => None,
             AE_IPV4 => {
-                Some(Ipv4Addr::new(src.get_u8(), src.get_u8(), src.get_u8(), src.get_u8()).into())
+                let mut raw_ip = [0; 4];
+                raw_ip.copy_from_slice(&src[..4]);
+                Some(Ipv4Addr::from(raw_ip).into())
             }
-            AE_IPV6 => Some(
-                Ipv6Addr::new(
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                )
-                .into(),
-            ),
-            AE_IPV6_LL => Some(
-                Ipv6Addr::new(
-                    0xfe80,
-                    0,
-                    0,
-                    0,
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                    src.get_u16(),
-                )
-                .into(),
-            ),
+            AE_IPV6 => {
+                let mut raw_ip = [0; 16];
+                raw_ip.copy_from_slice(&src[..16]);
+                Some(Ipv6Addr::from(raw_ip).into())
+            }
+            AE_IPV6_LL => {
+                let mut raw_ip = [0; 16];
+                raw_ip[0] = 0xfe;
+                raw_ip[1] = 0x80;
+                raw_ip[8..].copy_from_slice(&src[..8]);
+                Some(Ipv6Addr::from(raw_ip).into())
+            }
             _ => {
                 // Invalid AE type, skip reamining data and ignore
                 trace!("Invalid AE type in IHU TLV, drop TLV");
@@ -117,5 +105,23 @@ impl Ihu {
             interval,
             address,
         })
+    }
+
+    /// Encode this `Ihu` tlv as part of a packet.
+    pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
+        dst.put_u8(match self.address {
+            None => AE_WILDCARD,
+            Some(IpAddr::V4(_)) => AE_IPV4,
+            Some(IpAddr::V6(_)) => AE_IPV6,
+        });
+        // reserved byte, must be all 0
+        dst.put_u8(0);
+        dst.put_u16(self.rx_cost.into());
+        dst.put_u16(self.interval);
+        match self.address {
+            None => {}
+            Some(IpAddr::V4(ip)) => dst.put_slice(&ip.octets()),
+            Some(IpAddr::V6(ip)) => dst.put_slice(&ip.octets()),
+        }
     }
 }

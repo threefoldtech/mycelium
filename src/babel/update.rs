@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 use log::trace;
 use x25519_dalek::PublicKey;
 
@@ -18,9 +18,10 @@ const UPDATE_FLAG_ROUTER_ID: u8 = 0x40;
 const FLAG_MASK: u8 = 0b1100_0000;
 
 /// Base wire size of an [`Update`] without variable lenght address encoding.
-const UPDATE_BASE_WIRE_SIZE: u16 = 10 + 32;
+const UPDATE_BASE_WIRE_SIZE: u8 = 10 + 32;
 
 /// Update TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-update.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Update {
     /// Flags set in the TLV.
     flags: u8,
@@ -78,7 +79,7 @@ impl Update {
     }
 
     /// Calculates the size on the wire of this `Update`.
-    pub fn wire_size(&self) -> u16 {
+    pub fn wire_size(&self) -> u8 {
         UPDATE_BASE_WIRE_SIZE
             + match self.prefix {
                 // TODO: link local and wildcard should be encoded differently
@@ -154,5 +155,24 @@ impl Update {
             prefix,
             router_id,
         })
+    }
+
+    /// Encode this `Update` tlv as part of a packet.
+    pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
+        dst.put_u8(match self.prefix {
+            IpAddr::V4(_) => AE_IPV4,
+            IpAddr::V6(_) => AE_IPV6,
+        });
+        dst.put_u8(self.flags);
+        dst.put_u8(self.plen);
+        dst.put_u8(self.omitted);
+        dst.put_u16(self.interval);
+        dst.put_u16(self.seqno.into());
+        dst.put_u16(self.metric.into());
+        match self.prefix {
+            IpAddr::V4(ip) => dst.put_slice(&ip.octets()),
+            IpAddr::V6(ip) => dst.put_slice(&ip.octets()),
+        }
+        dst.put_slice(&self.router_id.as_bytes()[..])
     }
 }

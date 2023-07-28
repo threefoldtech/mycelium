@@ -13,11 +13,20 @@ pub enum Tlv {
 impl Tlv {
     /// Calculate the size on the wire for this `Tlv`. This DOES NOT included the TLV header size
     /// (2 bytes).
-    pub fn wire_size(&self) -> u16 {
+    pub fn wire_size(&self) -> u8 {
         match self {
             Self::Hello(hello) => hello.wire_size(),
             Self::Ihu(ihu) => ihu.wire_size(),
             Self::Update(update) => update.wire_size(),
+        }
+    }
+
+    /// Encode this `Hello` tlv as part of a packet.
+    pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
+        match self {
+            Self::Hello(hello) => hello.write_bytes(dst),
+            Self::Ihu(ihu) => ihu.write_bytes(dst),
+            Self::Update(update) => update.write_bytes(dst),
         }
     }
 }
