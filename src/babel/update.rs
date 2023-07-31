@@ -173,3 +173,186 @@ impl Update {
         dst.put_slice(&self.router_id.as_bytes()[..])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use bytes::Buf;
+    use x25519_dalek::PublicKey;
+
+    #[test]
+    fn encoding() {
+        let mut buf = bytes::BytesMut::new();
+
+        let ihu = super::Update {
+            flags: 0b1100_0000,
+            plen: 64,
+            omitted: 0,
+            interval: 400,
+            seqno: 17.into(),
+            metric: 25.into(),
+            prefix: Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(),
+            router_id: PublicKey::from([1u8; 32]),
+        };
+
+        ihu.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 58);
+        assert_eq!(
+            buf[..58],
+            [
+                2, 192, 64, 0, 1, 144, 0, 17, 0, 25, 2, 0, 0, 25, 0, 26, 0, 27, 0, 28, 0, 0, 0, 0,
+                0, 29, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1
+            ]
+        );
+
+        let mut buf = bytes::BytesMut::new();
+
+        let ihu = super::Update {
+            flags: 0b0000_0000,
+            plen: 32,
+            omitted: 0,
+            interval: 600,
+            seqno: 170.into(),
+            metric: 256.into(),
+            prefix: Ipv4Addr::new(10, 101, 4, 1).into(),
+            router_id: PublicKey::from([2u8; 32]),
+        };
+
+        ihu.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 46);
+        assert_eq!(
+            buf[..46],
+            [
+                1, 0, 32, 0, 2, 88, 0, 170, 1, 0, 10, 101, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+            ]
+        );
+    }
+
+    #[test]
+    fn decoding() {
+        let mut buf = bytes::BytesMut::from(
+            &[
+                0, 64, 0, 0, 0, 100, 0, 70, 2, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            ][..],
+        );
+
+        let ihu = super::Update {
+            flags: 0b0100_0000,
+            plen: 0,
+            omitted: 0,
+            interval: 100,
+            seqno: 70.into(),
+            metric: 512.into(),
+            prefix: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(),
+            router_id: PublicKey::from([3u8; 32]),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(
+            super::Update::from_bytes(&mut buf, buf_len as u8),
+            Some(ihu)
+        );
+        assert_eq!(buf.remaining(), 0);
+
+        let mut buf = bytes::BytesMut::from(
+            &[
+                3, 0, 92, 0, 3, 232, 0, 42, 3, 1, 0, 10, 0, 20, 0, 30, 0, 40, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+            ][..],
+        );
+
+        let ihu = super::Update {
+            flags: 0b0000_0000,
+            plen: 92,
+            omitted: 0,
+            interval: 1000,
+            seqno: 42.into(),
+            metric: 769.into(),
+            prefix: Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(),
+            router_id: PublicKey::from([4u8; 32]),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(
+            super::Update::from_bytes(&mut buf, buf_len as u8),
+            Some(ihu)
+        );
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn decode_ignores_invalid_ae_encoding() {
+        // AE 4 as it is the first one which should be used in protocol extension, causing this
+        // test to fail if we forget to update something
+        let mut buf = bytes::BytesMut::from(
+            &[
+                4, 0, 64, 0, 0, 44, 2, 0, 0, 10, 10, 5, 0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                17, 18, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+                5, 5, 5, 5, 5, 5, 5,
+            ][..],
+        );
+
+        let buf_len = buf.len();
+
+        assert_eq!(super::Update::from_bytes(&mut buf, buf_len as u8), None);
+        // Decode function should still consume the required amount of bytes to leave parser in a
+        // good state (assuming the length in the tlv preamble is good).
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn decode_ignores_invalid_flag_bits() {
+        // Set all flag bits, only allowed bits should be set on the decoded value
+        let mut buf = bytes::BytesMut::from(
+            &[
+                3, 255, 92, 0, 3, 232, 0, 42, 3, 1, 0, 10, 0, 20, 0, 30, 0, 40, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+            ][..],
+        );
+
+        let ihu = super::Update {
+            flags: super::UPDATE_FLAG_PREFIX | super::UPDATE_FLAG_ROUTER_ID,
+            plen: 92,
+            omitted: 0,
+            interval: 1000,
+            seqno: 42.into(),
+            metric: 769.into(),
+            prefix: Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(),
+            router_id: PublicKey::from([4u8; 32]),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(
+            super::Update::from_bytes(&mut buf, buf_len as u8),
+            Some(ihu)
+        );
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn roundtrip() {
+        let mut buf = bytes::BytesMut::new();
+
+        let hello_src = super::Update::new(
+            64,
+            0,
+            400,
+            10.into(),
+            25.into(),
+            Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0xbeef, 0xbabe, 0xdeaf, 1).into(),
+            PublicKey::from([6; 32]),
+        );
+        hello_src.write_bytes(&mut buf);
+        let buf_len = buf.len();
+        let decoded = super::Update::from_bytes(&mut buf, buf_len as u8);
+
+        assert_eq!(Some(hello_src), decoded);
+        assert_eq!(buf.remaining(), 0);
+    }
+}
