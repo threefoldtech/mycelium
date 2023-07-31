@@ -149,8 +149,6 @@ mod tests {
             interval: 400,
         };
 
-        hello.write_bytes(&mut buf);
-
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
         assert_eq!(buf.remaining(), 0);
 
@@ -161,8 +159,6 @@ mod tests {
             seqno: 100.into(),
             interval: 400,
         };
-
-        hello.write_bytes(&mut buf);
 
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
         assert_eq!(buf.remaining(), 0);
