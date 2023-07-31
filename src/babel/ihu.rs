@@ -176,6 +176,7 @@ mod tests {
 
         let buf_len = buf.len();
         assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+        assert_eq!(buf.remaining(), 0);
 
         let mut buf = bytes::BytesMut::from(&[1, 0, 0, 2, 0, 44, 3, 4, 5, 6][..]);
 
@@ -187,6 +188,7 @@ mod tests {
 
         let buf_len = buf.len();
         assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+        assert_eq!(buf.remaining(), 0);
 
         let mut buf = bytes::BytesMut::from(
             &[
@@ -202,6 +204,7 @@ mod tests {
 
         let buf_len = buf.len();
         assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+        assert_eq!(buf.remaining(), 0);
 
         let mut buf = bytes::BytesMut::from(&[3, 0, 1, 2, 0, 42, 7, 8, 9, 10, 11, 12, 13, 14][..]);
 
@@ -213,6 +216,7 @@ mod tests {
 
         let buf_len = buf.len();
         assert_eq!(super::Ihu::from_bytes(&mut buf, buf_len as u8), Some(ihu));
+        assert_eq!(buf.remaining(), 0);
     }
 
     #[test]
@@ -247,5 +251,6 @@ mod tests {
         let decoded = super::Ihu::from_bytes(&mut buf, buf_len as u8);
 
         assert_eq!(Some(hello_src), decoded);
+        assert_eq!(buf.remaining(), 0);
     }
 }

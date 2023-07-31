@@ -83,6 +83,8 @@ impl Hello {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Buf;
+
     #[test]
     fn encoding() {
         let mut buf = bytes::BytesMut::new();
@@ -123,6 +125,7 @@ mod tests {
         };
 
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+        assert_eq!(buf.remaining(), 0);
 
         let mut buf = bytes::BytesMut::from(&[0b00000000u8, 0b00000000, 1, 19, 200, 100][..]);
 
@@ -133,6 +136,7 @@ mod tests {
         };
 
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+        assert_eq!(buf.remaining(), 0);
     }
 
     #[test]
@@ -148,6 +152,7 @@ mod tests {
         hello.write_bytes(&mut buf);
 
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+        assert_eq!(buf.remaining(), 0);
 
         let mut buf = bytes::BytesMut::from(&[0b00001001u8, 0b00000000, 0, 100, 1, 144][..]);
 
@@ -160,6 +165,7 @@ mod tests {
         hello.write_bytes(&mut buf);
 
         assert_eq!(super::Hello::from_bytes(&mut buf), hello);
+        assert_eq!(buf.remaining(), 0);
     }
 
     #[test]
@@ -171,5 +177,6 @@ mod tests {
         let decoded = super::Hello::from_bytes(&mut buf);
 
         assert_eq!(hello_src, decoded);
+        assert_eq!(buf.remaining(), 0);
     }
 }
