@@ -12,6 +12,7 @@ use tokio::io::AsyncBufReadExt;
 
 mod babel;
 mod codec;
+mod interval;
 mod metric;
 mod node_setup;
 mod packet;
