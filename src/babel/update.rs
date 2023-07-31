@@ -108,29 +108,23 @@ impl Update {
                 // TODO: this is a temporary placeholder until we figure out how to handle this
                 Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into()
             }
-            AE_IPV4 => Ipv4Addr::new(src.get_u8(), src.get_u8(), src.get_u8(), src.get_u8()).into(),
-            AE_IPV6 => Ipv6Addr::new(
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-            )
-            .into(),
-            AE_IPV6_LL => Ipv6Addr::new(
-                0xfe80,
-                0,
-                0,
-                0,
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-                src.get_u16(),
-            )
-            .into(),
+            AE_IPV4 => {
+                let mut raw_ip = [0; 4];
+                raw_ip.copy_from_slice(&src[..4]);
+                Ipv4Addr::from(raw_ip).into()
+            }
+            AE_IPV6 => {
+                let mut raw_ip = [0; 16];
+                raw_ip.copy_from_slice(&src[..16]);
+                Ipv6Addr::from(raw_ip).into()
+            }
+            AE_IPV6_LL => {
+                let mut raw_ip = [0; 16];
+                raw_ip[0] = 0xfe;
+                raw_ip[1] = 0x80;
+                raw_ip[8..].copy_from_slice(&src[..8]);
+                Ipv6Addr::from(raw_ip).into()
+            }
             _ => {
                 // Invalid AE type, skip reamining data and ignore
                 trace!("Invalid AE type in update packet, drop packet");
