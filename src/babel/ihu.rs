@@ -78,11 +78,13 @@ impl Ihu {
             AE_IPV4 => {
                 let mut raw_ip = [0; 4];
                 raw_ip.copy_from_slice(&src[..4]);
+                src.advance(4);
                 Some(Ipv4Addr::from(raw_ip).into())
             }
             AE_IPV6 => {
                 let mut raw_ip = [0; 16];
                 raw_ip.copy_from_slice(&src[..16]);
+                src.advance(16);
                 Some(Ipv6Addr::from(raw_ip).into())
             }
             AE_IPV6_LL => {
@@ -90,6 +92,7 @@ impl Ihu {
                 raw_ip[0] = 0xfe;
                 raw_ip[1] = 0x80;
                 raw_ip[8..].copy_from_slice(&src[..8]);
+                src.advance(8);
                 Some(Ipv6Addr::from(raw_ip).into())
             }
             _ => {
