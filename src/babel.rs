@@ -10,7 +10,7 @@ use bytes::{Buf, BufMut};
 use log::trace;
 use tokio_util::codec::{Decoder, Encoder};
 
-use self::{hello::Hello, ihu::Ihu, update::Update};
+pub use self::{hello::Hello, ihu::Ihu, update::Update};
 
 pub use self::tlv::Tlv;
 

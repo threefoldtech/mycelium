@@ -1,6 +1,7 @@
 use super::{hello::Hello, ihu::Ihu, update::Update};
 
 /// A single `Tlv` in a babel packet body.
+#[derive(Debug)]
 pub enum Tlv {
     /// Hello Tlv type.
     Hello(Hello),
