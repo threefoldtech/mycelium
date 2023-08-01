@@ -6,7 +6,6 @@ use crate::{
     routing_table::{RouteEntry, RouteKey, RoutingTable},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
-    x25519::{self, shared_secret_from_keypair},
 };
 use log::{error, info, trace, warn};
 use std::{
