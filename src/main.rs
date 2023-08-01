@@ -7,11 +7,13 @@ use log::{debug, error, info, trace};
 use std::{
     error::Error,
     net::{Ipv6Addr, SocketAddr},
+    path::Path,
 };
 use tokio::io::AsyncBufReadExt;
 
 mod babel;
 mod codec;
+mod crypto;
 mod interval;
 mod metric;
 mod node_setup;
@@ -39,10 +41,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
 
     // Generate a new keypair for this node, panic if it fails
-    let node_keypair = x25519::get_keypair().unwrap();
+    let node_secret_key = crypto::SecretKey::load_file(Path::new("keys.txt")).await?;
+    let node_pub_key = crypto::PublicKey::from(&node_secret_key);
+    let node_keypair = (node_secret_key, node_pub_key);
 
     // Generate the node's IPv6 address from its public key
-    let node_addr = x25519::generate_addr_from_pubkey(&node_keypair.1);
+    let node_addr = node_pub_key.address();
     info!("Node address: {}", node_addr);
 
     // Create TUN interface and add static route
@@ -137,8 +141,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 };
 
-                let shared_secret =
-                    x25519::shared_secret_from_keypair(&own_secret, &pubkey_recipient);
+                let shared_secret = own_secret.shared_secret(&pubkey_recipient);
 
                 // println!(
                 //     "encryption with pubkey of recipient: {:?}",
@@ -151,7 +154,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     dest_ip: dest_addr,
                     pubkey: router.node_public_key(),
                     // encrypt data with shared secret
-                    raw_data: x25519::encrypt_raw_data(buf.to_vec(), shared_secret),
+                    raw_data: shared_secret.encrypt(&buf),
                 };
 
                 if router.router_data_tx().send(data_packet).is_err() {

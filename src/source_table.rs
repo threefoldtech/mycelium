@@ -1,9 +1,9 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use log::error;
-use x25519_dalek::PublicKey;
 
 use crate::{
+    crypto::PublicKey,
     metric::Metric,
     packet::{BabelTLV, ControlStruct},
     sequence_number::SeqNo,

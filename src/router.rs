@@ -1,4 +1,5 @@
 use crate::{
+    crypto::{PublicKey, SecretKey},
     metric::Metric,
     packet::{BabelTLV, BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
@@ -17,7 +18,6 @@ use std::{
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tun::Tun;
-use x25519_dalek::{PublicKey, StaticSecret};
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -45,7 +45,7 @@ impl Router {
         node_tun: Arc<Tun>,
         node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
-        node_keypair: (StaticSecret, PublicKey),
+        node_keypair: (SecretKey, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
@@ -121,7 +121,7 @@ impl Router {
         matching_peer.map(Clone::clone)
     }
 
-    pub fn node_secret_key(&self) -> StaticSecret {
+    pub fn node_secret_key(&self) -> SecretKey {
         self.inner.read().unwrap().node_keypair.0.clone()
     }
 
@@ -657,10 +657,14 @@ impl Router {
                 if data_packet.dest_ip == node_tun_addr {
                     // decrypt & send to TUN interface
                     let pubkey_sender = data_packet.pubkey;
-                    let own_secret = self.node_secret_key();
-                    let shared_secret = shared_secret_from_keypair(&own_secret, &pubkey_sender);
-                    let decrypted_raw_data =
-                        x25519::decrypt_raw_data(data_packet.raw_data, shared_secret);
+                    let shared_secret = self.node_secret_key().shared_secret(&pubkey_sender);
+                    let decrypted_raw_data = match shared_secret.decrypt(&data_packet.raw_data) {
+                        Ok(data) => data,
+                        Err(_) => {
+                            log::debug!("Dropping data packet with invalid encrypted content");
+                            continue;
+                        }
+                    };
                     match node_tun.send(&decrypted_raw_data).await {
                         Ok(_) => {}
                         Err(e) => {
@@ -765,7 +769,7 @@ pub struct RouterInner {
     source_table: SourceTable,
     router_seqno: SeqNo,
     static_routes: Vec<StaticRoute>,
-    node_keypair: (StaticSecret, PublicKey),
+    node_keypair: (SecretKey, PublicKey),
     // map that contains the overlay ips of peers and their respective public keys
     dest_pubkey_map: HashMap<Ipv6Addr, PublicKey>,
 }
@@ -777,7 +781,7 @@ impl RouterInner {
         static_routes: Vec<StaticRoute>,
         router_data_tx: UnboundedSender<DataPacket>,
         router_control_tx: UnboundedSender<ControlStruct>,
-        node_keypair: (StaticSecret, PublicKey),
+        node_keypair: (SecretKey, PublicKey),
     ) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
             router_id: node_keypair.1,

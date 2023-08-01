@@ -1,7 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr};
-use x25519_dalek::PublicKey;
 
-use crate::{metric::Metric, peer::Peer, sequence_number::SeqNo};
+use crate::{crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo};
 
 pub const BABEL_MAGIC: u8 = 42;
 pub const BABEL_VERSION: u8 = 2;

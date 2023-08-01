@@ -1,4 +1,5 @@
 use crate::{
+    crypto::PublicKey,
     metric::Metric,
     packet::{
         BabelPacketBody, BabelPacketHeader, BabelTLV, BabelTLVType, ControlPacket, DataPacket,
@@ -12,7 +13,6 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 use tokio_util::codec::{Decoder, Encoder};
-use x25519_dalek::PublicKey;
 
 /* ********************************PAKCET*********************************** */
 pub struct PacketCodec {

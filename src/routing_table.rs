@@ -1,6 +1,6 @@
-use x25519_dalek::PublicKey;
-
-use crate::{metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey};
+use crate::{
+    crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey,
+};
 use std::{collections::BTreeMap, net::IpAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
