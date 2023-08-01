@@ -77,9 +77,7 @@ impl PublicKey {
         hasher.update(self.as_bytes());
         let mut buf = hasher.finalize();
         buf[0] = 0x02 | buf[0] & 0x01;
-        let addr = Ipv6Addr::from(<[u8; 16]>::from(buf));
-
-        addr
+        Ipv6Addr::from(<[u8; 16]>::from(buf))
     }
 
     /// Convert this `PublicKey` to a byte array.
