@@ -15,13 +15,13 @@ pub struct Interval(u16);
 
 impl From<Duration> for Interval {
     fn from(value: Duration) -> Self {
-        Interval(value.as_millis() / 10)
+        Interval((value.as_millis() / 10) as u16)
     }
 }
 
 impl From<Interval> for Duration {
     fn from(value: Interval) -> Self {
-        Duration::from_millis(value.0 * 10)
+        Duration::from_millis(value.0 as u64 * 10)
     }
 }
 
