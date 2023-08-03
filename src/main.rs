@@ -59,7 +59,7 @@ pub enum Command {
     /// given.
     Inspect {
         /// Output in json format.
-        #[arg(short = 'j', long = "json")]
+        #[arg(long = "json")]
         json: bool,
 
         /// The key to inspect.
