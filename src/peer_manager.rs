@@ -29,7 +29,8 @@ impl PeerManager {
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
         tokio::spawn(PeerManager::start_listener(peer_manager.clone(), port));
         // Reads the nodeconfig.toml file and connects to the peers in the file.
-        tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
+        // TODO: ignore for now
+        // tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
         // Remote nodes can also be read from CLI arg
         tokio::spawn(PeerManager::get_peers_from_cli(
             peer_manager.clone(),
