@@ -103,6 +103,8 @@ impl Ihu {
             }
         };
 
+        trace!("Read ihu tlv body");
+
         Some(Self {
             rx_cost,
             interval,

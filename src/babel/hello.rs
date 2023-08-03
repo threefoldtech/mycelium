@@ -3,6 +3,7 @@
 use std::io;
 
 use bytes::{Buf, BufMut};
+use log::trace;
 
 use crate::sequence_number::SeqNo;
 
@@ -65,6 +66,8 @@ impl Hello {
         let flags = src.get_u16() & FLAG_MASK;
         let seqno = src.get_u16().into();
         let interval = src.get_u16();
+
+        trace!("Read hello tlv body");
 
         Self {
             flags,

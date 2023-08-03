@@ -156,6 +156,8 @@ impl Update {
 
         let router_id = PublicKey::from(router_id_bytes);
 
+        trace!("Read update tlv body");
+
         Some(Update {
             flags,
             plen,
