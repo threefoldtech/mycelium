@@ -176,16 +176,17 @@ mod tests {
 
     #[tokio::test]
     async fn codec_hello() {
-        let mut buf = io::Cursor::new(Vec::with_capacity(1024));
-        let mut framed = Framed::new(buf, super::Codec::new());
+        let (tx, rx) = tokio::io::duplex(1024);
+        let mut sender = Framed::new(tx, super::Codec::new());
+        let mut receiver = Framed::new(rx, super::Codec::new());
 
         let hello = super::Hello::new_unicast(15.into(), 400);
 
-        framed
-            .send(hello.into())
+        sender
+            .send(hello.clone().into())
             .await
             .expect("Send on a non-networked buffer can never fail; qed");
-        let recv_hello = framed
+        let recv_hello = receiver
             .next()
             .await
             .expect("Buffer isn't closed so this is always `Some`; qed")
@@ -195,16 +196,17 @@ mod tests {
 
     #[tokio::test]
     async fn codec_ihu() {
-        let mut buf = io::Cursor::new(Vec::with_capacity(1024));
-        let mut framed = Framed::new(buf, super::Codec::new());
+        let (tx, rx) = tokio::io::duplex(1024);
+        let mut sender = Framed::new(tx, super::Codec::new());
+        let mut receiver = Framed::new(rx, super::Codec::new());
 
         let ihu = super::Ihu::new(27.into(), 400, None);
 
-        framed
-            .send(ihu.into())
+        sender
+            .send(ihu.clone().into())
             .await
             .expect("Send on a non-networked buffer can never fail; qed");
-        let recv_ihu = framed
+        let recv_ihu = receiver
             .next()
             .await
             .expect("Buffer isn't closed so this is always `Some`; qed")
@@ -214,8 +216,9 @@ mod tests {
 
     #[tokio::test]
     async fn codec_update() {
-        let mut buf = io::Cursor::new(Vec::with_capacity(1024));
-        let mut framed = Framed::new(buf, super::Codec::new());
+        let (tx, rx) = tokio::io::duplex(1024);
+        let mut sender = Framed::new(tx, super::Codec::new());
+        let mut receiver = Framed::new(rx, super::Codec::new());
 
         let update = super::Update::new(
             64,
@@ -231,11 +234,11 @@ mod tests {
             .into(),
         );
 
-        framed
-            .send(update.into())
+        sender
+            .send(update.clone().into())
             .await
             .expect("Send on a non-networked buffer can never fail; qed");
-        let recv_update = framed
+        let recv_update = receiver
             .next()
             .await
             .expect("Buffer isn't closed so this is always `Some`; qed")
