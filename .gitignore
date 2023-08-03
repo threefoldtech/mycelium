@@ -1,3 +1,5 @@
 /target
 nodeconfig.toml
 keys.txt
+*.profraw
+*.profdata
