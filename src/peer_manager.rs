@@ -175,7 +175,7 @@ impl PeerManager {
     }
 
     async fn start_listener(self, port: u16) {
-        match TcpListener::bind(("[::]", port)).await {
+        match TcpListener::bind(("::", port)).await {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
