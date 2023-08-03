@@ -4,9 +4,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use bytes::{Buf, BufMut};
 use log::trace;
-use x25519_dalek::PublicKey;
 
-use crate::{metric::Metric, sequence_number::SeqNo};
+use crate::{crypto::PublicKey, metric::Metric, sequence_number::SeqNo};
 
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
