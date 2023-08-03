@@ -77,6 +77,21 @@ impl Update {
         self.metric
     }
 
+    /// Return the prefix length of the prefix in this `Update`.
+    pub fn plen(&self) -> u8 {
+        self.plen
+    }
+
+    /// Return the [`Prefix`](IpAddr) for which this is an `Update`.
+    pub fn prefix(&self) -> IpAddr {
+        self.prefix
+    }
+
+    /// Return the [`router-id`](PublicKey) of the router who advertised this [`Prefix`](IpAddr).
+    pub fn router_id(&self) -> PublicKey {
+        self.router_id
+    }
+
     /// Calculates the size on the wire of this `Update`.
     pub fn wire_size(&self) -> u8 {
         UPDATE_BASE_WIRE_SIZE
@@ -177,8 +192,8 @@ impl Update {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
+    use crate::crypto::PublicKey;
     use bytes::Buf;
-    use x25519_dalek::PublicKey;
 
     #[test]
     fn encoding() {
