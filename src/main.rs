@@ -27,6 +27,9 @@ mod source_table;
 
 const LINK_MTU: usize = 1420;
 
+/// The default port on the inderlay to listen on
+const DEFAULT_LISTEN_PORT: u16 = 9651;
+
 #[derive(Parser)]
 struct Cli {
     #[arg(short = 'p', long = "peers", num_args = 1..)]
@@ -86,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Creating a new PeerManager instance
     let _peer_manager: peer_manager::PeerManager =
-        peer_manager::PeerManager::new(router.clone(), static_peers);
+        peer_manager::PeerManager::new(router.clone(), static_peers, DEFAULT_LISTEN_PORT);
 
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets

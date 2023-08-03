@@ -21,13 +21,13 @@ pub struct PeerManager {
 }
 
 impl PeerManager {
-    pub fn new(router: Router, static_peers_sockets: Vec<SocketAddr>) -> Self {
+    pub fn new(router: Router, static_peers_sockets: Vec<SocketAddr>, port: u16) -> Self {
         let peer_manager = PeerManager {
             router,
             initial_peers: static_peers_sockets.clone(),
         };
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
-        tokio::spawn(PeerManager::start_listener(peer_manager.clone()));
+        tokio::spawn(PeerManager::start_listener(peer_manager.clone(), port));
         // Reads the nodeconfig.toml file and connects to the peers in the file.
         tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
         // Remote nodes can also be read from CLI arg
@@ -174,8 +174,8 @@ impl PeerManager {
         }
     }
 
-    async fn start_listener(self) {
-        match TcpListener::bind("[::]:9651").await {
+    async fn start_listener(self, port: u16) {
+        match TcpListener::bind(("[::]", port)).await {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
