@@ -1,7 +1,8 @@
 use crate::{
+    babel,
     crypto::{PublicKey, SecretKey},
     metric::Metric,
-    packet::{BabelTLV, BabelTLVType, ControlPacket, ControlStruct, DataPacket},
+    packet::{BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
     sequence_number::SeqNo,
@@ -297,16 +298,15 @@ impl Router {
         }
     }
 
-    fn handle_incoming_update(&self, update: ControlStruct) {
-        match update.control_packet.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval: _,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
+    fn handle_incoming_update(&self, update_packet: ControlStruct) {
+        match update_packet.control_packet.body.tlv {
+            babel::Tlv::Update(update) => {
+                let metric = update.metric();
+                let plen = update.plen();
+                let router_id = update.router_id();
+                let prefix = update.prefix();
+                let seqno = update.seqno();
+
                 // convert prefix to ipv6 address
                 if let IpAddr::V6(prefix_as_ipv6addr) = prefix {
                     // add it the mapping
@@ -315,7 +315,7 @@ impl Router {
 
                 // create route key from incoming update control struct
                 // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
-                let neighbor_ip = update.src_overlay_ip;
+                let neighbor_ip = update_packet.src_overlay_ip;
                 let route_key_from_update = RouteKey::new(prefix, plen, neighbor_ip);
                 // used later to filter out static route
                 if self.route_key_is_from_static_route(&route_key_from_update) {
@@ -813,17 +813,16 @@ impl RouterInner {
         matching_peer.map(Clone::clone)
     }
 
-    fn send_update(&mut self, peer: &Peer, update: ControlPacket) {
+    fn send_update(&mut self, peer: &Peer, update_packet: ControlPacket) {
         // before sending an update, the source table might need to be updated
-        match update.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval: _,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
+        match update_packet.body.tlv {
+            babel::Tlv::Update(ref update) => {
+                let plen = update.plen();
+                let seqno = update.seqno();
+                let metric = update.metric();
+                let prefix = update.prefix();
+                let router_id = update.router_id();
+
                 let source_key = SourceKey::new(prefix, plen, router_id);
 
                 if let Some(source_entry) = self.source_table.get(&source_key) {
@@ -847,7 +846,7 @@ impl RouterInner {
                 }
 
                 // send the update to the peer
-                if let Err(e) = peer.send_control_packet(update) {
+                if let Err(e) = peer.send_control_packet(update_packet) {
                     error!("Error sending update to peer: {:?}", e);
                 }
             }

@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr};
 
-use crate::{crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo};
+use crate::{babel, crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo};
 
 pub const BABEL_MAGIC: u8 = 42;
 pub const BABEL_VERSION: u8 = 2;
@@ -39,7 +39,6 @@ pub struct ControlStruct {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ControlPacket {
-    pub header: BabelPacketHeader,
     pub body: BabelPacketBody,
 }
 
@@ -55,7 +54,7 @@ pub struct BabelPacketHeader {
 pub struct BabelPacketBody {
     pub tlv_type: BabelTLVType,
     pub length: u8, // length of the tlv (only the tlv, not tlv_type and length itself)
-    pub tlv: BabelTLV,
+    pub tlv: babel::Tlv,
 }
 
 impl BabelPacketHeader {
@@ -70,33 +69,25 @@ impl BabelPacketHeader {
 
 impl ControlPacket {
     pub fn new_hello(dest_peer: &mut Peer, interval: u16) -> Self {
-        let header_length = (BabelTLVType::Hello.get_tlv_length(false) + 2) as u16;
+        let tlv: babel::Tlv = babel::Hello::new_unicast(dest_peer.hello_seqno(), interval).into();
         dest_peer.increment_hello_seqno();
         Self {
-            header: BabelPacketHeader::new(header_length),
             body: BabelPacketBody {
                 tlv_type: BabelTLVType::Hello,
-                length: BabelTLVType::Hello.get_tlv_length(false),
-                tlv: BabelTLV::Hello {
-                    seqno: dest_peer.hello_seqno(),
-                    interval,
-                },
+                length: tlv.wire_size(),
+                tlv,
             },
         }
     }
 
     pub fn new_ihu(interval: u16, dest_address: IpAddr) -> Self {
-        let uses_ipv6 = dest_address.is_ipv6();
-        let header_length = (BabelTLVType::IHU.get_tlv_length(uses_ipv6) + 2) as u16;
+        // TODO: Set rx metric
+        let tlv: babel::Tlv = babel::Ihu::new(Metric::from(0), interval, Some(dest_address)).into();
         Self {
-            header: BabelPacketHeader::new(header_length),
             body: BabelPacketBody {
                 tlv_type: BabelTLVType::IHU,
-                length: BabelTLVType::IHU.get_tlv_length(uses_ipv6),
-                tlv: BabelTLV::IHU {
-                    interval,
-                    address: dest_address,
-                },
+                length: tlv.wire_size(),
+                tlv,
             },
         }
     }
@@ -109,21 +100,13 @@ impl ControlPacket {
         prefix: IpAddr,
         router_id: PublicKey,
     ) -> Self {
-        let uses_ipv6 = prefix.is_ipv6();
-        let header_length = (BabelTLVType::Update.get_tlv_length(uses_ipv6) + 2) as u16;
+        let tlv: babel::Tlv =
+            babel::Update::new(plen, 0, interval, seqno, metric, prefix, router_id).into();
         Self {
-            header: BabelPacketHeader::new(header_length),
             body: BabelPacketBody {
                 tlv_type: BabelTLVType::Update,
-                length: BabelTLVType::Update.get_tlv_length(uses_ipv6),
-                tlv: BabelTLV::Update {
-                    plen,
-                    interval,
-                    seqno,
-                    metric,
-                    prefix,
-                    router_id,
-                },
+                length: tlv.wire_size(),
+                tlv,
             },
         }
     }
@@ -145,37 +128,4 @@ impl BabelTLVType {
             _ => None,
         }
     }
-
-    pub fn get_tlv_length(self, uses_ipv6: bool) -> u8 {
-        let (ipv6, ipv4) = match self {
-            Self::Hello => (4, 4),
-            Self::IHU => (18, 6),
-            Self::Update => (31 + 1, 19 + 1), // +1 for ae
-        };
-        if uses_ipv6 {
-            ipv6
-        } else {
-            ipv4
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum BabelTLV {
-    Hello {
-        seqno: SeqNo,
-        interval: u16,
-    },
-    IHU {
-        interval: u16,
-        address: IpAddr,
-    },
-    Update {
-        plen: u8,
-        interval: u16,
-        seqno: SeqNo,
-        metric: Metric,
-        prefix: IpAddr,
-        router_id: PublicKey,
-    },
 }

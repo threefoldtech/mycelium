@@ -1,13 +1,6 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use log::error;
-
-use crate::{
-    crypto::PublicKey,
-    metric::Metric,
-    packet::{BabelTLV, ControlStruct},
-    sequence_number::SeqNo,
-};
+use crate::{babel, crypto::PublicKey, metric::Metric, sequence_number::SeqNo};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
@@ -95,33 +88,18 @@ impl SourceTable {
     }
 
     /// Indicates if an update is feasible in the context of the current `SoureTable`.
-    pub fn is_update_feasible(&self, update: &ControlStruct) -> bool {
+    pub fn is_update_feasible(&self, update: &babel::Update) -> bool {
         // Before an update is accepted it should be checked against the feasbility condition
         // If an entry in the source table with the same source key exists, we perform the feasbility check
         // If no entry exists yet, the update is accepted as there is no better alternative available (yet)
-        match update.control_packet.body.tlv {
-            BabelTLV::Update {
-                plen,
-                interval: _,
-                seqno,
-                metric,
-                prefix,
-                router_id,
-            } => {
-                let source_key = SourceKey::new(prefix, plen, router_id);
-                match self.get(&source_key) {
-                    Some(&entry) => {
-                        (!seqno.lt(&entry.seqno()))
-                            || (seqno == entry.seqno() && metric < entry.metric())
-                            || metric.is_infinite()
-                    }
-                    None => true,
-                }
+        let source_key = SourceKey::new(update.prefix(), update.plen(), update.router_id());
+        match self.get(&source_key) {
+            Some(entry) => {
+                (!update.seqno().lt(&entry.seqno()))
+                    || (update.seqno() == entry.seqno() && update.metric() < entry.metric())
+                    || update.metric().is_infinite()
             }
-            _ => {
-                error!("Error accepting update, control struct did not match update packet");
-                false
-            }
+            None => true,
         }
     }
 }
