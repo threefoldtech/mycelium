@@ -1,7 +1,7 @@
-use super::{hello::Hello, ihu::Ihu, update::Update};
+pub use super::{hello::Hello, ihu::Ihu, update::Update};
 
 /// A single `Tlv` in a babel packet body.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Tlv {
     /// Hello Tlv type.
     Hello(Hello),
@@ -22,7 +22,7 @@ impl Tlv {
         }
     }
 
-    /// Encode this `Hello` tlv as part of a packet.
+    /// Encode this `Tlv` as part of a packet.
     pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
         match self {
             Self::Hello(hello) => hello.write_bytes(dst),

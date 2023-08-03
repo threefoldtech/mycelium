@@ -161,7 +161,85 @@ impl Encoder<Tlv> for Codec {
             Tlv::Update(_) => dst.put_u8(TLV_TYPE_UPDATE),
         }
         dst.put_u8(item.wire_size());
+        item.write_bytes(dst);
 
-        todo!()
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{io, net::Ipv6Addr};
+
+    use futures::{SinkExt, StreamExt};
+    use tokio_util::codec::Framed;
+
+    #[tokio::test]
+    async fn codec_hello() {
+        let mut buf = io::Cursor::new(Vec::with_capacity(1024));
+        let mut framed = Framed::new(buf, super::Codec::new());
+
+        let hello = super::Hello::new_unicast(15.into(), 400);
+
+        framed
+            .send(hello.into())
+            .await
+            .expect("Send on a non-networked buffer can never fail; qed");
+        let recv_hello = framed
+            .next()
+            .await
+            .expect("Buffer isn't closed so this is always `Some`; qed")
+            .expect("Can decode the previously encoded value");
+        assert_eq!(super::Tlv::from(hello), recv_hello);
+    }
+
+    #[tokio::test]
+    async fn codec_ihu() {
+        let mut buf = io::Cursor::new(Vec::with_capacity(1024));
+        let mut framed = Framed::new(buf, super::Codec::new());
+
+        let ihu = super::Ihu::new(27.into(), 400, None);
+
+        framed
+            .send(ihu.into())
+            .await
+            .expect("Send on a non-networked buffer can never fail; qed");
+        let recv_ihu = framed
+            .next()
+            .await
+            .expect("Buffer isn't closed so this is always `Some`; qed")
+            .expect("Can decode the previously encoded value");
+        assert_eq!(super::Tlv::from(ihu), recv_ihu);
+    }
+
+    #[tokio::test]
+    async fn codec_update() {
+        let mut buf = io::Cursor::new(Vec::with_capacity(1024));
+        let mut framed = Framed::new(buf, super::Codec::new());
+
+        let update = super::Update::new(
+            64,
+            0,
+            400,
+            16.into(),
+            25.into(),
+            Ipv6Addr::new(0x200, 1, 2, 3, 4, 5, 6, 7).into(),
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32,
+            ]
+            .into(),
+        );
+
+        framed
+            .send(update.into())
+            .await
+            .expect("Send on a non-networked buffer can never fail; qed");
+        let recv_update = framed
+            .next()
+            .await
+            .expect("Buffer isn't closed so this is always `Some`; qed")
+            .expect("Can decode the previously encoded value");
+        assert_eq!(super::Tlv::from(update), recv_update);
     }
 }
