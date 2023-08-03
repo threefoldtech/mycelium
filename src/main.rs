@@ -1,13 +1,15 @@
 use crate::packet::DataPacket;
 use crate::router::StaticRoute;
 use bytes::BytesMut;
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use crypto::PublicKey;
 use etherparse::{IpHeader, PacketHeaders};
 use log::{debug, error, info, trace};
+use serde::Serialize;
 use std::{
     error::Error,
-    net::{Ipv6Addr, SocketAddr},
-    path::Path,
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+    path::{Path, PathBuf},
 };
 use tokio::io::AsyncBufReadExt;
 
@@ -27,13 +29,42 @@ mod source_table;
 
 const LINK_MTU: usize = 1420;
 
-/// The default port on the inderlay to listen on
+/// The default port on the inderlay to listen on.
 const DEFAULT_LISTEN_PORT: u16 = 9651;
+
+const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 
 #[derive(Parser)]
 struct Cli {
-    #[arg(short = 'p', long = "peers", num_args = 1..)]
+    /// Peers to connect to.
+    #[arg(long = "peers", num_args = 1..)]
     static_peers: Vec<SocketAddr>,
+
+    /// Port to listen on.
+    #[arg(short = 'p', long = "port", default_value_t = DEFAULT_LISTEN_PORT)]
+    port: u16,
+
+    /// Path to the private key file. This will be created if it does not exist. Default
+    /// [priv_key.bin].
+    #[arg(short = 'k', long = "key-file")]
+    key_file: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Inspect a public key provided in hex format, or export the local public key if no key is
+    /// given.
+    Inspect {
+        /// Output in json format.
+        #[arg(short = 'j', long = "json")]
+        json: bool,
+
+        /// The key to inspect.
+        key: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -42,10 +73,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     pretty_env_logger::init();
 
-    // Generate a new keypair for this node, panic if it fails
-    let node_secret_key = crypto::SecretKey::load_file(Path::new("keys.txt")).await?;
+    let key_path = if let Some(path) = cli.key_file {
+        path
+    } else {
+        PathBuf::from(DEFAULT_KEY_FILE)
+    };
+
+    // Load the keypair for this node, or generate a new one if the file does not exist.
+    let node_secret_key = if key_path.exists() {
+        crypto::SecretKey::load_file(&key_path).await?
+    } else {
+        let secret_key = crypto::SecretKey::new();
+        secret_key.save_file(&key_path).await?;
+        secret_key
+    };
     let node_pub_key = crypto::PublicKey::from(&node_secret_key);
     let node_keypair = (node_secret_key, node_pub_key);
+
+    if let Some(cmd) = cli.command {
+        match cmd {
+            Command::Inspect { json, key } => {
+                let key = if let Some(key) = key {
+                    PublicKey::try_from(key.as_str())?
+                } else {
+                    node_pub_key
+                };
+                inspect(key, json)?;
+
+                return Ok(());
+            }
+        }
+    }
 
     // Generate the node's IPv6 address from its public key
     let node_addr = node_pub_key.address();
@@ -89,7 +147,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Creating a new PeerManager instance
     let _peer_manager: peer_manager::PeerManager =
-        peer_manager::PeerManager::new(router.clone(), static_peers, DEFAULT_LISTEN_PORT);
+        peer_manager::PeerManager::new(router.clone(), static_peers, cli.port);
 
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
@@ -204,6 +262,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::select! {
         _ = read_handle => { /* The read task completed (this should never happen) */ }
         _ = quit_signal => { /* The user pressed ctrl+c (the program should exit here) */ }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct InspectOutput {
+    #[serde(rename = "publicKey")]
+    public_key: PublicKey,
+    address: IpAddr,
+}
+
+/// Inspect the given pubkey, or the local key if no pubkey is given
+fn inspect(pubkey: PublicKey, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let address = pubkey.address().into();
+    if json {
+        let out = InspectOutput {
+            public_key: pubkey,
+            address,
+        };
+
+        let out_string = serde_json::to_string_pretty(&out)?;
+        println!("{out_string}");
+    } else {
+        println!("Public key: {pubkey}");
+        println!("Address: {address}");
     }
 
     Ok(())

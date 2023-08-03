@@ -3,3 +3,4 @@ nodeconfig.toml
 keys.txt
 *.profraw
 *.profdata
+priv_key.bin

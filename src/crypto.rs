@@ -1,5 +1,6 @@
 //! Abstraction over diffie hellman, symmetric encryption, and hashing.
 
+use core::fmt;
 use std::{io, net::Ipv6Addr, ops::Deref, path::Path};
 
 use aes_gcm::{
@@ -9,6 +10,7 @@ use aes_gcm::{
 use blake2::{Blake2b, Digest};
 use digest::consts::U16;
 use rand_core::OsRng;
+use serde::Serialize;
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -130,10 +132,34 @@ impl SharedSecret {
     }
 }
 
+impl fmt::Display for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&faster_hex::hex_string(self.as_bytes()))
+    }
+}
+
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&faster_hex::hex_string(self.as_bytes()))
+    }
+}
+
 impl From<[u8; 32]> for PublicKey {
     /// Given a byte array, construct a `PublicKey`.
     fn from(bytes: [u8; 32]) -> PublicKey {
         PublicKey(x25519_dalek::PublicKey::from(bytes))
+    }
+}
+impl TryFrom<&str> for PublicKey {
+    type Error = faster_hex::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut output = [0u8; 32];
+        faster_hex::hex_decode(value.as_bytes(), &mut output)?;
+        Ok(PublicKey::from(output))
     }
 }
 
