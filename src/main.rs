@@ -71,7 +71,7 @@ pub enum Command {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    pretty_env_logger::init();
+    pretty_env_logger::init_timed();
 
     let key_path = if let Some(path) = cli.key_file {
         path
