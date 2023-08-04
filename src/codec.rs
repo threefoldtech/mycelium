@@ -1,18 +1,11 @@
 use crate::{
-    babel::{self, Tlv},
+    babel::{self},
     crypto::PublicKey,
-    metric::Metric,
-    packet::{
-        BabelPacketBody, BabelPacketHeader, BabelTLVType, ControlPacket, DataPacket, Packet,
-        PacketType,
-    },
+    packet::{BabelPacketBody, BabelTLVType, ControlPacket, DataPacket, Packet, PacketType},
 };
 use bytes::{Buf, BufMut, BytesMut};
-use log::{debug, warn};
-use std::{
-    io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-};
+use log::debug;
+use std::{io, net::Ipv6Addr};
 use tokio_util::codec::{Decoder, Encoder};
 
 /* ********************************PAKCET*********************************** */

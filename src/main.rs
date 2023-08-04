@@ -9,7 +9,7 @@ use serde::Serialize;
 use std::{
     error::Error,
     net::{IpAddr, Ipv6Addr, SocketAddr},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use tokio::io::AsyncBufReadExt;
 
@@ -154,7 +154,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let router = router.clone();
         let node_tun = node_tun.clone();
-        let own_secret = node_keypair.0;
 
         tokio::spawn(async move {
             loop {

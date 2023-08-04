@@ -1,7 +1,5 @@
 //! The babel [Hello TLV](https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.5).
 
-use std::io;
-
 use bytes::{Buf, BufMut};
 use log::trace;
 

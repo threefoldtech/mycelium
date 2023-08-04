@@ -169,7 +169,7 @@ impl Encoder<Tlv> for Codec {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, net::Ipv6Addr};
+    use std::net::Ipv6Addr;
 
     use futures::{SinkExt, StreamExt};
     use tokio_util::codec::Framed;
