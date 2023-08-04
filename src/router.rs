@@ -8,7 +8,7 @@ use crate::{
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
 };
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::{
     collections::HashMap,
     error::Error,
@@ -240,6 +240,8 @@ impl Router {
                     .table
                     .retain(|_, route_entry| route_entry.next_hop() != dead_peer.overlay_ip());
 
+                info!("Sending retraction for {} to peers", dead_peer.overlay_ip());
+
                 // create retraction update for each dead peer
                 let retraction_update = ControlPacket::new_update(
                     32,
@@ -352,9 +354,11 @@ impl Router {
                 // if no entry exists (based on prefix, plen AND neighbor field)
                 if !route_entry_exists {
                     if metric.is_infinite() || !inner.source_table.is_update_feasible(&update) {
+                        debug!("Received retraction for unknown route");
                     } else {
                         // this means that the update is feasible and the metric is not infinite
                         // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
+                        info!("Learned route for previously unknown prefix {}", prefix);
 
                         let source_key = SourceKey::new(prefix, plen, router_id);
                         let fd = FeasibilityDistance::new(metric, seqno);
@@ -386,6 +390,7 @@ impl Router {
                                         .fallback_routing_table
                                         .table
                                         .insert(route_key.clone(), route_entry.clone());
+                                    debug!("Added new route for {prefix} via {neighbor_ip} as fallback route");
                                     return; // quit the function, work is done here
                                 }
                             }
@@ -406,6 +411,7 @@ impl Router {
                 } else {
                     // check if the update is a retraction
                     if inner.source_table.is_update_feasible(&update) && metric.is_infinite() {
+                        debug!("Received retraction for {prefix} from {neighbor_ip}");
                         // if the update is a retraction, we remove the entry from the routing tables
                         // we also remove the corresponding source entry???
                         if inner
