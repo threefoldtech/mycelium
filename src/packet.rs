@@ -45,7 +45,6 @@ pub struct ControlPacket {
 // A BabelPacketBody describes exactly one TLV
 #[derive(Debug, PartialEq, Clone)]
 pub struct BabelPacketBody {
-    pub length: u8, // length of the tlv (only the tlv, not tlv_type and length itself)
     pub tlv: babel::Tlv,
 }
 
@@ -54,10 +53,7 @@ impl ControlPacket {
         let tlv: babel::Tlv = babel::Hello::new_unicast(dest_peer.hello_seqno(), interval).into();
         dest_peer.increment_hello_seqno();
         Self {
-            body: BabelPacketBody {
-                length: tlv.wire_size(),
-                tlv,
-            },
+            body: BabelPacketBody { tlv },
         }
     }
 
@@ -65,10 +61,7 @@ impl ControlPacket {
         // TODO: Set rx metric
         let tlv: babel::Tlv = babel::Ihu::new(Metric::from(0), interval, Some(dest_address)).into();
         Self {
-            body: BabelPacketBody {
-                length: tlv.wire_size(),
-                tlv,
-            },
+            body: BabelPacketBody { tlv },
         }
     }
 
@@ -83,10 +76,7 @@ impl ControlPacket {
         let tlv: babel::Tlv =
             babel::Update::new(plen, 0, interval, seqno, metric, prefix, router_id).into();
         Self {
-            body: BabelPacketBody {
-                length: tlv.wire_size(),
-                tlv,
-            },
+            body: BabelPacketBody { tlv },
         }
     }
 }

@@ -237,10 +237,7 @@ impl Decoder for ControlPacketCodec {
             Some(res) => res,
         };
 
-        let body = BabelPacketBody {
-            length: tlv.wire_size(),
-            tlv,
-        };
+        let body = BabelPacketBody { tlv };
 
         Ok(Some(ControlPacket { body }))
     }
