@@ -1,7 +1,7 @@
 use crate::{
     babel::{self},
     crypto::PublicKey,
-    packet::{BabelPacketBody, BabelTLVType, ControlPacket, DataPacket, Packet, PacketType},
+    packet::{BabelPacketBody, ControlPacket, DataPacket, Packet, PacketType},
 };
 use bytes::{Buf, BufMut, BytesMut};
 use log::debug;

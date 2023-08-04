@@ -2,7 +2,7 @@ use crate::{
     babel,
     crypto::{PublicKey, SecretKey, SharedSecret},
     metric::Metric,
-    packet::{BabelTLVType, ControlPacket, ControlStruct, DataPacket},
+    packet::{ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
     sequence_number::SeqNo,
