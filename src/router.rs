@@ -1,6 +1,6 @@
 use crate::{
     babel,
-    crypto::{PublicKey, SecretKey},
+    crypto::{PublicKey, SecretKey, SharedSecret},
     metric::Metric,
     packet::{BabelTLVType, ControlPacket, ControlStruct, DataPacket},
     peer::Peer,
@@ -129,19 +129,34 @@ impl Router {
         self.inner.read().unwrap().node_keypair.1
     }
 
+    /// Add a new destination [`PublicKey`] to the destination map. This will also compute and store
+    /// the [`SharedSecret`] from the `Router`'s [`SecretKey`].
     pub fn add_dest_pubkey_map_entry(&self, dest: Ipv6Addr, pubkey: PublicKey) {
-        self.inner
-            .write()
-            .unwrap()
-            .dest_pubkey_map
-            .insert(dest, pubkey);
+        let mut inner = self.inner.write().unwrap();
+        let ss = inner.node_keypair.0.shared_secret(&pubkey);
+
+        inner.dest_pubkey_map.insert(dest, (pubkey, ss));
     }
 
-    pub fn get_pubkey_from_dest(&self, dest: Ipv6Addr) -> Option<PublicKey> {
-        let inner = self.inner.read().unwrap();
+    /// Gets the cached [`SharedSecret`] for the remote.
+    pub fn get_shared_secret_from_dest(&self, dest: &Ipv6Addr) -> Option<SharedSecret> {
+        self.inner
+            .read()
+            .unwrap()
+            .dest_pubkey_map
+            .get(dest)
+            .map(|(_, ss)| ss.clone())
+    }
 
-        let map = &inner.dest_pubkey_map;
-        map.get(&dest).map(Clone::clone)
+    /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
+    pub fn get_shared_secret_by_pubkey(&self, dest: &PublicKey) -> Option<SharedSecret> {
+        for (pk, ss) in self.inner.read().unwrap().dest_pubkey_map.values() {
+            if pk == dest {
+                return Some(ss.clone());
+            }
+        }
+
+        None
     }
 
     pub fn print_selected_routes(&self) {
@@ -656,7 +671,10 @@ impl Router {
                 if data_packet.dest_ip == node_tun_addr {
                     // decrypt & send to TUN interface
                     let pubkey_sender = data_packet.pubkey;
-                    let shared_secret = self.node_secret_key().shared_secret(&pubkey_sender);
+                    let shared_secret = match self.get_shared_secret_by_pubkey(&pubkey_sender) {
+                        Some(ss) => ss,
+                        None => self.node_secret_key().shared_secret(&pubkey_sender),
+                    };
                     let decrypted_raw_data = match shared_secret.decrypt(&data_packet.raw_data) {
                         Ok(data) => data,
                         Err(_) => {
@@ -757,7 +775,7 @@ impl Router {
 }
 
 pub struct RouterInner {
-    pub router_id: PublicKey,
+    router_id: PublicKey,
     peer_interfaces: Vec<Peer>,
     router_control_tx: UnboundedSender<ControlStruct>,
     router_data_tx: UnboundedSender<DataPacket>,
@@ -770,7 +788,7 @@ pub struct RouterInner {
     static_routes: Vec<StaticRoute>,
     node_keypair: (SecretKey, PublicKey),
     // map that contains the overlay ips of peers and their respective public keys
-    dest_pubkey_map: HashMap<Ipv6Addr, PublicKey>,
+    dest_pubkey_map: HashMap<Ipv6Addr, (PublicKey, SharedSecret)>,
 }
 
 impl RouterInner {
@@ -887,7 +905,7 @@ impl RouterInner {
                     let og_sender_pubkey_option = self.dest_pubkey_map.get(&prefix);
                     // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
                     let og_sender_pubkey = match og_sender_pubkey_option {
-                        Some(pubkey) => *pubkey,
+                        Some((pubkey, _)) => *pubkey,
                         None => self.router_id,
                     };
 

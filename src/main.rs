@@ -192,22 +192,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                // create shared secret between node and dest_addr
-                let pubkey_recipient = match router.get_pubkey_from_dest(dest_addr) {
-                    Some(pubkey) => pubkey,
+                // Get shared secret from node and dest address
+                let shared_secret = match router.get_shared_secret_from_dest(&dest_addr) {
+                    Some(ss) => ss,
                     None => {
-                        eprintln!("No pubkey found for dest addr: {:?}", dest_addr);
+                        debug!("No entry found for destination address {}", dest_addr);
                         continue;
                     }
                 };
-
-                let shared_secret = own_secret.shared_secret(&pubkey_recipient);
-
-                // println!(
-                //     "encryption with pubkey of recipient: {:?}",
-                //     pubkey_recipient
-                // );
-                // println!("encryption with {:?}", shared_secret.as_bytes());
 
                 // inject own pubkey
                 let data_packet = DataPacket {

@@ -31,6 +31,7 @@ pub struct SecretKey(x25519_dalek::StaticSecret);
 ///
 /// This type intentionally does not implement or derive [`Debug`] to avoid accidentally leaking
 /// secrets in logs.
+#[derive(Clone)]
 pub struct SharedSecret([u8; 32]);
 
 /// Type alias for a 16byte output blake2b hasher.
