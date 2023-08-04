@@ -37,22 +37,18 @@ pub struct ControlStruct {
     pub src_overlay_ip: IpAddr,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct ControlPacket {
-    pub body: babel::Tlv,
-}
+pub type ControlPacket = babel::Tlv;
 
 impl ControlPacket {
     pub fn new_hello(dest_peer: &mut Peer, interval: u16) -> Self {
         let tlv: babel::Tlv = babel::Hello::new_unicast(dest_peer.hello_seqno(), interval).into();
         dest_peer.increment_hello_seqno();
-        Self { body: tlv }
+        tlv
     }
 
     pub fn new_ihu(interval: u16, dest_address: IpAddr) -> Self {
         // TODO: Set rx metric
-        let tlv: babel::Tlv = babel::Ihu::new(Metric::from(0), interval, Some(dest_address)).into();
-        Self { body: tlv }
+        babel::Ihu::new(Metric::from(0), interval, Some(dest_address)).into()
     }
 
     pub fn new_update(
@@ -63,8 +59,6 @@ impl ControlPacket {
         prefix: IpAddr,
         router_id: PublicKey,
     ) -> Self {
-        let tlv: babel::Tlv =
-            babel::Update::new(plen, 0, interval, seqno, metric, prefix, router_id).into();
-        Self { body: tlv }
+        babel::Update::new(plen, 0, interval, seqno, metric, prefix, router_id).into()
     }
 }

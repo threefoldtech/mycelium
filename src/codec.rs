@@ -232,12 +232,7 @@ impl Decoder for ControlPacketCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let tlv = match self.codec.decode(buf)? {
-            None => return Ok(None),
-            Some(res) => res,
-        };
-
-        Ok(Some(ControlPacket { body: tlv }))
+        self.codec.decode(buf)
     }
 }
 
@@ -245,6 +240,6 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
     type Error = io::Error;
 
     fn encode(&mut self, message: ControlPacket, buf: &mut BytesMut) -> Result<(), Self::Error> {
-        self.codec.encode(message.body, buf)
+        self.codec.encode(message, buf)
     }
 }
