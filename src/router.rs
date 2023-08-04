@@ -273,10 +273,10 @@ impl Router {
             //     "received control packet from {:?}",
             //     control_struct.src_overlay_ip
             // );
-            match control_struct.control_packet.body.tlv_type {
-                BabelTLVType::Hello => Self::handle_incoming_hello(&self, control_struct),
-                BabelTLVType::IHU => Self::handle_incoming_ihu(&self, control_struct),
-                BabelTLVType::Update => Self::handle_incoming_update(&self, control_struct),
+            match control_struct.control_packet.body.tlv {
+                babel::Tlv::Hello(_) => self.handle_incoming_hello(control_struct),
+                babel::Tlv::Ihu(_) => self.handle_incoming_ihu(control_struct),
+                babel::Tlv::Update(_) => self.handle_incoming_update(control_struct),
             }
         }
     }

@@ -238,11 +238,6 @@ impl Decoder for ControlPacketCodec {
         };
 
         let body = BabelPacketBody {
-            tlv_type: match tlv {
-                babel::Tlv::Hello(_) => BabelTLVType::Hello,
-                babel::Tlv::Ihu(_) => BabelTLVType::IHU,
-                babel::Tlv::Update(_) => BabelTLVType::Update,
-            },
             length: tlv.wire_size(),
             tlv,
         };
