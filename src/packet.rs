@@ -39,30 +39,20 @@ pub struct ControlStruct {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ControlPacket {
-    pub body: BabelPacketBody,
-}
-
-// A BabelPacketBody describes exactly one TLV
-#[derive(Debug, PartialEq, Clone)]
-pub struct BabelPacketBody {
-    pub tlv: babel::Tlv,
+    pub body: babel::Tlv,
 }
 
 impl ControlPacket {
     pub fn new_hello(dest_peer: &mut Peer, interval: u16) -> Self {
         let tlv: babel::Tlv = babel::Hello::new_unicast(dest_peer.hello_seqno(), interval).into();
         dest_peer.increment_hello_seqno();
-        Self {
-            body: BabelPacketBody { tlv },
-        }
+        Self { body: tlv }
     }
 
     pub fn new_ihu(interval: u16, dest_address: IpAddr) -> Self {
         // TODO: Set rx metric
         let tlv: babel::Tlv = babel::Ihu::new(Metric::from(0), interval, Some(dest_address)).into();
-        Self {
-            body: BabelPacketBody { tlv },
-        }
+        Self { body: tlv }
     }
 
     pub fn new_update(
@@ -75,8 +65,6 @@ impl ControlPacket {
     ) -> Self {
         let tlv: babel::Tlv =
             babel::Update::new(plen, 0, interval, seqno, metric, prefix, router_id).into();
-        Self {
-            body: BabelPacketBody { tlv },
-        }
+        Self { body: tlv }
     }
 }

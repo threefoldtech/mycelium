@@ -1,7 +1,7 @@
 use crate::{
     babel::{self},
     crypto::PublicKey,
-    packet::{BabelPacketBody, ControlPacket, DataPacket, Packet, PacketType},
+    packet::{ControlPacket, DataPacket, Packet, PacketType},
 };
 use bytes::{Buf, BufMut, BytesMut};
 use log::debug;
@@ -237,9 +237,7 @@ impl Decoder for ControlPacketCodec {
             Some(res) => res,
         };
 
-        let body = BabelPacketBody { tlv };
-
-        Ok(Some(ControlPacket { body }))
+        Ok(Some(ControlPacket { body: tlv }))
     }
 }
 
@@ -247,6 +245,6 @@ impl Encoder<ControlPacket> for ControlPacketCodec {
     type Error = io::Error;
 
     fn encode(&mut self, message: ControlPacket, buf: &mut BytesMut) -> Result<(), Self::Error> {
-        self.codec.encode(message.body.tlv, buf)
+        self.codec.encode(message.body, buf)
     }
 }

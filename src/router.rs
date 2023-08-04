@@ -273,7 +273,7 @@ impl Router {
             //     "received control packet from {:?}",
             //     control_struct.src_overlay_ip
             // );
-            match control_struct.control_packet.body.tlv {
+            match control_struct.control_packet.body {
                 babel::Tlv::Hello(_) => self.handle_incoming_hello(control_struct),
                 babel::Tlv::Ihu(_) => self.handle_incoming_ihu(control_struct),
                 babel::Tlv::Update(_) => self.handle_incoming_update(control_struct),
@@ -314,7 +314,7 @@ impl Router {
     }
 
     fn handle_incoming_update(&self, update_packet: ControlStruct) {
-        match update_packet.control_packet.body.tlv {
+        match update_packet.control_packet.body {
             babel::Tlv::Update(update) => {
                 let metric = update.metric();
                 let plen = update.plen();
@@ -833,7 +833,7 @@ impl RouterInner {
 
     fn send_update(&mut self, peer: &Peer, update_packet: ControlPacket) {
         // before sending an update, the source table might need to be updated
-        match update_packet.body.tlv {
+        match update_packet.body {
             babel::Tlv::Update(ref update) => {
                 let plen = update.plen();
                 let seqno = update.seqno();
