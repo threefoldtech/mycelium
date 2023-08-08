@@ -20,7 +20,7 @@ mycelium -peers 203.0.113.5:9651
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
 
-The node uses a `x25519` keypair from which its identity is derived. The private key of this keypair is saved in a local file. You can
+The node uses a `x25519` keypair from which its identity is derived. The private key of this keypair is saved in a local file (32 bytes in binary format). You can
 specify the path to this file with the `-k` flag. By default, the file is saved in the current working directory as `priv_key.bin`.
 
 ## Inspecting node keys
