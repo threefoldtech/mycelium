@@ -1,21 +1,21 @@
 # Mycelium
 
 This POC aims to create an IPv6 overlay network completely writing in Rust. The overlay network uses some of the core principles
-of the Babel routing protocol (https://www.irif.fr/~jch/software/babel/). Each node that joins the overlay network will receive
-an overlay network IP in the 200::/7 range. 
+of the Babel routing protocol (<https://www.irif.fr/~jch/software/babel/>). Each node that joins the overlay network will receive
+an overlay network IP in the 200::/7 range.
 
 ## Running
 
 > Currently, only Linux is supported.
 
 First, get an useable binary, either by downloading [an artifact from a release](https://github.com/threefoldtech/mycelium/releases),
-or by [checking out and building the code yourself](#Developing).
+or by [checking out and building the code yourself](#developing).
 
 Once you have an useable binary, simply start it. If you want to connect to other nodes, you can specify their listening address as
 part of the command
 
 ```sh
-mycelium -peers 203.0.113.5:9651
+mycelium --peers 203.0.113.5:9651
 ```
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
