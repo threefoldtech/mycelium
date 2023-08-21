@@ -11,7 +11,10 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     path::PathBuf,
 };
-use tokio::io::AsyncBufReadExt;
+use tokio::{
+    io::AsyncBufReadExt,
+    signal::{self, unix::SignalKind},
+};
 
 mod babel;
 mod codec;
@@ -215,44 +218,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
-    let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut line = String::new();
+    // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
+    let mut sigusr1 =
+        signal::unix::signal(SignalKind::user_defined1()).expect("Can install SIGUSR1 handler");
+    let mut sigint =
+        signal::unix::signal(SignalKind::interrupt()).expect("Can install SIGINT handler");
+    let mut sigterm =
+        signal::unix::signal(SignalKind::terminate()).expect("Can install SIGTERM handler");
 
-    let read_handle = tokio::spawn(async move {
-        loop {
-            line.clear();
-            match reader.read_line(&mut line).await {
-                Ok(0) => return, // EOF, quit
-                Ok(_) => {
-                    // Remove trailing newline
-                    line.pop();
-                    println!("----------- Current selected routes -----------{}\n", line);
-                    router.print_selected_routes();
+    // print info on SIGUSR1
+    tokio::spawn(async move {
+        while let Some(()) = sigusr1.recv().await {
+            println!("----------- Current selected routes -----------\n");
+            router.print_selected_routes();
 
-                    println!("\n----------- Current peers: -----------");
-                    for p in router.peer_interfaces() {
-                        println!(
-                            "Peer: {:?}, with link cost: {}",
-                            p.overlay_ip(),
-                            p.link_cost()
-                        );
-                    }
-
-                    println!("\n\n");
-                }
-                Err(e) => {
-                    eprintln!("Error reading line: {}", e);
-                    return;
-                }
+            println!("\n----------- Current peers: -----------");
+            for p in router.peer_interfaces() {
+                println!(
+                    "Peer: {:?}, with link cost: {}",
+                    p.overlay_ip(),
+                    p.link_cost()
+                );
             }
+
+            println!("\n\n");
         }
     });
 
-    let quit_signal = tokio::signal::ctrl_c();
-
     tokio::select! {
-        _ = read_handle => { /* The read task completed (this should never happen) */ }
-        _ = quit_signal => { /* The user pressed ctrl+c (the program should exit here) */ }
+        _ = sigint.recv() => { }
+        _ = sigterm.recv() => { }
     }
 
     Ok(())
