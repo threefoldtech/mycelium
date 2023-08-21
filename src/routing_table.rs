@@ -16,7 +16,6 @@ pub struct RouteEntry {
     neighbor: Peer,
     metric: Metric, // If metric is 0xFFFF, the route has recently been retracted
     seqno: SeqNo,
-    next_hop: IpAddr, // This is the Peer's address
     selected: bool,
 }
 
@@ -51,7 +50,6 @@ impl RouteEntry {
         neighbor: Peer,
         metric: Metric,
         seqno: SeqNo,
-        next_hop: IpAddr,
         selected: bool,
     ) -> Self {
         Self {
@@ -59,7 +57,6 @@ impl RouteEntry {
             neighbor,
             metric,
             seqno,
-            next_hop,
             selected,
         }
     }
@@ -74,8 +71,8 @@ impl RouteEntry {
     }
 
     /// Return the address of the next hop [`Peer`] associated with this `RouteEntry`.
-    pub const fn next_hop(&self) -> IpAddr {
-        self.next_hop
+    pub fn next_hop(&self) -> IpAddr {
+        self.neighbor.overlay_ip()
     }
 
     /// Indicates this `RouteEntry` is the selected route for the destination.

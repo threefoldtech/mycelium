@@ -372,7 +372,6 @@ impl Router {
                                 .expect("peer by ip is known to add route entry"),
                             metric,
                             seqno,
-                            neighbor_ip,
                             true,
                         );
 
