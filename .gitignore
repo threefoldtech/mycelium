@@ -1,6 +1,9 @@
 /target
 nodeconfig.toml
 keys.txt
+priv_key.bin
+
+# Profile output
 *.profraw
 *.profdata
-priv_key.bin
+profile.json
