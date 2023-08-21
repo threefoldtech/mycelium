@@ -47,16 +47,6 @@ impl SourceKey {
         }
     }
 
-    /// Returns the prefix for this `SourceKey`.
-    pub const fn prefix(&self) -> IpAddr {
-        self.prefix
-    }
-
-    /// Returns the prefix length for this `SourceKey`.
-    pub const fn plen(&self) -> u8 {
-        self.plen
-    }
-
     /// Returns the router id for this `SourceKey`.
     pub const fn router_id(&self) -> PublicKey {
         self.router_id

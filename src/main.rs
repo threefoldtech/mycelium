@@ -11,10 +11,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     path::PathBuf,
 };
-use tokio::{
-    io::AsyncBufReadExt,
-    signal::{self, unix::SignalKind},
-};
+use tokio::signal::{self, unix::SignalKind};
 
 mod babel;
 mod codec;

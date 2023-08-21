@@ -2,9 +2,6 @@ use std::net::{IpAddr, Ipv6Addr};
 
 use crate::{babel, crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo};
 
-pub const BABEL_MAGIC: u8 = 42;
-pub const BABEL_VERSION: u8 = 2;
-
 /* ********************************PAKCET*********************************** */
 #[derive(Debug, Clone)]
 pub enum Packet {

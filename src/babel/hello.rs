@@ -32,23 +32,6 @@ impl Hello {
         }
     }
 
-    /// Returns the [`SeqNo`] in this `Hello`.
-    pub fn seqno(&self) -> SeqNo {
-        self.seqno
-    }
-
-    /// Returns the interval in this `Hello`. This value is expressed as centiseconds. If this is
-    /// non-zero, a new scheduled `Hello` will be sent after this inverval, with the same flag
-    /// settings.
-    pub fn interval(&self) -> u16 {
-        self.interval
-    }
-
-    /// Indicates if this is a unicast `Hello`.
-    pub fn is_unicast(&self) -> bool {
-        self.flags & HELLO_FLAG_UNICAST != 0
-    }
-
     /// Calculates the size on the wire of this `Hello`.
     pub fn wire_size(&self) -> u8 {
         HELLO_WIRE_SIZE

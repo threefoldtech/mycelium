@@ -35,21 +35,6 @@ impl Ihu {
         }
     }
 
-    /// The upper boud in centiseconds after which the sending node will send a new `Ihu`.
-    pub fn interval(&self) -> u16 {
-        self.interval
-    }
-
-    /// The cost of the link according to the sending `Peer`.
-    pub fn rx_cost(&self) -> Metric {
-        self.rx_cost
-    }
-
-    /// The address in this `Ihu`. This is the address of the receiving `Peer`.
-    pub fn address(&self) -> Option<IpAddr> {
-        self.address
-    }
-
     /// Calculates the size on the wire of this `Ihu`.
     pub fn wire_size(&self) -> u8 {
         IHU_BASE_WIRE_SIZE

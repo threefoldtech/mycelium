@@ -42,12 +42,6 @@ impl RouteKey {
     pub const fn plen(&self) -> u8 {
         self.plen
     }
-
-    #[inline]
-    /// Returns the neighbo associated with this `RouteKey`.
-    pub const fn neighbor(&self) -> IpAddr {
-        self.neighbor
-    }
 }
 
 impl RouteEntry {
@@ -74,24 +68,9 @@ impl RouteEntry {
         self.source
     }
 
-    /// Returns the [`neighbor`](Peer) associated with this `RouteEntry`.
-    pub fn neighbor(&self) -> Peer {
-        self.neighbor.clone()
-    }
-
     /// Returns the metric associated with this `RouteEntry`.
     pub const fn metric(&self) -> Metric {
         self.metric
-    }
-
-    /// Returns if the `RouteEntry` has recently been retracted.
-    pub const fn is_retracted(&self) -> bool {
-        self.metric.is_infinite()
-    }
-
-    /// Return the sequence number associated with this `RouteEntry`
-    pub const fn seqno(&self) -> SeqNo {
-        self.seqno
     }
 
     /// Return the address of the next hop [`Peer`] associated with this `RouteEntry`.

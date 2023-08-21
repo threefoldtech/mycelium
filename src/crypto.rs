@@ -84,7 +84,7 @@ impl PublicKey {
     }
 
     /// Convert this `PublicKey` to a byte array.
-    pub fn to_bytes(&self) -> [u8; 32] {
+    pub fn to_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
@@ -129,7 +129,7 @@ impl SharedSecret {
         let (data, nonce) = data.split_at(data.len() - 12);
 
         let cipher = Aes256Gcm::new(&key);
-        Ok(cipher.decrypt(nonce.into(), data).map_err(|_| ())?)
+        cipher.decrypt(nonce.into(), data).map_err(|_| ())
     }
 }
 
