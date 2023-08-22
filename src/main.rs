@@ -26,6 +26,7 @@ mod router;
 mod routing_table;
 mod sequence_number;
 mod source_table;
+mod tun;
 
 const LINK_MTU: usize = 1420;
 

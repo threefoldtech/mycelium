@@ -109,9 +109,11 @@ impl PartialEq for Peer {
 
 #[derive(Debug)]
 struct PeerInner {
+    /// Used to identify peer based on its connection params
     stream_ip: IpAddr,
     to_peer_data: mpsc::UnboundedSender<DataPacket>,
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
+    // TODO: not needed
     overlay_ip: IpAddr,
     hello_seqno: SeqNo,
     time_last_received_hello: tokio::time::Instant,
