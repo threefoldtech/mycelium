@@ -9,6 +9,7 @@ use bytes::{Buf, BufMut};
 use etherparse::{IpHeader, ReadError};
 use tokio_util::codec::{Decoder, Encoder};
 
+#[cfg(target_os = "linux")]
 pub use linux::{new, RxHalf, TxHalf};
 
 /// An IpPacket represents a layer 3 packet.
