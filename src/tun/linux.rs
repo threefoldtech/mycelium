@@ -1,30 +1,39 @@
 //! Linux specific tun interface setup.
 
 use std::{
-    io,
+    io, mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     pin::Pin,
+    sync::Arc,
+    task::Poll,
 };
 
-use futures::{Sink, Stream, TryStreamExt};
+use futures::{Future, Sink, Stream, TryStreamExt};
 use rtnetlink::Handle;
-use tokio::io::{ReadHalf, WriteHalf};
 use tokio_tun::{Tun, TunBuilder};
-use tokio_util::codec::{FramedRead, FramedWrite};
 
-use super::{IpPacket, IpPacketCodec};
+use super::IpPacket;
 
 // TODO
 const LINK_MTU: i32 = 1420;
 
 /// A sender half of a tun interface.
 pub struct TxHalf {
-    inner: FramedWrite<WriteHalf<Tun>, IpPacketCodec>,
+    inner: Arc<Tun>,
+    state: TxState,
 }
 
 /// A receiver half of a tun interface.
 pub struct RxHalf {
-    inner: FramedRead<ReadHalf<Tun>, IpPacketCodec>,
+    inner: Arc<Tun>,
+    buffer: Vec<u8>,
+    mtu: usize,
+}
+
+enum TxState {
+    Idle,
+    Closed,
+    Sending(IpPacket),
 }
 
 /// Create a new tun interface and set required routes
@@ -39,7 +48,7 @@ pub async fn new(
     route_address: IpAddr,
     route_prefix_len: u8,
 ) -> Result<(RxHalf, TxHalf), Box<dyn std::error::Error>> {
-    let tun = create_tun_interface(name)?;
+    let tun = Arc::new(create_tun_interface(name)?);
 
     let (conn, handle, _) = rtnetlink::new_connection()?;
     let netlink_task_handle = tokio::spawn(conn);
@@ -55,14 +64,15 @@ pub async fn new(
     // We are done with our netlink connection, abort the task so we can properly clean up.
     netlink_task_handle.abort();
 
-    let (rxhalf, txhalf) = tokio::io::split(tun);
-
     Ok((
         RxHalf {
-            inner: FramedRead::new(rxhalf, IpPacketCodec::new()),
+            inner: tun.clone(),
+            buffer: vec![0; LINK_MTU as usize],
+            mtu: LINK_MTU as usize,
         },
         TxHalf {
-            inner: FramedWrite::new(txhalf, IpPacketCodec::new()),
+            inner: tun,
+            state: TxState::Idle,
         },
     ))
 }
@@ -154,28 +164,76 @@ impl Sink<IpPacket> for TxHalf {
     type Error = io::Error;
 
     fn poll_ready(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.inner).poll_ready(cx)
+        let tx_half = self.get_mut();
+        match tx_half.state {
+            // If we are idle, just say we are ready.
+            TxState::Idle => Poll::Ready(Ok(())),
+            TxState::Closed => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "TxHalf is closed",
+            ))),
+            TxState::Sending(ref item) => {
+                let res = std::pin::pin!(tx_half.inner.send(&item.0))
+                    .poll(cx)
+                    .map_ok(|_| ());
+                if res.is_ready() {
+                    tx_half.state = TxState::Idle;
+                }
+                res
+            }
+        }
     }
 
     fn start_send(mut self: std::pin::Pin<&mut Self>, item: IpPacket) -> Result<(), Self::Error> {
-        Pin::new(&mut self.inner).start_send(item)
+        if matches!(self.state, TxState::Closed) {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "TxHalf is closed",
+            ));
+        }
+        // Per the contract of the Sink trait, this can only be called at the start or after
+        // Sink::poll_ready returned Poll::ready(()), so state here should always be idle. If this
+        // is violated, items will be lost.
+        self.state = TxState::Sending(item);
+        Ok(())
     }
 
     fn poll_flush(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.inner).poll_flush(cx)
+        // Since we buffer only up to 1 item, we can delegate this to poll_ready.
+        self.poll_ready(cx)
     }
 
     fn poll_close(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.inner).poll_close(cx)
+        // Since poll_ready consumes the pin we can't delegate this, as a state change in tx state
+        // happens after the delegated call. So instead perform the same logic here and properly
+        // update the state.
+        let tx_half = self.get_mut();
+        match tx_half.state {
+            // If we are idle, just say we are ready.
+            TxState::Idle => Poll::Ready(Ok(())),
+            TxState::Closed => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "TxHalf is closed",
+            ))),
+            TxState::Sending(ref item) => {
+                let res = std::pin::pin!(tx_half.inner.send(&item.0))
+                    .poll(cx)
+                    .map_ok(|_| ());
+                if res.is_ready() {
+                    tx_half.state = TxState::Closed;
+                }
+                res
+            }
+        }
     }
 }
 
@@ -183,9 +241,28 @@ impl Stream for RxHalf {
     type Item = Result<IpPacket, io::Error>;
 
     fn poll_next(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        Pin::new(&mut self.inner).poll_next(cx)
+        let RxHalf {
+            inner,
+            ref mut buffer,
+            mtu,
+        } = self.get_mut();
+        // Assign poll result to a temporary variable to appease the borrow checker. Failure to do
+        // so will result in a compilation error because there are 2 borrows on buffer.
+        let tmp = std::pin::pin!(inner.recv(buffer)).poll(cx);
+        match tmp {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(Ok(0)) => Poll::Ready(None),
+            Poll::Ready(Ok(n)) => {
+                buffer.truncate(n);
+                // Create new buffer.
+                let mut new_buffer = vec![0; *mtu];
+                mem::swap(buffer, &mut new_buffer);
+                Poll::Ready(Some(Ok(IpPacket(new_buffer))))
+            }
+        }
     }
 }
