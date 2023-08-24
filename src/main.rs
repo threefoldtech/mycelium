@@ -126,9 +126,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let static_peers = cli.static_peers;
 
+    let (tun_tx, mut tun_rx) = tokio::sync::mpsc::unbounded_channel();
+
     // Creating a new Router instance
     let router = match router::Router::new(
-        node_tun.clone(),
+        tun_tx,
         node_addr,
         vec![StaticRoute::new(node_addr.into())],
         node_keypair.clone(),
@@ -153,6 +155,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
     {
+        let router_data_tx = router.router_data_tx();
         let router = router.clone();
         let node_tun = node_tun.clone();
 
@@ -209,8 +212,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     raw_data: shared_secret.encrypt(&buf),
                 };
 
-                if router.router_data_tx().send(data_packet).is_err() {
+                if router_data_tx.send(data_packet).is_err() {
                     error!("Failed to send data_packet, router is gone");
+                }
+            }
+        });
+    }
+
+    {
+        let node_tun = node_tun.clone();
+        tokio::spawn(async move {
+            loop {
+                while let Some(packet) = tun_rx.recv().await {
+                    if let Err(e) = node_tun.send(&packet).await {
+                        error!("Failed to send packet on local TUN interface: {e}");
+                    }
                 }
             }
         });

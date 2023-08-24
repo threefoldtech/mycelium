@@ -17,7 +17,6 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio_tun::Tun;
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -42,7 +41,7 @@ pub struct Router {
 
 impl Router {
     pub fn new(
-        node_tun: Arc<Tun>,
+        node_tun: UnboundedSender<Vec<u8>>,
         node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
         node_keypair: (SecretKey, PublicKey),
@@ -92,7 +91,7 @@ impl Router {
         self.inner.read().unwrap().node_tun_addr
     }
 
-    pub fn node_tun(&self) -> Arc<Tun> {
+    pub fn node_tun(&self) -> UnboundedSender<Vec<u8>> {
         self.inner.read().unwrap().node_tun.clone()
     }
 
@@ -687,7 +686,7 @@ impl Router {
                             continue;
                         }
                     };
-                    match node_tun.send(&decrypted_raw_data).await {
+                    match node_tun.send(decrypted_raw_data) {
                         Ok(_) => {}
                         Err(e) => {
                             error!("Error sending data packet to TUN interface: {:?}", e)
@@ -784,7 +783,7 @@ pub struct RouterInner {
     peer_interfaces: Vec<Peer>,
     router_control_tx: UnboundedSender<ControlStruct>,
     router_data_tx: UnboundedSender<DataPacket>,
-    node_tun: Arc<Tun>,
+    node_tun: UnboundedSender<Vec<u8>>,
     node_tun_addr: Ipv6Addr,
     selected_routing_table: RoutingTable,
     fallback_routing_table: RoutingTable,
@@ -798,7 +797,7 @@ pub struct RouterInner {
 
 impl RouterInner {
     pub fn new(
-        node_tun: Arc<Tun>,
+        node_tun: UnboundedSender<Vec<u8>>,
         node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
         router_data_tx: UnboundedSender<DataPacket>,
