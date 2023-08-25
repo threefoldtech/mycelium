@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::spawn(async move {
             rxhalf
                 .filter_map(|input| futures::future::ready(input.ok()))
-                .for_each_concurrent(5, |packet| {
+                .for_each(|packet| {
                     trace!("Received packet from tun");
                     // Clone router and router_data_tx. Note we do this before entering the async
                     // block, so this is synchronous code where it is possible, as the entire async
@@ -172,54 +172,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let router_data_tx = router.router_data_tx();
 
                     async move {
-                        // Ignore a potential error here
-                        let _ = tokio::task::spawn_blocking(move || {
-                            let headers = match etherparse::IpHeader::from_slice(&packet) {
-                                Ok(header) => header,
-                                Err(e) => {
-                                    warn!("Could not parse IP header from tun packet: {e}");
-                                    return ();
-                                }
-                            };
-                            let dest_addr = if let IpHeader::Version6(header, _) = headers.0 {
-                                Ipv6Addr::from(header.destination)
-                            } else {
-                                debug!("Drop non ipv6 packet");
-                                return;
-                            };
+                        let headers = match etherparse::IpHeader::from_slice(&packet) {
+                            Ok(header) => header,
+                            Err(e) => {
+                                warn!("Could not parse IP header from tun packet: {e}");
+                                return ();
+                            }
+                        };
+                        let dest_addr = if let IpHeader::Version6(header, _) = headers.0 {
+                            Ipv6Addr::from(header.destination)
+                        } else {
+                            debug!("Drop non ipv6 packet");
+                            return;
+                        };
 
-                            trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
+                        trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
 
-                            // Check if destination address is in 200::/7 range
-                            let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
-                            if !(0x02..=0x3F).contains(&first_byte) {
-                                debug!("Dropping packet which is not destined for 200::/7");
+                        // Check if destination address is in 200::/7 range
+                        let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
+                        if !(0x02..=0x3F).contains(&first_byte) {
+                            debug!("Dropping packet which is not destined for 200::/7");
+                            return;
+                        }
+
+                        // Get shared secret from node and dest address
+                        let shared_secret = match router.get_shared_secret_from_dest(&dest_addr) {
+                            Some(ss) => ss,
+                            None => {
+                                debug!("No entry found for destination address {}", dest_addr);
                                 return;
                             }
+                        };
 
-                            // Get shared secret from node and dest address
-                            let shared_secret = match router.get_shared_secret_from_dest(&dest_addr)
-                            {
-                                Some(ss) => ss,
-                                None => {
-                                    debug!("No entry found for destination address {}", dest_addr);
-                                    return;
-                                }
-                            };
+                        // inject own pubkey
+                        let data_packet = DataPacket {
+                            dest_ip: dest_addr,
+                            pubkey: router.node_public_key(),
+                            // encrypt data with shared secret
+                            raw_data: shared_secret.encrypt(&packet),
+                        };
 
-                            // inject own pubkey
-                            let data_packet = DataPacket {
-                                dest_ip: dest_addr,
-                                pubkey: router.node_public_key(),
-                                // encrypt data with shared secret
-                                raw_data: shared_secret.encrypt(&packet),
-                            };
-
-                            if router_data_tx.send(data_packet).is_err() {
-                                error!("Failed to send data_packet, router is gone");
-                            }
-                        })
-                        .await;
+                        if router_data_tx.send(data_packet).is_err() {
+                            error!("Failed to send data_packet, router is gone");
+                        }
                     }
                 })
                 .await;
