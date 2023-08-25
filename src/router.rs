@@ -37,6 +37,12 @@ impl StaticRoute {
 #[derive(Clone)]
 pub struct Router {
     inner: Arc<RwLock<RouterInner>>,
+    router_id: PublicKey,
+    node_keypair: (SecretKey, PublicKey),
+    router_data_tx: UnboundedSender<DataPacket>,
+    router_control_tx: UnboundedSender<ControlStruct>,
+    node_tun: UnboundedSender<Vec<u8>>,
+    node_tun_addr: Ipv6Addr,
 }
 
 impl Router {
@@ -52,14 +58,13 @@ impl Router {
         let (router_data_tx, router_data_rx) = mpsc::unbounded_channel::<DataPacket>();
 
         let router = Router {
-            inner: Arc::new(RwLock::new(RouterInner::new(
-                node_tun,
-                node_tun_addr,
-                static_routes,
-                router_data_tx,
-                router_control_tx,
-                node_keypair,
-            )?)),
+            inner: Arc::new(RwLock::new(RouterInner::new(static_routes)?)),
+            router_id: node_keypair.1,
+            node_keypair,
+            router_data_tx,
+            router_control_tx,
+            node_tun,
+            node_tun_addr,
         };
 
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
@@ -74,25 +79,28 @@ impl Router {
         tokio::spawn(Router::propagate_static_route(router.clone()));
         tokio::spawn(Router::propagate_selected_routes(router.clone()));
 
-        tokio::spawn(Router::check_for_dead_peers(router.clone()));
+        tokio::spawn(Router::check_for_dead_peers(
+            router.clone(),
+            router.node_keypair.1,
+        ));
 
         Ok(router)
     }
 
     pub fn router_control_tx(&self) -> UnboundedSender<ControlStruct> {
-        self.inner.read().unwrap().router_control_tx.clone()
+        self.router_control_tx.clone()
     }
 
     pub fn router_data_tx(&self) -> UnboundedSender<DataPacket> {
-        self.inner.read().unwrap().router_data_tx.clone()
+        self.router_data_tx.clone()
     }
 
     pub fn node_tun_addr(&self) -> Ipv6Addr {
-        self.inner.read().unwrap().node_tun_addr
+        self.node_tun_addr
     }
 
     pub fn node_tun(&self) -> UnboundedSender<Vec<u8>> {
-        self.inner.read().unwrap().node_tun.clone()
+        self.node_tun.clone()
     }
 
     pub fn peer_interfaces(&self) -> Vec<Peer> {
@@ -121,20 +129,23 @@ impl Router {
     }
 
     pub fn node_secret_key(&self) -> SecretKey {
-        self.inner.read().unwrap().node_keypair.0.clone()
+        self.node_keypair.0.clone()
     }
 
     pub fn node_public_key(&self) -> PublicKey {
-        self.inner.read().unwrap().node_keypair.1
+        self.node_keypair.1
     }
 
     /// Add a new destination [`PublicKey`] to the destination map. This will also compute and store
     /// the [`SharedSecret`] from the `Router`'s [`SecretKey`].
     pub fn add_dest_pubkey_map_entry(&self, dest: Ipv6Addr, pubkey: PublicKey) {
-        let mut inner = self.inner.write().unwrap();
-        let ss = inner.node_keypair.0.shared_secret(&pubkey);
+        let ss = self.node_keypair.0.shared_secret(&pubkey);
 
-        inner.dest_pubkey_map.insert(dest, (pubkey, ss));
+        self.inner
+            .write()
+            .unwrap()
+            .dest_pubkey_map
+            .insert(dest, (pubkey, ss));
     }
 
     /// Gets the cached [`SharedSecret`] for the remote.
@@ -201,7 +212,7 @@ impl Router {
     //     }
     // }
 
-    async fn check_for_dead_peers(self) {
+    async fn check_for_dead_peers(self, router_id: PublicKey) {
         let ihu_threshold = tokio::time::Duration::from_secs(8);
 
         loop {
@@ -248,7 +259,7 @@ impl Router {
                     inner.router_seqno,
                     Metric::infinite(),
                     dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP
-                    inner.router_id,
+                    router_id,
                 );
                 retraction_updates.push(retraction_update);
             }
@@ -749,7 +760,7 @@ impl Router {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             let mut inner = self.inner.write().unwrap();
-            inner.propagate_static_route();
+            inner.propagate_static_route(self.router_id);
         }
     }
 
@@ -758,7 +769,7 @@ impl Router {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             let mut inner = self.inner.write().unwrap();
-            inner.propagate_selected_routes();
+            inner.propagate_selected_routes(self.router_id);
         }
     }
 
@@ -779,44 +790,25 @@ impl Router {
 }
 
 pub struct RouterInner {
-    router_id: PublicKey,
     peer_interfaces: Vec<Peer>,
-    router_control_tx: UnboundedSender<ControlStruct>,
-    router_data_tx: UnboundedSender<DataPacket>,
-    node_tun: UnboundedSender<Vec<u8>>,
-    node_tun_addr: Ipv6Addr,
     selected_routing_table: RoutingTable,
     fallback_routing_table: RoutingTable,
     source_table: SourceTable,
     router_seqno: SeqNo,
     static_routes: Vec<StaticRoute>,
-    node_keypair: (SecretKey, PublicKey),
     // map that contains the overlay ips of peers and their respective public keys
     dest_pubkey_map: HashMap<Ipv6Addr, (PublicKey, SharedSecret)>,
 }
 
 impl RouterInner {
-    pub fn new(
-        node_tun: UnboundedSender<Vec<u8>>,
-        node_tun_addr: Ipv6Addr,
-        static_routes: Vec<StaticRoute>,
-        router_data_tx: UnboundedSender<DataPacket>,
-        router_control_tx: UnboundedSender<ControlStruct>,
-        node_keypair: (SecretKey, PublicKey),
-    ) -> Result<Self, Box<dyn Error>> {
+    pub fn new(static_routes: Vec<StaticRoute>) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
-            router_id: node_keypair.1,
             peer_interfaces: Vec::new(),
-            router_control_tx,
-            router_data_tx,
-            node_tun,
             selected_routing_table: RoutingTable::new(),
             fallback_routing_table: RoutingTable::new(),
             source_table: SourceTable::new(),
             router_seqno: SeqNo::default(),
             static_routes,
-            node_keypair,
-            node_tun_addr,
             dest_pubkey_map: HashMap::new(),
         };
 
@@ -878,7 +870,7 @@ impl RouterInner {
         }
     }
 
-    fn propagate_static_route(&mut self) {
+    fn propagate_static_route(&mut self, router_id: PublicKey) {
         let mut updates = vec![];
         for sr in self.static_routes.iter() {
             for peer in self.peer_interfaces.iter() {
@@ -888,7 +880,7 @@ impl RouterInner {
                     self.router_seqno, // updates receive the seqno of the router
                     peer.link_cost().into(), // direct connection to other peer, so the only cost is the cost towards the peer
                     sr.prefix, // the prefix of a static route corresponds to the TUN addr of the node
-                    self.router_id,
+                    router_id,
                 );
                 updates.push((peer.clone(), update));
             }
@@ -898,7 +890,7 @@ impl RouterInner {
         }
     }
 
-    fn propagate_selected_routes(&mut self) {
+    fn propagate_selected_routes(&mut self, router_id: PublicKey) {
         let mut updates = vec![];
         for sr in self.selected_routing_table.table.iter() {
             for peer in self.peer_interfaces.iter() {
@@ -910,7 +902,7 @@ impl RouterInner {
                     // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
                     let og_sender_pubkey = match og_sender_pubkey_option {
                         Some((pubkey, _)) => *pubkey,
-                        None => self.router_id,
+                        None => router_id,
                     };
 
                     let update = ControlPacket::new_update(
