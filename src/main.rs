@@ -1,10 +1,11 @@
-use crate::packet::DataPacket;
 use crate::router::StaticRoute;
+use crate::{packet::DataPacket, tun::IpPacket};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
 use etherparse::{IpHeader, PacketHeaders};
-use log::{debug, error, info, trace};
+use futures::{SinkExt, StreamExt};
+use log::{debug, error, info, trace, warn};
 use serde::Serialize;
 use std::{
     error::Error,
@@ -34,6 +35,13 @@ const LINK_MTU: usize = 1420;
 const DEFAULT_LISTEN_PORT: u16 = 9651;
 
 const DEFAULT_KEY_FILE: &str = "priv_key.bin";
+
+/// Default name of tun interface
+const TUN_NAME: &str = "tun0";
+/// Global route of overlay network
+const TUN_ROUTE_DEST: Ipv6Addr = Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0);
+/// Global route prefix of overlay network
+const TUN_ROUTE_PREFIX: u8 = 7;
 
 #[derive(Parser)]
 struct Cli {
@@ -70,7 +78,7 @@ pub enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    console_subscriber::init();
+    //console_subscriber::init();
     let cli = Cli::parse();
 
     pretty_env_logger::init_timed();
@@ -111,17 +119,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_addr = node_pub_key.address();
     info!("Node address: {}", node_addr);
 
+    let (rxhalf, mut txhalf) = tun::new(
+        TUN_NAME,
+        node_addr.into(),
+        64,
+        TUN_ROUTE_DEST.into(),
+        TUN_ROUTE_PREFIX,
+    )
+    .await?;
+
     // Create TUN interface and add static route
-    let node_tun = match node_setup::setup_node(node_addr).await {
-        Ok(tun) => {
-            info!("Node setup complete");
-            tun
-        }
-        Err(e) => {
-            error!("Error setting up node: {e}");
-            panic!("Eror setting up node: {e}")
-        }
-    };
+    // let node_tun = match node_setup::setup_node(node_addr).await {
+    //     Ok(tun) => {
+    //         info!("Node setup complete");
+    //         tun
+    //     }
+    //     Err(e) => {
+    //         error!("Error setting up node: {e}");
+    //         panic!("Eror setting up node: {e}")
+    //     }
+    // };
 
     debug!("Node public key: {:?}", node_keypair.1);
 
@@ -156,78 +173,88 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Read packets from the TUN interface (originating from the kernel) and send them to the router
     // Note: we will never receive control packets from the kernel, only data packets
     {
-        let router_data_tx = router.router_data_tx();
         let router = router.clone();
-        let node_tun = node_tun.clone();
 
         tokio::spawn(async move {
-            loop {
-                let mut buf = BytesMut::zeroed(LINK_MTU);
+            rxhalf
+                .filter_map(|input| futures::future::ready(input.ok()))
+                .for_each_concurrent(5, |packet| {
+                    trace!("Received packet from tun");
+                    // Clone router and router_data_tx. Note we do this before entering the async
+                    // block, so this is synchronous code where it is possible, as the entire async
+                    // block is the actual return type.
+                    let router = router.clone();
+                    let router_data_tx = router.router_data_tx();
 
-                match node_tun.recv(&mut buf).await {
-                    Ok(n) => {
-                        buf.truncate(n);
+                    async move {
+                        // Ignore a potential error here
+                        let _ = tokio::task::spawn_blocking(move || {
+                            let headers = match etherparse::IpHeader::from_slice(&packet) {
+                                Ok(header) => header,
+                                Err(e) => {
+                                    warn!("Could not parse IP header from tun packet: {e}");
+                                    return ();
+                                }
+                            };
+                            let dest_addr = if let IpHeader::Version6(header, _) = headers.0 {
+                                Ipv6Addr::from(header.destination)
+                            } else {
+                                debug!("Drop non ipv6 packet");
+                                return ();
+                            };
+
+                            trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
+
+                            // Check if destination address is in 200::/7 range
+                            let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
+                            if !(0x02..=0x3F).contains(&first_byte) {
+                                debug!("Dropping packet which is not destined for 200::/7");
+                                return ();
+                            }
+
+                            // Get shared secret from node and dest address
+                            let shared_secret = match router.get_shared_secret_from_dest(&dest_addr)
+                            {
+                                Some(ss) => ss,
+                                None => {
+                                    debug!("No entry found for destination address {}", dest_addr);
+                                    return ();
+                                }
+                            };
+
+                            // inject own pubkey
+                            let data_packet = DataPacket {
+                                dest_ip: dest_addr,
+                                pubkey: router.node_public_key(),
+                                // encrypt data with shared secret
+                                raw_data: shared_secret.encrypt(&packet),
+                            };
+
+                            if router_data_tx.send(data_packet).is_err() {
+                                error!("Failed to send data_packet, router is gone");
+                            }
+                        })
+                        .await;
                     }
-                    Err(e) => {
-                        error!("Error reading from TUN: {e}");
-                        continue;
-                    }
-                }
-
-                let packet = match PacketHeaders::from_ip_slice(&buf) {
-                    Ok(packet) => packet,
-                    Err(e) => {
-                        eprintln!("Error from_ip_slice: {e}");
-                        continue;
-                    }
-                };
-
-                let dest_addr = if let Some(IpHeader::Version6(header, _)) = packet.ip {
-                    Ipv6Addr::from(header.destination)
-                } else {
-                    continue;
-                };
-
-                trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
-
-                // Check if destination address is in 200::/7 range
-                let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
-                if !(0x02..=0x3F).contains(&first_byte) {
-                    continue;
-                }
-
-                // Get shared secret from node and dest address
-                let shared_secret = match router.get_shared_secret_from_dest(&dest_addr) {
-                    Some(ss) => ss,
-                    None => {
-                        debug!("No entry found for destination address {}", dest_addr);
-                        continue;
-                    }
-                };
-
-                // inject own pubkey
-                let data_packet = DataPacket {
-                    dest_ip: dest_addr,
-                    pubkey: router.node_public_key(),
-                    // encrypt data with shared secret
-                    raw_data: shared_secret.encrypt(&buf),
-                };
-
-                if router_data_tx.send(data_packet).is_err() {
-                    error!("Failed to send data_packet, router is gone");
-                }
-            }
+                })
+                .await;
+            warn!("tun stream is done");
         });
     }
 
     {
-        let node_tun = node_tun.clone();
         tokio::spawn(async move {
             loop {
                 while let Some(packet) = tun_rx.recv().await {
-                    if let Err(e) = node_tun.send(&packet).await {
-                        error!("Failed to send packet on local TUN interface: {e}");
+                    trace!("received packet from tun_rx");
+                    if let Err(e) = txhalf.send(packet.clone().into()).await {
+                        error!(
+                            "Failed to send packet on local TUN interface: {e} - {}",
+                            faster_hex::hex_string(&packet)
+                        );
+                        continue;
                     }
+                    trace!("Sent packet on tun interface");
                 }
             }
         });
