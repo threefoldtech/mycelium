@@ -10,7 +10,7 @@ use std::{
 use futures::{Future, Sink, Stream, TryStreamExt};
 use log::{debug, trace};
 use rtnetlink::Handle;
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, ReadHalf, WriteHalf};
 use tokio_tun::{Tun, TunBuilder};
 
 use super::IpPacket;
@@ -20,13 +20,13 @@ const LINK_MTU: i32 = 1420;
 
 /// A sender half of a tun interface.
 pub struct TxHalf {
-    inner: Tun,
+    inner: WriteHalf<Tun>,
     state: TxState,
 }
 
 /// A receiver half of a tun interface.
 pub struct RxHalf {
-    inner: Tun,
+    inner: ReadHalf<Tun>,
     buffer: Vec<u8>,
     mtu: usize,
 }
@@ -49,7 +49,7 @@ pub async fn new(
     route_address: IpAddr,
     route_prefix_len: u8,
 ) -> Result<(RxHalf, TxHalf), Box<dyn std::error::Error>> {
-    let (tun_rx, tun_tx) = create_tun_interface(name)?;
+    let tun = create_tun_interface(name)?;
 
     let (conn, handle, _) = rtnetlink::new_connection()?;
     let netlink_task_handle = tokio::spawn(conn);
@@ -65,6 +65,9 @@ pub async fn new(
     // We are done with our netlink connection, abort the task so we can properly clean up.
     netlink_task_handle.abort();
 
+    // TODO: see if we can work around it
+    let (tun_rx, tun_tx) = tokio::io::split(tun);
+
     Ok((
         RxHalf {
             inner: tun_rx,
@@ -79,16 +82,16 @@ pub async fn new(
 }
 
 /// Create a new TUN interface
-fn create_tun_interface(name: &str) -> Result<(Tun, Tun), Box<dyn std::error::Error>> {
+fn create_tun_interface(name: &str) -> Result<Tun, Box<dyn std::error::Error>> {
     let mut tun = TunBuilder::new()
         .name(name)
         .tap(false)
         .mtu(LINK_MTU)
         .packet_info(false)
         .up()
-        .try_build_mq(2)?;
+        .try_build()?;
 
-    Ok((tun.remove(1), tun.remove(0)))
+    Ok(tun)
 }
 
 /// Retrieve the link index of an interface with the given name
@@ -177,8 +180,8 @@ impl Sink<IpPacket> for TxHalf {
                 "TxHalf is closed",
             ))),
             TxState::Sending(ref item) => {
-                let res = std::pin::pin!(tx_half.inner.send(&item.0))
-                    .poll(cx)
+                let res = Pin::new(&mut tx_half.inner)
+                    .poll_write(cx, &item.0)
                     .map_ok(|_| ());
                 if res.is_ready() {
                     tx_half.state = TxState::Idle;
@@ -226,8 +229,8 @@ impl Sink<IpPacket> for TxHalf {
                 "TxHalf is closed",
             ))),
             TxState::Sending(ref item) => {
-                let res = std::pin::pin!(tx_half.inner.send(&item.0))
-                    .poll(cx)
+                let res = Pin::new(&mut tx_half.inner)
+                    .poll_write(cx, &item.0)
                     .map_ok(|_| ());
                 if res.is_ready() {
                     tx_half.state = TxState::Closed;
