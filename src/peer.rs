@@ -17,6 +17,12 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Peer {
     inner: Arc<RwLock<PeerInner>>,
+    to_peer_data: mpsc::UnboundedSender<DataPacket>,
+    to_peer_control: mpsc::UnboundedSender<ControlPacket>,
+    /// Used to identify peer based on its connection params
+    stream_ip: IpAddr,
+    // TODO: not needed
+    overlay_ip: IpAddr,
 }
 
 impl Peer {
@@ -27,14 +33,23 @@ impl Peer {
         stream: TcpStream,
         overlay_ip: IpAddr,
     ) -> Result<Self, Box<dyn Error>> {
+        // Data channel for peer
+        let (to_peer_data, from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
+        // Control channel for peer
+        let (to_peer_control, from_routing_control) = mpsc::unbounded_channel::<ControlPacket>();
         Ok(Peer {
             inner: Arc::new(RwLock::new(PeerInner::new(
-                stream_ip,
                 router_data_tx,
                 router_control_tx,
+                from_routing_data,
+                from_routing_control,
                 stream,
                 overlay_ip,
             )?)),
+            to_peer_data,
+            to_peer_control,
+            stream_ip,
+            overlay_ip,
         })
     }
 
@@ -58,26 +73,21 @@ impl Peer {
 
     /// Get overlay IP for this peer
     pub fn overlay_ip(&self) -> IpAddr {
-        self.inner.read().unwrap().overlay_ip
+        self.overlay_ip
     }
 
     /// For sending data packets towards a peer instance on this node.
     /// It's send over the to_peer_data channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
     pub fn send_data_packet(&self, data_packet: DataPacket) -> Result<(), Box<dyn Error>> {
-        Ok(self.inner.write().unwrap().to_peer_data.send(data_packet)?)
+        Ok(self.to_peer_data.send(data_packet)?)
     }
 
     /// For sending control packets towards a peer instance on this node.
     /// It's send over the to_peer_control channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
     pub fn send_control_packet(&self, control_packet: ControlPacket) -> Result<(), Box<dyn Error>> {
-        Ok(self
-            .inner
-            .write()
-            .unwrap()
-            .to_peer_control
-            .send(control_packet)?)
+        Ok(self.to_peer_control.send(control_packet)?)
     }
 
     pub fn link_cost(&self) -> u16 {
@@ -89,7 +99,7 @@ impl Peer {
     }
 
     pub fn underlay_ip(&self) -> IpAddr {
-        self.inner.read().unwrap().stream_ip
+        self.stream_ip
     }
 
     pub fn time_last_received_ihu(&self) -> tokio::time::Instant {
@@ -109,12 +119,6 @@ impl PartialEq for Peer {
 
 #[derive(Debug)]
 struct PeerInner {
-    /// Used to identify peer based on its connection params
-    stream_ip: IpAddr,
-    to_peer_data: mpsc::UnboundedSender<DataPacket>,
-    to_peer_control: mpsc::UnboundedSender<ControlPacket>,
-    // TODO: not needed
-    overlay_ip: IpAddr,
     hello_seqno: SeqNo,
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
@@ -123,20 +127,16 @@ struct PeerInner {
 
 impl PeerInner {
     pub fn new(
-        stream_ip: IpAddr,
         router_data_tx: mpsc::UnboundedSender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<ControlStruct>,
+        mut from_routing_data: mpsc::UnboundedReceiver<DataPacket>,
+        mut from_routing_control: mpsc::UnboundedReceiver<ControlPacket>,
         stream: TcpStream,
         overlay_ip: IpAddr,
     ) -> Result<Self, Box<dyn Error>> {
         // Framed for peer
         // Used to send and receive packets from a TCP stream
         let mut framed = Framed::new(stream, PacketCodec::new());
-        // Data channel for peer
-        let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
-        // Control channel for peer
-        let (to_peer_control, mut from_routing_control) =
-            mpsc::unbounded_channel::<ControlPacket>();
 
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = SeqNo::default();
@@ -207,10 +207,6 @@ impl PeerInner {
             }
         });
         Ok(Self {
-            stream_ip,
-            to_peer_data,
-            to_peer_control,
-            overlay_ip,
             hello_seqno,
             link_cost,
             time_last_received_ihu,
