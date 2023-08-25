@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures::{Future, Sink, Stream, TryStreamExt};
-use log::{debug, error, trace};
+use log::{debug, trace};
 use rtnetlink::Handle;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio_tun::{Tun, TunBuilder};
@@ -255,7 +255,6 @@ impl Stream for RxHalf {
         // Assign poll result to a temporary variable to appease the borrow checker. Failure to do
         // so will result in a compilation error because there are 2 borrows on buffer.
         let mut buf = ReadBuf::new(buffer);
-        let old_len = buf.filled().len();
         let tmp = Pin::new(inner).poll_read(cx, &mut buf)?;
         match tmp {
             Poll::Pending => {
@@ -263,15 +262,16 @@ impl Stream for RxHalf {
                 Poll::Pending
             }
             Poll::Ready(()) => {
+                // We recreate the buffer everytime, since a packet is always read in its entirety.
+                // Therefore the start len is always 0.
                 let buf_len = buf.filled().len();
-                let read = buf_len - old_len;
-                trace!("Read {read} bytes packet from tun in poll method.");
-                if read == 0 {
+                trace!("Read {buf_len} bytes packet from tun in poll method.");
+                if buf_len == 0 {
                     // EOF reached
                     debug!("Stream read 0 bytes, closing");
                     return Poll::Ready(None);
                 }
-                buffer.truncate(read);
+                buffer.truncate(buf_len);
                 // Create new buffer.
                 let mut new_buffer = vec![0; *mtu];
                 mem::swap(buffer, &mut new_buffer);
