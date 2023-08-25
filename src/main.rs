@@ -19,7 +19,6 @@ mod codec;
 mod crypto;
 mod interval;
 mod metric;
-mod node_setup;
 mod packet;
 mod peer;
 mod peer_manager;
@@ -127,18 +126,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         TUN_ROUTE_PREFIX,
     )
     .await?;
-
-    // Create TUN interface and add static route
-    // let node_tun = match node_setup::setup_node(node_addr).await {
-    //     Ok(tun) => {
-    //         info!("Node setup complete");
-    //         tun
-    //     }
-    //     Err(e) => {
-    //         error!("Error setting up node: {e}");
-    //         panic!("Eror setting up node: {e}")
-    //     }
-    // };
 
     debug!("Node public key: {:?}", node_keypair.1);
 
