@@ -83,7 +83,7 @@ pub async fn new(
 
 /// Create a new TUN interface
 fn create_tun_interface(name: &str) -> Result<Tun, Box<dyn std::error::Error>> {
-    let mut tun = TunBuilder::new()
+    let tun = TunBuilder::new()
         .name(name)
         .tap(false)
         .mtu(LINK_MTU)

@@ -28,8 +28,6 @@ mod sequence_number;
 mod source_table;
 mod tun;
 
-const LINK_MTU: usize = 1420;
-
 /// The default port on the inderlay to listen on.
 const DEFAULT_LISTEN_PORT: u16 = 9651;
 
@@ -187,7 +185,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Ipv6Addr::from(header.destination)
                             } else {
                                 debug!("Drop non ipv6 packet");
-                                return ();
+                                return;
                             };
 
                             trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
@@ -196,7 +194,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
                             if !(0x02..=0x3F).contains(&first_byte) {
                                 debug!("Dropping packet which is not destined for 200::/7");
-                                return ();
+                                return;
                             }
 
                             // Get shared secret from node and dest address
@@ -205,7 +203,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Some(ss) => ss,
                                 None => {
                                     debug!("No entry found for destination address {}", dest_addr);
-                                    return ();
+                                    return;
                                 }
                             };
 
