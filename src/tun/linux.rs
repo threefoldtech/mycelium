@@ -1,20 +1,14 @@
 //! Linux specific tun interface setup.
 
 use std::{
-    io, mem,
+    io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    pin::Pin,
-    task::Poll,
 };
 
-use futures::{Future, Sink, Stream, TryStreamExt};
-use log::{debug, error, info, trace};
+use futures::{Sink, Stream, TryStreamExt};
+use log::{error, info};
 use rtnetlink::Handle;
-use tokio::{
-    io::{AsyncRead, AsyncWrite, ReadBuf, ReadHalf, WriteHalf},
-    select,
-    sync::mpsc,
-};
+use tokio::{select, sync::mpsc};
 use tokio_tun::{Tun, TunBuilder};
 
 use super::IpPacket;

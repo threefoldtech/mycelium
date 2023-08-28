@@ -1,9 +1,9 @@
+use crate::packet::DataPacket;
 use crate::router::StaticRoute;
-use crate::{packet::DataPacket, tun::IpPacket};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
-use etherparse::{IpHeader, PacketHeaders};
+use etherparse::IpHeader;
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
 use serde::Serialize;

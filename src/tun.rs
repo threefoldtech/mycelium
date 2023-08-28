@@ -3,11 +3,7 @@
 #[cfg(target_os = "linux")]
 mod linux;
 
-use std::{io, ops::Deref};
-
-use bytes::{Buf, BufMut};
-use etherparse::{IpHeader, ReadError};
-use tokio_util::codec::{Decoder, Encoder};
+use std::ops::Deref;
 
 #[cfg(target_os = "linux")]
 pub use linux::new;
