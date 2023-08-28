@@ -28,7 +28,7 @@ pub struct Peer {
 impl Peer {
     pub fn new(
         stream_ip: IpAddr,
-        router_data_tx: mpsc::UnboundedSender<DataPacket>,
+        router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<ControlStruct>,
         stream: TcpStream,
         overlay_ip: IpAddr,
@@ -127,7 +127,7 @@ struct PeerInner {
 
 impl PeerInner {
     pub fn new(
-        router_data_tx: mpsc::UnboundedSender<DataPacket>,
+        router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<ControlStruct>,
         mut from_routing_data: mpsc::UnboundedReceiver<DataPacket>,
         mut from_routing_control: mpsc::UnboundedReceiver<ControlPacket>,
@@ -159,7 +159,7 @@ impl PeerInner {
                         Some(Ok(packet)) => {
                             match packet {
                                 Packet::DataPacket(packet) => {
-                                    if let Err(error) = router_data_tx.send(packet){
+                                    if let Err(error) = router_data_tx.send(packet).await{
                                         error!("Error sending to to_routing_data: {}", error);
                                     }
                                 }
