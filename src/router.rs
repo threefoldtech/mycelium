@@ -17,8 +17,8 @@ use std::{
     net::{IpAddr, Ipv6Addr},
     sync::{Arc, RwLock},
 };
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -41,7 +41,7 @@ pub struct Router {
     inner: Arc<RwLock<RouterInner>>,
     router_id: PublicKey,
     node_keypair: (SecretKey, PublicKey),
-    router_data_tx: UnboundedSender<DataPacket>,
+    router_data_tx: Sender<DataPacket>,
     router_control_tx: UnboundedSender<ControlStruct>,
     node_tun: UnboundedSender<Vec<u8>>,
     node_tun_addr: Ipv6Addr,
@@ -57,7 +57,7 @@ impl Router {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel::<ControlStruct>();
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
-        let (router_data_tx, router_data_rx) = mpsc::unbounded_channel::<DataPacket>();
+        let (router_data_tx, router_data_rx) = mpsc::channel::<DataPacket>(1000);
 
         let router = Router {
             inner: Arc::new(RwLock::new(RouterInner::new(static_routes)?)),
@@ -93,7 +93,7 @@ impl Router {
         self.router_control_tx.clone()
     }
 
-    pub fn router_data_tx(&self) -> UnboundedSender<DataPacket> {
+    pub fn router_data_tx(&self) -> Sender<DataPacket> {
         self.router_data_tx.clone()
     }
 
@@ -676,12 +676,12 @@ impl Router {
         false
     }
 
-    async fn handle_incoming_data_packet(self, router_data_rx: UnboundedReceiver<DataPacket>) {
+    async fn handle_incoming_data_packet(self, router_data_rx: Receiver<DataPacket>) {
         // If destination IP of packet is same as TUN interface IP, send to TUN interface
         // If destination IP of packet is not same as TUN interface IP, send to peer with matching overlay IP
         // let node_tun = self.node_tun();
         // let node_tun_addr = self.node_tun_addr();
-        UnboundedReceiverStream::new(router_data_rx)
+        ReceiverStream::new(router_data_rx)
             .for_each(|data_packet| {
                 let router = self.clone();
                 let node_tun = self.node_tun();
