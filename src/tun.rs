@@ -10,7 +10,7 @@ use etherparse::{IpHeader, ReadError};
 use tokio_util::codec::{Decoder, Encoder};
 
 #[cfg(target_os = "linux")]
-pub use linux::{new, RxHalf, TxHalf};
+pub use linux::new;
 
 /// An IpPacket represents a layer 3 packet.
 #[derive(Debug, Clone)]
