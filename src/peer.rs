@@ -193,10 +193,10 @@ impl PeerInner {
                         let mut packet_buf: [_; 5] = std::array::from_fn(|_| None);
                         let mut packets_received = 1;
                         packet_buf[0] = Some(packet);
-                        for i in 1..packet_buf.len() {
+                        for buf_slot in packet_buf.iter_mut().skip(1) {
                             // There can be 2 cases of errors here, empty channel and no more
                             // senders. In both cases we don't really care at this point
-                            packet_buf[i] = if let Ok(packet) = from_routing_data.try_recv() {
+                            *buf_slot = if let Ok(packet) = from_routing_data.try_recv() {
                                 trace!("Instantly queued ready packet to transfer to peer");
                                 packets_received += 1;
                                 Some(packet)
