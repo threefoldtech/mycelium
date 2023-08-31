@@ -15,6 +15,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+/// A peer represents a directly connected participant in the network.
 pub struct Peer {
     inner: Arc<RwLock<PeerInner>>,
     to_peer_data: mpsc::UnboundedSender<DataPacket>,

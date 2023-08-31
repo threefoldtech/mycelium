@@ -16,7 +16,7 @@ pub struct FeasibilityDistance {
 }
 
 // Store (prefix, plen, router_id) -> feasibility distance mapping
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourceTable {
     table: HashMap<SourceKey, FeasibilityDistance>,
 }
