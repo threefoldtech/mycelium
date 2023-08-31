@@ -834,46 +834,39 @@ impl RouterInner {
         matching_peer.map(Clone::clone)
     }
 
-    fn send_update(&mut self, peer: &Peer, update_packet: ControlPacket) {
+    fn send_update(&mut self, peer: &Peer, update: babel::Update) {
         // before sending an update, the source table might need to be updated
-        match update_packet {
-            babel::Tlv::Update(ref update) => {
-                let plen = update.plen();
-                let seqno = update.seqno();
-                let metric = update.metric();
-                let prefix = update.prefix();
-                let router_id = update.router_id();
+        let plen = update.plen();
+        let seqno = update.seqno();
+        let metric = update.metric();
+        let prefix = update.prefix();
+        let router_id = update.router_id();
 
-                let source_key = SourceKey::new(prefix, plen, router_id);
+        let source_key = SourceKey::new(prefix, plen, router_id);
 
-                if let Some(source_entry) = self.source_table.get(&source_key) {
-                    // if seqno of the update is greater than the seqno in the source table, update the source table
-                    if !seqno.lt(&source_entry.seqno()) {
-                        self.source_table
-                            .insert(source_key, FeasibilityDistance::new(metric, seqno));
-                    }
-                    // if seqno of the update is equal to the seqno in the source table, update the source table if the metric (of the update) is lower
-                    else if seqno == source_entry.seqno() && source_entry.metric() > metric {
-                        self.source_table.insert(
-                            source_key,
-                            FeasibilityDistance::new(metric, source_entry.seqno()),
-                        );
-                    }
-                }
-                // no entry for this source key, so insert it
-                else {
-                    self.source_table
-                        .insert(source_key, FeasibilityDistance::new(metric, seqno));
-                }
-
-                // send the update to the peer
-                if let Err(e) = peer.send_control_packet(update_packet) {
-                    error!("Error sending update to peer: {:?}", e);
-                }
+        if let Some(source_entry) = self.source_table.get(&source_key) {
+            // if seqno of the update is greater than the seqno in the source table, update the source table
+            if !seqno.lt(&source_entry.seqno()) {
+                self.source_table
+                    .insert(source_key, FeasibilityDistance::new(metric, seqno));
             }
-            _ => {
-                panic!("Control packet is not a correct Update packet");
+            // if seqno of the update is equal to the seqno in the source table, update the source table if the metric (of the update) is lower
+            else if seqno == source_entry.seqno() && source_entry.metric() > metric {
+                self.source_table.insert(
+                    source_key,
+                    FeasibilityDistance::new(metric, source_entry.seqno()),
+                );
             }
+        }
+        // no entry for this source key, so insert it
+        else {
+            self.source_table
+                .insert(source_key, FeasibilityDistance::new(metric, seqno));
+        }
+
+        // send the update to the peer
+        if let Err(e) = peer.send_control_packet(ControlPacket::Update(update)) {
+            error!("Error sending update to peer: {:?}", e);
         }
     }
 
@@ -881,8 +874,9 @@ impl RouterInner {
         let mut updates = vec![];
         for sr in self.static_routes.iter() {
             for peer in self.peer_interfaces.iter() {
-                let update = ControlPacket::new_update(
+                let update = babel::Update::new(
                     sr.plen, // static routes have plen 32
+                    0,
                     UPDATE_INTERVAL,
                     self.router_seqno, // updates receive the seqno of the router
                     peer.link_cost().into(), // direct connection to other peer, so the only cost is the cost towards the peer
@@ -912,8 +906,9 @@ impl RouterInner {
                         None => router_id,
                     };
 
-                    let update = ControlPacket::new_update(
+                    let update = babel::Update::new(
                         sr.0.plen(),
+                        0,
                         UPDATE_INTERVAL,
                         self.router_seqno, // updates receive the seqno of the router
                         sr.1.metric() + Metric::from(peer_link_cost),
