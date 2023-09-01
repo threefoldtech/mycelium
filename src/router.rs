@@ -722,13 +722,9 @@ impl Router {
     async fn handle_incoming_data_packet(self, mut router_data_rx: Receiver<DataPacket>) {
         // If destination IP of packet is same as TUN interface IP, send to TUN interface
         // If destination IP of packet is not same as TUN interface IP, send to peer with matching overlay IP
-        // let node_tun = self.node_tun();
-        // let node_tun_addr = self.node_tun_addr();
-        while let Some(data_packet) = router_data_rx.recv().await {
-            let router = self.clone();
-            let node_tun = self.node_tun();
-            let node_tun_addr = self.node_tun_addr();
+        let node_tun_addr = self.node_tun_addr();
 
+        while let Some(data_packet) = router_data_rx.recv().await {
             trace!(
                 "Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})",
                 data_packet.dest_ip,
@@ -738,9 +734,9 @@ impl Router {
             if data_packet.dest_ip == node_tun_addr {
                 // decrypt & send to TUN interface
                 let pubkey_sender = data_packet.pubkey;
-                let shared_secret = match router.get_shared_secret_by_pubkey(&pubkey_sender) {
+                let shared_secret = match self.get_shared_secret_by_pubkey(&pubkey_sender) {
                     Some(ss) => ss,
-                    None => router.node_secret_key().shared_secret(&pubkey_sender),
+                    None => self.node_secret_key().shared_secret(&pubkey_sender),
                 };
                 let decrypted_raw_data = match shared_secret.decrypt(&data_packet.raw_data) {
                     Ok(data) => data,
@@ -749,7 +745,7 @@ impl Router {
                         return;
                     }
                 };
-                match node_tun.send(decrypted_raw_data) {
+                match self.node_tun().send(decrypted_raw_data) {
                     Ok(_) => {}
                     Err(e) => {
                         error!("Error sending data packet to TUN interface: {:?}", e)
@@ -757,10 +753,10 @@ impl Router {
                 }
             } else {
                 // send to peer with matching overlay IP
-                let best_route = router.select_best_route(IpAddr::V6(data_packet.dest_ip));
+                let best_route = self.select_best_route(IpAddr::V6(data_packet.dest_ip));
                 match best_route {
                     Some(route_entry) => {
-                        let peer = router.peer_by_ip(route_entry.next_hop());
+                        let peer = self.peer_by_ip(route_entry.next_hop());
                         // drop the packet if the peer is couldn't be found
                         match peer {
                             Some(peer) => {
