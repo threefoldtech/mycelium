@@ -13,7 +13,6 @@ use std::{
     path::PathBuf,
 };
 use tokio::signal::{self, unix::SignalKind};
-use tokio_util::sync::PollSender;
 
 mod babel;
 mod codec;

@@ -1,4 +1,4 @@
-use crate::packet::{ControlPacket, ControlStruct, DataPacket};
+use crate::packet::{ControlStruct, DataPacket};
 use crate::peer::Peer;
 use crate::router::Router;
 use log::{debug, error, info};

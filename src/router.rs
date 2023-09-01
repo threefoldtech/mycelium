@@ -8,7 +8,6 @@ use crate::{
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
 };
-use futures::StreamExt;
 use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
 use std::{
@@ -16,10 +15,9 @@ use std::{
     error::Error,
     fmt::Debug,
     net::{IpAddr, Ipv6Addr},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
-use tokio_stream::wrappers::ReceiverStream;
 
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
@@ -49,11 +47,6 @@ pub struct Router {
     node_tun: UnboundedSender<Vec<u8>>,
     node_tun_addr: Ipv6Addr,
 }
-
-// TODO
-// SAFETY: this should generally be fine and I don't really know why this is not the case
-//unsafe impl Send for Router {}
-//unsafe impl Sync for Router {}
 
 impl Router {
     pub fn new(
@@ -1081,7 +1074,7 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                     .retain(|_, route_entry| route_entry.next_hop() != peer.overlay_ip());
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
-                self.source_table.insert(sk.clone(), fd.clone());
+                self.source_table.insert(*sk, *fd);
             }
             RouterOpLogEntry::InsertFallbackRoute(rk, re) => {
                 self.fallback_routing_table.insert(rk.clone(), re.clone());
@@ -1090,7 +1083,7 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.selected_routing_table.insert(rk.clone(), re.clone());
             }
             RouterOpLogEntry::UnselectRoute(rk) => {
-                if let Some(mut old_selected) = self.selected_routing_table.remove(&rk) {
+                if let Some(mut old_selected) = self.selected_routing_table.remove(rk) {
                     old_selected.set_selected(false);
                     self.fallback_routing_table.insert(rk.clone(), old_selected);
                 }
