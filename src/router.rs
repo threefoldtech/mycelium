@@ -742,7 +742,7 @@ impl Router {
                     Ok(data) => data,
                     Err(_) => {
                         log::debug!("Dropping data packet with invalid encrypted content");
-                        return;
+                        continue;
                     }
                 };
                 match self.node_tun().send(decrypted_raw_data) {
