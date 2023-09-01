@@ -1,11 +1,14 @@
+use crate::packet::{ControlPacket, ControlStruct, DataPacket};
 use crate::peer::Peer;
 use crate::router::Router;
-use log::{debug, error};
+use log::{debug, error, info};
 use serde::Deserialize;
-use std::net::{IpAddr, SocketAddr};
+use std::io;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 pub const NODE_CONFIG_FILE_PATH: &str = "nodeconfig.toml";
 
@@ -29,8 +32,7 @@ impl PeerManager {
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
         tokio::spawn(PeerManager::start_listener(peer_manager.clone(), port));
         // Reads the nodeconfig.toml file and connects to the peers in the file.
-        // TODO: ignore for now
-        // tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
+        tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
         // Remote nodes can also be read from CLI arg
         tokio::spawn(PeerManager::get_peers_from_cli(
             peer_manager.clone(),
@@ -176,11 +178,30 @@ impl PeerManager {
     }
 
     async fn start_listener(self, port: u16) {
+        let node_tun_addr = self.router.node_tun_addr();
+        let router_data_tx = self.router.router_data_tx();
+        let router_control_tx = self.router.router_control_tx();
+
         match TcpListener::bind(("::", port)).await {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
-                        self.start_reverse_peer_exchange(stream).await;
+                        let new_peer = Self::start_reverse_peer_exchange(
+                            stream,
+                            node_tun_addr,
+                            router_data_tx.clone(),
+                            router_control_tx.clone(),
+                        )
+                        .await;
+                        match new_peer {
+                            Ok(peer) => {
+                                info!("Accepted new peer {}", peer.overlay_ip());
+                                self.router.add_peer_interface(peer);
+                            }
+                            Err(e) => {
+                                error!("Failed to accept new peer {e}");
+                            }
+                        }
                     }
                     Err(e) => {
                         error!("Error accepting connection: {}", e);
@@ -193,7 +214,12 @@ impl PeerManager {
         }
     }
 
-    async fn start_reverse_peer_exchange(&self, mut stream: TcpStream) {
+    async fn start_reverse_peer_exchange(
+        mut stream: TcpStream,
+        node_tun_addr: Ipv6Addr,
+        router_data_tx: Sender<DataPacket>,
+        router_control_tx: UnboundedSender<ControlStruct>,
+    ) -> Result<Peer, Box<dyn std::error::Error>> {
         // Steps:
         // 1. Send own TUN address over the stream
         // 2. Read other node's TUN address from the stream
@@ -201,7 +227,7 @@ impl PeerManager {
         let mut buf = [0u8; 17];
         // only using IPv6
         buf[0] = 1;
-        buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
+        buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
         // Step 1
         stream.write_all(&buf).await.unwrap();
@@ -212,26 +238,22 @@ impl PeerManager {
             1 => IpAddr::from(<&[u8] as TryInto<[u8; 16]>>::try_into(&buf[1..]).unwrap()),
             _ => {
                 error!("Invalid address encoding byte");
-                return;
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid encoding byte received",
+                )
+                .into());
             }
         };
 
         // Create new Peer instance
         let peer_stream_ip = stream.peer_addr().unwrap().ip();
-        let new_peer = Peer::new(
+        Peer::new(
             peer_stream_ip,
-            self.router.router_data_tx(),
-            self.router.router_control_tx(),
+            router_data_tx,
+            router_control_tx,
             stream,
             received_overlay_ip,
-        );
-        match new_peer {
-            Ok(new_peer) => {
-                self.router.add_peer_interface(new_peer);
-            }
-            Err(e) => {
-                error!("Error creating peer: {}", e);
-            }
-        }
+        )
     }
 }

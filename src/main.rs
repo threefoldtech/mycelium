@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_addr = node_pub_key.address();
     info!("Node address: {}", node_addr);
 
-    let (rxhalf, mut txhalf) = tun::new(
+    let (mut rxhalf, mut txhalf) = tun::new(
         TUN_NAME,
         node_addr.into(),
         64,
@@ -160,75 +160,68 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Note: we will never receive control packets from the kernel, only data packets
     {
         let router = router.clone();
-        let sink = PollSender::new(router.router_data_tx());
+        let router_data_tx = router.router_data_tx();
 
         tokio::spawn(async move {
-            if let Err(e) = rxhalf
-                .filter_map(|input| {
-                    // Clone router and router_data_tx. Note we do this before entering the async
-                    // block, so this is synchronous code where it is possible, as the entire async
-                    // block is the actual return type.
-                    let router = router.clone();
-
-                    async move {
-                        let packet = match input {
-                            Err(e) => {
-                                error!("Failed to read packet from TUN interface {e}");
-                                return None;
-                            }
-                            Ok(packet) => packet,
-                        };
-
-                        trace!("Received packet from tun");
-                        let headers = match etherparse::IpHeader::from_slice(&packet) {
-                            Ok(header) => header,
-                            Err(e) => {
-                                warn!("Could not parse IP header from tun packet: {e}");
-                                return None;
-                            }
-                        };
-                        let dest_addr = if let IpHeader::Version6(header, _) = headers.0 {
-                            Ipv6Addr::from(header.destination)
-                        } else {
-                            debug!("Drop non ipv6 packet");
-                            return None;
-                        };
-
-                        trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
-
-                        // Check if destination address is in 200::/7 range
-                        let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
-                        if !(0x02..=0x3F).contains(&first_byte) {
-                            debug!("Dropping packet which is not destined for 200::/7");
-                            return None;
-                        }
-
-                        // Get shared secret from node and dest address
-                        let shared_secret = match router.get_shared_secret_from_dest(&dest_addr) {
-                            Some(ss) => ss,
-                            None => {
-                                debug!(
-                                    "No entry found for destination address {}, dropping packet",
-                                    dest_addr
-                                );
-                                return None;
-                            }
-                        };
-
-                        // inject own pubkey
-                        Some(Ok(DataPacket {
-                            dest_ip: dest_addr,
-                            pubkey: router.node_public_key(),
-                            // encrypt data with shared secret
-                            raw_data: shared_secret.encrypt(&packet),
-                        }))
+            while let Some(packet) = rxhalf.next().await {
+                let packet = match packet {
+                    Err(e) => {
+                        error!("Failed to read packet from TUN interface {e}");
+                        continue;
                     }
-                })
-                .forward(sink)
-                .await
-            {
-                error!("Could not forward TUN data to router: {e}");
-            };
+                    Ok(packet) => packet,
+                };
+
+                trace!("Received packet from tun");
+                let headers = match etherparse::IpHeader::from_slice(&packet) {
+                    Ok(header) => header,
+                    Err(e) => {
+                        warn!("Could not parse IP header from tun packet: {e}");
+                        continue;
+                    }
+                };
+                let dest_addr = if let IpHeader::Version6(header, _) = headers.0 {
+                    Ipv6Addr::from(header.destination)
+                } else {
+                    debug!("Drop non ipv6 packet");
+                    continue;
+                };
+
+                trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
+
+                // Check if destination address is in 200::/7 range
+                let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
+                if !(0x02..=0x3F).contains(&first_byte) {
+                    debug!("Dropping packet which is not destined for 200::/7");
+                    continue;
+                }
+
+                // Get shared secret from node and dest address
+                let shared_secret = match router.get_shared_secret_from_dest(&dest_addr) {
+                    Some(ss) => ss,
+                    None => {
+                        debug!(
+                            "No entry found for destination address {}, dropping packet",
+                            dest_addr
+                        );
+                        continue;
+                    }
+                };
+
+                let node_pk = router.node_public_key();
+                // inject own pubkey
+                if let Err(e) = router_data_tx
+                    .send(DataPacket {
+                        dest_ip: dest_addr,
+                        pubkey: node_pk,
+                        // encrypt data with shared secret
+                        raw_data: shared_secret.encrypt(&packet),
+                    })
+                    .await
+                {
+                    error!("Could not forward TUN data to router: {e}");
+                }
+            }
             warn!("tun stream is done");
         });
     }
