@@ -38,6 +38,8 @@ impl Peer {
         let (to_peer_data, from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Control channel for peer
         let (to_peer_control, from_routing_control) = mpsc::unbounded_channel::<ControlPacket>();
+        // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
+        stream.set_nodelay(true)?;
         Ok(Peer {
             inner: Arc::new(RwLock::new(PeerInner::new(
                 router_data_tx,
