@@ -26,6 +26,7 @@ mod router;
 mod routing_table;
 mod sequence_number;
 mod source_table;
+mod subnet;
 mod tun;
 
 /// The default port on the inderlay to listen on.
