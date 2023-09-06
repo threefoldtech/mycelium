@@ -206,15 +206,14 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
         let routing_table = &inner.selected_routing_table;
-        for route in routing_table.table.iter() {
-            println!("Route key: {:?}", route.0);
+        for (route_key, route_entry) in routing_table.table.iter() {
+            println!("Route key: {:?}", route_key);
             println!(
-                "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
-                route.0.subnet().address(),
-                route.0.subnet().prefix_len(),
-                route.1.next_hop(),
-                route.1.metric(),
-                route.1.selected()
+                "Route: {} (with next-hop: {:?}, metric: {}, selected: {})",
+                route_key.subnet(),
+                route_entry.next_hop(),
+                route_entry.metric(),
+                route_entry.selected()
             );
             // println!("As advertised by: {:?}", route.1.source.router_id);
         }
