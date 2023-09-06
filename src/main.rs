@@ -1,5 +1,5 @@
-use crate::packet::DataPacket;
 use crate::router::StaticRoute;
+use crate::{packet::DataPacket, subnet::Subnet};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
@@ -136,7 +136,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let router = match router::Router::new(
         tun_tx,
         node_addr,
-        vec![StaticRoute::new(node_addr.into())],
+        vec![StaticRoute::new(
+            Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
+        )],
         node_keypair.clone(),
     ) {
         Ok(router) => {

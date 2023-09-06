@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::{Buf, BufMut};
 use log::trace;
 
-use crate::{crypto::PublicKey, metric::Metric, sequence_number::SeqNo};
+use crate::{crypto::PublicKey, metric::Metric, sequence_number::SeqNo, subnet::Subnet};
 
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
@@ -24,20 +24,15 @@ const UPDATE_BASE_WIRE_SIZE: u8 = 10 + 32;
 pub struct Update {
     /// Flags set in the TLV.
     flags: u8,
-    /// Prefix length in bits of the advertised prefix.
-    plen: u8,
-    /// The number of octets that have been omitted and that should be taken from a preceding
-    /// update TLV in the same body.
-    // TODO: remove this field
-    omitted: u8,
     /// Upper bound in centiseconds after which a new `Update` is sent. Must not be 0.
     interval: u16,
     /// Senders sequence number.
     seqno: SeqNo,
     /// Senders metric for this route.
     metric: Metric,
-    /// Prefix being advertised. Size of the field is plen/8 - omitted
-    prefix: IpAddr,
+    /// The [`Subnet`] contained in this update. An update packet itself can contain any allowed
+    /// subnet.
+    subnet: Subnet,
     /// Router id of the sender. Importantly this is not part of the update itself, though we do
     /// transmit it for now as such.
     router_id: PublicKey,
@@ -46,23 +41,19 @@ pub struct Update {
 impl Update {
     /// Create a new `Update`.
     pub fn new(
-        plen: u8,
-        omitted: u8,
         interval: u16,
         seqno: SeqNo,
         metric: Metric,
-        prefix: IpAddr,
+        subnet: Subnet,
         router_id: PublicKey,
     ) -> Self {
         Self {
             // No flags used for now
             flags: 0,
-            plen,
-            omitted,
             interval,
             seqno,
             metric,
-            prefix,
+            subnet,
             router_id,
         }
     }
@@ -77,14 +68,9 @@ impl Update {
         self.metric
     }
 
-    /// Return the prefix length of the prefix in this `Update`.
-    pub fn plen(&self) -> u8 {
-        self.plen
-    }
-
-    /// Return the [`Prefix`](IpAddr) for which this is an `Update`.
-    pub fn prefix(&self) -> IpAddr {
-        self.prefix
+    /// Return the [`Subnet`] in this `Update.`
+    pub fn subnet(&self) -> Subnet {
+        self.subnet
     }
 
     /// Return the [`router-id`](PublicKey) of the router who advertised this [`Prefix`](IpAddr).
@@ -95,7 +81,7 @@ impl Update {
     /// Calculates the size on the wire of this `Update`.
     pub fn wire_size(&self) -> u8 {
         UPDATE_BASE_WIRE_SIZE
-            + match self.prefix {
+            + match self.subnet.address() {
                 // TODO: link local and wildcard should be encoded differently
                 IpAddr::V4(_) => 4,
                 IpAddr::V6(_) => 16,
@@ -112,7 +98,8 @@ impl Update {
         let ae = src.get_u8();
         let flags = src.get_u8() & FLAG_MASK;
         let plen = src.get_u8();
-        let omitted = src.get_u8();
+        // Read "omitted" value, we assume this is 0
+        let _ = src.get_u8();
         let interval = src.get_u16();
         let seqno = src.get_u16().into();
         let metric = src.get_u16().into();
@@ -150,6 +137,8 @@ impl Update {
             }
         };
 
+        let subnet = Subnet::new(prefix, plen).ok()?;
+
         let mut router_id_bytes = [0u8; 32];
         router_id_bytes.copy_from_slice(&src[..32]);
         src.advance(32);
@@ -160,29 +149,28 @@ impl Update {
 
         Some(Update {
             flags,
-            plen,
-            omitted,
             interval,
             seqno,
             metric,
-            prefix,
+            subnet,
             router_id,
         })
     }
 
     /// Encode this `Update` tlv as part of a packet.
     pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
-        dst.put_u8(match self.prefix {
+        dst.put_u8(match self.subnet.address() {
             IpAddr::V4(_) => AE_IPV4,
             IpAddr::V6(_) => AE_IPV6,
         });
         dst.put_u8(self.flags);
-        dst.put_u8(self.plen);
-        dst.put_u8(self.omitted);
+        dst.put_u8(self.subnet.prefix_len());
+        // Write "omitted" value, currently not used in our encoding scheme.
+        dst.put_u8(0);
         dst.put_u16(self.interval);
         dst.put_u16(self.seqno.into());
         dst.put_u16(self.metric.into());
-        match self.prefix {
+        match self.subnet.address() {
             IpAddr::V4(ip) => dst.put_slice(&ip.octets()),
             IpAddr::V6(ip) => dst.put_slice(&ip.octets()),
         }
@@ -194,7 +182,7 @@ impl Update {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
-    use crate::crypto::PublicKey;
+    use crate::{crypto::PublicKey, subnet::Subnet};
     use bytes::Buf;
 
     #[test]
@@ -203,12 +191,11 @@ mod tests {
 
         let ihu = super::Update {
             flags: 0b1100_0000,
-            plen: 64,
-            omitted: 0,
             interval: 400,
             seqno: 17.into(),
             metric: 25.into(),
-            prefix: Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(),
+            subnet: Subnet::new(Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(), 64)
+                .expect("64 is a valid IPv6 prefix size; qed"),
             router_id: PublicKey::from([1u8; 32]),
         };
 
@@ -228,12 +215,11 @@ mod tests {
 
         let ihu = super::Update {
             flags: 0b0000_0000,
-            plen: 32,
-            omitted: 0,
             interval: 600,
             seqno: 170.into(),
             metric: 256.into(),
-            prefix: Ipv4Addr::new(10, 101, 4, 1).into(),
+            subnet: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
+                .expect("32 is a valid IPv4 prefix size; qed"),
             router_id: PublicKey::from([2u8; 32]),
         };
 
@@ -260,12 +246,11 @@ mod tests {
 
         let ihu = super::Update {
             flags: 0b0100_0000,
-            plen: 0,
-            omitted: 0,
             interval: 100,
             seqno: 70.into(),
             metric: 512.into(),
-            prefix: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(),
+            subnet: Subnet::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0)
+                .expect("0 is a valid IPv6 prefix size; qed"),
             router_id: PublicKey::from([3u8; 32]),
         };
 
@@ -285,12 +270,11 @@ mod tests {
 
         let ihu = super::Update {
             flags: 0b0000_0000,
-            plen: 92,
-            omitted: 0,
             interval: 1000,
             seqno: 42.into(),
             metric: 769.into(),
-            prefix: Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(),
+            subnet: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
+                .expect("92 is a valid IPv6 prefix size; qed"),
             router_id: PublicKey::from([4u8; 32]),
         };
 
@@ -334,12 +318,11 @@ mod tests {
 
         let ihu = super::Update {
             flags: super::UPDATE_FLAG_PREFIX | super::UPDATE_FLAG_ROUTER_ID,
-            plen: 92,
-            omitted: 0,
             interval: 1000,
             seqno: 42.into(),
             metric: 769.into(),
-            prefix: Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(),
+            subnet: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
+                .expect("92 is a valid IPv6 prefix size; qed"),
             router_id: PublicKey::from([4u8; 32]),
         };
 
@@ -357,11 +340,13 @@ mod tests {
 
         let hello_src = super::Update::new(
             64,
-            0,
-            400,
             10.into(),
             25.into(),
-            Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0xbeef, 0xbabe, 0xdeaf, 1).into(),
+            Subnet::new(
+                Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0xbeef, 0xbabe, 0xdeaf, 1).into(),
+                64,
+            )
+            .expect("64 is a valid IPv6 prefix size; qed"),
             PublicKey::from([6; 32]),
         );
         hello_src.write_bytes(&mut buf);

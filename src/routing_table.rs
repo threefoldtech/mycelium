@@ -1,12 +1,12 @@
 use crate::{
     crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey,
+    subnet::Subnet,
 };
 use std::{collections::BTreeMap, net::IpAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RouteKey {
-    prefix: IpAddr,
-    plen: u8,
+    subnet: Subnet,
     neighbor: IpAddr,
 }
 
@@ -22,24 +22,14 @@ pub struct RouteEntry {
 impl RouteKey {
     /// Create a new `RouteKey` with the given values.
     #[inline]
-    pub const fn new(prefix: IpAddr, plen: u8, neighbor: IpAddr) -> Self {
-        Self {
-            prefix,
-            plen,
-            neighbor,
-        }
+    pub const fn new(subnet: Subnet, neighbor: IpAddr) -> Self {
+        Self { subnet, neighbor }
     }
 
-    /// Returns the prefix associated with this `RouteKey`.
+    /// Returns the [`Subnet`] associated with this `RouteKey`.
     #[inline]
-    pub const fn prefix(&self) -> IpAddr {
-        self.prefix
-    }
-
-    /// Returns the plen associated with this `RouteKey`.
-    #[inline]
-    pub const fn plen(&self) -> u8 {
-        self.plen
+    pub const fn subnet(&self) -> Subnet {
+        self.subnet
     }
 }
 

@@ -7,6 +7,7 @@ use crate::{
     routing_table::{RouteEntry, RouteKey, RoutingTable},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
+    subnet::Subnet,
 };
 use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
@@ -25,13 +26,12 @@ const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 
 #[derive(Debug, Clone, Copy)]
 pub struct StaticRoute {
-    plen: u8,
-    prefix: IpAddr,
+    subnet: Subnet,
 }
 
 impl StaticRoute {
-    pub fn new(prefix: IpAddr) -> Self {
-        Self { plen: 64, prefix }
+    pub fn new(subnet: Subnet) -> Self {
+        Self { subnet }
     }
 }
 
@@ -210,8 +210,8 @@ impl Router {
             println!("Route key: {:?}", route.0);
             println!(
                 "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
-                route.0.prefix(),
-                route.0.plen(),
+                route.0.subnet().address(),
+                route.0.subnet().prefix_len(),
                 route.1.next_hop(),
                 route.1.metric(),
                 route.1.selected()
@@ -286,11 +286,10 @@ impl Router {
 
                 // create retraction update for each dead peer
                 let retraction_update = ControlPacket::new_update(
-                    32,
                     UPDATE_INTERVAL,
                     inner_w.enter().expect("Write handle is saved on router so it is not dropped before the read handles").router_seqno,
                     Metric::infinite(),
-                    dead_peer.overlay_ip(), // todo: fix to use actual prefix, not IP
+                    Subnet::new(dead_peer.overlay_ip(), 64).expect("TODO: fix this"), 
                     router_id,
                 );
                 retraction_updates.push(retraction_update);
@@ -370,13 +369,12 @@ impl Router {
         match update_packet.control_packet {
             babel::Tlv::Update(update) => {
                 let metric = update.metric();
-                let plen = update.plen();
                 let router_id = update.router_id();
-                let prefix = update.prefix();
                 let seqno = update.seqno();
+                let subnet = update.subnet();
 
                 // convert prefix to ipv6 address
-                if let IpAddr::V6(prefix_as_ipv6addr) = prefix {
+                if let IpAddr::V6(prefix_as_ipv6addr) = subnet.address() {
                     // add it the mapping
                     self.add_dest_pubkey_map_entry(prefix_as_ipv6addr, router_id);
                 }
@@ -384,7 +382,7 @@ impl Router {
                 // create route key from incoming update control struct
                 // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
                 let neighbor_ip = update_packet.src_overlay_ip;
-                let route_key_from_update = RouteKey::new(prefix, plen, neighbor_ip);
+                let route_key_from_update = RouteKey::new(subnet, neighbor_ip);
                 // used later to filter out static route
                 if self.route_key_is_from_static_route(&route_key_from_update) {
                     return;
@@ -421,13 +419,13 @@ impl Router {
                     } else {
                         // this means that the update is feasible and the metric is not infinite
                         // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
-                        info!("Learned route for previously unknown prefix {}", prefix);
+                        info!("Learned route for previously unknown subnet {}", subnet);
 
-                        let source_key = SourceKey::new(prefix, plen, router_id);
+                        let source_key = SourceKey::new(subnet, router_id);
                         let fd = FeasibilityDistance::new(metric, seqno);
                         inner_w.append(RouterOpLogEntry::InsertSourceEntry(source_key, fd));
 
-                        let route_key = RouteKey::new(prefix, plen, neighbor_ip);
+                        let route_key = RouteKey::new(subnet, neighbor_ip);
                         let route_entry =
                             RouteEntry::new(source_key, hop_peer, metric, seqno, true);
 
@@ -440,7 +438,7 @@ impl Router {
                             .table
                             .iter()
                         {
-                            if rk.plen() == plen && rk.prefix() == prefix {
+                            if rk.subnet() == subnet {
                                 if metric < re.metric() {
                                     //to_remove.push(r.0.clone());
                                     to_remove = Some(rk.clone());
@@ -456,7 +454,7 @@ impl Router {
 
                         if add_fallback {
                             debug!(
-                                "Added new route for {prefix} via {neighbor_ip} as fallback route"
+                                "Added new route for {subnet} via {neighbor_ip} as fallback route"
                             );
                             inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
                                 route_key,
@@ -466,7 +464,7 @@ impl Router {
                         }
 
                         if let Some(rk) = to_remove {
-                            debug!("Moved existing route for {prefix} to fallback route",);
+                            debug!("Moved existing route for {subnet} to fallback route",);
                             inner_w.append(RouterOpLogEntry::UnselectRoute(rk));
                         }
 
@@ -479,7 +477,7 @@ impl Router {
                 } else {
                     // check if the update is a retraction
                     if update_feasible && metric.is_infinite() {
-                        debug!("Received retraction for {prefix} from {neighbor_ip}");
+                        debug!("Received retraction for {subnet} from {neighbor_ip}");
                         // if the update is a retraction, we remove the entry from the routing tables
                         // we also remove the corresponding source entry???
                         inner_w.append(RouterOpLogEntry::RemoveSelectedRoute(
@@ -488,7 +486,7 @@ impl Router {
                         inner_w
                             .append(RouterOpLogEntry::RemoveFallbackRoute(route_key_from_update));
                         // remove the corresponding source entry
-                        let source_key = SourceKey::new(prefix, plen, router_id);
+                        let source_key = SourceKey::new(subnet, router_id);
                         inner_w.append(RouterOpLogEntry::RemoveSourceEntry(source_key));
                         return;
                     }
@@ -712,7 +710,7 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
         for sr in inner.static_routes.iter() {
-            if sr.plen == route_key.plen() && sr.prefix == route_key.prefix() {
+            if sr.subnet == route_key.subnet() {
                 return true;
             }
         }
@@ -787,7 +785,7 @@ impl Router {
         let mut best_route = None;
         // first look in the selected routing table for a match on the prefix of dest_ip
         for (route_key, route_entry) in inner.selected_routing_table.table.iter() {
-            if route_key.prefix() == dest_ip {
+            if route_key.subnet().address() == dest_ip {
                 best_route = Some(route_entry.clone());
             }
         }
@@ -795,7 +793,7 @@ impl Router {
         if best_route.is_none() {
             trace!("no match in selected routing table, looking in fallback routing table");
             for (route_key, route_entry) in inner.fallback_routing_table.table.iter() {
-                if route_key.prefix() == dest_ip {
+                if route_key.subnet().address() == dest_ip {
                     best_route = Some(route_entry.clone());
                 }
             }
@@ -899,13 +897,12 @@ impl RouterInner {
 
     fn send_update(&self, peer: &Peer, update: babel::Update) -> Option<RouterOpLogEntry> {
         // before sending an update, the source table might need to be updated
-        let plen = update.plen();
         let seqno = update.seqno();
         let metric = update.metric();
-        let prefix = update.prefix();
         let router_id = update.router_id();
+        let subnet = update.subnet();
 
-        let source_key = SourceKey::new(prefix, plen, router_id);
+        let source_key = SourceKey::new(subnet, router_id);
 
         let op = if let Some(source_entry) = self.source_table.get(&source_key) {
             // if seqno of the update is greater than the seqno in the source table, update the source table
@@ -947,12 +944,10 @@ impl RouterInner {
         for sr in self.static_routes.iter() {
             for peer in self.peer_interfaces.iter() {
                 let update = babel::Update::new(
-                    sr.plen, // static routes have plen 32
-                    0,
                     UPDATE_INTERVAL,
                     self.router_seqno, // updates receive the seqno of the router
                     peer.link_cost().into(), // direct connection to other peer, so the only cost is the cost towards the peer
-                    sr.prefix, // the prefix of a static route corresponds to the TUN addr of the node
+                    sr.subnet,
                     router_id,
                 );
                 updates.push((peer.clone(), update));
@@ -972,7 +967,7 @@ impl RouterInner {
                 let peer_link_cost = peer.link_cost();
 
                 // convert sr.0.prefix to ipv6 addr
-                if let IpAddr::V6(prefix) = sr.0.prefix() {
+                if let IpAddr::V6(prefix) = sr.0.subnet().address() {
                     let og_sender_pubkey_option = self.dest_pubkey_map.get(&prefix);
                     // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
                     let og_sender_pubkey = match og_sender_pubkey_option {
@@ -981,13 +976,11 @@ impl RouterInner {
                     };
 
                     let update = babel::Update::new(
-                        sr.0.plen(),
-                        0,
                         UPDATE_INTERVAL,
                         self.router_seqno, // updates receive the seqno of the router
                         sr.1.metric() + Metric::from(peer_link_cost),
                         // the cost of the route is the cost of the route + the cost of the link to the peer
-                        sr.0.prefix(), // the prefix of a static route corresponds to the TUN addr of the node
+                        sr.0.subnet(),
                         // we looked for the router_id, which is a public key, in the dest_pubkey_map
                         // if the router_id is not in the map, then the route came from the node itself
                         og_sender_pubkey,

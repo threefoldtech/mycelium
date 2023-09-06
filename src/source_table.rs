@@ -1,11 +1,10 @@
-use std::{collections::HashMap, net::IpAddr};
+use std::collections::HashMap;
 
-use crate::{babel, crypto::PublicKey, metric::Metric, sequence_number::SeqNo};
+use crate::{babel, crypto::PublicKey, metric::Metric, sequence_number::SeqNo, subnet::Subnet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
-    prefix: IpAddr,
-    plen: u8,
+    subnet: Subnet,
     router_id: PublicKey,
 }
 
@@ -39,12 +38,8 @@ impl FeasibilityDistance {
 
 impl SourceKey {
     /// Create a new `SourceKey`.
-    pub const fn new(prefix: IpAddr, plen: u8, router_id: PublicKey) -> Self {
-        Self {
-            prefix,
-            plen,
-            router_id,
-        }
+    pub const fn new(subnet: Subnet, router_id: PublicKey) -> Self {
+        Self { subnet, router_id }
     }
 
     /// Returns the router id for this `SourceKey`.
@@ -82,7 +77,7 @@ impl SourceTable {
         // Before an update is accepted it should be checked against the feasbility condition
         // If an entry in the source table with the same source key exists, we perform the feasbility check
         // If no entry exists yet, the update is accepted as there is no better alternative available (yet)
-        let source_key = SourceKey::new(update.prefix(), update.plen(), update.router_id());
+        let source_key = SourceKey::new(update.subnet(), update.router_id());
         match self.get(&source_key) {
             Some(entry) => {
                 (!update.seqno().lt(&entry.seqno()))
