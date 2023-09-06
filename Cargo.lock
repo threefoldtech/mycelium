@@ -853,6 +853,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipnet"
+version = "2.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28b29a3cd74f0f4598934efe3aeba42bae0eb4680554128851ebbecb02af14e6"
+
+[[package]]
 name = "is-terminal"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1002,6 +1008,7 @@ dependencies = [
  "faster-hex",
  "futures",
  "getrandom 0.2.10",
+ "ipnet",
  "left-right",
  "log",
  "opentelemetry",

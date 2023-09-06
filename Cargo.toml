@@ -36,3 +36,4 @@ faster-hex = "0.8.0"
 console-subscriber = "0.1.10"
 tokio-stream = { version = "0.1.14", features = ["sync"] }
 left-right = "0.11.5"
+ipnet = "2.8.0"
