@@ -4,12 +4,11 @@ use core::fmt;
 use std::{io, net::Ipv6Addr, ops::Deref, path::Path};
 
 use aes_gcm::{
-    aead::{Aead, OsRng as CryptOsRng},
+    aead::{Aead, OsRng},
     AeadCore, Aes256Gcm, Key, KeyInit,
 };
 use blake2::{Blake2b, Digest};
 use digest::consts::U16;
-use rand_core::OsRng;
 use serde::Serialize;
 use tokio::{
     fs::File,
@@ -40,7 +39,7 @@ type Blake2b128 = Blake2b<U16>;
 impl SecretKey {
     /// Generate a new `StaticSecret` using [`OsRng`] as an entropy source.
     pub fn new() -> Self {
-        SecretKey(x25519_dalek::StaticSecret::new(OsRng))
+        SecretKey(x25519_dalek::StaticSecret::random_from_rng(OsRng))
     }
 
     /// Load a `SecretKey` from a file.
@@ -101,7 +100,7 @@ impl SharedSecret {
     /// nonce is appended to the encrypted data.
     pub fn encrypt(&self, data: &[u8]) -> Vec<u8> {
         let key: Key<Aes256Gcm> = self.0.into();
-        let nonce = Aes256Gcm::generate_nonce(&mut CryptOsRng);
+        let nonce = Aes256Gcm::generate_nonce(OsRng);
 
         let cipher = Aes256Gcm::new(&key);
         let mut encrypted_data = cipher
