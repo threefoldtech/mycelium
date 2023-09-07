@@ -162,7 +162,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Note: we will never receive control packets from the kernel, only data packets
     {
         let router = router.clone();
-        let router_data_tx = router.router_data_tx();
 
         tokio::spawn(async move {
             while let Some(packet) = rxhalf.next().await {
