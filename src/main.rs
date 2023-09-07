@@ -212,17 +212,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 let node_pk = router.node_public_key();
                 // inject own pubkey
-                if let Err(e) = router_data_tx
-                    .send(DataPacket {
-                        dest_ip: dest_addr,
-                        pubkey: node_pk,
-                        // encrypt data with shared secret
-                        raw_data: shared_secret.encrypt(&packet),
-                    })
-                    .await
-                {
-                    error!("Could not forward TUN data to router: {e}");
-                }
+                let _ = router.route_packet(DataPacket {
+                    dest_ip: dest_addr,
+                    pubkey: node_pk,
+                    raw_data: shared_secret.encrypt(&packet),
+                });
             }
             warn!("tun stream is done");
         });
