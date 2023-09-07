@@ -37,7 +37,6 @@ impl StaticRoute {
 
 #[derive(Clone)]
 pub struct Router {
-    //inner: Arc<RwLock<RouterInner>>,
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
     inner_r: ReadHandle<RouterInner>,
     router_id: PublicKey,
