@@ -76,7 +76,6 @@ pub enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    //console_subscriber::init();
     let cli = Cli::parse();
 
     pretty_env_logger::init_timed();
