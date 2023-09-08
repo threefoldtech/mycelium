@@ -10,7 +10,7 @@ use tokio_util::codec::Framed;
 
 use crate::{codec::PacketCodec, packet::Packet};
 use crate::{
-    packet::{ControlPacket, ControlStruct, DataPacket},
+    packet::{ControlPacket, DataPacket},
     sequence_number::SeqNo,
 };
 
@@ -30,7 +30,7 @@ impl Peer {
     pub fn new(
         stream_ip: IpAddr,
         router_data_tx: mpsc::Sender<DataPacket>,
-        router_control_tx: mpsc::UnboundedSender<(ControlStruct, Peer)>,
+        router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         stream: TcpStream,
         overlay_ip: IpAddr,
     ) -> Result<Self, Box<dyn Error>> {
@@ -70,15 +70,7 @@ impl Peer {
                                             }
                                         }
                                         Packet::ControlPacket(packet) => {
-                                            // Parse the DataPacket into a ControlStruct as the to_routing_control channel expects
-                                            let control_struct = ControlStruct {
-                                                control_packet: packet,
-                                                src_overlay_ip: overlay_ip,
-                                                // Note: although this control packet is received from the TCP stream
-                                                // we set the src_overlay_ip to the overlay_ip of the peer
-                                                // as we 'arrived' in the peer instance of representing the sending node on this current node
-                                            };
-                                            if let Err(error) = router_control_tx.send((control_struct, peer.clone())) {
+                                            if let Err(error) = router_control_tx.send((packet, peer.clone())) {
                                                 error!("Error sending to to_routing_control: {}", error);
                                             }
 

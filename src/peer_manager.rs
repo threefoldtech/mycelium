@@ -1,4 +1,4 @@
-use crate::packet::{ControlStruct, DataPacket};
+use crate::packet::{ControlPacket, DataPacket};
 use crate::peer::Peer;
 use crate::router::Router;
 use log::{debug, error, info};
@@ -218,7 +218,7 @@ impl PeerManager {
         mut stream: TcpStream,
         node_tun_addr: Ipv6Addr,
         router_data_tx: Sender<DataPacket>,
-        router_control_tx: UnboundedSender<(ControlStruct, Peer)>,
+        router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
     ) -> Result<Peer, Box<dyn std::error::Error>> {
         // Steps:
         // 1. Send own TUN address over the stream

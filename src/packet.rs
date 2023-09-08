@@ -30,12 +30,6 @@ impl DataPacket {}
 
 /* ****************************CONTROL PACKET******************************** */
 
-#[derive(Debug, Clone)]
-pub struct ControlStruct {
-    pub control_packet: ControlPacket,
-    pub src_overlay_ip: IpAddr,
-}
-
 pub type ControlPacket = babel::Tlv;
 
 impl ControlPacket {

@@ -2,7 +2,7 @@ use crate::{
     babel,
     crypto::{PublicKey, SecretKey, SharedSecret},
     metric::Metric,
-    packet::{ControlPacket, ControlStruct, DataPacket},
+    packet::{ControlPacket, DataPacket},
     peer::Peer,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
     sequence_number::SeqNo,
@@ -42,7 +42,7 @@ pub struct Router {
     router_id: PublicKey,
     node_keypair: (SecretKey, PublicKey),
     router_data_tx: Sender<DataPacket>,
-    router_control_tx: UnboundedSender<(ControlStruct, Peer)>,
+    router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
     node_tun: UnboundedSender<Vec<u8>>,
     node_tun_addr: Ipv6Addr,
 }
@@ -95,7 +95,7 @@ impl Router {
         Ok(router)
     }
 
-    pub fn router_control_tx(&self) -> UnboundedSender<(ControlStruct, Peer)> {
+    pub fn router_control_tx(&self) -> UnboundedSender<(ControlPacket, Peer)> {
         self.router_control_tx.clone()
     }
 
@@ -307,14 +307,14 @@ impl Router {
 
     async fn handle_incoming_control_packet(
         self,
-        mut router_control_rx: UnboundedReceiver<(ControlStruct, Peer)>,
+        mut router_control_rx: UnboundedReceiver<(ControlPacket, Peer)>,
     ) {
-        while let Some((control_struct, source_peer)) = router_control_rx.recv().await {
+        while let Some((control_packet, source_peer)) = router_control_rx.recv().await {
             // println!(
             //     "received control packet from {:?}",
             //     control_struct.src_overlay_ip
             // );
-            match control_struct.control_packet {
+            match control_packet {
                 babel::Tlv::Hello(hello) => self.handle_incoming_hello(hello, source_peer),
                 babel::Tlv::Ihu(ihu) => self.handle_incoming_ihu(ihu, source_peer),
                 babel::Tlv::Update(update) => self.handle_incoming_update(update, source_peer),
