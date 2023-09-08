@@ -30,30 +30,106 @@ impl Peer {
     pub fn new(
         stream_ip: IpAddr,
         router_data_tx: mpsc::Sender<DataPacket>,
-        router_control_tx: mpsc::UnboundedSender<ControlStruct>,
+        router_control_tx: mpsc::UnboundedSender<(ControlStruct, Peer)>,
         stream: TcpStream,
         overlay_ip: IpAddr,
     ) -> Result<Self, Box<dyn Error>> {
         // Data channel for peer
-        let (to_peer_data, from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
+        let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Control channel for peer
-        let (to_peer_control, from_routing_control) = mpsc::unbounded_channel::<ControlPacket>();
+        let (to_peer_control, mut from_routing_control) =
+            mpsc::unbounded_channel::<ControlPacket>();
         // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
         stream.set_nodelay(true)?;
-        Ok(Peer {
-            inner: Arc::new(RwLock::new(PeerInner::new(
-                router_data_tx,
-                router_control_tx,
-                from_routing_data,
-                from_routing_control,
-                stream,
-                overlay_ip,
-            )?)),
+        let peer = Peer {
+            inner: Arc::new(RwLock::new(PeerInner::new())),
             to_peer_data,
             to_peer_control,
             stream_ip,
             overlay_ip,
-        })
+        };
+
+        // Framed for peer
+        // Used to send and receive packets from a TCP stream
+        let mut framed = Framed::new(stream, PacketCodec::new());
+
+        {
+            let peer = peer.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    select! {
+                        // Received over the TCP stream
+                        frame = framed.next() => {
+                            match frame {
+                                Some(Ok(packet)) => {
+                                    match packet {
+                                        Packet::DataPacket(packet) => {
+                                            if let Err(error) = router_data_tx.send(packet).await{
+                                                error!("Error sending to to_routing_data: {}", error);
+                                            }
+                                        }
+                                        Packet::ControlPacket(packet) => {
+                                            // Parse the DataPacket into a ControlStruct as the to_routing_control channel expects
+                                            let control_struct = ControlStruct {
+                                                control_packet: packet,
+                                                src_overlay_ip: overlay_ip,
+                                                // Note: although this control packet is received from the TCP stream
+                                                // we set the src_overlay_ip to the overlay_ip of the peer
+                                                // as we 'arrived' in the peer instance of representing the sending node on this current node
+                                            };
+                                            if let Err(error) = router_control_tx.send((control_struct, peer.clone())) {
+                                                error!("Error sending to to_routing_control: {}", error);
+                                            }
+
+                                        }
+                                    }
+                                }
+                                Some(Err(e)) => {
+                                    error!("Error from framed: {}", e);
+                                },
+                                None => {
+                                    info!("Stream is closed.");
+                                    return
+                                }
+                            }
+                        }
+
+                        Some(packet) = from_routing_data.recv() => {
+                            let mut packet_buf: [_; 5] = std::array::from_fn(|_| None);
+                            let mut packets_received = 1;
+                            packet_buf[0] = Some(packet);
+                            for buf_slot in packet_buf.iter_mut().skip(1) {
+                                // There can be 2 cases of errors here, empty channel and no more
+                                // senders. In both cases we don't really care at this point
+                                *buf_slot = if let Ok(packet) = from_routing_data.try_recv() {
+                                    trace!("Instantly queued ready packet to transfer to peer");
+                                    packets_received += 1;
+                                    Some(packet)
+                                } else { break }
+                            }
+                            let mut packet_stream = futures::stream::iter(
+                                packet_buf
+                                    .into_iter()
+                                    .take(packets_received)
+                                    .filter_map(|item| item.map(|item| Ok(Packet::DataPacket(item)))));
+                            if let Err(e) = framed.send_all(&mut packet_stream).await {
+                                error!("Error writing to stream: {}", e);
+                            }
+                        }
+
+                        Some(packet) = from_routing_control.recv() => {
+                            // Send it over the TCP stream
+                            if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
+                                error!("Error writing to stream: {}", e);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        Ok(peer)
     }
 
     /// Get current sequence number for this peer.
@@ -129,18 +205,8 @@ struct PeerInner {
 }
 
 impl PeerInner {
-    pub fn new(
-        router_data_tx: mpsc::Sender<DataPacket>,
-        router_control_tx: mpsc::UnboundedSender<ControlStruct>,
-        mut from_routing_data: mpsc::UnboundedReceiver<DataPacket>,
-        mut from_routing_control: mpsc::UnboundedReceiver<ControlPacket>,
-        stream: TcpStream,
-        overlay_ip: IpAddr,
-    ) -> Result<Self, Box<dyn Error>> {
-        // Framed for peer
-        // Used to send and receive packets from a TCP stream
-        let mut framed = Framed::new(stream, PacketCodec::new());
-
+    /// Create a new `PeerInner`, holding the mutable state of a [`Peer`]
+    pub fn new() -> Self {
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = SeqNo::default();
         // Initialize last_path_cost to infinity - 1
@@ -150,85 +216,11 @@ impl PeerInner {
         // Initialiwe time_last_send_ihu
         let time_last_received_ihu = tokio::time::Instant::now();
 
-        // Intialize the timers
-        // let ihu_timer = Timer::new_ihu_timer(IHU_INTERVAL);
-
-        tokio::spawn(async move {
-            loop {
-                select! {
-                    // Received over the TCP stream
-                    frame = framed.next() => {
-                        match frame {
-                            Some(Ok(packet)) => {
-                                match packet {
-                                    Packet::DataPacket(packet) => {
-                                        if let Err(error) = router_data_tx.send(packet).await{
-                                            error!("Error sending to to_routing_data: {}", error);
-                                        }
-                                    }
-                                    Packet::ControlPacket(packet) => {
-                                        // Parse the DataPacket into a ControlStruct as the to_routing_control channel expects
-                                        let control_struct = ControlStruct {
-                                            control_packet: packet,
-                                            src_overlay_ip: overlay_ip,
-                                            // Note: although this control packet is received from the TCP stream
-                                            // we set the src_overlay_ip to the overlay_ip of the peer
-                                            // as we 'arrived' in the peer instance of representing the sending node on this current node
-                                        };
-                                        if let Err(error) = router_control_tx.send(control_struct) {
-                                            error!("Error sending to to_routing_control: {}", error);
-                                        }
-
-                                    }
-                                }
-                            }
-                            Some(Err(e)) => {
-                                error!("Error from framed: {}", e);
-                            },
-                            None => {
-                                info!("Stream is closed.");
-                                return
-                            }
-                        }
-                    }
-
-                    Some(packet) = from_routing_data.recv() => {
-                        let mut packet_buf: [_; 5] = std::array::from_fn(|_| None);
-                        let mut packets_received = 1;
-                        packet_buf[0] = Some(packet);
-                        for buf_slot in packet_buf.iter_mut().skip(1) {
-                            // There can be 2 cases of errors here, empty channel and no more
-                            // senders. In both cases we don't really care at this point
-                            *buf_slot = if let Ok(packet) = from_routing_data.try_recv() {
-                                trace!("Instantly queued ready packet to transfer to peer");
-                                packets_received += 1;
-                                Some(packet)
-                            } else { break }
-                        }
-                        let mut packet_stream = futures::stream::iter(
-                            packet_buf
-                                .into_iter()
-                                .take(packets_received)
-                                .filter_map(|item| item.map(|item| Ok(Packet::DataPacket(item)))));
-                        if let Err(e) = framed.send_all(&mut packet_stream).await {
-                            error!("Error writing to stream: {}", e);
-                        }
-                    }
-
-                    Some(packet) = from_routing_control.recv() => {
-                        // Send it over the TCP stream
-                        if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
-                            error!("Error writing to stream: {}", e);
-                        }
-                    }
-                }
-            }
-        });
-        Ok(Self {
+        Self {
             hello_seqno,
             link_cost,
             time_last_received_ihu,
             time_last_received_hello,
-        })
+        }
     }
 }
