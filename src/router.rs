@@ -1012,11 +1012,6 @@ impl RouterInner {
             .iter()
             .any(|peer| peer.underlay_ip() == peer_underlay_ip)
     }
-
-    /// Set the static peer entries to the given value.
-    fn set_static_routes(&mut self, static_routes: Vec<StaticRoute>) {
-        self.static_routes = static_routes;
-    }
 }
 
 enum RouterOpLogEntry {
