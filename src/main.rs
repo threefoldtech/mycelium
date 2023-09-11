@@ -23,6 +23,7 @@ mod packet;
 mod peer;
 mod peer_manager;
 mod router;
+mod router_id;
 mod routing_table;
 mod sequence_number;
 mod source_table;
