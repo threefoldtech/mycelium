@@ -131,7 +131,7 @@ impl RoutingTable {
 
     /// Create an iterator over all key value pairs in the table.
     // TODO: remove this?
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a RouteKey, &'a RouteEntry)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&'_ RouteKey, &'_ RouteEntry)> {
         self.table.iter()
     }
 
