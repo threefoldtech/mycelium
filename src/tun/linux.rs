@@ -11,6 +11,8 @@ use rtnetlink::Handle;
 use tokio::{select, sync::mpsc};
 use tokio_tun::{Tun, TunBuilder};
 
+use crate::crypto::PacketBuffer;
+
 use super::IpPacket;
 
 // TODO
@@ -29,7 +31,7 @@ pub async fn new(
     route_prefix_len: u8,
 ) -> Result<
     (
-        impl Stream<Item = io::Result<IpPacket>>,
+        impl Stream<Item = io::Result<PacketBuffer>>,
         impl Sink<IpPacket, Error = impl std::error::Error>,
     ),
     Box<dyn std::error::Error>,
@@ -56,7 +58,7 @@ pub async fn new(
     // Spawn a single task to manage the TUN interface
     tokio::spawn(async move {
         loop {
-            let mut buf = vec![0; LINK_MTU as usize];
+            let mut buf = PacketBuffer::new();
             select! {
                 data = sink_receiver.recv() => {
                     match data {
@@ -68,10 +70,10 @@ pub async fn new(
                         }
                     }
                 }
-                read_result = tun.recv(&mut buf) => {
+                read_result = tun.recv(buf.buffer_mut()) => {
                     if tun_stream.send(read_result.map(|n| {
-                        buf.truncate(n);
-                        IpPacket(buf)
+                        buf.set_size(n);
+                        buf
                     })).is_err() {
                         error!("Could not forward data to tun stream, receiver is gone");
                         break;

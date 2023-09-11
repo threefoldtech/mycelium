@@ -214,7 +214,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let _ = router.route_packet(DataPacket {
                     dest_ip: dest_addr,
                     pubkey: node_pk,
-                    raw_data: shared_secret.encrypt(&packet),
+                    raw_data: shared_secret.encrypt(packet),
                 });
             }
             warn!("tun stream is done");

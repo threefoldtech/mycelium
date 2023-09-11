@@ -5,7 +5,7 @@ use std::{io, net::Ipv6Addr, ops::Deref, path::Path};
 
 use aes_gcm::{
     aead::{Aead, OsRng},
-    AeadCore, Aes256Gcm, Key, KeyInit,
+    AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit,
 };
 use blake2::{Blake2b, Digest};
 use digest::consts::U16;
@@ -14,6 +14,21 @@ use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
 };
+
+/// Default MTU for a packet. Ideally this would not be needed and the [`PacketBuffer`] takes a
+/// const generic argument which is then expanded with the needed extra space for the buffer,
+/// however as it stands const generics can only be used standalone and not in a constant
+/// expression. This _is_ possible on nightly rust, with a feature gate (generic_const_exprs).
+const PACKET_SIZE: usize = 1420;
+
+/// Size of an AES_GCM tag in bytes.
+const AES_TAG_SIZE: usize = 16;
+
+/// Size of an AES_GCM nonce in bytes.
+const AES_NONCE_SIZE: usize = 12;
+
+/// Size of a `PacketBuffer`.
+const PACKET_BUFFER_SIZE: usize = PACKET_SIZE + AES_TAG_SIZE + AES_NONCE_SIZE;
 
 /// A public key used as part of Diffie Hellman key exchange. It is derived from a [`SecretKey`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,6 +47,14 @@ pub struct SecretKey(x25519_dalek::StaticSecret);
 /// secrets in logs.
 #[derive(Clone)]
 pub struct SharedSecret([u8; 32]);
+
+/// A buffer for packets. This holds enough space to  encrypt a packet in place without
+/// reallocating.
+pub struct PacketBuffer {
+    buf: Vec<u8>,
+    /// Amount of byts written in the buffer
+    size: usize,
+}
 
 /// Type alias for a 16byte output blake2b hasher.
 type Blake2b128 = Blake2b<U16>;
@@ -94,22 +117,26 @@ impl PublicKey {
 }
 
 impl SharedSecret {
-    /// Encrypt a message using the `SharedSecret` as key.
+    /// Encrypt a [`PacketBuffer`] using the `SharedSecret` as key.
     ///
     /// Internally, a new random nonce will be generated using the OS's crypto rng generator. This
     /// nonce is appended to the encrypted data.
-    pub fn encrypt(&self, data: &[u8]) -> Vec<u8> {
+    pub fn encrypt(&self, mut data: PacketBuffer) -> Vec<u8> {
         let key: Key<Aes256Gcm> = self.0.into();
         let nonce = Aes256Gcm::generate_nonce(OsRng);
 
         let cipher = Aes256Gcm::new(&key);
-        let mut encrypted_data = cipher
-            .encrypt(&nonce, data)
+        let tag = cipher
+            .encrypt_in_place_detached(&nonce, &[], &mut data.buf[..data.size])
             .expect("Encryption can't fail; qed.");
 
-        encrypted_data.extend_from_slice(&nonce);
+        data.buf[data.size..data.size + AES_TAG_SIZE].clone_from_slice(tag.as_slice());
+        data.buf[data.size + AES_TAG_SIZE..data.size + AES_TAG_SIZE + AES_NONCE_SIZE]
+            .clone_from_slice(&nonce);
 
-        encrypted_data
+        data.buf.truncate(data.size + AES_NONCE_SIZE + AES_TAG_SIZE);
+
+        data.buf
     }
 
     /// Decrypt a message previously encrytped with an equivalent `SharedSecret`. In other words, a
@@ -129,6 +156,27 @@ impl SharedSecret {
 
         let cipher = Aes256Gcm::new(&key);
         cipher.decrypt(nonce.into(), data).map_err(|_| ())
+    }
+}
+
+impl PacketBuffer {
+    /// Create a new `PacketBuffer`.
+    pub fn new() -> Self {
+        Self {
+            buf: vec![0; PACKET_BUFFER_SIZE],
+            size: 0,
+        }
+    }
+
+    /// Get a reference to the entire useable internal buffer.
+    pub fn buffer_mut(&mut self) -> &mut [u8] {
+        let buf_size = self.buf.len() - AES_TAG_SIZE - AES_NONCE_SIZE;
+        &mut self.buf[..buf_size]
+    }
+
+    /// Sets the amount of bytes in use by the buffer.
+    pub fn set_size(&mut self, size: usize) {
+        self.size = size;
     }
 }
 
@@ -175,5 +223,13 @@ impl Deref for SharedSecret {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Deref for PacketBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.buf[..self.size]
     }
 }
