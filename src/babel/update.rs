@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::{Buf, BufMut};
 use log::trace;
 
-use crate::{crypto::PublicKey, metric::Metric, sequence_number::SeqNo, subnet::Subnet};
+use crate::{metric::Metric, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
 
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
@@ -35,7 +35,7 @@ pub struct Update {
     subnet: Subnet,
     /// Router id of the sender. Importantly this is not part of the update itself, though we do
     /// transmit it for now as such.
-    router_id: PublicKey,
+    router_id: RouterId,
 }
 
 impl Update {
@@ -45,7 +45,7 @@ impl Update {
         seqno: SeqNo,
         metric: Metric,
         subnet: Subnet,
-        router_id: PublicKey,
+        router_id: RouterId,
     ) -> Self {
         Self {
             // No flags used for now
@@ -74,7 +74,7 @@ impl Update {
     }
 
     /// Return the [`router-id`](PublicKey) of the router who advertised this [`Prefix`](IpAddr).
-    pub fn router_id(&self) -> PublicKey {
+    pub fn router_id(&self) -> RouterId {
         self.router_id
     }
 
@@ -143,7 +143,7 @@ impl Update {
         router_id_bytes.copy_from_slice(&src[..32]);
         src.advance(32);
 
-        let router_id = PublicKey::from(router_id_bytes);
+        let router_id = RouterId::from(router_id_bytes);
 
         trace!("Read update tlv body");
 
@@ -182,7 +182,7 @@ impl Update {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
-    use crate::{crypto::PublicKey, subnet::Subnet};
+    use crate::{router_id::RouterId, subnet::Subnet};
     use bytes::Buf;
 
     #[test]
@@ -196,7 +196,7 @@ mod tests {
             metric: 25.into(),
             subnet: Subnet::new(Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(), 64)
                 .expect("64 is a valid IPv6 prefix size; qed"),
-            router_id: PublicKey::from([1u8; 32]),
+            router_id: RouterId::from([1u8; 32]),
         };
 
         ihu.write_bytes(&mut buf);
@@ -220,7 +220,7 @@ mod tests {
             metric: 256.into(),
             subnet: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
                 .expect("32 is a valid IPv4 prefix size; qed"),
-            router_id: PublicKey::from([2u8; 32]),
+            router_id: RouterId::from([2u8; 32]),
         };
 
         ihu.write_bytes(&mut buf);
@@ -251,7 +251,7 @@ mod tests {
             metric: 512.into(),
             subnet: Subnet::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0)
                 .expect("0 is a valid IPv6 prefix size; qed"),
-            router_id: PublicKey::from([3u8; 32]),
+            router_id: RouterId::from([3u8; 32]),
         };
 
         let buf_len = buf.len();
@@ -275,7 +275,7 @@ mod tests {
             metric: 769.into(),
             subnet: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
                 .expect("92 is a valid IPv6 prefix size; qed"),
-            router_id: PublicKey::from([4u8; 32]),
+            router_id: RouterId::from([4u8; 32]),
         };
 
         let buf_len = buf.len();
@@ -323,7 +323,7 @@ mod tests {
             metric: 769.into(),
             subnet: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
                 .expect("92 is a valid IPv6 prefix size; qed"),
-            router_id: PublicKey::from([4u8; 32]),
+            router_id: RouterId::from([4u8; 32]),
         };
 
         let buf_len = buf.len();
@@ -347,7 +347,7 @@ mod tests {
                 64,
             )
             .expect("64 is a valid IPv6 prefix size; qed"),
-            PublicKey::from([6; 32]),
+            RouterId::from([6; 32]),
         );
         hello_src.write_bytes(&mut buf);
         let buf_len = buf.len();

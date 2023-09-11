@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{babel, crypto::PublicKey, metric::Metric, sequence_number::SeqNo, subnet::Subnet};
+use crate::{babel, metric::Metric, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
     subnet: Subnet,
-    router_id: PublicKey,
+    router_id: RouterId,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -38,17 +38,17 @@ impl FeasibilityDistance {
 
 impl SourceKey {
     /// Create a new `SourceKey`.
-    pub const fn new(subnet: Subnet, router_id: PublicKey) -> Self {
+    pub const fn new(subnet: Subnet, router_id: RouterId) -> Self {
         Self { subnet, router_id }
     }
 
-    /// Returns the router id for this `SourceKey`.
-    pub const fn router_id(&self) -> PublicKey {
+    /// Returns the [`RouterId`] for this `SourceKey`.
+    pub const fn router_id(&self) -> RouterId {
         self.router_id
     }
 
-    /// Updates the router id of this `SourceKey`
-    pub fn set_router_id(&mut self, router_id: PublicKey) {
+    /// Updates the [`RouterId`] of this `SourceKey`
+    pub fn set_router_id(&mut self, router_id: RouterId) {
         self.router_id = router_id
     }
 }

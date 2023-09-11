@@ -4,6 +4,7 @@ use crate::{
     metric::Metric,
     packet::{ControlPacket, DataPacket},
     peer::Peer,
+    router_id::RouterId,
     routing_table::{RouteEntry, RouteKey, RoutingTable},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
@@ -39,7 +40,7 @@ impl StaticRoute {
 pub struct Router {
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
     inner_r: ReadHandle<RouterInner>,
-    router_id: PublicKey,
+    router_id: RouterId,
     node_keypair: (SecretKey, PublicKey),
     router_data_tx: Sender<DataPacket>,
     router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
@@ -67,7 +68,7 @@ impl Router {
         let router = Router {
             inner_w: Arc::new(Mutex::new(inner_w)),
             inner_r,
-            router_id: node_keypair.1,
+            router_id: RouterId::new(node_keypair.1),
             node_keypair,
             router_data_tx,
             router_control_tx,
@@ -89,7 +90,7 @@ impl Router {
 
         tokio::spawn(Router::check_for_dead_peers(
             router.clone(),
-            router.node_keypair.1,
+            RouterId::new(router.node_keypair.1),
         ));
 
         Ok(router)
@@ -234,7 +235,7 @@ impl Router {
     //     }
     // }
 
-    async fn check_for_dead_peers(self, router_id: PublicKey) {
+    async fn check_for_dead_peers(self, router_id: RouterId) {
         let ihu_threshold = tokio::time::Duration::from_secs(8);
 
         loop {
@@ -352,7 +353,7 @@ impl Router {
         // convert prefix to ipv6 address
         if let IpAddr::V6(prefix_as_ipv6addr) = subnet.address() {
             // add it the mapping
-            self.add_dest_pubkey_map_entry(prefix_as_ipv6addr, router_id);
+            self.add_dest_pubkey_map_entry(prefix_as_ipv6addr, router_id.to_pubkey());
         }
 
         // create route key from incoming update control struct
@@ -743,7 +744,7 @@ impl RouterInner {
         op
     }
 
-    fn propagate_static_route(&self, router_id: PublicKey) -> Vec<RouterOpLogEntry> {
+    fn propagate_static_route(&self, router_id: RouterId) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
         for sr in self.static_routes.iter() {
             for peer in self.peer_interfaces.iter() {
@@ -764,7 +765,7 @@ impl RouterInner {
             .collect()
     }
 
-    fn propagate_selected_routes(&self, router_id: PublicKey) -> Vec<RouterOpLogEntry> {
+    fn propagate_selected_routes(&self, router_id: RouterId) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
         for sr in self.selected_routing_table.iter() {
             for peer in self.peer_interfaces.iter() {
@@ -775,7 +776,7 @@ impl RouterInner {
                     let og_sender_pubkey_option = self.dest_pubkey_map.get(&prefix);
                     // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
                     let og_sender_pubkey = match og_sender_pubkey_option {
-                        Some((pubkey, _)) => *pubkey,
+                        Some((pubkey, _)) => RouterId::new(*pubkey),
                         None => router_id,
                     };
 
@@ -836,10 +837,10 @@ enum RouterOpLogEntry {
     UnselectRoute(RouteKey),
     /// Update the route entry associated to the given route key in the fallback route table, if
     /// one exists
-    UpdateFallbackRouteEntry(RouteKey, SeqNo, Metric, PublicKey),
+    UpdateFallbackRouteEntry(RouteKey, SeqNo, Metric, RouterId),
     /// Update the route entry associated to the given route key in the selected route table, if
     /// one exists
-    UpdateSelectedRouteEntry(RouteKey, SeqNo, Metric, PublicKey),
+    UpdateSelectedRouteEntry(RouteKey, SeqNo, Metric, RouterId),
     /// Sets the static routes of the router to the provided value.
     SetStaticRoutes(Vec<StaticRoute>),
 }

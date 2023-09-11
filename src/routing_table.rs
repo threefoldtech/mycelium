@@ -1,6 +1,6 @@
 use crate::{
-    crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey,
-    subnet::Subnet,
+    metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
+    source_table::SourceKey, subnet::Subnet,
 };
 use std::{collections::BTreeMap, net::IpAddr};
 
@@ -80,8 +80,8 @@ impl RouteEntry {
         self.seqno = seqno;
     }
 
-    /// Updates the source router id of this `RouteEntry` to the given value.
-    pub fn update_router_id(&mut self, router_id: PublicKey) {
+    /// Updates the source [`RouterId`] of this `RouteEntry` to the given value.
+    pub fn update_router_id(&mut self, router_id: RouterId) {
         self.source.set_router_id(router_id);
     }
 

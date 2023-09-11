@@ -1,7 +1,8 @@
 use std::net::{IpAddr, Ipv6Addr};
 
 use crate::{
-    babel, crypto::PublicKey, metric::Metric, peer::Peer, sequence_number::SeqNo, subnet::Subnet,
+    babel, crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId,
+    sequence_number::SeqNo, subnet::Subnet,
 };
 
 /* ********************************PAKCET*********************************** */
@@ -49,7 +50,7 @@ impl ControlPacket {
         seqno: SeqNo,
         metric: Metric,
         subnet: Subnet,
-        router_id: PublicKey,
+        router_id: RouterId,
     ) -> Self {
         babel::Update::new(interval, seqno, metric, subnet, router_id).into()
     }

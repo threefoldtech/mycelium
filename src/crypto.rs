@@ -153,6 +153,7 @@ impl From<[u8; 32]> for PublicKey {
         PublicKey(x25519_dalek::PublicKey::from(bytes))
     }
 }
+
 impl TryFrom<&str> for PublicKey {
     type Error = faster_hex::Error;
 
