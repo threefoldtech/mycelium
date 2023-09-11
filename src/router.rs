@@ -196,7 +196,7 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
         let routing_table = &inner.selected_routing_table;
-        for (route_key, route_entry) in routing_table.table.iter() {
+        for (route_key, route_entry) in routing_table.iter() {
             println!("Route key: {:?}", route_key);
             println!(
                 "Route: {} (with next-hop: {:?}, metric: {}, selected: {})",
@@ -375,11 +375,9 @@ impl Router {
             (
                 inner
                     .selected_routing_table
-                    .table
                     .contains_key(&route_key_from_update)
                     || inner
                         .fallback_routing_table
-                        .table
                         .contains_key(&route_key_from_update),
                 inner.source_table.is_update_feasible(&update),
                 inner
@@ -410,7 +408,6 @@ impl Router {
                     .enter()
                     .expect("We deref through a write handle so this enter never fails")
                     .selected_routing_table
-                    .table
                     .iter()
                 {
                     if rk.subnet() == subnet {
@@ -468,7 +465,6 @@ impl Router {
                 .enter()
                 .expect("We deref through a write handle so this enter never fails")
                 .selected_routing_table
-                .table
                 .get(&route_key_from_update)
                 // clone to get rid of borrow into read handle
                 .cloned();
@@ -592,7 +588,7 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
         let mut best_route = None;
         // first look in the selected routing table for a match on the prefix of dest_ip
-        for (route_key, route_entry) in inner.selected_routing_table.table.iter() {
+        for (route_key, route_entry) in inner.selected_routing_table.iter() {
             if route_key.subnet().address() == dest_ip {
                 best_route = Some(route_entry.clone());
             }
@@ -600,7 +596,7 @@ impl Router {
         // if no match was found, look in the fallback routing table
         if best_route.is_none() {
             trace!("no match in selected routing table, looking in fallback routing table");
-            for (route_key, route_entry) in inner.fallback_routing_table.table.iter() {
+            for (route_key, route_entry) in inner.fallback_routing_table.iter() {
                 if route_key.subnet().address() == dest_ip {
                     best_route = Some(route_entry.clone());
                 }
@@ -770,7 +766,7 @@ impl RouterInner {
 
     fn propagate_selected_routes(&self, router_id: PublicKey) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
-        for sr in self.selected_routing_table.table.iter() {
+        for sr in self.selected_routing_table.iter() {
             for peer in self.peer_interfaces.iter() {
                 let peer_link_cost = peer.link_cost();
 
@@ -859,10 +855,8 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.remove_peer_interface(peer.clone());
                 // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
                 self.selected_routing_table
-                    .table
                     .retain(|_, route_entry| route_entry.next_hop() != peer.overlay_ip());
                 self.fallback_routing_table
-                    .table
                     .retain(|_, route_entry| route_entry.next_hop() != peer.overlay_ip());
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
@@ -888,14 +882,14 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.selected_routing_table.remove(rk);
             }
             RouterOpLogEntry::UpdateFallbackRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(re) = self.fallback_routing_table.table.get_mut(rk) {
+                if let Some(re) = self.fallback_routing_table.get_mut(rk) {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
                 }
             }
             RouterOpLogEntry::UpdateSelectedRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(re) = self.selected_routing_table.table.get_mut(rk) {
+                if let Some(re) = self.selected_routing_table.get_mut(rk) {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);

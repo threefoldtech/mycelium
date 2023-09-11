@@ -93,22 +93,58 @@ impl RouteEntry {
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
-    pub table: BTreeMap<RouteKey, RouteEntry>,
+    // TODO: we might need a better structure for this.
+    table: BTreeMap<RouteKey, RouteEntry>,
 }
 
 impl RoutingTable {
+    /// Create a new, empty `RoutingTable`.
     pub fn new() -> Self {
         Self {
             table: BTreeMap::new(),
         }
     }
 
-    pub fn insert(&mut self, key: RouteKey, entry: RouteEntry) {
-        self.table.insert(key, entry);
-        //println!("Added route to routing table: {:?}", self.table);
+    /// Get a reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is present in
+    /// the table.
+    pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {
+        self.table.get(key)
     }
 
+    /// Get a mutablereference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
+    /// present in the table.
+    pub fn get_mut(&mut self, key: &RouteKey) -> Option<&mut RouteEntry> {
+        self.table.get_mut(key)
+    }
+
+    /// Insert a new [`RouteEntry`] in the table. If there is already an entry for the
+    /// [`RouteKey`], the existing entry is removed.
+    pub fn insert(&mut self, key: RouteKey, entry: RouteEntry) {
+        self.table.insert(key, entry);
+    }
+
+    /// Make sure there is no [`RouteEntry`] in the table for a given [`RouteKey`]. If an entry
+    /// existed prior to calling this, it is returned.
     pub fn remove(&mut self, key: &RouteKey) -> Option<RouteEntry> {
         self.table.remove(key)
+    }
+
+    /// Create an iterator over all key value pairs in the table.
+    // TODO: remove this?
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a RouteKey, &'a RouteEntry)> {
+        self.table.iter()
+    }
+
+    /// Checks if there is an entry for the given [`RouteKey`].
+    pub fn contains_key(&self, key: &RouteKey) -> bool {
+        self.table.contains_key(key)
+    }
+
+    /// Only maintain the [`RouteEntry`]'s indicated by the predicate.
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&RouteKey, &mut RouteEntry) -> bool,
+    {
+        self.table.retain(f)
     }
 }
