@@ -57,8 +57,14 @@ pub async fn new(
 
     // Spawn a single task to manage the TUN interface
     tokio::spawn(async move {
+        let mut buf_hold = None;
         loop {
-            let mut buf = PacketBuffer::new();
+            let mut buf = if let Some(buf) = buf_hold.take() {
+                buf
+            } else {
+                PacketBuffer::new()
+            };
+
             select! {
                 data = sink_receiver.recv() => {
                     match data {
@@ -69,6 +75,8 @@ pub async fn new(
                             }
                         }
                     }
+                    // Save the buffer as we didn't  use it
+                    buf_hold = Some(buf);
                 }
                 read_result = tun.recv(buf.buffer_mut()) => {
                     if tun_stream.send(read_result.map(|n| {
