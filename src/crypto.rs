@@ -16,7 +16,7 @@ use tokio::{
 /// const generic argument which is then expanded with the needed extra space for the buffer,
 /// however as it stands const generics can only be used standalone and not in a constant
 /// expression. This _is_ possible on nightly rust, with a feature gate (generic_const_exprs).
-const PACKET_SIZE: usize = 1420;
+const PACKET_SIZE: usize = 1400;
 
 /// Size of an AES_GCM tag in bytes.
 const AES_TAG_SIZE: usize = 16;

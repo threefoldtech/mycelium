@@ -16,7 +16,7 @@ use crate::crypto::PacketBuffer;
 use super::IpPacket;
 
 // TODO
-const LINK_MTU: i32 = 1420;
+const LINK_MTU: i32 = 1400;
 
 /// Create a new tun interface and set required routes
 ///
