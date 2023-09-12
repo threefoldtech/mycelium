@@ -243,3 +243,58 @@ impl Deref for PacketBuffer {
         &self.buf[..self.size]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{PacketBuffer, SecretKey, AES_NONCE_SIZE, AES_TAG_SIZE};
+
+    #[test]
+    /// Test if encryption works in general. We just create some random value and encrypt it.
+    /// Specifically, this will help to catch runtime panics in case AES_TAG_SIZE or AES_NONCE_SIZE
+    /// don't have a proper value aligned with the underlying AES_GCM implementation.
+    fn encryption_succeeds() {
+        let k1 = SecretKey::new();
+        let k2 = SecretKey::new();
+
+        let ss = k1.shared_secret(&(&k2).into());
+
+        let mut pb = PacketBuffer::new();
+        let data = b"vnno30nv f654q364 vfsv 44"; // Random keyboard smash.
+
+        pb.buffer_mut()[..data.len()].copy_from_slice(data);
+        pb.set_size(data.len());
+
+        // We only care that this does not panic.
+        let res = ss.encrypt(pb);
+        // At the same time, check expected size.
+        assert_eq!(res.len(), data.len() + AES_TAG_SIZE + AES_NONCE_SIZE);
+    }
+
+    #[test]
+    /// Encrypt a value and then decrypt it. This makes sure the decrypt flow and encrypt flow
+    /// match, and both follow the expected format. Also, we don't reuse the shared secret for
+    /// decryption, but instead generate the secret again the other way round, to simulate a remote
+    /// node.
+    fn encrypt_decrypt_roundtrip() {
+        let k1 = SecretKey::new();
+        let k2 = SecretKey::new();
+
+        let ss1 = k1.shared_secret(&(&k2).into());
+        let ss2 = k2.shared_secret(&(&k1).into());
+
+        // This assertion is not strictly necessary as it will be checked below implicitly.
+        assert_eq!(ss1.as_slice(), ss2.as_slice());
+
+        let data = b"dsafjiqjo23  u2953u8 3oid fjo321j";
+        let mut pb = PacketBuffer::new();
+
+        pb.buffer_mut()[..data.len()].copy_from_slice(data);
+        pb.set_size(data.len());
+
+        let res = ss1.encrypt(pb);
+
+        let original = ss2.decrypt(res).expect("Decryption works");
+
+        assert_eq!(&original, &data[..]);
+    }
+}
