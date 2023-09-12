@@ -530,7 +530,7 @@ impl Router {
                 Some(ss) => ss,
                 None => self.node_secret_key().shared_secret(&pubkey_sender),
             };
-            let decrypted_raw_data = match shared_secret.decrypt(&data_packet.raw_data) {
+            let decrypted_raw_data = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
                     log::debug!("Dropping data packet with invalid encrypted content");

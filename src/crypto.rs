@@ -3,10 +3,7 @@
 use core::fmt;
 use std::{io, net::Ipv6Addr, ops::Deref, path::Path};
 
-use aes_gcm::{
-    aead::{Aead, OsRng},
-    AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit,
-};
+use aes_gcm::{aead::OsRng, AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit};
 use blake2::{Blake2b, Digest};
 use digest::consts::U16;
 use serde::Serialize;
@@ -146,16 +143,29 @@ impl SharedSecret {
     /// If the passed in data to decrypt does not contain a valid nonce, decryption fails and an
     /// opaque error is returned. As an extension to this, if the data is not of sufficient length
     /// to contain a valid nonce, an error is returned immediately.
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
+    pub fn decrypt(&self, mut data: Vec<u8>) -> Result<Vec<u8>, ()> {
         // Make sure we have sufficient data (i.e. a nonce).
-        if data.len() < 12 {
+        if data.len() < AES_NONCE_SIZE + AES_TAG_SIZE {
             return Err(());
         }
-        let key: Key<Aes256Gcm> = self.0.into();
-        let (data, nonce) = data.split_at(data.len() - 12);
 
-        let cipher = Aes256Gcm::new(&key);
-        cipher.decrypt(nonce.into(), data).map_err(|_| ())
+        let data_len = data.len();
+
+        let key: Key<Aes256Gcm> = self.0.into();
+        {
+            let (data, nonce) = data.split_at_mut(data_len - AES_NONCE_SIZE);
+            let (data, tag) = data.split_at_mut(data.len() - AES_TAG_SIZE);
+
+            let cipher = Aes256Gcm::new(&key);
+            cipher
+                .decrypt_in_place_detached((&*nonce).into(), &[], data, (&*tag).into())
+                .map_err(|_| ())?;
+        }
+
+        // Set the proper size
+        data.truncate(data_len - AES_TAG_SIZE - AES_NONCE_SIZE);
+
+        Ok(data)
     }
 }
 
