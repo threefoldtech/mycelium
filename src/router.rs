@@ -1,6 +1,7 @@
 use crate::{
     babel,
     crypto::{PublicKey, SecretKey, SharedSecret},
+    filters::RouteUpdateFilter,
     metric::Metric,
     packet::{ControlPacket, DataPacket},
     peer::Peer,
@@ -46,6 +47,7 @@ pub struct Router {
     router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
     node_tun: UnboundedSender<Vec<u8>>,
     node_tun_addr: Ipv6Addr,
+    update_filters: Arc<Vec<Box<dyn RouteUpdateFilter + Send + Sync>>>,
 }
 
 impl Router {
@@ -54,6 +56,7 @@ impl Router {
         node_tun_addr: Ipv6Addr,
         static_routes: Vec<StaticRoute>,
         node_keypair: (SecretKey, PublicKey),
+        update_filters: Vec<Box<dyn RouteUpdateFilter + Send + Sync>>,
     ) -> Result<Self, Box<dyn Error>> {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel();
@@ -74,6 +77,7 @@ impl Router {
             router_control_tx,
             node_tun,
             node_tun_addr,
+            update_filters: Arc::new(update_filters),
         };
 
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
@@ -345,6 +349,14 @@ impl Router {
     }
 
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {
+        // Check if we actually allow this update based on filters.
+        for filter in &*self.update_filters {
+            if !filter.allow(&update) {
+                debug!("Update denied by filter");
+                return;
+            }
+        }
+
         let metric = update.metric();
         let router_id = update.router_id();
         let seqno = update.seqno();

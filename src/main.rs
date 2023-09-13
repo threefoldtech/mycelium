@@ -1,3 +1,4 @@
+use crate::filters::AllowedSubnet;
 use crate::router::StaticRoute;
 use crate::{packet::DataPacket, subnet::Subnet};
 use bytes::BytesMut;
@@ -42,6 +43,11 @@ const TUN_NAME: &str = "tun0";
 const TUN_ROUTE_DEST: Ipv6Addr = Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0);
 /// Global route prefix of overlay network
 const TUN_ROUTE_PREFIX: u8 = 7;
+
+/// The prefix of the global subnet used.
+const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0));
+/// THe prefix lenght of the global subnet used.
+const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
 #[derive(Parser)]
 struct Cli {
@@ -141,6 +147,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
         )],
         node_keypair.clone(),
+        vec![Box::new(AllowedSubnet::new(
+            Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
+                .expect("Global subnet is properly defined; qed"),
+        ))],
     ) {
         Ok(router) => {
             info!(
