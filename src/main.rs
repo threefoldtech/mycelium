@@ -17,6 +17,7 @@ use tokio::signal::{self, unix::SignalKind};
 mod babel;
 mod codec;
 mod crypto;
+mod filters;
 mod interval;
 mod metric;
 mod packet;
