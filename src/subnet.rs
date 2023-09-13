@@ -42,6 +42,24 @@ impl Subnet {
     pub fn address(&self) -> IpAddr {
         self.inner.addr()
     }
+
+    /// Checks if this `Subnet` contains the provided `Subnet`, i.e. all addresses of the provided
+    /// `Subnet` are also part of this `Subnet`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::net::Ipv4Address
+    ///
+    /// let global = Subnet::new(Ipv4Address::new(0,0,0,0).into(), 0);
+    /// let local = Subnet::new(Ipv4Address::new(10,0,0,0).into(), 8);
+    ///
+    /// assert!(global.contains_subnet(&local));
+    /// assert!(!local.contains_subnet(&global));
+    /// ```
+    pub fn contains_subnet(&self, other: &Self) -> bool {
+        self.inner.contains(&other.inner)
+    }
 }
 
 impl fmt::Display for Subnet {
