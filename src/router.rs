@@ -599,20 +599,20 @@ impl Router {
             .inner_r
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles");
-        let mut best_route = None;
+        let mut best_route;
         // first look in the selected routing table for a match on the prefix of dest_ip
-        for (route_key, route_entry) in inner.selected_routing_table.iter() {
-            if route_key.subnet().address() == dest_ip {
-                best_route = Some(route_entry.clone());
-            }
-        }
-        // if no match was found, look in the fallback routing table
+        best_route = inner.selected_routing_table.lookup(dest_ip);
+        // If there was no entry in the selected routing table, check for one in the fallback
+        // routing table.
+        // TODO: Is this even possible?
         if best_route.is_none() {
-            trace!("no match in selected routing table, looking in fallback routing table");
-            for (route_key, route_entry) in inner.fallback_routing_table.iter() {
-                if route_key.subnet().address() == dest_ip {
-                    best_route = Some(route_entry.clone());
-                }
+            best_route = inner.fallback_routing_table.lookup(dest_ip);
+            if best_route.is_some() {
+                // TODO: verify above todo and adapt as required.
+                warn!(
+                    "Found route for dest {:?} in fallback table but not in selected table",
+                    dest_ip
+                );
             }
         }
 
