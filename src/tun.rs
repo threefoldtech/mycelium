@@ -3,6 +3,9 @@
 #[cfg(target_os = "linux")]
 mod linux;
 
+#[cfg(not(target_os = "linux"))]
+compile_error!("The platform you are compiling on is currently not supported");
+
 use std::ops::Deref;
 
 #[cfg(target_os = "linux")]
