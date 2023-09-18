@@ -60,6 +60,11 @@ impl Subnet {
     pub fn contains_subnet(&self, other: &Self) -> bool {
         self.inner.contains(&other.inner)
     }
+
+    /// Cheks if this `Subnet` contains the provided [`IpAddr`].
+    pub fn contains_ip(&self, ip: IpAddr) -> bool {
+        self.inner.contains(&ip)
+    }
 }
 
 impl fmt::Display for Subnet {
