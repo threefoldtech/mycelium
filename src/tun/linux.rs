@@ -79,10 +79,12 @@ pub async fn new(
                     buf_hold = Some(buf);
                 }
                 read_result = tun.recv(buf.buffer_mut()) => {
-                    if tun_stream.send(read_result.map(|n| {
+                    let rr = read_result.map(|n| {
                         buf.set_size(n);
                         buf
-                    })).is_err() {
+                    });
+
+                    if tun_stream.send(rr).is_err() {
                         error!("Could not forward data to tun stream, receiver is gone");
                         break;
                     };
