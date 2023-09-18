@@ -147,4 +147,15 @@ impl RoutingTable {
     {
         self.table.retain(f)
     }
+
+    /// Look up a route for an [`IpAddr`] in the `RoutingTable`.
+    pub fn lookup(&self, ip: IpAddr) -> Option<RouteEntry> {
+        for (rk, rv) in &self.table {
+            if rk.subnet.contains_ip(ip) {
+                return Some(rv.clone());
+            }
+        }
+
+        None
+    }
 }
