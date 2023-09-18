@@ -46,14 +46,14 @@ pub struct Router {
     router_data_tx: Sender<DataPacket>,
     router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
     node_tun: UnboundedSender<Vec<u8>>,
-    node_tun_addr: Ipv6Addr,
+    node_tun_subnet: Subnet,
     update_filters: Arc<Vec<Box<dyn RouteUpdateFilter + Send + Sync>>>,
 }
 
 impl Router {
     pub fn new(
         node_tun: UnboundedSender<Vec<u8>>,
-        node_tun_addr: Ipv6Addr,
+        node_tun_subnet: Subnet,
         static_routes: Vec<StaticRoute>,
         node_keypair: (SecretKey, PublicKey),
         update_filters: Vec<Box<dyn RouteUpdateFilter + Send + Sync>>,
@@ -76,7 +76,7 @@ impl Router {
             router_data_tx,
             router_control_tx,
             node_tun,
-            node_tun_addr,
+            node_tun_subnet,
             update_filters: Arc::new(update_filters),
         };
 
@@ -108,8 +108,8 @@ impl Router {
         self.router_data_tx.clone()
     }
 
-    pub fn node_tun_addr(&self) -> Ipv6Addr {
-        self.node_tun_addr
+    pub fn node_tun_subnet(&self) -> Subnet {
+        self.node_tun_subnet
     }
 
     pub fn node_tun(&self) -> UnboundedSender<Vec<u8>> {
@@ -527,15 +527,15 @@ impl Router {
     }
 
     pub fn route_packet(&self, data_packet: DataPacket) -> Result<(), ()> {
-        let node_tun_addr = self.node_tun_addr();
+        let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
             "Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})",
             data_packet.dest_ip,
-            node_tun_addr
+            node_tun_subnet
         );
 
-        if data_packet.dest_ip == node_tun_addr {
+        if node_tun_subnet.contains_ip(data_packet.dest_ip.into()) {
             // decrypt & send to TUN interface
             let pubkey_sender = data_packet.pubkey;
             let shared_secret = match self.get_shared_secret_by_pubkey(&pubkey_sender) {

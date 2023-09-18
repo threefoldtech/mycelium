@@ -48,6 +48,11 @@ impl PeerManager {
 
     async fn get_peers_from_config(self) {
         if let Ok(file_content) = std::fs::read_to_string(NODE_CONFIG_FILE_PATH) {
+            let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
+                ip
+            } else {
+                panic!("Non IPv6 node tun not support currently")
+            };
             let config: PeersConfig = toml::from_str(&file_content).unwrap();
 
             for peer_addr in config.peers {
@@ -70,7 +75,7 @@ impl PeerManager {
                     let mut buf = [0u8; 17];
                     // only using IPv6
                     buf[0] = 1;
-                    buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
+                    buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
                     peer_stream.write_all(&buf).await.unwrap();
 
@@ -92,6 +97,11 @@ impl PeerManager {
     }
 
     async fn get_peers_from_cli(self, socket_addresses: Vec<SocketAddr>) {
+        let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
+            ip
+        } else {
+            panic!("Non IPv6 node tun not support currently")
+        };
         for peer_addr in socket_addresses {
             if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
                 let mut buffer = [0u8; 17];
@@ -112,7 +122,7 @@ impl PeerManager {
                 let mut buf = [0u8; 17];
                 // only using IPv6
                 buf[0] = 1;
-                buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
+                buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
                 peer_stream.write_all(&buf).await.unwrap();
 
@@ -132,6 +142,11 @@ impl PeerManager {
 
     // this is used to reconnect to the provided static peers in case the connection is lost
     async fn reconnect_to_initial_peers(self) {
+        let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
+            ip
+        } else {
+            panic!("Non IPv6 node tun not support currently")
+        };
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
@@ -157,7 +172,7 @@ impl PeerManager {
                         let mut buf = [0u8; 17];
                         // only using IPv6
                         buf[0] = 1;
-                        buf[1..].copy_from_slice(&self.router.node_tun_addr().octets()[..]);
+                        buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
                         peer_stream.write_all(&buf).await.unwrap();
 
@@ -178,7 +193,11 @@ impl PeerManager {
     }
 
     async fn start_listener(self, port: u16) {
-        let node_tun_addr = self.router.node_tun_addr();
+        let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
+            ip
+        } else {
+            panic!("Non IPv6 node tun not support currently")
+        };
         let router_data_tx = self.router.router_data_tx();
         let router_control_tx = self.router.router_control_tx();
 

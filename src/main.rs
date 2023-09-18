@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Creating a new Router instance
     let router = match router::Router::new(
         tun_tx,
-        node_addr,
+        Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
         vec![StaticRoute::new(
             Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
         )],
