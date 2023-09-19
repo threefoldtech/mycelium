@@ -162,12 +162,10 @@ impl RoutingTable {
         self.table.contains_key(key)
     }
 
-    /// Only maintain the [`RouteEntry`]'s indicated by the predicate.
-    pub fn retain<F>(&mut self, f: F)
-    where
-        F: FnMut(&RouteKey, &mut RouteEntry) -> bool,
-    {
-        self.table.retain(f)
+    /// Remove all [`RouteKey`] and [`RouteEntry`] pairs where the [`RouteEntry`]'s neighbour value
+    /// is the given [`Peer`].
+    pub fn remove_peer(&mut self, peer: &Peer) {
+        self.table.retain(|rk, _| &rk.neighbor != peer)
     }
 
     /// Look up a route for an [`IpAddr`] in the `RoutingTable`.

@@ -835,10 +835,8 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::RemovePeer(peer) => {
                 self.remove_peer_interface(peer.clone());
                 // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
-                self.selected_routing_table
-                    .retain(|_, route_entry| route_entry.neighbour() != peer);
-                self.fallback_routing_table
-                    .retain(|_, route_entry| route_entry.neighbour() != peer);
+                self.selected_routing_table.remove_peer(peer);
+                self.fallback_routing_table.remove_peer(peer);
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
                 self.source_table.insert(*sk, *fd);
