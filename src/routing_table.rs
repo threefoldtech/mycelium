@@ -82,11 +82,6 @@ impl RouteEntry {
         self.metric
     }
 
-    /// Return the address of the next hop [`Peer`] associated with this `RouteEntry`.
-    pub fn next_hop(&self) -> IpAddr {
-        self.neighbor.overlay_ip()
-    }
-
     /// Return the (neighbour)[`Peer`] associated with this `RouteEntry`.
     pub fn neighbour(&self) -> &Peer {
         &self.neighbor

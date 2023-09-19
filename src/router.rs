@@ -133,13 +133,6 @@ impl Router {
             .publish();
     }
 
-    pub fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
-        self.inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .peer_by_ip(peer_ip)
-    }
-
     pub fn peer_exists(&self, peer_underlay_ip: IpAddr) -> bool {
         self.inner_r
             .enter()
@@ -685,15 +678,6 @@ impl RouterInner {
     }
     fn remove_peer_interface(&mut self, peer: Peer) {
         self.peer_interfaces.retain(|p| p != &peer);
-    }
-
-    fn peer_by_ip(&self, peer_ip: IpAddr) -> Option<Peer> {
-        let matching_peer = self
-            .peer_interfaces
-            .iter()
-            .find(|peer| peer.overlay_ip() == peer_ip);
-
-        matching_peer.map(Clone::clone)
     }
 
     fn send_update(&self, peer: &Peer, update: babel::Update) -> Option<RouterOpLogEntry> {
