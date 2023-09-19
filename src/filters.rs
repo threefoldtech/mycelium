@@ -8,6 +8,16 @@ pub trait RouteUpdateFilter {
     fn allow(&self, update: &babel::Update) -> bool;
 }
 
+/// Limit the subnet size of subnets announced in updates to be at most `N` bits. Note that "at
+/// most" here means that the actual prefix length needs to be **AT LEAST** this value.
+pub struct MaxSubnetSize<const N: u8>;
+
+impl<const N: u8> RouteUpdateFilter for MaxSubnetSize<N> {
+    fn allow(&self, update: &babel::Update) -> bool {
+        update.subnet().prefix_len() >= N
+    }
+}
+
 pub struct AllowedSubnet {
     subnet: Subnet,
 }

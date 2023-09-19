@@ -1,4 +1,4 @@
-use crate::filters::AllowedSubnet;
+use crate::filters;
 use crate::router::StaticRoute;
 use crate::{packet::DataPacket, subnet::Subnet};
 use bytes::BytesMut;
@@ -147,10 +147,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
         )],
         node_keypair.clone(),
-        vec![Box::new(AllowedSubnet::new(
-            Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
-                .expect("Global subnet is properly defined; qed"),
-        ))],
+        vec![
+            Box::new(filters::AllowedSubnet::new(
+                Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
+                    .expect("Global subnet is properly defined; qed"),
+            )),
+            Box::new(filters::MaxSubnetSize::<64>),
+        ],
     ) {
         Ok(router) => {
             info!(
