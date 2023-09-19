@@ -1,4 +1,3 @@
-use crate::filters;
 use crate::router::StaticRoute;
 use crate::{packet::DataPacket, subnet::Subnet};
 use bytes::BytesMut;
@@ -20,6 +19,7 @@ mod codec;
 mod crypto;
 mod filters;
 mod interval;
+mod ip_pubkey;
 mod metric;
 mod packet;
 mod peer;
