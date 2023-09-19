@@ -212,7 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Get shared secret from node and dest address
-                let shared_secret = match router.get_shared_secret_from_dest(&dest_addr) {
+                let shared_secret = match router.get_shared_secret_from_dest(dest_addr) {
                     Some(ss) => ss,
                     None => {
                         debug!(
