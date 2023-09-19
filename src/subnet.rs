@@ -61,9 +61,14 @@ impl Subnet {
         self.inner.contains(&other.inner)
     }
 
-    /// Cheks if this `Subnet` contains the provided [`IpAddr`].
+    /// Checks if this `Subnet` contains the provided [`IpAddr`].
     pub fn contains_ip(&self, ip: IpAddr) -> bool {
         self.inner.contains(&ip)
+    }
+
+    /// Returns the network part of the `Subnet`. All non prefix bits are set to 0.
+    pub fn network(&self) -> IpAddr {
+        self.inner.network()
     }
 }
 
