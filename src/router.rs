@@ -2,6 +2,7 @@ use crate::{
     babel,
     crypto::{PublicKey, SecretKey, SharedSecret},
     filters::RouteUpdateFilter,
+    ip_pubkey::IpPubkeyMap,
     metric::Metric,
     packet::{ControlPacket, DataPacket},
     peer::Peer,
@@ -14,7 +15,6 @@ use crate::{
 use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
 use std::{
-    collections::HashMap,
     error::Error,
     fmt::Debug,
     net::{IpAddr, Ipv6Addr},
@@ -150,7 +150,7 @@ impl Router {
 
     /// Add a new destination [`PublicKey`] to the destination map. This will also compute and store
     /// the [`SharedSecret`] from the `Router`'s [`SecretKey`].
-    pub fn add_dest_pubkey_map_entry(&self, dest: Ipv6Addr, pubkey: PublicKey) {
+    pub fn add_dest_pubkey_map_entry(&self, dest: Subnet, pubkey: PublicKey) {
         let ss = self.node_keypair.0.shared_secret(&pubkey);
 
         self.inner_w
@@ -161,30 +161,23 @@ impl Router {
     }
 
     /// Gets the cached [`SharedSecret`] for the remote.
-    pub fn get_shared_secret_from_dest(&self, dest: &Ipv6Addr) -> Option<SharedSecret> {
+    pub fn get_shared_secret_from_dest(&self, dest: Ipv6Addr) -> Option<SharedSecret> {
         self.inner_r
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles")
             .dest_pubkey_map
-            .get(dest)
+            .lookup(dest)
             .map(|(_, ss)| ss.clone())
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
     pub fn get_shared_secret_by_pubkey(&self, dest: &PublicKey) -> Option<SharedSecret> {
-        for (pk, ss) in self
-            .inner_r
+        self.inner_r
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles")
             .dest_pubkey_map
-            .values()
-        {
-            if pk == dest {
-                return Some(ss.clone());
-            }
-        }
-
-        None
+            .lookup(dest.address())
+            .map(|(_, ss)| ss.clone())
     }
 
     pub fn print_selected_routes(&self) {
@@ -355,11 +348,8 @@ impl Router {
         let seqno = update.seqno();
         let subnet = update.subnet();
 
-        // convert prefix to ipv6 address
-        if let IpAddr::V6(prefix_as_ipv6addr) = subnet.address() {
-            // add it the mapping
-            self.add_dest_pubkey_map_entry(prefix_as_ipv6addr, router_id.to_pubkey());
-        }
+        // add it to the mapping
+        self.add_dest_pubkey_map_entry(subnet, router_id.to_pubkey());
 
         // create route key from incoming update control struct
         // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
@@ -380,10 +370,12 @@ impl Router {
             (
                 inner
                     .selected_routing_table
-                    .contains_key(&route_key_from_update)
+                    .get(&route_key_from_update)
+                    .is_some()
                     || inner
                         .fallback_routing_table
-                        .contains_key(&route_key_from_update),
+                        .get(&route_key_from_update)
+                        .is_some(),
                 inner.source_table.is_update_feasible(&update),
             )
         };
@@ -659,7 +651,7 @@ pub struct RouterInner {
     router_seqno: SeqNo,
     static_routes: Vec<StaticRoute>,
     // map that contains the overlay ips of peers and their respective public keys
-    dest_pubkey_map: HashMap<Ipv6Addr, (PublicKey, SharedSecret)>,
+    dest_pubkey_map: IpPubkeyMap,
 }
 
 impl RouterInner {
@@ -671,7 +663,7 @@ impl RouterInner {
             source_table: SourceTable::new(),
             router_seqno: SeqNo::default(),
             static_routes: vec![],
-            dest_pubkey_map: HashMap::new(),
+            dest_pubkey_map: IpPubkeyMap::new(),
         };
 
         Ok(router_inner)
@@ -752,31 +744,36 @@ impl RouterInner {
                 let peer_link_cost = peer.link_cost();
 
                 // convert sr.0.prefix to ipv6 addr
-                if let IpAddr::V6(prefix) = sr.0.subnet().address() {
-                    let og_sender_pubkey_option = self.dest_pubkey_map.get(&prefix);
-                    // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
-                    let og_sender_pubkey = match og_sender_pubkey_option {
-                        Some((pubkey, _)) => RouterId::new(*pubkey),
-                        None => router_id,
-                    };
+                let addr = if let IpAddr::V6(addr) = sr.0.subnet().address() {
+                    addr
+                } else {
+                    continue;
+                };
 
-                    let update = babel::Update::new(
-                        UPDATE_INTERVAL,
-                        self.router_seqno, // updates receive the seqno of the router
-                        sr.1.metric() + Metric::from(peer_link_cost),
-                        // the cost of the route is the cost of the route + the cost of the link to the peer
-                        sr.0.subnet(),
-                        // we looked for the router_id, which is a public key, in the dest_pubkey_map
-                        // if the router_id is not in the map, then the route came from the node itself
-                        og_sender_pubkey,
-                    );
-                    // println!(
-                    //     "\n\n\n\nPropagting route update to: {}\n {:?}\n\n",
-                    //     peer.overlay_ip(),
-                    //     update
-                    // );
-                    updates.push((peer.clone(), update));
-                }
+                let og_sender_pubkey = if let Some((pubkey, _)) = self.dest_pubkey_map.lookup(addr)
+                {
+                    RouterId::new(*pubkey)
+                } else {
+                    // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
+                    router_id
+                };
+
+                let update = babel::Update::new(
+                    UPDATE_INTERVAL,
+                    self.router_seqno, // updates receive the seqno of the router
+                    sr.1.metric() + Metric::from(peer_link_cost),
+                    // the cost of the route is the cost of the route + the cost of the link to the peer
+                    sr.0.subnet(),
+                    // we looked for the router_id, which is a public key, in the dest_pubkey_map
+                    // if the router_id is not in the map, then the route came from the node itself
+                    og_sender_pubkey,
+                );
+                // println!(
+                //     "\n\n\n\nPropagting route update to: {}\n {:?}\n\n",
+                //     peer.overlay_ip(),
+                //     update
+                // );
+                updates.push((peer.clone(), update));
             }
         }
 
@@ -795,7 +792,7 @@ impl RouterInner {
 
 enum RouterOpLogEntry {
     /// Add a destination public key and shared secret for this router.
-    AddDestPubkey(Ipv6Addr, PublicKey, SharedSecret),
+    AddDestPubkey(Subnet, PublicKey, SharedSecret),
     /// Add a new peer to the router.
     AddPeer(Peer),
     /// Removes a peer from the router.
@@ -829,7 +826,7 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
     fn absorb_first(&mut self, operation: &mut RouterOpLogEntry, _: &Self) {
         match operation {
             RouterOpLogEntry::AddDestPubkey(dest, pk, ss) => {
-                self.dest_pubkey_map.insert(*dest, (*pk, ss.clone()));
+                self.dest_pubkey_map.insert(*dest, *pk, ss.clone());
             }
             RouterOpLogEntry::AddPeer(peer) => self.peer_interfaces.push(peer.clone()),
             RouterOpLogEntry::RemovePeer(peer) => {

@@ -1,8 +1,13 @@
+use ip_network_table_deps_treebitmap::IpLookupTable;
+
 use crate::{
     metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
     source_table::SourceKey, subnet::Subnet,
 };
-use std::{cmp::Ordering, collections::BTreeMap, net::IpAddr};
+use std::{
+    cmp::Ordering,
+    net::{IpAddr, Ipv6Addr},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteKey {
@@ -113,69 +118,141 @@ impl RouteEntry {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct RoutingTable {
     // TODO: we might need a better structure for this.
-    table: BTreeMap<RouteKey, RouteEntry>,
+    //table: BTreeMap<RouteKey, RouteEntry>,
+    table: IpLookupTable<Ipv6Addr, RouteEntry>,
 }
 
 impl RoutingTable {
     /// Create a new, empty `RoutingTable`.
     pub fn new() -> Self {
         Self {
-            table: BTreeMap::new(),
+            table: IpLookupTable::new(),
         }
     }
 
     /// Get a reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is present in
     /// the table.
     pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {
-        self.table.get(key)
+        let addr = match key.subnet.address() {
+            IpAddr::V6(addr) => addr,
+            _ => return None,
+        };
+
+        let val = self
+            .table
+            .exact_match(addr, key.subnet.prefix_len() as u32)?;
+        if val.neighbor == key.neighbor {
+            return Some(val);
+        }
+
+        None
     }
 
     /// Get a mutablereference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
     /// present in the table.
     pub fn get_mut(&mut self, key: &RouteKey) -> Option<&mut RouteEntry> {
-        self.table.get_mut(key)
+        let addr = match key.subnet.address() {
+            IpAddr::V6(addr) => addr,
+            _ => return None,
+        };
+
+        let val = self
+            .table
+            .exact_match_mut(addr, key.subnet.prefix_len() as u32)?;
+        if val.neighbor == key.neighbor {
+            return Some(val);
+        }
+
+        None
     }
 
     /// Insert a new [`RouteEntry`] in the table. If there is already an entry for the
     /// [`RouteKey`], the existing entry is removed.
+    ///
+    /// Currenly only IPv6 is supported, attempting to insert an IPv4 network does nothing.
     pub fn insert(&mut self, key: RouteKey, entry: RouteEntry) {
-        self.table.insert(key, entry);
+        let addr = match key.subnet.network() {
+            IpAddr::V6(addr) => addr,
+            _ => return,
+        };
+        self.table
+            .insert(addr, key.subnet.prefix_len() as u32, entry);
     }
 
     /// Make sure there is no [`RouteEntry`] in the table for a given [`RouteKey`]. If an entry
     /// existed prior to calling this, it is returned.
+    ///
+    /// Currenly only IPv6 is supported, attempting to remove an IPv4 network does nothing.
     pub fn remove(&mut self, key: &RouteKey) -> Option<RouteEntry> {
-        self.table.remove(key)
+        let addr = match key.subnet.network() {
+            IpAddr::V6(addr) => addr,
+            _ => return None,
+        };
+        self.table.remove(addr, key.subnet.prefix_len() as u32)
     }
 
     /// Create an iterator over all key value pairs in the table.
     // TODO: remove this?
-    pub fn iter(&self) -> impl Iterator<Item = (&'_ RouteKey, &'_ RouteEntry)> {
-        self.table.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (RouteKey, &'_ RouteEntry)> {
+        self.table.iter().map(|(addr, prefix, value)| {
+            (
+                RouteKey::new(
+                    Subnet::new(addr.into(), prefix as u8)
+                        .expect("Only proper subnets are inserted in the table; qed"),
+                    value.neighbor.clone(),
+                ),
+                value,
+            )
+        })
     }
 
     /// Checks if there is an entry for the given [`RouteKey`].
-    pub fn contains_key(&self, key: &RouteKey) -> bool {
-        self.table.contains_key(key)
-    }
+    //pub fn contains_key(&self, key: &RouteKey) -> bool {
+    //    self.table.exact_match()
+    //    self.table.contains_key(key);
+    //}
 
     /// Remove all [`RouteKey`] and [`RouteEntry`] pairs where the [`RouteEntry`]'s neighbour value
     /// is the given [`Peer`].
+    // TODO: performance
     pub fn remove_peer(&mut self, peer: &Peer) {
-        self.table.retain(|rk, _| &rk.neighbor != peer)
+        let to_remove = self
+            .table
+            .iter()
+            .filter_map(|(addr, plen, re)| {
+                if &re.neighbor == peer {
+                    Some((addr, plen))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for (addr, plen) in to_remove {
+            self.table.remove(addr, plen);
+        }
     }
 
     /// Look up a route for an [`IpAddr`] in the `RoutingTable`.
+    ///
+    /// Currently only IPv6 is supported, looking up an IPv4 address always returns [`Option::None`].
     pub fn lookup(&self, ip: IpAddr) -> Option<RouteEntry> {
-        for (rk, rv) in &self.table {
-            if rk.subnet.contains_ip(ip) {
-                return Some(rv.clone());
-            }
-        }
+        let addr = match ip {
+            IpAddr::V6(addr) => addr,
+            _ => return None,
+        };
+        self.table.longest_match(addr).map(|(_, _, re)| re.clone())
+    }
+}
 
-        None
+impl Clone for RoutingTable {
+    fn clone(&self) -> Self {
+        let mut new = RoutingTable::new();
+        for (rk, rv) in self.iter() {
+            new.insert(rk, rv.clone());
+        }
+        new
     }
 }
