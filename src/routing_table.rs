@@ -2,12 +2,33 @@ use crate::{
     metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
     source_table::SourceKey, subnet::Subnet,
 };
-use std::{collections::BTreeMap, net::IpAddr};
+use std::{cmp::Ordering, collections::BTreeMap, net::IpAddr};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RouteKey {
     subnet: Subnet,
-    neighbor: IpAddr,
+    neighbor: Peer,
+}
+
+impl Eq for RouteKey {}
+impl PartialOrd for RouteKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self.subnet.partial_cmp(&other.subnet) {
+            Some(Ordering::Equal) => self
+                .neighbor
+                .overlay_ip()
+                .partial_cmp(&other.neighbor.overlay_ip()),
+            ord => ord,
+        }
+    }
+}
+impl Ord for RouteKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.subnet.cmp(&other.subnet) {
+            Ordering::Equal => self.neighbor.overlay_ip().cmp(&other.neighbor.overlay_ip()),
+            ord => ord,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +43,7 @@ pub struct RouteEntry {
 impl RouteKey {
     /// Create a new `RouteKey` with the given values.
     #[inline]
-    pub const fn new(subnet: Subnet, neighbor: IpAddr) -> Self {
+    pub const fn new(subnet: Subnet, neighbor: Peer) -> Self {
         Self { subnet, neighbor }
     }
 
@@ -50,6 +71,7 @@ impl RouteEntry {
             selected,
         }
     }
+
     /// Returns the [`SourceKey`] associated with this `RouteEntry`.
     pub const fn source(&self) -> SourceKey {
         self.source
@@ -63,6 +85,11 @@ impl RouteEntry {
     /// Return the address of the next hop [`Peer`] associated with this `RouteEntry`.
     pub fn next_hop(&self) -> IpAddr {
         self.neighbor.overlay_ip()
+    }
+
+    /// Return the (neighbour)[`Peer`] associated with this `RouteEntry`.
+    pub fn neighbour(&self) -> &Peer {
+        &self.neighbor
     }
 
     /// Indicates this `RouteEntry` is the selected route for the destination.

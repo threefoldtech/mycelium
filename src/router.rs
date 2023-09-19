@@ -206,7 +206,7 @@ impl Router {
             println!(
                 "Route: {} (with next-hop: {:?}, metric: {}, selected: {})",
                 route_key.subnet(),
-                route_entry.next_hop(),
+                route_entry.neighbour().overlay_ip(),
                 route_entry.metric(),
                 route_entry.selected()
             );
@@ -370,8 +370,7 @@ impl Router {
 
         // create route key from incoming update control struct
         // we need the address of the neighbour; this corresponds to the source ip of the control struct as the update is received from the neighbouring peer
-        let neighbor_ip = source_peer.overlay_ip();
-        let route_key_from_update = RouteKey::new(subnet, neighbor_ip);
+        let route_key_from_update = RouteKey::new(subnet, source_peer.clone());
         // used later to filter out static route
         if self.route_key_is_from_static_route(&route_key_from_update) {
             return;
@@ -380,7 +379,7 @@ impl Router {
         let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
 
         // check if a route entry with the same route key exists in both routing tables
-        let (route_entry_exists, update_feasible, hop_peer) = {
+        let (route_entry_exists, update_feasible) = {
             let inner = inner_w
                 .enter()
                 .expect("We deref through a write handle so this enter never fails");
@@ -393,9 +392,6 @@ impl Router {
                         .fallback_routing_table
                         .contains_key(&route_key_from_update),
                 inner.source_table.is_update_feasible(&update),
-                inner
-                    .peer_by_ip(neighbor_ip)
-                    .expect("peer by ip is known to add route entry"),
             )
         };
 
@@ -412,33 +408,31 @@ impl Router {
                 let fd = FeasibilityDistance::new(metric, seqno);
                 inner_w.append(RouterOpLogEntry::InsertSourceEntry(source_key, fd));
 
-                let route_key = RouteKey::new(subnet, neighbor_ip);
-                let route_entry = RouteEntry::new(source_key, hop_peer, metric, seqno, true);
+                let route_key = RouteKey::new(subnet, source_peer.clone());
+                let route_entry =
+                    RouteEntry::new(source_key, source_peer.clone(), metric, seqno, true);
 
                 let mut to_remove = None;
                 let mut add_fallback = false;
-                for (rk, re) in inner_w
+                if let Some(re) = inner_w
                     .enter()
                     .expect("We deref through a write handle so this enter never fails")
                     .selected_routing_table
-                    .iter()
+                    .lookup(subnet.address())
                 {
-                    if rk.subnet() == subnet {
-                        if metric < re.metric() {
-                            //to_remove.push(r.0.clone());
-                            to_remove = Some(rk.clone());
-                            break; // we can break, as there will be max 1 better route in selected table at any point in time (hence 'selected')
-                                   // metric of update is greater than entry's metric
-                        } else if metric >= re.metric() {
-                            // this means that there is already a better route in our selected routing table,
-                            // so we should add it to fallback instead
-                            add_fallback = true;
-                        }
+                    if metric < re.metric() {
+                        // TODO: find better way to get the RouteKey instead of reconstructing it
+                        to_remove = Some(RouteKey::new(subnet, re.neighbour().clone()))
+                    } else {
+                        add_fallback = true;
                     }
                 }
 
                 if add_fallback {
-                    debug!("Added new route for {subnet} via {neighbor_ip} as fallback route");
+                    debug!(
+                        "Added new route for {subnet} via {} as fallback route",
+                        source_peer.overlay_ip()
+                    );
                     inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
                         route_key,
                         route_entry,
@@ -460,7 +454,10 @@ impl Router {
         } else {
             // check if the update is a retraction
             if update_feasible && metric.is_infinite() {
-                debug!("Received retraction for {subnet} from {neighbor_ip}");
+                debug!(
+                    "Received retraction for {subnet} from {}",
+                    source_peer.overlay_ip()
+                );
                 // if the update is a retraction, we remove the entry from the routing tables
                 // we also remove the corresponding source entry???
                 inner_w.append(RouterOpLogEntry::RemoveSelectedRoute(
