@@ -554,26 +554,13 @@ impl Router {
                 }
             }
         } else {
-            // send to peer with matching overlay IP
-            let best_route = self.select_best_route(IpAddr::V6(data_packet.dest_ip));
-            match best_route {
+            match self.select_best_route(IpAddr::V6(data_packet.dest_ip)) {
                 Some(route_entry) => {
-                    let peer = self.peer_by_ip(route_entry.next_hop());
-                    // drop the packet if the peer is couldn't be found
-                    match peer {
-                        Some(peer) => {
-                            if let Err(e) = peer.send_data_packet(data_packet) {
-                                error!("Error sending data packet to peer: {:?}", e);
-                                Err(())
-                            } else {
-                                Ok(())
-                            }
-                        }
-                        None => {
-                            // route but no peer
-                            warn!("Dropping data packet, no peer found");
-                            Err(())
-                        }
+                    if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
+                        error!("Error sending data packet to peer: {:?}", e);
+                        Err(())
+                    } else {
+                        Ok(())
                     }
                 }
                 None => {
@@ -865,9 +852,9 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.remove_peer_interface(peer.clone());
                 // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
                 self.selected_routing_table
-                    .retain(|_, route_entry| route_entry.next_hop() != peer.overlay_ip());
+                    .retain(|_, route_entry| route_entry.neighbour() != peer);
                 self.fallback_routing_table
-                    .retain(|_, route_entry| route_entry.next_hop() != peer.overlay_ip());
+                    .retain(|_, route_entry| route_entry.neighbour() != peer);
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
                 self.source_table.insert(*sk, *fd);
