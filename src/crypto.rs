@@ -90,6 +90,12 @@ impl SecretKey {
     }
 }
 
+impl Default for SecretKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PublicKey {
     /// Generates an [`Ipv6Addr`] from a `PublicKey`.
     ///
@@ -187,6 +193,12 @@ impl PacketBuffer {
     /// Sets the amount of bytes in use by the buffer.
     pub fn set_size(&mut self, size: usize) {
         self.size = size;
+    }
+}
+
+impl Default for PacketBuffer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
