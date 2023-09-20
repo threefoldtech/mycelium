@@ -1,7 +1,8 @@
 use crate::{babel, subnet::Subnet};
 
 /// This trait is used to filter incoming updates from peers. Only updates which pass all
-/// configured filters on the local [`Router`] will actually be forwarded to the [`Router`]
+/// configured filters on the local [`Router`](crate::router::Router) will actually be forwarded
+/// to the [`Router`](crate::router::Router) for processing.
 pub trait RouteUpdateFilter {
     /// Judge an incoming update. This method takes a mutable reference to `self`, to allow it to
     /// update internal state.
