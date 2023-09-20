@@ -49,10 +49,11 @@ impl Subnet {
     /// # Examples
     ///
     /// ```
-    /// use std::net::Ipv4Address
+    /// use mycelium::subnet::Subnet;
+    /// use std::net::Ipv4Addr;
     ///
-    /// let global = Subnet::new(Ipv4Address::new(0,0,0,0).into(), 0);
-    /// let local = Subnet::new(Ipv4Address::new(10,0,0,0).into(), 8);
+    /// let global = Subnet::new(Ipv4Addr::new(0,0,0,0).into(), 0).expect("Defined a valid subnet");
+    /// let local = Subnet::new(Ipv4Addr::new(10,0,0,0).into(), 8).expect("Defined a valid subnet");
     ///
     /// assert!(global.contains_subnet(&local));
     /// assert!(!local.contains_subnet(&global));
