@@ -10,8 +10,10 @@ use crate::{metric::Metric, router_id::RouterId, sequence_number::SeqNo, subnet:
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
 /// Flag bit indicating an [`Update`] TLV establishes a new default prefix.
+#[allow(dead_code)]
 const UPDATE_FLAG_PREFIX: u8 = 0x80;
 /// Flag bit indicating an [`Update`] TLV establishes a new default router-id.
+#[allow(dead_code)]
 const UPDATE_FLAG_ROUTER_ID: u8 = 0x40;
 /// Mask to apply to [`Update`] flags, leaving only valid flags.
 const FLAG_MASK: u8 = 0b1100_0000;
