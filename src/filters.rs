@@ -4,8 +4,7 @@ use crate::{babel, subnet::Subnet};
 /// configured filters on the local [`Router`](crate::router::Router) will actually be forwarded
 /// to the [`Router`](crate::router::Router) for processing.
 pub trait RouteUpdateFilter {
-    /// Judge an incoming update. This method takes a mutable reference to `self`, to allow it to
-    /// update internal state.
+    /// Judge an incoming update.
     fn allow(&self, update: &babel::Update) -> bool;
 }
 
