@@ -199,7 +199,7 @@ impl Encoder<DataPacket> for DataPacketCodec {
     type Error = std::io::Error;
 
     fn encode(&mut self, item: DataPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(item.raw_data.len() + 16 + 32);
+        dst.reserve(item.raw_data.len() + 2 + 16 + 32);
         // Write the length of the data
         dst.put_u16(item.raw_data.len() as u16);
         // Write the destination IP
