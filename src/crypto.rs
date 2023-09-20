@@ -1,7 +1,7 @@
 //! Abstraction over diffie hellman, symmetric encryption, and hashing.
 
 use core::fmt;
-use std::{io, net::Ipv6Addr, ops::Deref, path::Path};
+use std::{error::Error, fmt::Display, io, net::Ipv6Addr, ops::Deref, path::Path};
 
 use aes_gcm::{aead::OsRng, AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit};
 use blake2::{Blake2b, Digest};
@@ -52,6 +52,18 @@ pub struct PacketBuffer {
     /// Amount of byts written in the buffer
     size: usize,
 }
+
+/// Opaque type indicating decryption failed.
+#[derive(Debug, Clone, Copy)]
+pub struct DecryptionError;
+
+impl Display for DecryptionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Decryption failed, invalid or insufficient encrypted content for this key")
+    }
+}
+
+impl Error for DecryptionError {}
 
 /// Type alias for a 16byte output blake2b hasher.
 type Blake2b128 = Blake2b<U16>;
@@ -149,10 +161,10 @@ impl SharedSecret {
     /// If the passed in data to decrypt does not contain a valid nonce, decryption fails and an
     /// opaque error is returned. As an extension to this, if the data is not of sufficient length
     /// to contain a valid nonce, an error is returned immediately.
-    pub fn decrypt(&self, mut data: Vec<u8>) -> Result<Vec<u8>, ()> {
+    pub fn decrypt(&self, mut data: Vec<u8>) -> Result<Vec<u8>, DecryptionError> {
         // Make sure we have sufficient data (i.e. a nonce).
         if data.len() < AES_NONCE_SIZE + AES_TAG_SIZE {
-            return Err(());
+            return Err(DecryptionError);
         }
 
         let data_len = data.len();
@@ -165,7 +177,7 @@ impl SharedSecret {
             let cipher = Aes256Gcm::new(&key);
             cipher
                 .decrypt_in_place_detached((&*nonce).into(), &[], data, (&*tag).into())
-                .map_err(|_| ())?;
+                .map_err(|_| DecryptionError)?;
         }
 
         // Set the proper size
