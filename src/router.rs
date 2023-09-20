@@ -832,8 +832,8 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::RemovePeer(peer) => {
                 self.remove_peer_interface(peer.clone());
                 // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
-                self.selected_routing_table.remove_peer(peer);
-                self.fallback_routing_table.remove_peer(peer);
+                self.selected_routing_table.remove_peer(peer.clone());
+                self.fallback_routing_table.remove_peer(peer.clone());
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
                 self.source_table.insert(*sk, *fd);
@@ -857,18 +857,22 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::RemoveSelectedRoute(rk) => {
                 self.selected_routing_table.remove(rk);
             }
+            // TODO: this is very inneficient as it might delete the routing table set
             RouterOpLogEntry::UpdateFallbackRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(re) = self.fallback_routing_table.get_mut(rk) {
+                if let Some(mut re) = self.fallback_routing_table.remove(rk) {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
+                    self.fallback_routing_table.insert(rk.clone(), re)
                 }
             }
+            // TODO: this is very inneficient as it might delete the routing table set
             RouterOpLogEntry::UpdateSelectedRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(re) = self.selected_routing_table.get_mut(rk) {
+                if let Some(mut re) = self.selected_routing_table.remove(rk) {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
+                    self.selected_routing_table.insert(rk.clone(), re);
                 }
             }
             RouterOpLogEntry::SetStaticRoutes(static_routes) => {
