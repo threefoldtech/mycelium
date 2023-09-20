@@ -31,15 +31,6 @@ impl IpPubkeyMap {
             .insert(addr, subnet.prefix_len() as u32, (pk, ss));
     }
 
-    /// Remove the [`PublicKey`] and [`SharedSecret`] for a given [`Subnet`] from the map.
-    pub fn remove(&mut self, subnet: Subnet) {
-        let addr = match subnet.network() {
-            IpAddr::V6(addr) => addr,
-            _ => return,
-        };
-        self.inner.remove(addr, subnet.prefix_len() as u32);
-    }
-
     /// Look up the [`PublicKey`] and [`SharedSecret`] associated with an [`IpAddr`], if any is
     /// known in the map.
     pub fn lookup(&self, addr: Ipv6Addr) -> Option<&(PublicKey, SharedSecret)> {
