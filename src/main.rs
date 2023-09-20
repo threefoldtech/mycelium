@@ -228,10 +228,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 while let Some(packet) = tun_rx.recv().await {
                     trace!("received packet from tun_rx");
                     if let Err(e) = txhalf.send(packet.clone().into()).await {
-                        error!(
-                            "Failed to send packet on local TUN interface: {e} - {}",
-                            faster_hex::hex_string(&packet)
-                        );
+                        error!("Failed to send packet on local TUN interface: {e}",);
                         continue;
                     }
                     trace!("Sent packet on tun interface");
