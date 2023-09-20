@@ -1,11 +1,15 @@
-use crate::router::StaticRoute;
-use crate::{packet::DataPacket, subnet::Subnet};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
 use etherparse::IpHeader;
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
+use mycelium::crypto;
+use mycelium::filters;
+use mycelium::peer_manager;
+use mycelium::router;
+use mycelium::router::StaticRoute;
+use mycelium::{packet::DataPacket, subnet::Subnet};
 use serde::Serialize;
 use std::{
     error::Error,
@@ -13,23 +17,6 @@ use std::{
     path::PathBuf,
 };
 use tokio::signal::{self, unix::SignalKind};
-
-mod babel;
-mod codec;
-mod crypto;
-mod filters;
-mod interval;
-mod ip_pubkey;
-mod metric;
-mod packet;
-mod peer;
-mod peer_manager;
-mod router;
-mod router_id;
-mod routing_table;
-mod sequence_number;
-mod source_table;
-mod subnet;
 mod tun;
 
 /// The default port on the inderlay to listen on.
