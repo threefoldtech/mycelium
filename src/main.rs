@@ -212,7 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 let node_pk = router.node_public_key();
                 // inject own pubkey
-                let _ = router.route_packet(DataPacket {
+                router.route_packet(DataPacket {
                     dest_ip: dest_addr,
                     pubkey: node_pk,
                     raw_data: shared_secret.encrypt(packet),

@@ -508,7 +508,7 @@ impl Router {
         false
     }
 
-    pub fn route_packet(&self, data_packet: DataPacket) -> Result<(), ()> {
+    pub fn route_packet(&self, data_packet: DataPacket) {
         let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
@@ -528,29 +528,21 @@ impl Router {
                 Ok(data) => data,
                 Err(_) => {
                     log::debug!("Dropping data packet with invalid encrypted content");
-                    return Err(());
+                    return;
                 }
             };
-            match self.node_tun().send(decrypted_raw_data) {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    error!("Error sending data packet to TUN interface: {:?}", e);
-                    Err(())
-                }
+            if let Err(e) = self.node_tun().send(decrypted_raw_data) {
+                error!("Error sending data packet to TUN interface: {:?}", e);
             }
         } else {
             match self.select_best_route(IpAddr::V6(data_packet.dest_ip)) {
                 Some(route_entry) => {
                     if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
                         error!("Error sending data packet to peer: {:?}", e);
-                        Err(())
-                    } else {
-                        Ok(())
                     }
                 }
                 None => {
                     trace!("Error sending data packet, no route found");
-                    Err(())
                 }
             }
         }
@@ -558,7 +550,7 @@ impl Router {
 
     async fn handle_incoming_data_packet(self, mut router_data_rx: Receiver<DataPacket>) {
         while let Some(data_packet) = router_data_rx.recv().await {
-            let _ = self.route_packet(data_packet);
+            self.route_packet(data_packet);
         }
         warn!("Router data receiver stream ended");
     }
