@@ -1,5 +1,4 @@
 mod babel;
-mod codec;
 pub mod crypto;
 pub mod filters;
 mod interval;
