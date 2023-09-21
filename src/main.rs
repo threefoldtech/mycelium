@@ -182,39 +182,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                 };
-                let dest_addr = if let IpHeader::Version6(header, _) = headers.0 {
-                    Ipv6Addr::from(header.destination)
+                let (src_ip, dst_ip) = if let IpHeader::Version6(header, _) = headers.0 {
+                    (
+                        Ipv6Addr::from(header.source),
+                        Ipv6Addr::from(header.destination),
+                    )
                 } else {
                     debug!("Drop non ipv6 packet");
                     continue;
                 };
 
-                trace!("Received packet from TUN with dest addr: {:?}", dest_addr);
+                trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
 
                 // Check if destination address is in 200::/7 range
-                let first_byte = dest_addr.segments()[0] >> 8; // get the first byte
+                let first_byte = dst_ip.segments()[0] >> 8; // get the first byte
                 if !(0x02..=0x3F).contains(&first_byte) {
                     debug!("Dropping packet which is not destined for 200::/7");
                     continue;
                 }
 
                 // Get shared secret from node and dest address
-                let shared_secret = match router.get_shared_secret_from_dest(dest_addr) {
+                let shared_secret = match router.get_shared_secret_from_dest(dst_ip) {
                     Some(ss) => ss,
                     None => {
                         debug!(
                             "No entry found for destination address {}, dropping packet",
-                            dest_addr
+                            dst_ip
                         );
                         continue;
                     }
                 };
 
-                let node_pk = router.node_public_key();
                 // inject own pubkey
                 router.route_packet(DataPacket {
-                    dest_ip: dest_addr,
-                    pubkey: node_pk,
+                    dst_ip,
+                    src_ip,
                     raw_data: shared_secret.encrypt(packet),
                 });
             }

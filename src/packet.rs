@@ -1,8 +1,7 @@
 use std::net::{IpAddr, Ipv6Addr};
 
 use crate::{
-    babel, crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId,
-    sequence_number::SeqNo, subnet::Subnet,
+    babel, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet,
 };
 
 /* ********************************PAKCET*********************************** */
@@ -23,8 +22,8 @@ pub enum PacketType {
 #[derive(Debug, Clone)]
 pub struct DataPacket {
     pub raw_data: Vec<u8>, // eccrypte data isself then append the nonce
-    pub dest_ip: Ipv6Addr,
-    pub pubkey: PublicKey,
+    pub dst_ip: Ipv6Addr,
+    pub src_ip: Ipv6Addr,
 }
 
 impl DataPacket {}

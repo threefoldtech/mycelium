@@ -513,17 +513,19 @@ impl Router {
 
         trace!(
             "Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})",
-            data_packet.dest_ip,
+            data_packet.dst_ip,
             node_tun_subnet
         );
 
-        if node_tun_subnet.contains_ip(data_packet.dest_ip.into()) {
+        if node_tun_subnet.contains_ip(data_packet.dst_ip.into()) {
             // decrypt & send to TUN interface
-            let pubkey_sender = data_packet.pubkey;
-            let shared_secret = match self.get_shared_secret_by_pubkey(&pubkey_sender) {
-                Some(ss) => ss,
-                None => self.node_secret_key().shared_secret(&pubkey_sender),
-            };
+            let shared_secret =
+                if let Some(ss) = self.get_shared_secret_from_dest(data_packet.src_ip) {
+                    ss
+                } else {
+                    trace!("Received packet from unknown sender");
+                    return;
+                };
             let decrypted_raw_data = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
@@ -535,7 +537,7 @@ impl Router {
                 error!("Error sending data packet to TUN interface: {:?}", e);
             }
         } else {
-            match self.select_best_route(IpAddr::V6(data_packet.dest_ip)) {
+            match self.select_best_route(IpAddr::V6(data_packet.dst_ip)) {
                 Some(route_entry) => {
                     if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
                         error!("Error sending data packet to peer: {:?}", e);

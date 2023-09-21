@@ -1,6 +1,5 @@
 use crate::{
     babel::{self},
-    crypto::PublicKey,
     packet::{ControlPacket, DataPacket, Packet, PacketType},
 };
 use bytes::{Buf, BufMut, BytesMut};
@@ -103,8 +102,8 @@ impl Encoder<Packet> for PacketCodec {
 /* ******************************DATA PACKET********************************* */
 pub struct DataPacketCodec {
     len: Option<u16>,
-    dest_ip: Option<std::net::Ipv6Addr>,
-    pubkey: Option<PublicKey>,
+    dest_ip: Option<Ipv6Addr>,
+    src_ip: Option<Ipv6Addr>,
 }
 
 impl DataPacketCodec {
@@ -112,7 +111,7 @@ impl DataPacketCodec {
         DataPacketCodec {
             len: None,
             dest_ip: None,
-            pubkey: None,
+            src_ip: None,
         }
     }
 }
@@ -155,21 +154,22 @@ impl Decoder for DataPacketCodec {
             dest_ip
         };
 
-        // Determine the pubkey
-        let pubkey = if let Some(pubkey) = self.pubkey {
-            pubkey
+        // Determine the source IP
+        let src_ip = if let Some(src_ip) = self.src_ip {
+            src_ip
         } else {
-            if src.len() < 32 {
+            if src.len() < 16 {
                 return Ok(None);
             }
 
-            let mut pubkey_bytes = [0u8; 32];
-            pubkey_bytes.copy_from_slice(&src[..32]);
-            let pubkey = PublicKey::from(pubkey_bytes);
-            src.advance(32);
+            // Decode octets
+            let mut ip_bytes = [0u8; 16];
+            ip_bytes.copy_from_slice(&src[..16]);
+            let src_ip = Ipv6Addr::from(ip_bytes);
+            src.advance(16);
 
-            self.pubkey = Some(pubkey);
-            pubkey
+            self.src_ip = Some(src_ip);
+            src_ip
         };
 
         // Check we have enough data to decode
@@ -185,12 +185,12 @@ impl Decoder for DataPacketCodec {
         // Reset state
         self.len = None;
         self.dest_ip = None;
-        self.pubkey = None;
+        self.src_ip = None;
 
         Ok(Some(DataPacket {
             raw_data: data,
-            dest_ip,
-            pubkey,
+            dst_ip: dest_ip,
+            src_ip,
         }))
     }
 }
@@ -203,9 +203,9 @@ impl Encoder<DataPacket> for DataPacketCodec {
         // Write the length of the data
         dst.put_u16(item.raw_data.len() as u16);
         // Write the destination IP
-        dst.put_slice(&item.dest_ip.octets());
+        dst.put_slice(&item.dst_ip.octets());
         // Write the public key
-        dst.put_slice(&item.pubkey.to_bytes());
+        dst.put_slice(&item.dst_ip.octets());
         // Write the data
         dst.extend_from_slice(&item.raw_data);
 
