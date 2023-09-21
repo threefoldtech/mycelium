@@ -286,22 +286,26 @@ impl RoutingTable {
             IpAddr::V6(addr) => addr,
             _ => return None,
         };
-        self.table.longest_match(addr).map(|(_, _, set)| {
-            let mut lowest_metric = None;
-            for entry in set {
-                match lowest_metric {
-                    None => {
-                        lowest_metric = Some(&entry.0);
-                    }
-                    Some(e) => {
-                        if entry.0.metric < e.metric {
+        self.table
+            .longest_match(addr)
+            .and_then(|(_, _, set)| {
+                let mut lowest_metric = None;
+                for entry in set {
+                    match lowest_metric {
+                        None => {
                             lowest_metric = Some(&entry.0);
+                        }
+                        Some(e) => {
+                            if entry.0.metric < e.metric {
+                                lowest_metric = Some(&entry.0);
+                            }
                         }
                     }
                 }
-            }
-            lowest_metric.expect("We don't keep empty sets in the routing table, so reaching this map means there is at least 1 entry present; qed").clone()
-        })
+                // TODO: Verify how we can get an empty map here.
+                lowest_metric
+            })
+            .cloned()
     }
 }
 
