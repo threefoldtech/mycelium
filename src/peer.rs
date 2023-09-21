@@ -8,7 +8,7 @@ use std::{
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::{codec::PacketCodec, packet::Packet};
+use crate::packet::{self, Packet};
 use crate::{
     packet::{ControlPacket, DataPacket},
     sequence_number::SeqNo,
@@ -51,7 +51,7 @@ impl Peer {
 
         // Framed for peer
         // Used to send and receive packets from a TCP stream
-        let mut framed = Framed::new(stream, PacketCodec::new());
+        let mut framed = Framed::new(stream, packet::Codec::new());
 
         {
             let peer = peer.clone();

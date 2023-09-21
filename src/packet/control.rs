@@ -1,10 +1,18 @@
-use std::net::IpAddr;
+use std::{io, net::IpAddr};
+
+use bytes::BytesMut;
+use tokio_util::codec::{Decoder, Encoder};
 
 use crate::{
     babel, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet,
 };
 
 pub type ControlPacket = babel::Tlv;
+
+pub struct Codec {
+    // TODO: wrapper to make it easier to deserialize
+    codec: babel::Codec,
+}
 
 impl ControlPacket {
     pub fn new_hello(dest_peer: &mut Peer, interval: u16) -> Self {
@@ -26,5 +34,30 @@ impl ControlPacket {
         router_id: RouterId,
     ) -> Self {
         babel::Update::new(interval, seqno, metric, subnet, router_id).into()
+    }
+}
+
+impl Codec {
+    pub fn new() -> Self {
+        Codec {
+            codec: babel::Codec::new(),
+        }
+    }
+}
+
+impl Decoder for Codec {
+    type Item = ControlPacket;
+    type Error = std::io::Error;
+
+    fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        self.codec.decode(buf)
+    }
+}
+
+impl Encoder<ControlPacket> for Codec {
+    type Error = io::Error;
+
+    fn encode(&mut self, message: ControlPacket, buf: &mut BytesMut) -> Result<(), Self::Error> {
+        self.codec.encode(message, buf)
     }
 }
