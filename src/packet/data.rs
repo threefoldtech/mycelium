@@ -3,6 +3,9 @@ use std::net::Ipv6Addr;
 use bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
+/// Size of the header start for a data packet (before the IP addresses).
+const DATA_PACKET_HEADER_SIZE: usize = 4;
+
 #[derive(Debug, Clone)]
 pub struct DataPacket {
     pub raw_data: Vec<u8>, // eccrypte data isself then append the nonce
@@ -36,11 +39,13 @@ impl Decoder for Codec {
             data_len
         } else {
             // Check we have enough data to decode
-            if src.len() < 2 {
+            if src.len() < DATA_PACKET_HEADER_SIZE {
                 return Ok(None);
             }
 
             let data_len = src.get_u16();
+            // Reserved part of header
+            let _ = src.get_u16();
             self.len = Some(data_len);
 
             data_len
@@ -109,9 +114,11 @@ impl Encoder<DataPacket> for Codec {
     type Error = std::io::Error;
 
     fn encode(&mut self, item: DataPacket, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(item.raw_data.len() + 2 + 16 + 32);
+        dst.reserve(item.raw_data.len() + DATA_PACKET_HEADER_SIZE + 16 + 16);
         // Write the length of the data
         dst.put_u16(item.raw_data.len() as u16);
+        // Write reserved part of header
+        dst.put_u16(0);
         // Write the source IP
         dst.put_slice(&item.src_ip.octets());
         // Write the destination IP
