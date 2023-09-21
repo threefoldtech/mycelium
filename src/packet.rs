@@ -6,6 +6,9 @@ use tokio_util::codec::{Decoder, Encoder};
 mod control;
 mod data;
 
+/// The size of a `Packet` header on the wire, in bytes.
+const PACKET_HEADER_SIZE: usize = 4;
+
 #[derive(Debug, Clone)]
 pub enum Packet {
     DataPacket(DataPacket),
@@ -44,12 +47,16 @@ impl Decoder for Codec {
         let packet_type = if let Some(packet_type) = self.packet_type {
             packet_type
         } else {
-            // Check we can read the packet type (1 byte)
-            if src.is_empty() {
+            // Check we can read the header
+            if src.remaining() <= PACKET_HEADER_SIZE {
                 return Ok(None);
             }
 
-            let packet_type_byte = src.get_u8(); // ! This will advance the buffer 1 byte !
+            let mut header = [0; PACKET_HEADER_SIZE];
+            header.copy_from_slice(&src[..PACKET_HEADER_SIZE]);
+            src.advance(PACKET_HEADER_SIZE);
+
+            let packet_type_byte = header[0];
             let packet_type = match packet_type_byte {
                 0 => PacketType::DataPacket,
                 1 => PacketType::ControlPacket,
@@ -98,11 +105,11 @@ impl Encoder<Packet> for Codec {
     fn encode(&mut self, item: Packet, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match item {
             Packet::DataPacket(datapacket) => {
-                dst.put_u8(0);
+                dst.put_slice(&[0, 0, 0, 0]);
                 self.data_packet_codec.encode(datapacket, dst)
             }
             Packet::ControlPacket(controlpacket) => {
-                dst.put_u8(1);
+                dst.put_slice(&[1, 0, 0, 0]);
                 self.control_packet_codec.encode(controlpacket, dst)
             }
         }
