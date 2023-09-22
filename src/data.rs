@@ -126,13 +126,13 @@ where
                     ss
                 } else {
                     trace!("Received packet from unknown sender");
-                    return;
+                    continue;
                 };
             let decrypted_raw_data = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
                     log::debug!("Dropping data packet with invalid encrypted content");
-                    return;
+                    continue;
                 }
             };
 
