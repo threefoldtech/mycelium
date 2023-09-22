@@ -37,7 +37,7 @@ pub async fn new(
 
     let tun_index = link_index_by_name(handle.clone(), name.to_string()).await?;
 
-    add_address(handle.clone(), node_subnet, tun_index).await?;
+    add_address(handle.clone(), tun_index, node_subnet).await?;
     add_route(handle.clone(), tun_index, route_subnet).await?;
 
     // We are done with our netlink connection, abort the task so we can properly clean up.
@@ -125,8 +125,8 @@ async fn link_index_by_name(
 /// The kernel will automatically add a route entry for the subnet assigned to the interface.
 async fn add_address(
     handle: Handle,
-    subnet: Subnet,
     link_index: u32,
+    subnet: Subnet,
 ) -> Result<(), Box<dyn std::error::Error>> {
     Ok(handle
         .address()
