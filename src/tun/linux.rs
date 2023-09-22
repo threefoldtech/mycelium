@@ -1,12 +1,10 @@
 //! Linux specific tun interface setup.
 
-use std::{
-    io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-};
+use std::{io, net::IpAddr};
 
 use futures::{Sink, Stream, TryStreamExt};
 use log::{error, info};
+use mycelium::subnet::Subnet;
 use rtnetlink::Handle;
 use tokio::{select, sync::mpsc};
 use tokio_tun::{Tun, TunBuilder};
@@ -23,10 +21,8 @@ const LINK_MTU: i32 = 1400;
 /// This function will panic if called outside of the context of a tokio runtime.
 pub async fn new(
     name: &str,
-    address: IpAddr,
-    address_prefix_len: u8,
-    route_address: IpAddr,
-    route_prefix_len: u8,
+    node_subnet: Subnet,
+    route_subnet: Subnet,
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
@@ -41,11 +37,8 @@ pub async fn new(
 
     let tun_index = link_index_by_name(handle.clone(), name.to_string()).await?;
 
-    add_address(handle.clone(), address, address_prefix_len, tun_index).await?;
-    match route_address {
-        IpAddr::V6(dest) => add_ipv6_route(handle, tun_index, dest, route_prefix_len).await?,
-        IpAddr::V4(dest) => add_ipv4_route(handle, tun_index, dest, route_prefix_len).await?,
-    }
+    add_address(handle.clone(), node_subnet, tun_index).await?;
+    add_route(handle.clone(), tun_index, route_subnet).await?;
 
     // We are done with our netlink connection, abort the task so we can properly clean up.
     netlink_task_handle.abort();
@@ -132,51 +125,38 @@ async fn link_index_by_name(
 /// The kernel will automatically add a route entry for the subnet assigned to the interface.
 async fn add_address(
     handle: Handle,
-    addr: IpAddr,
-    prefix_len: u8,
+    subnet: Subnet,
     link_index: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     Ok(handle
         .address()
-        .add(link_index, addr, prefix_len)
+        .add(link_index, subnet.address(), subnet.prefix_len())
         .execute()
         .await?)
 }
 
-/// Add an IpV4 route to an interface
-async fn add_ipv4_route(
+/// Add a route to an interface
+async fn add_route(
     handle: Handle,
     link_index: u32,
-    destination: Ipv4Addr,
-    prefix: u8,
+    subnet: Subnet,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    handle
-        .route()
-        .add()
-        .v4()
-        .destination_prefix(destination, prefix)
-        .output_interface(link_index)
-        .execute()
-        .await?;
-
-    Ok(())
-}
-
-/// Add an IpV6 route to an interface
-async fn add_ipv6_route(
-    handle: Handle,
-    link_index: u32,
-    destination: Ipv6Addr,
-    prefix: u8,
-) -> Result<(), Box<dyn std::error::Error>> {
-    handle
-        .route()
-        .add()
-        .v6()
-        .destination_prefix(destination, prefix)
-        .output_interface(link_index)
-        .execute()
-        .await?;
-
+    let base = handle.route().add();
+    match subnet.address() {
+        IpAddr::V4(addr) => {
+            base.v4()
+                .destination_prefix(addr, subnet.prefix_len())
+                .output_interface(link_index)
+                .execute()
+                .await
+        }
+        IpAddr::V6(addr) => {
+            base.v6()
+                .destination_prefix(addr, subnet.prefix_len())
+                .output_interface(link_index)
+                .execute()
+                .await
+        }
+    }?;
     Ok(())
 }
