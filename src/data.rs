@@ -104,13 +104,13 @@ where
                 }
             };
 
-            // inject own pubkey
             router.route_packet(DataPacket {
                 dst_ip,
                 src_ip,
                 raw_data: shared_secret.encrypt(packet),
             });
         }
+
         warn!("Data inject loop from host to router ended");
     }
 
