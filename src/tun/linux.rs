@@ -13,8 +13,6 @@ use tokio_tun::{Tun, TunBuilder};
 
 use crate::crypto::PacketBuffer;
 
-use super::IpPacket;
-
 // TODO
 const LINK_MTU: i32 = 1400;
 
@@ -32,7 +30,7 @@ pub async fn new(
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
-        impl Sink<IpPacket, Error = impl std::error::Error>,
+        impl Sink<Vec<u8>, Error = impl std::error::Error>,
     ),
     Box<dyn std::error::Error>,
 > {
@@ -52,7 +50,7 @@ pub async fn new(
     // We are done with our netlink connection, abort the task so we can properly clean up.
     netlink_task_handle.abort();
 
-    let (tun_sink, mut sink_receiver) = mpsc::channel::<IpPacket>(1000);
+    let (tun_sink, mut sink_receiver) = mpsc::channel::<Vec<u8>>(1000);
     let (tun_stream, stream_receiver) = mpsc::unbounded_channel();
 
     // Spawn a single task to manage the TUN interface

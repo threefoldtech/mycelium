@@ -45,14 +45,14 @@ pub struct Router {
     node_keypair: (SecretKey, PublicKey),
     router_data_tx: Sender<DataPacket>,
     router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
-    node_tun: UnboundedSender<Vec<u8>>,
+    node_tun: UnboundedSender<DataPacket>,
     node_tun_subnet: Subnet,
     update_filters: Arc<Vec<Box<dyn RouteUpdateFilter + Send + Sync>>>,
 }
 
 impl Router {
     pub fn new(
-        node_tun: UnboundedSender<Vec<u8>>,
+        node_tun: UnboundedSender<DataPacket>,
         node_tun_subnet: Subnet,
         static_routes: Vec<StaticRoute>,
         node_keypair: (SecretKey, PublicKey),
@@ -112,7 +112,7 @@ impl Router {
         self.node_tun_subnet
     }
 
-    pub fn node_tun(&self) -> UnboundedSender<Vec<u8>> {
+    pub fn node_tun(&self) -> UnboundedSender<DataPacket> {
         self.node_tun.clone()
     }
 
@@ -518,22 +518,7 @@ impl Router {
         );
 
         if node_tun_subnet.contains_ip(data_packet.dst_ip.into()) {
-            // decrypt & send to TUN interface
-            let shared_secret =
-                if let Some(ss) = self.get_shared_secret_from_dest(data_packet.src_ip) {
-                    ss
-                } else {
-                    trace!("Received packet from unknown sender");
-                    return;
-                };
-            let decrypted_raw_data = match shared_secret.decrypt(data_packet.raw_data) {
-                Ok(data) => data,
-                Err(_) => {
-                    log::debug!("Dropping data packet with invalid encrypted content");
-                    return;
-                }
-            };
-            if let Err(e) = self.node_tun().send(decrypted_raw_data) {
+            if let Err(e) = self.node_tun().send(data_packet) {
                 error!("Error sending data packet to TUN interface: {:?}", e);
             }
         } else {

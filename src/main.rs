@@ -1,15 +1,14 @@
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
-use etherparse::IpHeader;
-use futures::{SinkExt, StreamExt};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info};
 use mycelium::crypto;
+use mycelium::data::DataPlane;
 use mycelium::filters;
 use mycelium::peer_manager;
 use mycelium::router;
 use mycelium::router::StaticRoute;
-use mycelium::{packet::DataPacket, subnet::Subnet};
+use mycelium::subnet::Subnet;
 use serde::Serialize;
 use std::{
     error::Error,
@@ -111,7 +110,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_addr = node_pub_key.address();
     info!("Node address: {}", node_addr);
 
-    let (mut rxhalf, mut txhalf) = tun::new(
+    let (rxhalf, txhalf) = tun::new(
         TUN_NAME,
         node_addr.into(),
         64,
@@ -124,7 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let static_peers = cli.static_peers;
 
-    let (tun_tx, mut tun_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tun_tx, tun_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Creating a new Router instance
     let router = match router::Router::new(
@@ -159,85 +158,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _peer_manager: peer_manager::PeerManager =
         peer_manager::PeerManager::new(router.clone(), static_peers, cli.port);
 
-    // Read packets from the TUN interface (originating from the kernel) and send them to the router
-    // Note: we will never receive control packets from the kernel, only data packets
-    {
-        let router = router.clone();
-
-        tokio::spawn(async move {
-            while let Some(packet) = rxhalf.next().await {
-                let packet = match packet {
-                    Err(e) => {
-                        error!("Failed to read packet from TUN interface {e}");
-                        continue;
-                    }
-                    Ok(packet) => packet,
-                };
-
-                trace!("Received packet from tun");
-                let headers = match etherparse::IpHeader::from_slice(&packet) {
-                    Ok(header) => header,
-                    Err(e) => {
-                        warn!("Could not parse IP header from tun packet: {e}");
-                        continue;
-                    }
-                };
-                let (src_ip, dst_ip) = if let IpHeader::Version6(header, _) = headers.0 {
-                    (
-                        Ipv6Addr::from(header.source),
-                        Ipv6Addr::from(header.destination),
-                    )
-                } else {
-                    debug!("Drop non ipv6 packet");
-                    continue;
-                };
-
-                trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
-
-                // Check if destination address is in 200::/7 range
-                let first_byte = dst_ip.segments()[0] >> 8; // get the first byte
-                if !(0x02..=0x3F).contains(&first_byte) {
-                    debug!("Dropping packet which is not destined for 200::/7");
-                    continue;
-                }
-
-                // Get shared secret from node and dest address
-                let shared_secret = match router.get_shared_secret_from_dest(dst_ip) {
-                    Some(ss) => ss,
-                    None => {
-                        debug!(
-                            "No entry found for destination address {}, dropping packet",
-                            dst_ip
-                        );
-                        continue;
-                    }
-                };
-
-                // inject own pubkey
-                router.route_packet(DataPacket {
-                    dst_ip,
-                    src_ip,
-                    raw_data: shared_secret.encrypt(packet),
-                });
-            }
-            warn!("tun stream is done");
-        });
-    }
-
-    {
-        tokio::spawn(async move {
-            loop {
-                while let Some(packet) = tun_rx.recv().await {
-                    trace!("received packet from tun_rx");
-                    if let Err(e) = txhalf.send(packet.into()).await {
-                        error!("Failed to send packet on local TUN interface: {e}",);
-                        continue;
-                    }
-                    trace!("Sent packet on tun interface");
-                }
-            }
-        });
-    }
+    let _data_plane = DataPlane::new(router.clone(), rxhalf, txhalf, tun_rx);
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     let mut sigusr1 =
