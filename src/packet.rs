@@ -6,6 +6,9 @@ use tokio_util::codec::{Decoder, Encoder};
 mod control;
 mod data;
 
+/// Current version of the protocol being used.
+const PROTOCOL_VERSION: u8 = 1;
+
 /// The size of a `Packet` header on the wire, in bytes.
 const PACKET_HEADER_SIZE: usize = 4;
 
@@ -56,7 +59,15 @@ impl Decoder for Codec {
             header.copy_from_slice(&src[..PACKET_HEADER_SIZE]);
             src.advance(PACKET_HEADER_SIZE);
 
-            let packet_type_byte = header[0];
+            // For now it's a hard error to not follow the 1 defined protocol version
+            if header[0] != PROTOCOL_VERSION {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Unknown protocol version",
+                ));
+            };
+
+            let packet_type_byte = header[1];
             let packet_type = match packet_type_byte {
                 0 => PacketType::DataPacket,
                 1 => PacketType::ControlPacket,
@@ -105,11 +116,11 @@ impl Encoder<Packet> for Codec {
     fn encode(&mut self, item: Packet, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match item {
             Packet::DataPacket(datapacket) => {
-                dst.put_slice(&[0, 0, 0, 0]);
+                dst.put_slice(&[PROTOCOL_VERSION, 0, 0, 0]);
                 self.data_packet_codec.encode(datapacket, dst)
             }
             Packet::ControlPacket(controlpacket) => {
-                dst.put_slice(&[1, 0, 0, 0]);
+                dst.put_slice(&[PROTOCOL_VERSION, 1, 0, 0]);
                 self.control_packet_codec.encode(controlpacket, dst)
             }
         }
