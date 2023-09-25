@@ -24,8 +24,11 @@ const AES_TAG_SIZE: usize = 16;
 /// Size of an AES_GCM nonce in bytes.
 const AES_NONCE_SIZE: usize = 12;
 
+/// Size of user defined data header. This header will be part of the encrypted data.
+const DATA_HEADER_SIZE: usize = 4;
+
 /// Size of a `PacketBuffer`.
-const PACKET_BUFFER_SIZE: usize = PACKET_SIZE + AES_TAG_SIZE + AES_NONCE_SIZE;
+const PACKET_BUFFER_SIZE: usize = PACKET_SIZE + AES_TAG_SIZE + AES_NONCE_SIZE + DATA_HEADER_SIZE;
 
 /// A public key used as part of Diffie Hellman key exchange. It is derived from a [`SecretKey`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,7 +52,7 @@ pub struct SharedSecret([u8; 32]);
 /// reallocating.
 pub struct PacketBuffer {
     buf: Vec<u8>,
-    /// Amount of byts written in the buffer
+    /// Amount of bytes written in the buffer
     size: usize,
 }
 
@@ -161,9 +164,9 @@ impl SharedSecret {
     /// If the passed in data to decrypt does not contain a valid nonce, decryption fails and an
     /// opaque error is returned. As an extension to this, if the data is not of sufficient length
     /// to contain a valid nonce, an error is returned immediately.
-    pub fn decrypt(&self, mut data: Vec<u8>) -> Result<Vec<u8>, DecryptionError> {
+    pub fn decrypt(&self, mut data: Vec<u8>) -> Result<PacketBuffer, DecryptionError> {
         // Make sure we have sufficient data (i.e. a nonce).
-        if data.len() < AES_NONCE_SIZE + AES_TAG_SIZE {
+        if data.len() < AES_NONCE_SIZE + AES_TAG_SIZE + DATA_HEADER_SIZE {
             return Err(DecryptionError);
         }
 
@@ -183,7 +186,11 @@ impl SharedSecret {
         // Set the proper size
         data.truncate(data_len - AES_TAG_SIZE - AES_NONCE_SIZE);
 
-        Ok(data)
+        Ok(PacketBuffer {
+            // We truncated buffer size while respecting the header
+            size: data.len(),
+            buf: data,
+        })
     }
 }
 
@@ -198,13 +205,13 @@ impl PacketBuffer {
 
     /// Get a reference to the entire useable internal buffer.
     pub fn buffer_mut(&mut self) -> &mut [u8] {
-        let buf_size = self.buf.len() - AES_TAG_SIZE - AES_NONCE_SIZE;
-        &mut self.buf[..buf_size]
+        let buf_end = self.buf.len() - AES_NONCE_SIZE - DATA_HEADER_SIZE;
+        &mut self.buf[DATA_HEADER_SIZE..buf_end]
     }
 
     /// Sets the amount of bytes in use by the buffer.
     pub fn set_size(&mut self, size: usize) {
-        self.size = size;
+        self.size = size + DATA_HEADER_SIZE;
     }
 }
 
@@ -264,7 +271,16 @@ impl Deref for PacketBuffer {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.buf[..self.size]
+        &self.buf[DATA_HEADER_SIZE..self.size]
+    }
+}
+
+impl fmt::Debug for PacketBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PacketBuffer")
+            .field("data", &"...")
+            .field("len", &self.size)
+            .finish()
     }
 }
 

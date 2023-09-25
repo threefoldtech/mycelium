@@ -19,7 +19,7 @@ pub struct DataPlane<S, T> {
 impl<S, T> DataPlane<S, T>
 where
     S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
-    T: Sink<Vec<u8>> + Send + Unpin + 'static,
+    T: Sink<PacketBuffer> + Send + Unpin + 'static,
     T::Error: std::fmt::Display,
 {
     /// Create a new `DataPlane` using the given [`Router`] for packet handling.
