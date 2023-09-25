@@ -8,10 +8,10 @@ license-file = "LICENSE"
 
 [dependencies]
 tokio = { version = "1.32.0", features = ["full"] }
-tokio-util = { version = "0.7.8", features = ["codec"] }
-clap = { version = "4.1.8", features = ["derive"] }
+tokio-util = { version = "0.7.9", features = ["codec"] }
+clap = { version = "4.4.4", features = ["derive"] }
 futures = "0.3.27"
-toml = "0.7.3"
+toml = "0.7.8"
 serde = { version = "1.0.158", features = ["derive"] }
 rand = "0.8.5"
 bytes = "1.4.0"
@@ -36,4 +36,4 @@ ip_network_table-deps-treebitmap = "0.5.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.13.1"
-tokio-tun = "0.9.0"
+tokio-tun = "0.9.1"
