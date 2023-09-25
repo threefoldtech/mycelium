@@ -7,6 +7,12 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{crypto::PacketBuffer, packet::DataPacket, router::Router};
 
+/// Current version of the user data header.
+const USER_DATA_VERSION: u8 = 1;
+
+/// Type value indicating L3 data in the user data header.
+const USER_DATA_L3_TYPE: u8 = 0;
+
 /// The DataPlane manages forwarding/receiving of local data packets to the [`Router`], and the
 /// encryption/decryption of them.
 #[derive(Clone)]
@@ -56,7 +62,7 @@ where
 
     async fn inject_l3_packet_loop(router: Router, mut l3_packet_stream: S) {
         while let Some(packet) = l3_packet_stream.next().await {
-            let packet = match packet {
+            let mut packet = match packet {
                 Err(e) => {
                     error!("Failed to read packet from TUN interface {e}");
                     continue;
@@ -91,6 +97,10 @@ where
                 debug!("Dropping packet which is not destined for 200::/7");
                 continue;
             }
+
+            let mut header = packet.header_mut();
+            header[0] = USER_DATA_VERSION;
+            header[1] = USER_DATA_L3_TYPE;
 
             // Get shared secret from node and dest address
             let shared_secret = match router.get_shared_secret_from_dest(dst_ip) {
@@ -128,7 +138,7 @@ where
                     trace!("Received packet from unknown sender");
                     continue;
                 };
-            let decrypted_raw_data = match shared_secret.decrypt(data_packet.raw_data) {
+            let decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
                     log::debug!("Dropping data packet with invalid encrypted content");
@@ -136,7 +146,20 @@ where
                 }
             };
 
-            if let Err(e) = l3_packet_sink.send(decrypted_raw_data).await {
+            // Check header
+            let header = decrypted_packet.header();
+            if header[0] != USER_DATA_VERSION {
+                trace!("Dropping decrypted packet with unknown header version");
+                continue;
+            }
+
+            // Route based on packet type.
+            if header[1] != USER_DATA_L3_TYPE {
+                trace!("Dropping decrypted packet with unknown protocol type");
+                continue;
+            }
+
+            if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
                 error!("Failed to send packet on local TUN interface: {e}",);
                 continue;
             }

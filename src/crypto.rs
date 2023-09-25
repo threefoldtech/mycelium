@@ -1,7 +1,14 @@
 //! Abstraction over diffie hellman, symmetric encryption, and hashing.
 
 use core::fmt;
-use std::{error::Error, fmt::Display, io, net::Ipv6Addr, ops::Deref, path::Path};
+use std::{
+    error::Error,
+    fmt::Display,
+    io,
+    net::Ipv6Addr,
+    ops::{Deref, DerefMut},
+    path::Path,
+};
 
 use aes_gcm::{aead::OsRng, AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit};
 use blake2::{Blake2b, Digest};
@@ -50,10 +57,24 @@ pub struct SharedSecret([u8; 32]);
 
 /// A buffer for packets. This holds enough space to  encrypt a packet in place without
 /// reallocating.
+///
+/// Internally, the buffer is created with an additional header. Because this header is part of the
+/// encrypted content, it is not included in the global version set by the main packet header. As
+/// such, an internal version is included.
 pub struct PacketBuffer {
     buf: Vec<u8>,
     /// Amount of bytes written in the buffer
     size: usize,
+}
+
+/// A reference to the header in a [`PacketBuffer`].
+pub struct PacketBufferHeader<'a> {
+    data: &'a [u8; DATA_HEADER_SIZE],
+}
+
+/// A mutable reference to the header in a [`PacketBuffer`].
+pub struct PacketBufferHeaderMut<'a> {
+    data: &'a mut [u8; DATA_HEADER_SIZE],
 }
 
 /// Opaque type indicating decryption failed.
@@ -195,11 +216,30 @@ impl SharedSecret {
 }
 
 impl PacketBuffer {
-    /// Create a new `PacketBuffer`.
+    /// Create a new blank `PacketBuffer`.
     pub fn new() -> Self {
         Self {
             buf: vec![0; PACKET_BUFFER_SIZE],
             size: 0,
+        }
+    }
+
+    /// Get a reference to the packet header.
+    pub fn header(&self) -> PacketBufferHeader<'_> {
+        PacketBufferHeader {
+            data: self.buf[..DATA_HEADER_SIZE]
+                .try_into()
+                .expect("Header size constant is correct; qed"),
+        }
+    }
+
+    /// Get a mutable reference to the packet header.
+    pub fn header_mut(&mut self) -> PacketBufferHeaderMut<'_> {
+        PacketBufferHeaderMut {
+            data: <&mut [u8] as TryInto<&mut [u8; DATA_HEADER_SIZE]>>::try_into(
+                &mut self.buf[..DATA_HEADER_SIZE],
+            )
+            .expect("Header size constant is correct; qed"),
         }
     }
 
@@ -275,6 +315,28 @@ impl Deref for PacketBuffer {
     }
 }
 
+impl<'a> Deref for PacketBufferHeader<'a> {
+    type Target = [u8; DATA_HEADER_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+
+impl<'a> Deref for PacketBufferHeaderMut<'a> {
+    type Target = [u8; DATA_HEADER_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+
+impl<'a> DerefMut for PacketBufferHeaderMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.data
+    }
+}
+
 impl fmt::Debug for PacketBuffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PacketBuffer")
@@ -339,5 +401,19 @@ mod tests {
         let original = ss2.decrypt(res).expect("Decryption works");
 
         assert_eq!(&*original, &data[..]);
+    }
+
+    #[test]
+    /// Test if PacketBufferHeaderMut actually modifies the PacketBuffer storage.
+    fn modify_header() {
+        let mut pb = PacketBuffer::new();
+        let mut header = pb.header_mut();
+
+        header[0] = 1;
+        header[1] = 2;
+        header[2] = 3;
+        header[3] = 4;
+
+        assert_eq!(pb.buf[..DATA_HEADER_SIZE], [1, 2, 3, 4]);
     }
 }
