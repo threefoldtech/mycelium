@@ -286,7 +286,7 @@ impl fmt::Debug for PacketBuffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{PacketBuffer, SecretKey, AES_NONCE_SIZE, AES_TAG_SIZE};
+    use super::{PacketBuffer, SecretKey, AES_NONCE_SIZE, AES_TAG_SIZE, DATA_HEADER_SIZE};
 
     #[test]
     /// Test if encryption works in general. We just create some random value and encrypt it.
@@ -307,7 +307,10 @@ mod tests {
         // We only care that this does not panic.
         let res = ss.encrypt(pb);
         // At the same time, check expected size.
-        assert_eq!(res.len(), data.len() + AES_TAG_SIZE + AES_NONCE_SIZE);
+        assert_eq!(
+            res.len(),
+            data.len() + DATA_HEADER_SIZE + AES_TAG_SIZE + AES_NONCE_SIZE
+        );
     }
 
     #[test]
@@ -335,6 +338,6 @@ mod tests {
 
         let original = ss2.decrypt(res).expect("Decryption works");
 
-        assert_eq!(&original, &data[..]);
+        assert_eq!(&*original, &data[..]);
     }
 }
