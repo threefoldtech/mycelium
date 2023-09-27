@@ -14,6 +14,10 @@ use crate::{
     sequence_number::SeqNo,
 };
 
+/// The maximum amount of packets to immediatly send if they are ready when the first one is
+/// received.
+const PACKET_COALESCE_WINDOW: usize = 5;
+
 #[derive(Debug, Clone)]
 /// A peer represents a directly connected participant in the network.
 pub struct Peer {
@@ -88,7 +92,7 @@ impl Peer {
                         }
 
                         Some(packet) = from_routing_data.recv() => {
-                            let mut packet_buf: [_; 5] = std::array::from_fn(|_| None);
+                            let mut packet_buf: [_; PACKET_COALESCE_WINDOW] = std::array::from_fn(|_| None);
                             let mut packets_received = 1;
                             packet_buf[0] = Some(packet);
                             for buf_slot in packet_buf.iter_mut().skip(1) {
