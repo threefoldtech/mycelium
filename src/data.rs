@@ -1,6 +1,5 @@
 use std::{marker::PhantomData, net::Ipv6Addr};
 
-use etherparse::IpHeader;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -12,6 +11,16 @@ const USER_DATA_VERSION: u8 = 1;
 
 /// Type value indicating L3 data in the user data header.
 const USER_DATA_L3_TYPE: u8 = 0;
+
+/// Minimum size in bytes of an IPv6 header.
+const IPV6_MIN_HEADER_SIZE: usize = 40;
+
+/// Mask applied to the first byte of an IP header to extract the version.
+const IP_VERSION_MASK: u8 = 0b1111_0000;
+
+/// Version byte of an IP header indicating IPv6. Since the version is only 4 bits, the lower bits
+/// must be masked first.
+const IPV6_VERSION_BYTE: u8 = 0b0110_0000;
 
 /// The DataPlane manages forwarding/receiving of local data packets to the [`Router`], and the
 /// encryption/decryption of them.
