@@ -71,22 +71,36 @@ where
             };
 
             trace!("Received packet from tun");
-            let headers = match etherparse::IpHeader::from_slice(&packet) {
-                Ok(header) => header,
-                Err(e) => {
-                    warn!("Could not parse IP header from tun packet: {e}");
-                    continue;
-                }
-            };
-            let (src_ip, dst_ip) = if let IpHeader::Version6(header, _) = headers.0 {
-                (
-                    Ipv6Addr::from(header.source),
-                    Ipv6Addr::from(header.destination),
-                )
-            } else {
-                debug!("Drop non ipv6 packet");
+
+            // Parse an IPv6 header. We don't care about the full header in reality. What we want
+            // to know is:
+            // - This is an IPv6 header
+            // - Source address
+            // - Destination address
+            // This translates to the following requirements:
+            // - at least 40 bytes of data, as that is the minimum size of an IPv6 header
+            // - first 4 bits (version) are the constant 6 (0b0110)
+            // - src is byte 9-24 (8-23 0 indexed).
+            // - dst is byte 25-40 (24-39 0 indexed).
+
+            if packet.len() < IPV6_MIN_HEADER_SIZE {
+                trace!("Packet can't contain an IPv6 header");
                 continue;
-            };
+            }
+
+            if packet[0] & IP_VERSION_MASK != IPV6_VERSION_BYTE {
+                trace!("Packet is not IPv6");
+                continue;
+            }
+
+            let src_ip = Ipv6Addr::from(
+                <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[8..24])
+                    .expect("Static range bounds on slice are correct length"),
+            );
+            let dst_ip = Ipv6Addr::from(
+                <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[24..40])
+                    .expect("Static range bounds on slice are correct length"),
+            );
 
             trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
 
