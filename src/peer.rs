@@ -14,7 +14,7 @@ use crate::{
     sequence_number::SeqNo,
 };
 
-/// The maximum amount of packets to immediatly send if they are ready when the first one is
+/// The maximum amount of packets to immediately send if they are ready when the first one is
 /// received.
 const PACKET_COALESCE_WINDOW: usize = 5;
 
