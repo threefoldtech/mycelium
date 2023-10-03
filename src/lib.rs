@@ -4,6 +4,7 @@ pub mod data;
 pub mod filters;
 mod interval;
 mod ip_pubkey;
+pub mod message;
 mod metric;
 pub mod packet;
 mod peer;
