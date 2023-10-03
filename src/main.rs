@@ -157,7 +157,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _peer_manager: peer_manager::PeerManager =
         peer_manager::PeerManager::new(router.clone(), static_peers, cli.port);
 
-    let _data_plane = DataPlane::new(router.clone(), rxhalf, txhalf, tun_rx);
+    let _data_plane = DataPlane::new(
+        router.clone(),
+        rxhalf,
+        txhalf,
+        // TODO: proper sink to message handler
+        futures::sink::drain(),
+        tun_rx,
+    );
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     let mut sigusr1 =

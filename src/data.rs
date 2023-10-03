@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, net::Ipv6Addr};
+use std::net::Ipv6Addr;
 
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
@@ -12,6 +12,9 @@ const USER_DATA_VERSION: u8 = 1;
 /// Type value indicating L3 data in the user data header.
 const USER_DATA_L3_TYPE: u8 = 0;
 
+/// Type value indicating a user message in the data header.
+const USER_DATA_MESSAGE_TYPE: u8 = 1;
+
 /// Minimum size in bytes of an IPv6 header.
 const IPV6_MIN_HEADER_SIZE: usize = 40;
 
@@ -24,44 +27,42 @@ const IPV6_VERSION_BYTE: u8 = 0b0110_0000;
 
 /// The DataPlane manages forwarding/receiving of local data packets to the [`Router`], and the
 /// encryption/decryption of them.
+///
+/// DataPlane itself can be cloned, but this is not cheap on the router and should be avoided.
 #[derive(Clone)]
-pub struct DataPlane<S, T> {
+pub struct DataPlane {
     router: Router,
-    _stream_marker: PhantomData<S>,
-    _sink_marker: PhantomData<T>,
 }
 
-impl<S, T> DataPlane<S, T>
-where
-    S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
-    T: Sink<PacketBuffer> + Send + Unpin + 'static,
-    T::Error: std::fmt::Display,
-{
+impl DataPlane {
     /// Create a new `DataPlane` using the given [`Router`] for packet handling.
     ///
     /// `l3_packet_stream` is a stream of l3 packets from the host, usually read from a TUN interface.
     /// `l3_packet_sink` is a sink for l3 packets received from a romte, usually send to a TUN interface,
-    pub fn new(
+    pub fn new<S, T, U>(
         router: Router,
         l3_packet_stream: S,
         l3_packet_sink: T,
+        message_packet_sink: U,
         host_packet_source: UnboundedReceiver<DataPacket>,
-    ) -> Self {
-        tokio::spawn(Self::inject_l3_packet_loop(
-            router.clone(),
-            l3_packet_stream,
-        ));
-        tokio::spawn(Self::extract_l3_packet_loop(
-            router.clone(),
+    ) -> Self
+    where
+        S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+        T: Sink<PacketBuffer> + Send + Unpin + 'static,
+        T::Error: std::fmt::Display,
+        U: Sink<PacketBuffer> + Send + Unpin + 'static,
+        U::Error: std::fmt::Display,
+    {
+        let dp = Self { router };
+
+        tokio::spawn(dp.clone().inject_l3_packet_loop(l3_packet_stream));
+        tokio::spawn(dp.clone().extract_packet_loop(
             l3_packet_sink,
+            message_packet_sink,
             host_packet_source,
         ));
 
-        Self {
-            router,
-            _stream_marker: PhantomData,
-            _sink_marker: PhantomData,
-        }
+        dp
     }
 
     /// Get a reference to the [`Router`] used.
@@ -69,7 +70,12 @@ where
         &self.router
     }
 
-    async fn inject_l3_packet_loop(router: Router, mut l3_packet_stream: S) {
+    async fn inject_l3_packet_loop<S>(self, mut l3_packet_stream: S)
+    where
+        // TODO: no result
+        // TODO: should IP extraction be handled higher up?
+        S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+    {
         while let Some(packet) = l3_packet_stream.next().await {
             let mut packet = match packet {
                 Err(e) => {
@@ -125,37 +131,61 @@ where
             header[0] = USER_DATA_VERSION;
             header[1] = USER_DATA_L3_TYPE;
 
-            // Get shared secret from node and dest address
-            let shared_secret = match router.get_shared_secret_from_dest(dst_ip) {
-                Some(ss) => ss,
-                None => {
-                    debug!(
-                        "No entry found for destination address {}, dropping packet",
-                        dst_ip
-                    );
-                    continue;
-                }
-            };
-
-            router.route_packet(DataPacket {
-                dst_ip,
-                src_ip,
-                raw_data: shared_secret.encrypt(packet),
-            });
+            self.encrypt_and_route_packet(src_ip, dst_ip, packet)
         }
 
         warn!("Data inject loop from host to router ended");
     }
 
-    async fn extract_l3_packet_loop(
-        router: Router,
-        mut l3_packet_sink: T,
-        mut host_packet_source: UnboundedReceiver<DataPacket>,
+    /// Inject a new packet where the content is a `message` fragment.
+    pub fn inject_message_packet(
+        &self,
+        src_ip: Ipv6Addr,
+        dst_ip: Ipv6Addr,
+        mut packet: PacketBuffer,
     ) {
+        let mut header = packet.header_mut();
+        header[0] = USER_DATA_VERSION;
+        header[1] = USER_DATA_MESSAGE_TYPE;
+
+        self.encrypt_and_route_packet(src_ip, dst_ip, packet)
+    }
+
+    fn encrypt_and_route_packet(&self, src_ip: Ipv6Addr, dst_ip: Ipv6Addr, packet: PacketBuffer) {
+        // Get shared secret from node and dest address
+        let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip) {
+            Some(ss) => ss,
+            None => {
+                debug!(
+                    "No entry found for destination address {}, dropping packet",
+                    dst_ip
+                );
+                return;
+            }
+        };
+
+        self.router.route_packet(DataPacket {
+            dst_ip,
+            src_ip,
+            raw_data: shared_secret.encrypt(packet),
+        });
+    }
+
+    async fn extract_packet_loop<T, U>(
+        self,
+        mut l3_packet_sink: T,
+        mut message_packet_sink: U,
+        mut host_packet_source: UnboundedReceiver<DataPacket>,
+    ) where
+        T: Sink<PacketBuffer> + Send + Unpin + 'static,
+        T::Error: std::fmt::Display,
+        U: Sink<PacketBuffer> + Send + Unpin + 'static,
+        U::Error: std::fmt::Display,
+    {
         while let Some(data_packet) = host_packet_source.recv().await {
             // decrypt & send to TUN interface
             let shared_secret =
-                if let Some(ss) = router.get_shared_secret_from_dest(data_packet.src_ip) {
+                if let Some(ss) = self.router.get_shared_secret_from_dest(data_packet.src_ip) {
                     ss
                 } else {
                     trace!("Received packet from unknown sender");
@@ -177,14 +207,23 @@ where
             }
 
             // Route based on packet type.
-            if header[1] != USER_DATA_L3_TYPE {
-                trace!("Dropping decrypted packet with unknown protocol type");
-                continue;
-            }
-
-            if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
-                error!("Failed to send packet on local TUN interface: {e}",);
-                continue;
+            match header[1] {
+                USER_DATA_L3_TYPE => {
+                    if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
+                        error!("Failed to send packet on local TUN interface: {e}",);
+                        continue;
+                    }
+                }
+                USER_DATA_MESSAGE_TYPE => {
+                    if let Err(e) = message_packet_sink.send(decrypted_packet).await {
+                        error!("Failed to send packet to message handler: {e}",);
+                        continue;
+                    }
+                }
+                _ => {
+                    trace!("Dropping decrypted packet with unknown protocol type");
+                    continue;
+                }
             }
         }
 
