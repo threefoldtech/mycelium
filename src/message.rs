@@ -8,6 +8,7 @@
 use std::{
     collections::HashMap,
     net::Ipv6Addr,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
     time::{self, Duration},
 };
@@ -180,6 +181,38 @@ impl MessageId {
             .expect("Can instantiate new ID from thread RNG generator; qed");
 
         id
+    }
+}
+
+/// A reference to a header in a message packet.
+pub struct MessagePakcetHeader<'a> {
+    header: &'a [u8; MESSAGE_HEADER_SIZE],
+}
+
+/// A mutable reference to a header in a message packet.
+pub struct MessagePakcetHeaderMut<'a> {
+    header: &'a mut [u8; MESSAGE_HEADER_SIZE],
+}
+
+impl<'a> Deref for MessagePakcetHeader<'a> {
+    type Target = [u8; MESSAGE_HEADER_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        self.header
+    }
+}
+
+impl<'a> Deref for MessagePakcetHeaderMut<'a> {
+    type Target = [u8; MESSAGE_HEADER_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        self.header
+    }
+}
+
+impl<'a> DerefMut for MessagePakcetHeaderMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.header
     }
 }
 
