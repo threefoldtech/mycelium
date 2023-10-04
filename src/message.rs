@@ -19,6 +19,8 @@ use crate::data::DataPlane;
 
 /// The size in bytes of the message header which starts each user message packet.
 const MESSAGE_HEADER_SIZE: usize = 12;
+/// The size in bytes of a message ID.
+const MESSAGE_ID_SIZE: usize = 8;
 
 /// Flag indicating we are starting a new message. The message ID is specified in the header. The
 /// body contains the length of the message. The receiver must create an entry for the new ID. This
@@ -171,7 +173,7 @@ impl MessageStack {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MessageId([u8; 8]);
+pub struct MessageId([u8; MESSAGE_ID_SIZE]);
 
 impl MessageId {
     fn new() -> Self {
@@ -192,6 +194,28 @@ pub struct MessagePakcetHeader<'a> {
 /// A mutable reference to a header in a message packet.
 pub struct MessagePakcetHeaderMut<'a> {
     header: &'a mut [u8; MESSAGE_HEADER_SIZE],
+}
+
+// Header layout:
+//   - 8 bytes message id
+//   - 2 bytes flags
+//   - 2 bytes reserved
+impl<'a> MessagePakcetHeaderMut<'a> {
+    /// Get the [`MessageId`] from the buffer.
+    fn message_id(&self) -> MessageId {
+        MessageId(
+            self.header[..MESSAGE_ID_SIZE]
+                .try_into()
+                .expect("Buffer is properly sized; qed"),
+        )
+    }
+
+    /// Set the [`MessageId`] in the buffer to the provided value.
+    fn set_message_id(&mut self, mid: MessageId) {
+        self.header[..MESSAGE_ID_SIZE].copy_from_slice(&mid.0[..]);
+    }
+
+    // TODO: flags
 }
 
 impl<'a> Deref for MessagePakcetHeader<'a> {
