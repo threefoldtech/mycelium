@@ -15,7 +15,7 @@ use std::{
 
 use rand::Fill;
 
-use crate::data::DataPlane;
+use crate::{crypto::PacketBuffer, data::DataPlane};
 
 /// The size in bytes of the message header which starts each user message packet.
 const MESSAGE_HEADER_SIZE: usize = 12;
@@ -181,6 +181,35 @@ impl MessageId {
             .expect("Can instantiate new ID from thread RNG generator; qed");
 
         id
+    }
+}
+
+/// A MessagePacketMut exposes the mutable useable body of a `PacketBuffer` for working with messages.
+struct MessagePacketMut<'a> {
+    packet: &'a mut PacketBuffer,
+}
+
+impl<'a> From<&'a mut PacketBuffer> for MessagePacketMut<'a> {
+    fn from(packet: &'a mut PacketBuffer) -> Self {
+        MessagePacketMut { packet }
+    }
+}
+
+impl<'a> MessagePacketMut<'a> {
+    /// Get a mutable reference to the header in this message packet.
+    fn header_mut(&mut self) -> MessagePacketHeaderMut {
+        MessagePacketHeaderMut {
+            header: self
+                .packet
+                .buffer_mut()
+                .try_into()
+                .expect("Buffer is big enough for a header; qed"),
+        }
+    }
+
+    /// Get a mutable reference to the message packet body.
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.packet.buffer_mut()[MESSAGE_HEADER_SIZE..]
     }
 }
 
