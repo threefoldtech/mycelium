@@ -17,6 +17,10 @@ use rand::Fill;
 
 use crate::{crypto::PacketBuffer, data::DataPlane};
 
+mod chunk;
+mod done;
+mod init;
+
 /// The size in bytes of the message header which starts each user message packet.
 const MESSAGE_HEADER_SIZE: usize = 12;
 /// The size in bytes of a message ID.
