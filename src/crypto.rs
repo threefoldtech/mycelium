@@ -243,7 +243,13 @@ impl PacketBuffer {
         }
     }
 
-    /// Get a reference to the entire useable internal buffer.
+    /// Get a reference to the entire useable inner buffer.
+    pub fn buffer(&self) -> &[u8] {
+        let buf_end = self.buf.len() - AES_NONCE_SIZE - DATA_HEADER_SIZE;
+        &self.buf[DATA_HEADER_SIZE..buf_end]
+    }
+
+    /// Get a mutable reference to the entire useable internal buffer.
     pub fn buffer_mut(&mut self) -> &mut [u8] {
         let buf_end = self.buf.len() - AES_NONCE_SIZE - DATA_HEADER_SIZE;
         &mut self.buf[DATA_HEADER_SIZE..buf_end]

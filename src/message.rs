@@ -188,6 +188,50 @@ impl MessageId {
     }
 }
 
+/// An owned [`PacketBuffer`] for working with messages.
+struct MessagePacket {
+    packet: PacketBuffer,
+}
+
+impl MessagePacket {
+    /// Create a new `MessagePacket` in the given [`PacketBuffer`].
+    pub fn new(packet: PacketBuffer) -> Self {
+        Self { packet }
+    }
+
+    /// Get a read only reference to the usable space in the buffer.
+    pub fn buffer(&self) -> &[u8] {
+        &self.packet.buffer()[MESSAGE_HEADER_SIZE..]
+    }
+
+    /// Get a mutable reference to the usable space in the buffer.
+    pub fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.packet.buffer_mut()[MESSAGE_HEADER_SIZE..]
+    }
+
+    /// Get a read only reference to the header of the `MessagePacket`.
+    pub fn header(&self) -> MessagePacketHeader {
+        MessagePacketHeader {
+            header: self.packet.buffer()[..MESSAGE_HEADER_SIZE]
+                .try_into()
+                .expect("Packet contains enough data for a header; qed"),
+        }
+    }
+
+    /// Get a mutable reference to the header of the `MessagePacket`.
+    pub fn header_mut(&mut self) -> MessagePacketHeaderMut {
+        MessagePacketHeaderMut {
+            // header: &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE]
+            //     .try_into()
+            //     .expect("Packet contains enough size for a header; qed"),
+            header: <&mut [u8] as TryInto<&mut [u8; MESSAGE_HEADER_SIZE]>>::try_into(
+                &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE],
+            )
+            .expect("Packet contains enough data for a header; qed"),
+        }
+    }
+}
+
 /// A MessagePacketMut exposes the mutable useable body of a `PacketBuffer` for working with messages.
 struct MessagePacketMut<'a> {
     packet: &'a mut PacketBuffer,
@@ -203,11 +247,10 @@ impl<'a> MessagePacketMut<'a> {
     /// Get a mutable reference to the header in this message packet.
     fn header_mut(&mut self) -> MessagePacketHeaderMut {
         MessagePacketHeaderMut {
-            header: self
-                .packet
-                .buffer_mut()
-                .try_into()
-                .expect("Buffer is big enough for a header; qed"),
+            header: <&mut [u8] as TryInto<&mut [u8; MESSAGE_HEADER_SIZE]>>::try_into(
+                &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE],
+            )
+            .expect("Buffer is big enough for a header; qed"),
         }
     }
 
