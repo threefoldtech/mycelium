@@ -27,18 +27,20 @@ const MESSAGE_ID_SIZE: usize = 8;
 /// flag must always be set on the first packet of a message stream. If a receiver already received
 /// data for this message and a new packet comes in with this flag set for this message, all
 /// existing data must be removed on the receiver side.
-const FLAG_MESSAGE_INIT: u8 = 0b1000_0000;
+const FLAG_MESSAGE_INIT: u16 = 0b1000_0000_0000_0000;
 // Flag indicating the message with the given ID is done, i.e. it has been fully transmitted.
-const FLAG_MESSAGE_DONE: u8 = 0b0100_0000;
+const FLAG_MESSAGE_DONE: u16 = 0b0100_0000_0000_0000;
 /// Indicats the message with this ID is aborted by the sender and the receiver should discard it.
 /// The receiver can ignore this if it fully received the message.
-const FLAG_MESSAGE_ABORTED: u8 = 0b0010_0000;
+const FLAG_MESSAGE_ABORTED: u16 = 0b0010_0000_0000_0000;
+/// Flag indicating we are transfering a data chunk.
+const FLAG_MESSAGE_CHUNK: u16 = 0b0001_0000_0000_0000;
 /// Flag indicating the message with the given ID has been read by the receiver, that is it has
 /// been transfered to an external process.
-const FLAG_MESSAGE_READ: u8 = 0b0001_0000;
-/// Flag acknowledging receipt of a chunk. Once this has been received, the packet __should not__ be
+const FLAG_MESSAGE_READ: u16 = 0b0000_1000_0000_0000;
+/// Flag acknowledging receipt of a packet. Once this has been received, the packet __should not__ be
 /// transmitted again by the sender.
-const FLAG_MESSAGE_CHUNK_ACK: u8 = 0b0000_0001;
+const FLAG_MESSAGE_ACK: u16 = 0b0000_0001_0000_0000;
 
 pub struct MessageStack {
     data_plane: Arc<DataPlane>,
@@ -140,10 +142,6 @@ impl MessageStack {
     }
 }
 
-pub struct MessagePacketHeader {
-    data: [u8; MESSAGE_HEADER_SIZE],
-}
-
 impl MessageStack {
     /// Push a new message to be transmitted, which will be tried for the given duration.
     pub fn push_message(&self, dst: Ipv6Addr, data: Vec<u8>, try_duration: Duration) -> MessageId {
@@ -187,20 +185,36 @@ impl MessageId {
 }
 
 /// A reference to a header in a message packet.
-pub struct MessagePakcetHeader<'a> {
+pub struct MessagePacketHeader<'a> {
     header: &'a [u8; MESSAGE_HEADER_SIZE],
 }
 
 /// A mutable reference to a header in a message packet.
-pub struct MessagePakcetHeaderMut<'a> {
+pub struct MessagePacketHeaderMut<'a> {
     header: &'a mut [u8; MESSAGE_HEADER_SIZE],
+}
+
+/// A mutable reference to the flags in a message header.
+// We keep a separate struct because creating a u16 from a byte buffer will write the data in
+// native endiannes, but we need big endian. So we add a drop implementation which forces a big
+// endian writeback to the buffer.
+struct FlagsMut<'a, 'b> {
+    header: &'b mut MessagePacketHeaderMut<'a>,
+    flags: u16,
+}
+
+impl Drop for FlagsMut<'_, '_> {
+    fn drop(&mut self) {
+        // Explicitly write back the flags in big endian format
+        self.header[MESSAGE_ID_SIZE..MESSAGE_ID_SIZE + 2].copy_from_slice(&self.flags.to_be_bytes())
+    }
 }
 
 // Header layout:
 //   - 8 bytes message id
 //   - 2 bytes flags
 //   - 2 bytes reserved
-impl<'a> MessagePakcetHeaderMut<'a> {
+impl<'a> MessagePacketHeaderMut<'a> {
     /// Get the [`MessageId`] from the buffer.
     fn message_id(&self) -> MessageId {
         MessageId(
@@ -215,10 +229,54 @@ impl<'a> MessagePakcetHeaderMut<'a> {
         self.header[..MESSAGE_ID_SIZE].copy_from_slice(&mid.0[..]);
     }
 
-    // TODO: flags
+    /// Get a mutable reference to the flags in this header.
+    // Note: we explicitly name lifetimes here, as elliding would give the mutable ref to self
+    // lifetime '1, which is not the same as the elided lifetime 'b on the struct, which would then
+    // cause the compiler to force the FlagsMut struct to as long as self and not be dropped.
+    fn flags_mut<'b>(&'b mut self) -> FlagsMut<'a, 'b> {
+        let flags = u16::from_be_bytes(
+            self.header[MESSAGE_ID_SIZE..MESSAGE_ID_SIZE + 2]
+                .try_into()
+                .expect("Slice has a length of 2 which is valid for a u16; qed"),
+        );
+        FlagsMut {
+            header: self,
+            flags,
+        }
+    }
+
+    /// Sets the MESSAGE_INIT flag on the header.
+    fn set_init(&mut self) {
+        self.flags_mut().flags |= FLAG_MESSAGE_INIT;
+    }
+
+    /// Sets the MESSAGE_DONE flag on the header.
+    fn set_done(&mut self) {
+        self.flags_mut().flags |= FLAG_MESSAGE_DONE;
+    }
+
+    /// Sets the MESSAGE_ABORTED flag on the header.
+    fn set_aborted(&mut self) {
+        self.flags_mut().flags |= FLAG_MESSAGE_ABORTED;
+    }
+
+    /// Sets the MESSAGE_CHUNK flag on the header.
+    fn set_chunk(&mut self) {
+        self.flags_mut().flags |= FLAG_MESSAGE_CHUNK;
+    }
+
+    /// Sets the MESSAGE_READ flag on the header.
+    fn set_read(&mut self) {
+        self.flags_mut().flags |= FLAG_MESSAGE_READ;
+    }
+
+    /// Sets the MESSAGE_ACK flag on the header.
+    fn set_ack(&mut self) {
+        self.flags_mut().flags |= FLAG_MESSAGE_ACK;
+    }
 }
 
-impl<'a> Deref for MessagePakcetHeader<'a> {
+impl<'a> Deref for MessagePacketHeader<'a> {
     type Target = [u8; MESSAGE_HEADER_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -226,7 +284,7 @@ impl<'a> Deref for MessagePakcetHeader<'a> {
     }
 }
 
-impl<'a> Deref for MessagePakcetHeaderMut<'a> {
+impl<'a> Deref for MessagePacketHeaderMut<'a> {
     type Target = [u8; MESSAGE_HEADER_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -234,7 +292,7 @@ impl<'a> Deref for MessagePakcetHeaderMut<'a> {
     }
 }
 
-impl<'a> DerefMut for MessagePakcetHeaderMut<'a> {
+impl<'a> DerefMut for MessagePacketHeaderMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.header
     }
@@ -260,4 +318,74 @@ pub struct OutboundMessageInfo {
     deadline: time::SystemTime,
     /// The message to send
     msg: Message,
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::{MessagePacketHeaderMut, MESSAGE_HEADER_SIZE};
+
+    #[test]
+    fn set_init_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_init();
+
+        assert_eq!(buf_mut.header[8], 0b1000_0000);
+    }
+
+    #[test]
+    fn set_done_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_done();
+
+        assert_eq!(buf_mut.header[8], 0b0100_0000);
+    }
+
+    #[test]
+    fn set_aborted_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_aborted();
+
+        assert_eq!(buf_mut.header[8], 0b0010_0000);
+    }
+
+    #[test]
+    fn set_chunk_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_chunk();
+
+        assert_eq!(buf_mut.header[8], 0b0001_0000);
+    }
+
+    #[test]
+    fn set_read_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_read();
+
+        assert_eq!(buf_mut.header[8], 0b0000_1000);
+    }
+
+    #[test]
+    fn set_ack_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_ack();
+
+        assert_eq!(buf_mut.header[8], 0b0000_0001);
+    }
+
+    #[test]
+    fn set_mutli_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.set_init();
+        buf_mut.set_ack();
+
+        assert_eq!(buf_mut.header[8], 0b1000_0001);
+    }
 }
