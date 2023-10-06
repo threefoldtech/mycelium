@@ -46,6 +46,12 @@ const FLAG_MESSAGE_READ: u16 = 0b0000_1000_0000_0000;
 /// transmitted again by the sender.
 const FLAG_MESSAGE_ACK: u16 = 0b0000_0001_0000_0000;
 
+/// Length of a message checksum in bytes.
+const MESSAGE_CHECKSUM_LENGTH: usize = 32;
+
+/// A message checksum. In practice this is a 32 byte blake3 digest of the entire message.
+pub type Checksum = [u8; MESSAGE_CHECKSUM_LENGTH];
+
 pub struct MessageStack {
     data_plane: Arc<DataPlane>,
     inbox: Arc<Mutex<MessageInbox>>,
@@ -189,7 +195,7 @@ impl MessageId {
 }
 
 /// An owned [`PacketBuffer`] for working with messages.
-struct MessagePacket {
+pub struct MessagePacket {
     packet: PacketBuffer,
 }
 
@@ -221,9 +227,6 @@ impl MessagePacket {
     /// Get a mutable reference to the header of the `MessagePacket`.
     pub fn header_mut(&mut self) -> MessagePacketHeaderMut {
         MessagePacketHeaderMut {
-            // header: &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE]
-            //     .try_into()
-            //     .expect("Packet contains enough size for a header; qed"),
             header: <&mut [u8] as TryInto<&mut [u8; MESSAGE_HEADER_SIZE]>>::try_into(
                 &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE],
             )
