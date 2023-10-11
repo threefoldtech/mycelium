@@ -28,6 +28,11 @@ impl MessageInit {
     pub fn set_length(&mut self, length: u64) {
         self.buffer.buffer_mut()[..8].copy_from_slice(&length.to_be_bytes())
     }
+
+    /// Consumes this `MessageInit`, returning the underlying [`MessagePacket`].
+    pub fn into_inner(self) -> MessagePacket {
+        self.buffer
+    }
 }
 
 #[cfg(test)]

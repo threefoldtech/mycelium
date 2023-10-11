@@ -87,6 +87,11 @@ impl MessageChunk {
 
         Ok(())
     }
+
+    /// Consumes this `MessageChunk`, returning the underlying [`MessagePacket`].
+    pub fn into_inner(self) -> MessagePacket {
+        self.buffer
+    }
 }
 
 /// An error indicating not enough space is availbe in a message to set the chunk data.
