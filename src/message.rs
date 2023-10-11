@@ -279,8 +279,7 @@ struct Flags<'a> {
     flags: u16,
     // We explicitly tie the reference used to create the Flags struct to the lifetime of this
     // struct to prevent modification of flags while we have a Flags struct.
-    // TODO: should this be &'a MessagePacketHeader?
-    _marker: PhantomData<&'a ()>,
+    _marker: PhantomData<&'a MessagePacketHeader<'a>>,
 }
 
 impl<'a> Flags<'a> {
