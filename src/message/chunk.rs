@@ -124,6 +124,14 @@ mod tests {
     use super::MessageChunk;
 
     #[test]
+    fn chunk_flag_set() {
+        let mc = MessageChunk::new(MessagePacket::new(PacketBuffer::new()));
+
+        let mp = mc.into_inner();
+        assert!(mp.header().flags().chunk());
+    }
+
+    #[test]
     fn read_chunk_idx() {
         let mut pb = PacketBuffer::new();
         pb.buffer_mut()[12..20].copy_from_slice(&[0, 0, 0, 0, 0, 0, 100, 73]);
