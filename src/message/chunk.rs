@@ -15,7 +15,8 @@ pub struct MessageChunk {
 
 impl MessageChunk {
     /// Create a new `MessageChunk` in the provided [`MessagePacket`].
-    pub fn new(buffer: MessagePacket) -> Self {
+    pub fn new(mut buffer: MessagePacket) -> Self {
+        buffer.header_mut().flags_mut().set_chunk();
         Self { buffer }
     }
 
