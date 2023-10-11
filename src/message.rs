@@ -7,6 +7,7 @@
 
 use std::{
     collections::HashMap,
+    marker::PhantomData,
     net::Ipv6Addr,
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
@@ -273,6 +274,47 @@ pub struct MessagePacketHeaderMut<'a> {
     header: &'a mut [u8; MESSAGE_HEADER_SIZE],
 }
 
+// A reference to the flags in a message header.
+struct Flags<'a> {
+    flags: u16,
+    // We explicitly tie the reference used to create the Flags struct to the lifetime of this
+    // struct to prevent modification of flags while we have a Flags struct.
+    // TODO: should this be &'a MessagePacketHeader?
+    _marker: PhantomData<&'a ()>,
+}
+
+impl<'a> Flags<'a> {
+    /// Check if the MESSAGE_INIT flag is set on the header.
+    fn init(&mut self) -> bool {
+        self.flags & FLAG_MESSAGE_INIT != 0
+    }
+
+    /// Check if the MESSAGE_DONE flag is set on the header.
+    fn done(&mut self) -> bool {
+        self.flags & FLAG_MESSAGE_DONE != 0
+    }
+
+    /// Check if the MESSAGE_ABORTED flag is set on the header.
+    fn aborted(&mut self) -> bool {
+        self.flags & FLAG_MESSAGE_ABORTED != 0
+    }
+
+    /// Check if the MESSAGE_CHUNK flag is set on the header.
+    fn chunk(&mut self) -> bool {
+        self.flags & FLAG_MESSAGE_CHUNK != 0
+    }
+
+    /// Check if the MESSAGE_READ flag is set on the header.
+    fn read(&mut self) -> bool {
+        self.flags & FLAG_MESSAGE_READ != 0
+    }
+
+    /// Check if the MESSAGE_ACK flag is set on the header.
+    fn ack(&mut self) -> bool {
+        self.flags & FLAG_MESSAGE_ACK != 0
+    }
+}
+
 /// A mutable reference to the flags in a message header.
 // We keep a separate struct because creating a u16 from a byte buffer will write the data in
 // native endiannes, but we need big endian. So we add a drop implementation which forces a big
@@ -325,6 +367,34 @@ impl FlagsMut<'_, '_> {
 //   - 8 bytes message id
 //   - 2 bytes flags
 //   - 2 bytes reserved
+impl<'a> MessagePacketHeader<'a> {
+    /// Get the [`MessageId`] from the buffer.
+    fn message_id(&self) -> MessageId {
+        MessageId(
+            self.header[..MESSAGE_ID_SIZE]
+                .try_into()
+                .expect("Buffer is properly sized; qed"),
+        )
+    }
+
+    /// Get a reference to the [`Flags`] in this header.
+    fn flags(&self) -> Flags<'_> {
+        let flags = u16::from_be_bytes(
+            self.header[MESSAGE_ID_SIZE..MESSAGE_ID_SIZE + 2]
+                .try_into()
+                .expect("Slice has a length of 2 which is valid for a u16; qed"),
+        );
+        Flags {
+            flags,
+            _marker: PhantomData,
+        }
+    }
+}
+
+// Header layout:
+//   - 8 bytes message id
+//   - 2 bytes flags
+//   - 2 bytes reserved
 impl<'a> MessagePacketHeaderMut<'a> {
     /// Get the [`MessageId`] from the buffer.
     fn message_id(&self) -> MessageId {
@@ -338,6 +408,19 @@ impl<'a> MessagePacketHeaderMut<'a> {
     /// Set the [`MessageId`] in the buffer to the provided value.
     fn set_message_id(&mut self, mid: MessageId) {
         self.header[..MESSAGE_ID_SIZE].copy_from_slice(&mid.0[..]);
+    }
+
+    /// Get a reference to the [`Flags`] in this header.
+    fn flags(&self) -> Flags<'_> {
+        let flags = u16::from_be_bytes(
+            self.header[MESSAGE_ID_SIZE..MESSAGE_ID_SIZE + 2]
+                .try_into()
+                .expect("Slice has a length of 2 which is valid for a u16; qed"),
+        );
+        Flags {
+            flags,
+            _marker: PhantomData,
+        }
     }
 
     /// Get a mutable reference to the flags in this header.
@@ -412,6 +495,7 @@ mod tests {
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
         buf_mut.flags_mut().set_init();
 
+        assert!(buf_mut.flags().init());
         assert_eq!(buf_mut.header[8], 0b1000_0000);
     }
 
@@ -421,6 +505,7 @@ mod tests {
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
         buf_mut.flags_mut().set_done();
 
+        assert!(buf_mut.flags().done());
         assert_eq!(buf_mut.header[8], 0b0100_0000);
     }
 
@@ -430,6 +515,7 @@ mod tests {
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
         buf_mut.flags_mut().set_aborted();
 
+        assert!(buf_mut.flags().aborted());
         assert_eq!(buf_mut.header[8], 0b0010_0000);
     }
 
@@ -439,6 +525,7 @@ mod tests {
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
         buf_mut.flags_mut().set_chunk();
 
+        assert!(buf_mut.flags().chunk());
         assert_eq!(buf_mut.header[8], 0b0001_0000);
     }
 
@@ -448,6 +535,7 @@ mod tests {
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
         buf_mut.flags_mut().set_read();
 
+        assert!(buf_mut.flags().read());
         assert_eq!(buf_mut.header[8], 0b0000_1000);
     }
 
@@ -457,6 +545,7 @@ mod tests {
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
         buf_mut.flags_mut().set_ack();
 
+        assert!(buf_mut.flags().ack());
         assert_eq!(buf_mut.header[8], 0b0000_0001);
     }
 
@@ -467,6 +556,7 @@ mod tests {
         buf_mut.flags_mut().set_init();
         buf_mut.flags_mut().set_ack();
 
+        assert!(buf_mut.flags().ack() && buf_mut.flags().init());
         assert_eq!(buf_mut.header[8], 0b1000_0001);
     }
 }
