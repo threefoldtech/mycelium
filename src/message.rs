@@ -284,32 +284,32 @@ struct Flags<'a> {
 
 impl<'a> Flags<'a> {
     /// Check if the MESSAGE_INIT flag is set on the header.
-    fn init(&mut self) -> bool {
+    fn init(&self) -> bool {
         self.flags & FLAG_MESSAGE_INIT != 0
     }
 
     /// Check if the MESSAGE_DONE flag is set on the header.
-    fn done(&mut self) -> bool {
+    fn done(&self) -> bool {
         self.flags & FLAG_MESSAGE_DONE != 0
     }
 
     /// Check if the MESSAGE_ABORTED flag is set on the header.
-    fn aborted(&mut self) -> bool {
+    fn aborted(&self) -> bool {
         self.flags & FLAG_MESSAGE_ABORTED != 0
     }
 
     /// Check if the MESSAGE_CHUNK flag is set on the header.
-    fn chunk(&mut self) -> bool {
+    fn chunk(&self) -> bool {
         self.flags & FLAG_MESSAGE_CHUNK != 0
     }
 
     /// Check if the MESSAGE_READ flag is set on the header.
-    fn read(&mut self) -> bool {
+    fn read(&self) -> bool {
         self.flags & FLAG_MESSAGE_READ != 0
     }
 
     /// Check if the MESSAGE_ACK flag is set on the header.
-    fn ack(&mut self) -> bool {
+    fn ack(&self) -> bool {
         self.flags & FLAG_MESSAGE_ACK != 0
     }
 }
