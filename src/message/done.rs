@@ -41,6 +41,11 @@ impl MessageDone {
     pub fn set_checksum(&mut self, checksum: Checksum) {
         self.buffer.buffer_mut()[8..8 + MESSAGE_CHECKSUM_LENGTH].copy_from_slice(&checksum)
     }
+
+    /// Consumes this `MessageDone`, returning the underlying [`MessagePacket`].
+    pub fn into_inner(self) -> MessagePacket {
+        self.buffer
+    }
 }
 
 #[cfg(test)]
