@@ -289,6 +289,38 @@ impl Drop for FlagsMut<'_, '_> {
     }
 }
 
+impl FlagsMut<'_, '_> {
+    /// Sets the MESSAGE_INIT flag on the header.
+    fn set_init(&mut self) {
+        self.flags |= FLAG_MESSAGE_INIT;
+    }
+
+    /// Sets the MESSAGE_DONE flag on the header.
+    fn set_done(&mut self) {
+        self.flags |= FLAG_MESSAGE_DONE;
+    }
+
+    /// Sets the MESSAGE_ABORTED flag on the header.
+    fn set_aborted(&mut self) {
+        self.flags |= FLAG_MESSAGE_ABORTED;
+    }
+
+    /// Sets the MESSAGE_CHUNK flag on the header.
+    fn set_chunk(&mut self) {
+        self.flags |= FLAG_MESSAGE_CHUNK;
+    }
+
+    /// Sets the MESSAGE_READ flag on the header.
+    fn set_read(&mut self) {
+        self.flags |= FLAG_MESSAGE_READ;
+    }
+
+    /// Sets the MESSAGE_ACK flag on the header.
+    fn set_ack(&mut self) {
+        self.flags |= FLAG_MESSAGE_ACK;
+    }
+}
+
 // Header layout:
 //   - 8 bytes message id
 //   - 2 bytes flags
@@ -322,36 +354,6 @@ impl<'a> MessagePacketHeaderMut<'a> {
             header: self,
             flags,
         }
-    }
-
-    /// Sets the MESSAGE_INIT flag on the header.
-    fn set_init(&mut self) {
-        self.flags_mut().flags |= FLAG_MESSAGE_INIT;
-    }
-
-    /// Sets the MESSAGE_DONE flag on the header.
-    fn set_done(&mut self) {
-        self.flags_mut().flags |= FLAG_MESSAGE_DONE;
-    }
-
-    /// Sets the MESSAGE_ABORTED flag on the header.
-    fn set_aborted(&mut self) {
-        self.flags_mut().flags |= FLAG_MESSAGE_ABORTED;
-    }
-
-    /// Sets the MESSAGE_CHUNK flag on the header.
-    fn set_chunk(&mut self) {
-        self.flags_mut().flags |= FLAG_MESSAGE_CHUNK;
-    }
-
-    /// Sets the MESSAGE_READ flag on the header.
-    fn set_read(&mut self) {
-        self.flags_mut().flags |= FLAG_MESSAGE_READ;
-    }
-
-    /// Sets the MESSAGE_ACK flag on the header.
-    fn set_ack(&mut self) {
-        self.flags_mut().flags |= FLAG_MESSAGE_ACK;
     }
 }
 
@@ -408,7 +410,7 @@ mod tests {
     fn set_init_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_init();
+        buf_mut.flags_mut().set_init();
 
         assert_eq!(buf_mut.header[8], 0b1000_0000);
     }
@@ -417,7 +419,7 @@ mod tests {
     fn set_done_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_done();
+        buf_mut.flags_mut().set_done();
 
         assert_eq!(buf_mut.header[8], 0b0100_0000);
     }
@@ -426,7 +428,7 @@ mod tests {
     fn set_aborted_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_aborted();
+        buf_mut.flags_mut().set_aborted();
 
         assert_eq!(buf_mut.header[8], 0b0010_0000);
     }
@@ -435,7 +437,7 @@ mod tests {
     fn set_chunk_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_chunk();
+        buf_mut.flags_mut().set_chunk();
 
         assert_eq!(buf_mut.header[8], 0b0001_0000);
     }
@@ -444,7 +446,7 @@ mod tests {
     fn set_read_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_read();
+        buf_mut.flags_mut().set_read();
 
         assert_eq!(buf_mut.header[8], 0b0000_1000);
     }
@@ -453,7 +455,7 @@ mod tests {
     fn set_ack_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_ack();
+        buf_mut.flags_mut().set_ack();
 
         assert_eq!(buf_mut.header[8], 0b0000_0001);
     }
@@ -462,8 +464,8 @@ mod tests {
     fn set_mutli_flag() {
         let mut buf = [0; MESSAGE_HEADER_SIZE];
         let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
-        buf_mut.set_init();
-        buf_mut.set_ack();
+        buf_mut.flags_mut().set_init();
+        buf_mut.flags_mut().set_ack();
 
         assert_eq!(buf_mut.header[8], 0b1000_0001);
     }
