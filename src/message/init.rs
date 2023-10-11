@@ -42,6 +42,14 @@ mod tests {
     use super::MessageInit;
 
     #[test]
+    fn init_flag_set() {
+        let mi = MessageInit::new(MessagePacket::new(PacketBuffer::new()));
+
+        let mp = mi.into_inner();
+        assert!(mp.header().flags().init());
+    }
+
+    #[test]
     fn read_length() {
         let mut pb = PacketBuffer::new();
         pb.buffer_mut()[12..20].copy_from_slice(&[0, 0, 0, 0, 2, 3, 4, 5]);

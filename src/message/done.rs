@@ -58,6 +58,14 @@ mod tests {
     use super::MessageDone;
 
     #[test]
+    fn done_flag_set() {
+        let md = MessageDone::new(MessagePacket::new(PacketBuffer::new()));
+
+        let mp = md.into_inner();
+        assert!(mp.header().flags().done());
+    }
+
+    #[test]
     fn read_chunk_count() {
         let mut pb = PacketBuffer::new();
         pb.buffer_mut()[12..20].copy_from_slice(&[0, 0, 0, 0, 0, 0, 73, 55]);
