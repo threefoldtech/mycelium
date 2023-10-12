@@ -14,6 +14,8 @@ use std::{
     time::{self, Duration},
 };
 
+use futures::{Stream, StreamExt};
+use log::{debug, error, warn};
 use rand::Fill;
 
 use crate::{crypto::PacketBuffer, data::DataPlane};
@@ -53,8 +55,10 @@ const MESSAGE_CHECKSUM_LENGTH: usize = 32;
 /// A message checksum. In practice this is a 32 byte blake3 digest of the entire message.
 pub type Checksum = [u8; MESSAGE_CHECKSUM_LENGTH];
 
+#[derive(Clone)]
 pub struct MessageStack {
-    data_plane: Arc<DataPlane>,
+    // The DataPlane is wrappen in a Mutex since it does not implement Sync.
+    data_plane: Arc<Mutex<DataPlane>>,
     inbox: Arc<Mutex<MessageInbox>>,
     outbox: Arc<Mutex<MessageOutbox>>,
 }
@@ -107,11 +111,12 @@ enum ChunkTransmitState {
     Acked,
 }
 
+#[derive(PartialEq)]
 enum TransmissionState {
     /// Transmission has not started yet.
     Init,
-    /// Transmission is in progress.
-    InProgress(Vec<ChunkState>),
+    /// Transmission is in progress (ACK received for INIT).
+    InProgress,
     /// Remote acknowledged full reception.
     Received,
     /// Remote indicated the message has been read by an external entity.
@@ -144,19 +149,86 @@ impl MessageOutbox {
 }
 
 impl MessageStack {
-    pub fn new(data_plane: DataPlane) -> Arc<Self> {
-        Arc::new(Self {
-            data_plane: Arc::new(data_plane),
+    /// Create a new `MessageStack`. This uses the provided [`DataPlane`] to inject message
+    /// packets. Received packets must be injected into the `MessageStack` through the provided
+    /// [`Stream`].
+    pub fn new<S>(data_plane: DataPlane, message_packet_stream: S) -> Self
+    where
+        S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+    {
+        let ms = Self {
+            data_plane: Arc::new(Mutex::new(data_plane)),
             inbox: Arc::new(Mutex::new(MessageInbox::new())),
             outbox: Arc::new(Mutex::new(MessageOutbox::new())),
-        })
+        };
+
+        tokio::task::spawn(
+            ms.clone()
+                .handle_incoming_message_packets(message_packet_stream),
+        );
+
+        ms
+    }
+
+    /// Handle incoming messages from the [`DataPlane`].
+    async fn handle_incoming_message_packets<S>(self, mut message_packet_stream: S)
+    where
+        S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+    {
+        while let Some(maybe_message) = message_packet_stream.next().await {
+            let packet = match maybe_message {
+                Ok(packet) => packet,
+                Err(e) => {
+                    error!("Error reading message packet: {e}");
+                    // TODO: is this fatal?
+                    continue;
+                }
+            };
+
+            let mp = MessagePacket::new(packet);
+
+            if mp.header().flags().ack() {
+                self.handle_message_reply(mp);
+            } else {
+                self.handle_message(mp);
+            }
+        }
+
+        warn!("Incoming message packet stream ended!");
+    }
+
+    /// Handle an incoming message packet which is a reply to a message we previously sent.
+    fn handle_message_reply(&self, mp: MessagePacket) {
+        if mp.header().flags().init() {
+            let mut outbox = self.outbox.lock().unwrap();
+            if let Some(message) = outbox.msges.get_mut(&mp.header().message_id()) {
+                if message.state != TransmissionState::Init {
+                    debug!("Dropping INIT ACK for message not in init state");
+                    return;
+                }
+                message.state = TransmissionState::InProgress;
+                todo!("start sending chunks");
+            }
+        }
+        todo!();
+    }
+
+    /// Handle an incoming message packet which is **not** a reply to a packet we previously sent.
+    fn handle_message(&self, mp: MessagePacket) {
+        todo!();
     }
 }
 
 impl MessageStack {
     /// Push a new message to be transmitted, which will be tried for the given duration.
     pub fn push_message(&self, dst: Ipv6Addr, data: Vec<u8>, try_duration: Duration) -> MessageId {
-        let src = self.data_plane.router().node_public_key().address();
+        let src = self
+            .data_plane
+            .lock()
+            .unwrap()
+            .router()
+            .node_public_key()
+            .address();
 
         let id = MessageId::new();
 
@@ -170,6 +242,7 @@ impl MessageStack {
             created,
             deadline,
             msg,
+            chunks: vec![], // leave Vec empty at start
         };
 
         self.outbox
@@ -479,8 +552,10 @@ pub struct OutboundMessageInfo {
     created: time::SystemTime,
     /// Timestamp indicating when we stop trying to send the message.
     deadline: time::SystemTime,
-    /// The message to send
+    /// The message to send.
     msg: Message,
+    /// Chunks of the message.
+    chunks: Vec<ChunkState>,
 }
 
 #[cfg(test)]
