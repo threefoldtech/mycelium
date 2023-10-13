@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    net::Ipv6Addr,
+    net::{IpAddr, Ipv6Addr},
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
     time::{self, Duration},
@@ -18,11 +18,22 @@ use futures::{Stream, StreamExt};
 use log::{debug, error, warn};
 use rand::Fill;
 
-use crate::{crypto::PacketBuffer, data::DataPlane};
+use crate::{
+    crypto::PacketBuffer,
+    data::DataPlane,
+    message::{chunk::MessageChunk, init::MessageInit},
+};
 
 mod chunk;
 mod done;
 mod init;
+
+/// The average size of a single chunk. This is mainly intended to preallocate the chunk array on
+/// the receiver size. This value should allow reasonable overhead for standard MTU.
+const AVERAGE_CHUNK_SIZE: usize = 1_300;
+/// The minimum size of a data chunk. Chunks which have a size smaller than this are rejected. An
+/// exception is made for the last chunk.
+const MINIMUM_CHUNK_SIZE: u64 = 250;
 
 /// The size in bytes of the message header which starts each user message packet.
 const MESSAGE_HEADER_SIZE: usize = 12;
@@ -69,21 +80,26 @@ struct MessageOutbox {
 
 struct MessageInbox {
     /// Messages which are still being transmitted.
+    // TODO: MessageID is part of ReceivedMessageInfo, rework this into HashSet?
     pending_msges: HashMap<MessageId, ReceivedMessageInfo>,
     /// Messages which have been completed.
+    // TODO: MessageID is part of Message, rework this into HashSet?
     complete_msges: HashMap<MessageId, Message>,
 }
 
 struct ReceivedMessageInfo {
     id: MessageId,
-    src: Ipv6Addr,
-    dst: Ipv6Addr,
-    message: Vec<Chunk>,
+    src: IpAddr,
+    dst: IpAddr,
+    /// Length of the finished message.
+    len: u64,
+    chunks: Vec<Option<Chunk>>,
 }
 
 /// A chunk of a message. This represents individual data pieces on the receiver side.
+#[derive(Clone)]
 struct Chunk {
-    chunk_idx: usize,
+    chunk_idx: u64,
     data: Vec<u8>,
 }
 
@@ -154,7 +170,10 @@ impl MessageStack {
     /// [`Stream`].
     pub fn new<S>(data_plane: DataPlane, message_packet_stream: S) -> Self
     where
-        S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+        S: Stream<Item = Result<(PacketBuffer, IpAddr, IpAddr), std::io::Error>>
+            + Send
+            + Unpin
+            + 'static,
     {
         let ms = Self {
             data_plane: Arc::new(Mutex::new(data_plane)),
@@ -173,11 +192,14 @@ impl MessageStack {
     /// Handle incoming messages from the [`DataPlane`].
     async fn handle_incoming_message_packets<S>(self, mut message_packet_stream: S)
     where
-        S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+        S: Stream<Item = Result<(PacketBuffer, IpAddr, IpAddr), std::io::Error>>
+            + Send
+            + Unpin
+            + 'static,
     {
         while let Some(maybe_message) = message_packet_stream.next().await {
-            let packet = match maybe_message {
-                Ok(packet) => packet,
+            let (packet, src, dst) = match maybe_message {
+                Ok((packet, src, dst)) => (packet, src, dst),
                 Err(e) => {
                     error!("Error reading message packet: {e}");
                     // TODO: is this fatal?
@@ -190,7 +212,7 @@ impl MessageStack {
             if mp.header().flags().ack() {
                 self.handle_message_reply(mp);
             } else {
-                self.handle_message(mp);
+                self.handle_message(mp, src, dst);
             }
         }
 
@@ -199,9 +221,12 @@ impl MessageStack {
 
     /// Handle an incoming message packet which is a reply to a message we previously sent.
     fn handle_message_reply(&self, mp: MessagePacket) {
-        if mp.header().flags().init() {
+        let header = mp.header();
+        let message_id = header.message_id();
+        let flags = header.flags();
+        if flags.init() {
             let mut outbox = self.outbox.lock().unwrap();
-            if let Some(message) = outbox.msges.get_mut(&mp.header().message_id()) {
+            if let Some(message) = outbox.msges.get_mut(&message_id) {
                 if message.state != TransmissionState::Init {
                     debug!("Dropping INIT ACK for message not in init state");
                     return;
@@ -209,13 +234,144 @@ impl MessageStack {
                 message.state = TransmissionState::InProgress;
                 todo!("start sending chunks");
             }
+        } else if flags.chunk() {
+            // ACK for a chunk, mark chunk as received so it is not retried again.
+            let mut outbox = self.outbox.lock().unwrap();
+            if let Some(message) = outbox.msges.get_mut(&message_id) {
+                if message.state != TransmissionState::InProgress {
+                    debug!("Dropping CHUNK ACK for message not being transmitted");
+                    return;
+                }
+                let mc = MessageChunk::new(mp);
+                // Sanity checks. This is just to protect ourselves, if the other party is
+                // malicious it can return any data it wants here.
+                if mc.chunk_idx() > message.chunks.len() as u64 {
+                    debug!("Dropping CHUNK ACK for message because ACK'ed chunk is out of bounds");
+                    return;
+                }
+                // Don't check data size. It is the repsonsiblity of the other party to ensure he
+                // ACKs the right chunk. Additionally a malicious node could return a crafted input
+                // here anyway.
+
+                message.chunks[mc.chunk_idx() as usize].chunk_transmit_state =
+                    ChunkTransmitState::Acked;
+            }
+        } else if flags.done() {
+            // ACK for full message.
+            let mut outbox = self.outbox.lock().unwrap();
+            if let Some(message) = outbox.msges.get_mut(&message_id) {
+                if message.state != TransmissionState::InProgress {
+                    debug!("Dropping DONE ACK for message which is not being transmitted");
+                    return;
+                }
+                message.state = TransmissionState::Received;
+            }
+        } else if flags.read() {
+            // Ack for a read flag. Since the original read flag is sent by the receiver, this
+            // means the sender indicates he has successfully received the notification that a
+            // userspace process has read the message. Note that read flags are only sent once, and
+            // this ack is only sent at most once, even if it gets lost. As a result, there is
+            // nothing to really do here, and this behavior (ACK READ) might be dropped in the
+            // future.
+            debug!("Received READ ACK");
+        } else {
+            debug!("Received unknown ACK message flags {:x}", flags.flags);
         }
-        todo!();
     }
 
     /// Handle an incoming message packet which is **not** a reply to a packet we previously sent.
-    fn handle_message(&self, mp: MessagePacket) {
-        todo!();
+    fn handle_message(&self, mp: MessagePacket, src: IpAddr, dst: IpAddr) {
+        let header = mp.header();
+        let message_id = header.message_id();
+        let flags = header.flags();
+        if flags.init() {
+            // We receive a new message with an ID. If we already have a complete message, ignore
+            // it.
+            let mut inbox = self.inbox.lock().unwrap();
+            if inbox.complete_msges.contains_key(&message_id) {
+                debug!("Dropping INIT message as we already have a complete message with this ID");
+                return;
+            }
+            // Otherwise unilaterally reset the state. The message id space is large enough to
+            // avoid accidental collisions.
+            let mi = MessageInit::new(mp);
+            let expected_chunks =
+                (mi.length() as usize + AVERAGE_CHUNK_SIZE - 1) / AVERAGE_CHUNK_SIZE;
+            let chunks = vec![None; expected_chunks];
+            let message = ReceivedMessageInfo {
+                id: message_id,
+                src,
+                dst,
+                len: mi.length(),
+                chunks,
+            };
+
+            if inbox.pending_msges.insert(message_id, message).is_some() {
+                debug!("Dropped current pending message because we received a new message with INIT flag set for the same ID");
+            }
+        } else if flags.chunk() {
+            // A chunk can only be received for incomplete messages. We don't have to check the
+            // completed messages. Either there is none, so no problem, or there is one, in which
+            // case we consider this to be a lingering chunk which was already accepted in the
+            // meantime (as the message is complete).
+            //
+            // SAFETY: a malcious node could send a lot of empty chunks, which trigger allocations
+            // to hold the chunk array, effectively exhausting memory. As such, we first need to
+            // determine if the chunk is feasible.
+            let mut inbox = self.inbox.lock().unwrap();
+            if let Some(message) = inbox.pending_msges.get_mut(&message_id) {
+                let mc = MessageChunk::new(mp);
+                // Make sure the data is within bounds of the message being sent.
+                if message.len < mc.chunk_offset() + mc.chunk_size() {
+                    debug!("Dropping invalid message CHUNK for being out of bounds");
+                    return;
+                }
+                // Check max chunk idx.
+                let max_chunk_idx = (message.len + MINIMUM_CHUNK_SIZE - 1) / MINIMUM_CHUNK_SIZE;
+                if mc.chunk_idx() > max_chunk_idx {
+                    debug!("Dropping CHUNK because index is too high");
+                    return;
+                }
+                // Check chunk size, allow exception on last chunk.
+                if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != max_chunk_idx {
+                    debug!("Dropping CHUNK which is too small");
+                    return;
+                }
+                // Finally check if we have sufficient space for our chunks.
+                if message.chunks.len() as u64 <= mc.chunk_idx() {
+                    // TODO: optimize
+                    let chunks =
+                        vec![None; (mc.chunk_idx() + 1 - message.chunks.len() as u64) as usize];
+                    message.chunks.extend_from_slice(&chunks);
+                }
+                // Now insert the chunk. Overwrite any previous chunk.
+                message.chunks[mc.chunk_idx() as usize] = Some(Chunk {
+                    chunk_idx: mc.chunk_idx(),
+                    data: mc.data().to_vec(),
+                });
+            }
+        } else if flags.done() {
+            todo!("Checksum, reassemble and move message");
+        } else if flags.read() {
+            let mut outbox = self.outbox.lock().unwrap();
+            if let Some(message) = outbox.msges.get_mut(&message_id) {
+                if message.state != TransmissionState::Received {
+                    debug!("Got READ for message which is not in received state");
+                    return;
+                }
+                message.state = TransmissionState::Read;
+            }
+        } else if flags.aborted() {
+            // If the message is not finished yet, discard it completely.
+            // But if it is finished, ignore this, i.e, nothing to do.
+            let mut inbox = self.inbox.lock().unwrap();
+            if inbox.pending_msges.remove(&message_id).is_some() {
+                debug!("Dropping pending message because we received an ABORT");
+            }
+        } else {
+            debug!("Received unknown ACK message flags {:x}", flags.flags);
+        }
+        todo!("reply");
     }
 }
 
@@ -241,6 +397,7 @@ impl MessageStack {
             state: TransmissionState::Init,
             created,
             deadline,
+            len: msg.data.len(),
             msg,
             chunks: vec![], // leave Vec empty at start
         };
@@ -552,6 +709,8 @@ pub struct OutboundMessageInfo {
     created: time::SystemTime,
     /// Timestamp indicating when we stop trying to send the message.
     deadline: time::SystemTime,
+    /// Length of the message.
+    len: usize,
     /// The message to send.
     msg: Message,
     /// Chunks of the message.

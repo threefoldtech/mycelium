@@ -50,10 +50,14 @@ impl MessageChunk {
 
     /// Return the size of the chunk in the message, as written in the body.
     pub fn chunk_size(&self) -> u64 {
-        u64::from_be_bytes(
-            self.buffer.buffer()[16..24]
-                .try_into()
-                .expect("Buffer contains a size field of valid length; qed"),
+        // Shield against a corrupt value.
+        u64::min(
+            u64::from_be_bytes(
+                self.buffer.buffer()[16..24]
+                    .try_into()
+                    .expect("Buffer contains a size field of valid length; qed"),
+            ),
+            self.buffer.buffer().len() as u64 - 24,
         )
     }
 
