@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    net::{IpAddr, Ipv6Addr},
+    net::IpAddr,
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
     time::{self, Duration},
@@ -21,7 +21,7 @@ use rand::Fill;
 use crate::{
     crypto::PacketBuffer,
     data::DataPlane,
-    message::{chunk::MessageChunk, init::MessageInit},
+    message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
 };
 
 mod chunk;
@@ -63,7 +63,6 @@ const FLAG_MESSAGE_ACK: u16 = 0b0000_0001_0000_0000;
 /// Length of a message checksum in bytes.
 const MESSAGE_CHECKSUM_LENGTH: usize = 32;
 
-/// A message checksum. In practice this is a 32 byte blake3 digest of the entire message.
 pub type Checksum = [u8; MESSAGE_CHECKSUM_LENGTH];
 
 #[derive(Clone)]
@@ -351,7 +350,54 @@ impl MessageStack {
                 });
             }
         } else if flags.done() {
-            todo!("Checksum, reassemble and move message");
+            let mut inbox = self.inbox.lock().unwrap();
+            let md = MessageDone::new(mp);
+            // At this point, we should have all message chunks. Verify length and reassemble them.
+            if let Some(inbound_message) = inbox.pending_msges.get_mut(&message_id) {
+                // Track total size of data we have allocated.
+                let mut chunk_size = 0;
+                let mut message_data = Vec::with_capacity(inbound_message.len as usize);
+
+                // Chunks are inserted in order.
+                for chunk in &inbound_message.chunks {
+                    if let Some(chunk) = chunk {
+                        message_data.extend_from_slice(&chunk.data);
+                        chunk_size += chunk.data.len();
+                    } else {
+                        // A none chunk is not possible, we should have all chunks
+                        debug!("DONE received for incomplete message");
+                        return;
+                    }
+                }
+
+                // TODO: report back here if there is an error.
+                if chunk_size as u64 != inbound_message.len {
+                    debug!("Message has invalid size");
+                    return;
+                }
+
+                let message = Message {
+                    id: inbound_message.id,
+                    src: inbound_message.src,
+                    dst: inbound_message.dst,
+                    data: message_data,
+                };
+
+                let checksum = message.checksum();
+
+                if checksum != md.checksum() {
+                    debug!(
+                        "Message has wrong checksum, got {} expected {}",
+                        md.checksum().to_hex(),
+                        checksum.to_hex()
+                    );
+                    return;
+                }
+
+                // Move message to be read.
+                inbox.complete_msges.insert(message_id, message);
+                inbox.pending_msges.remove(&message_id);
+            }
         } else if flags.read() {
             let mut outbox = self.outbox.lock().unwrap();
             if let Some(message) = outbox.msges.get_mut(&message_id) {
@@ -377,14 +423,15 @@ impl MessageStack {
 
 impl MessageStack {
     /// Push a new message to be transmitted, which will be tried for the given duration.
-    pub fn push_message(&self, dst: Ipv6Addr, data: Vec<u8>, try_duration: Duration) -> MessageId {
+    pub fn push_message(&self, dst: IpAddr, data: Vec<u8>, try_duration: Duration) -> MessageId {
         let src = self
             .data_plane
             .lock()
             .unwrap()
             .router()
             .node_public_key()
-            .address();
+            .address()
+            .into();
 
         let id = MessageId::new();
 
@@ -695,9 +742,9 @@ pub struct Message {
     /// Generated ID, used to identify the message on the wire
     id: MessageId,
     /// Source IP (ours)
-    src: Ipv6Addr,
+    src: IpAddr,
     /// Destination IP
-    dst: Ipv6Addr,
+    dst: IpAddr,
     /// Data
     data: Vec<u8>,
 }
@@ -715,6 +762,18 @@ pub struct OutboundMessageInfo {
     msg: Message,
     /// Chunks of the message.
     chunks: Vec<ChunkState>,
+}
+
+/// A message checksum. In practice this is a 32 byte blake3 digest of the entire message.
+pub type MessageChecksum = blake3::Hash;
+
+impl Message {
+    /// Calculates the [`MessageChechsum`] of the message.
+    ///
+    /// Currently this is a 32 byte blake3 hash.
+    pub fn checksum(&self) -> MessageChecksum {
+        blake3::hash(&self.data)
+    }
 }
 
 #[cfg(test)]

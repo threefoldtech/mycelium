@@ -1,4 +1,4 @@
-use super::{Checksum, MessagePacket, MESSAGE_CHECKSUM_LENGTH};
+use super::{MessageChecksum, MessagePacket, MESSAGE_CHECKSUM_LENGTH};
 
 /// A message representing a "done" message.
 ///
@@ -31,15 +31,18 @@ impl MessageDone {
     }
 
     /// Get the checksum of the message from the body.
-    pub fn checksum(&self) -> Checksum {
-        self.buffer.buffer()[8..8 + MESSAGE_CHECKSUM_LENGTH]
-            .try_into()
-            .expect("Buffer contains enough data for a checksum; qed")
+    pub fn checksum(&self) -> MessageChecksum {
+        MessageChecksum::from_bytes(
+            self.buffer.buffer()[8..8 + MESSAGE_CHECKSUM_LENGTH]
+                .try_into()
+                .expect("Buffer contains enough data for a checksum; qed"),
+        )
     }
 
     /// Set the checksum of the message in the body.
-    pub fn set_checksum(&mut self, checksum: Checksum) {
-        self.buffer.buffer_mut()[8..8 + MESSAGE_CHECKSUM_LENGTH].copy_from_slice(&checksum)
+    pub fn set_checksum(&mut self, checksum: MessageChecksum) {
+        self.buffer.buffer_mut()[8..8 + MESSAGE_CHECKSUM_LENGTH]
+            .copy_from_slice(checksum.as_bytes())
     }
 
     /// Consumes this `MessageDone`, returning the underlying [`MessagePacket`].
@@ -52,7 +55,7 @@ impl MessageDone {
 mod tests {
     use crate::{
         crypto::PacketBuffer,
-        message::{Checksum, MessagePacket},
+        message::{MessageChecksum, MessagePacket},
     };
 
     use super::MessageDone;
@@ -89,13 +92,13 @@ mod tests {
 
     #[test]
     fn read_checksum() {
-        const CHECKSUM: Checksum = [
+        const CHECKSUM: MessageChecksum = MessageChecksum::from_bytes([
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
             0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
             0x1C, 0x1D, 0x1E, 0x1F,
-        ];
+        ]);
         let mut pb = PacketBuffer::new();
-        pb.buffer_mut()[20..52].copy_from_slice(&CHECKSUM);
+        pb.buffer_mut()[20..52].copy_from_slice(CHECKSUM.as_bytes());
 
         let ms = MessageDone::new(MessagePacket::new(pb));
 
@@ -104,18 +107,18 @@ mod tests {
 
     #[test]
     fn write_checksum() {
-        const CHECKSUM: Checksum = [
+        const CHECKSUM: MessageChecksum = MessageChecksum::from_bytes([
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
             0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
             0x1C, 0x1D, 0x1E, 0x1F,
-        ];
+        ]);
         let mut ms = MessageDone::new(MessagePacket::new(PacketBuffer::new()));
 
         ms.set_checksum(CHECKSUM);
 
         // Since we don't work with packet buffer we don't have to account for the message packet
         // header.
-        assert_eq!(&ms.buffer.buffer()[8..40], &CHECKSUM);
+        assert_eq!(&ms.buffer.buffer()[8..40], CHECKSUM.as_bytes());
         assert_eq!(ms.checksum(), CHECKSUM);
     }
 }
