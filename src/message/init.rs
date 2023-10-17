@@ -29,6 +29,12 @@ impl MessageInit {
         self.buffer.buffer_mut()[..8].copy_from_slice(&length.to_be_bytes())
     }
 
+    /// Convert the `MessageInit` into a reply. This does nothing if it is already a reply.
+    pub fn into_reply(mut self) -> Self {
+        self.buffer.header_mut().flags_mut().set_ack();
+        self
+    }
+
     /// Consumes this `MessageInit`, returning the underlying [`MessagePacket`].
     pub fn into_inner(self) -> MessagePacket {
         self.buffer
