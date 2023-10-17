@@ -45,6 +45,12 @@ impl MessageDone {
             .copy_from_slice(checksum.as_bytes())
     }
 
+    /// Convert the `MessageDone` into a reply. This does nothing if it is already a reply.
+    pub fn into_reply(mut self) -> Self {
+        self.buffer.header_mut().flags_mut().set_ack();
+        self
+    }
+
     /// Consumes this `MessageDone`, returning the underlying [`MessagePacket`].
     pub fn into_inner(self) -> MessagePacket {
         self.buffer

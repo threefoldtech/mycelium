@@ -92,6 +92,15 @@ impl MessageChunk {
         Ok(())
     }
 
+    /// Convert the `MessageChunk` into a reply. This does nothing if it is already a reply.
+    pub fn into_reply(mut self) -> Self {
+        self.buffer.header_mut().flags_mut().set_ack();
+        // We want to leave the length field in tact but don't want to copy the data in the reply.
+        // This needs additional work on the underlying buffer.
+        // TODO
+        self
+    }
+
     /// Consumes this `MessageChunk`, returning the underlying [`MessagePacket`].
     pub fn into_inner(self) -> MessagePacket {
         self.buffer

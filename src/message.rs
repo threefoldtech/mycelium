@@ -22,6 +22,7 @@ use crate::{
     crypto::PacketBuffer,
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
+    packet::{DataPacket, Packet},
 };
 
 mod chunk;
@@ -283,7 +284,7 @@ impl MessageStack {
         let header = mp.header();
         let message_id = header.message_id();
         let flags = header.flags();
-        if flags.init() {
+        let reply = if flags.init() {
             // We receive a new message with an ID. If we already have a complete message, ignore
             // it.
             let mut inbox = self.inbox.lock().unwrap();
@@ -308,6 +309,8 @@ impl MessageStack {
             if inbox.pending_msges.insert(message_id, message).is_some() {
                 debug!("Dropped current pending message because we received a new message with INIT flag set for the same ID");
             }
+
+            Some(mi.into_reply().into_inner())
         } else if flags.chunk() {
             // A chunk can only be received for incomplete messages. We don't have to check the
             // completed messages. Either there is none, so no problem, or there is one, in which
@@ -348,6 +351,10 @@ impl MessageStack {
                     chunk_idx: mc.chunk_idx(),
                     data: mc.data().to_vec(),
                 });
+
+                Some(mc.into_reply().into_inner())
+            } else {
+                None
             }
         } else if flags.done() {
             let mut inbox = self.inbox.lock().unwrap();
@@ -397,6 +404,10 @@ impl MessageStack {
                 // Move message to be read.
                 inbox.complete_msges.insert(message_id, message);
                 inbox.pending_msges.remove(&message_id);
+
+                Some(md.into_reply().into_inner())
+            } else {
+                None
             }
         } else if flags.read() {
             let mut outbox = self.outbox.lock().unwrap();
@@ -407,6 +418,7 @@ impl MessageStack {
                 }
                 message.state = TransmissionState::Read;
             }
+            None
         } else if flags.aborted() {
             // If the message is not finished yet, discard it completely.
             // But if it is finished, ignore this, i.e, nothing to do.
@@ -414,10 +426,25 @@ impl MessageStack {
             if inbox.pending_msges.remove(&message_id).is_some() {
                 debug!("Dropping pending message because we received an ABORT");
             }
+            None
         } else {
-            debug!("Received unknown ACK message flags {:x}", flags.flags);
+            debug!("Received unknown message flags {:x}", flags.flags);
+            None
+        };
+        if let Some(reply) = reply {
+            // This is a reply, so SRC -> DST and DST -> SRC
+            // FIXME: this can be fixed once the dataplane accepts generic IpAddr addresses.
+            match (src, dst) {
+                (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                    self.data_plane.lock().unwrap().inject_message_packet(
+                        dst,
+                        src,
+                        reply.into_inner(),
+                    );
+                }
+                _ => debug!("can only reply to message fragments if both src and dst are IPv6"),
+            }
         }
-        todo!("reply");
     }
 }
 
@@ -510,6 +537,11 @@ impl MessagePacket {
             )
             .expect("Packet contains enough data for a header; qed"),
         }
+    }
+
+    /// Consumes this `MessagePacket`, returning the underlying [`PacketBuffer`].
+    pub fn into_inner(self) -> PacketBuffer {
+        self.packet
     }
 }
 
