@@ -22,7 +22,6 @@ use crate::{
     crypto::PacketBuffer,
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
-    packet::{DataPacket, Packet},
 };
 
 mod chunk;
@@ -99,7 +98,6 @@ struct ReceivedMessageInfo {
 /// A chunk of a message. This represents individual data pieces on the receiver side.
 #[derive(Clone)]
 struct Chunk {
-    chunk_idx: u64,
     data: Vec<u8>,
 }
 
@@ -232,7 +230,20 @@ impl MessageStack {
                     return;
                 }
                 message.state = TransmissionState::InProgress;
-                todo!("start sending chunks");
+                // Transform message into chunks.
+                let mut chunks =
+                    Vec::with_capacity((message.len + AVERAGE_CHUNK_SIZE - 1) / AVERAGE_CHUNK_SIZE);
+                for (chunk_idx, data_chunk) in
+                    message.msg.data.chunks(AVERAGE_CHUNK_SIZE).enumerate()
+                {
+                    chunks.push(ChunkState {
+                        chunk_idx,
+                        chunk_offset: chunk_idx * AVERAGE_CHUNK_SIZE,
+                        chunk_size: data_chunk.len(),
+                        chunk_transmit_state: ChunkTransmitState::Started,
+                    })
+                }
+                message.chunks = chunks;
             }
         } else if flags.chunk() {
             // ACK for a chunk, mark chunk as received so it is not retried again.
@@ -348,7 +359,6 @@ impl MessageStack {
                 }
                 // Now insert the chunk. Overwrite any previous chunk.
                 message.chunks[mc.chunk_idx() as usize] = Some(Chunk {
-                    chunk_idx: mc.chunk_idx(),
                     data: mc.data().to_vec(),
                 });
 
@@ -462,6 +472,7 @@ impl MessageStack {
 
         let id = MessageId::new();
 
+        let len = data.len();
         let msg = Message { id, src, dst, data };
 
         let created = std::time::SystemTime::now();
@@ -471,7 +482,7 @@ impl MessageStack {
             state: TransmissionState::Init,
             created,
             deadline,
-            len: msg.data.len(),
+            len,
             msg,
             chunks: vec![], // leave Vec empty at start
         };
@@ -480,6 +491,20 @@ impl MessageStack {
             .lock()
             .expect("Outbox lock isn't poisoned; qed")
             .insert(obmi);
+
+        // Already send the init packet.
+        let mut mi = MessageInit::new(MessagePacket::new(PacketBuffer::new()));
+        mi.set_length(len as u64);
+        match (src, dst) {
+            (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                self.data_plane.lock().unwrap().inject_message_packet(
+                    src,
+                    dst,
+                    mi.into_inner().into_inner(),
+                );
+            }
+            _ => debug!("Can only send messages between two IPv6 addresses"),
+        }
 
         id
     }
