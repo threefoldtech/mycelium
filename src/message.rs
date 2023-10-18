@@ -493,7 +493,10 @@ impl MessageStack {
             .insert(obmi);
 
         // Already send the init packet.
-        let mut mi = MessageInit::new(MessagePacket::new(PacketBuffer::new()));
+        let mut mp = MessagePacket::new(PacketBuffer::new());
+        mp.header_mut().set_message_id(id);
+
+        let mut mi = MessageInit::new(mp);
         mi.set_length(len as u64);
         match (src, dst) {
             (IpAddr::V6(src), IpAddr::V6(dst)) => {
