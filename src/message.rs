@@ -6,7 +6,7 @@
 //! possible.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     marker::PhantomData,
     net::IpAddr,
     ops::{Deref, DerefMut},
@@ -82,8 +82,7 @@ struct MessageInbox {
     // TODO: MessageID is part of ReceivedMessageInfo, rework this into HashSet?
     pending_msges: HashMap<MessageId, ReceivedMessageInfo>,
     /// Messages which have been completed.
-    // TODO: MessageID is part of Message, rework this into HashSet?
-    complete_msges: HashMap<MessageId, Message>,
+    complete_msges: VecDeque<Message>,
 }
 
 struct ReceivedMessageInfo {
@@ -143,7 +142,7 @@ impl MessageInbox {
     fn new() -> Self {
         Self {
             pending_msges: HashMap::new(),
-            complete_msges: HashMap::new(),
+            complete_msges: VecDeque::new(),
         }
     }
 }
@@ -299,7 +298,12 @@ impl MessageStack {
             // We receive a new message with an ID. If we already have a complete message, ignore
             // it.
             let mut inbox = self.inbox.lock().unwrap();
-            if inbox.complete_msges.contains_key(&message_id) {
+            if inbox
+                .complete_msges
+                .iter()
+                .find(|m| m.id == message_id)
+                .is_some()
+            {
                 debug!("Dropping INIT message as we already have a complete message with this ID");
                 return;
             }
@@ -412,7 +416,7 @@ impl MessageStack {
                 }
 
                 // Move message to be read.
-                inbox.complete_msges.insert(message_id, message);
+                inbox.complete_msges.push_back(message);
                 inbox.pending_msges.remove(&message_id);
 
                 Some(md.into_reply().into_inner())
