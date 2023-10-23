@@ -22,13 +22,7 @@ pub struct RouteKey {
 impl Eq for RouteKey {}
 impl PartialOrd for RouteKey {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match self.subnet.partial_cmp(&other.subnet) {
-            Some(Ordering::Equal) => self
-                .neighbor
-                .overlay_ip()
-                .partial_cmp(&other.neighbor.overlay_ip()),
-            ord => ord,
-        }
+        Some(self.cmp(other))
     }
 }
 impl Ord for RouteKey {
