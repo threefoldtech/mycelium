@@ -28,6 +28,12 @@ mod chunk;
 mod done;
 mod init;
 
+/// The amount of time to try and send messages before we give up.
+const MESSAGE_SEND_WINDOW: Duration = Duration::from_secs(60 * 5);
+
+/// The amount of time to wait before sending a chunk again if receipt is not acknowledged.
+const RETRANSMISSION_DELAY: Duration = Duration::from_secs(1);
+
 /// The average size of a single chunk. This is mainly intended to preallocate the chunk array on
 /// the receiver size. This value should allow reasonable overhead for standard MTU.
 const AVERAGE_CHUNK_SIZE: usize = 1_300;
@@ -298,12 +304,7 @@ impl MessageStack {
             // We receive a new message with an ID. If we already have a complete message, ignore
             // it.
             let mut inbox = self.inbox.lock().unwrap();
-            if inbox
-                .complete_msges
-                .iter()
-                .find(|m| m.id == message_id)
-                .is_some()
-            {
+            if inbox.complete_msges.iter().any(|m| m.id == message_id) {
                 debug!("Dropping INIT message as we already have a complete message with this ID");
                 return;
             }
@@ -375,6 +376,12 @@ impl MessageStack {
             let md = MessageDone::new(mp);
             // At this point, we should have all message chunks. Verify length and reassemble them.
             if let Some(inbound_message) = inbox.pending_msges.get_mut(&message_id) {
+                // Check if we have sufficient chunks
+                if md.chunk_count() != inbound_message.chunks.len() as u64 {
+                    // TODO: report error to sender
+                    debug!("Message has invalid amount of chunks");
+                    return;
+                }
                 // Track total size of data we have allocated.
                 let mut chunk_size = 0;
                 let mut message_data = Vec::with_capacity(inbound_message.len as usize);
@@ -512,6 +519,221 @@ impl MessageStack {
             }
             _ => debug!("Can only send messages between two IPv6 addresses"),
         }
+
+        // Clone message stack so it can be injected in the task.
+        let message_stack = self.clone();
+        tokio::task::spawn(async move {
+            let mut deadline = tokio::time::interval(MESSAGE_SEND_WINDOW);
+            let mut interval = tokio::time::interval(RETRANSMISSION_DELAY);
+            // Avoid a send burst if the system is slow.
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // intervals tick immediatly, so consume one tick each
+            deadline.tick().await;
+            interval.tick().await;
+
+            let mut aborted = false;
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if aborted {
+                            continue
+                        }
+                        if let Some(msg) = message_stack.outbox.lock().unwrap().msges.get_mut(&id) {
+                            match msg.state {
+                                TransmissionState::Init => {
+                                    // Send the init packet.
+                                    let mut mp = MessagePacket::new(PacketBuffer::new());
+                                    mp.header_mut().set_message_id(id);
+
+                                    let mut mi = MessageInit::new(mp);
+                                    mi.set_length(len as u64);
+                                    match (msg.msg.src, msg.msg.dst) {
+                                        (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                                            message_stack
+                                                .data_plane
+                                                .lock()
+                                                .unwrap()
+                                                .inject_message_packet(
+                                                    src,
+                                                    dst,
+                                                    mi.into_inner().into_inner(),
+                                                );
+                                        }
+                                        _ => debug!("Can only send messages between two IPv6 addresses"),
+                                    }
+                                }
+                                TransmissionState::InProgress => {
+                                    // Send chunks which haven't been sent yet.
+                                    let mut all_acked = true;
+                                    for chunk in msg.chunks.iter_mut() {
+                                        if !matches!(chunk.chunk_transmit_state, ChunkTransmitState::Acked)
+                                        {
+                                            all_acked = false;
+                                        }
+                                        match chunk.chunk_transmit_state {
+                                            ChunkTransmitState::Started => {
+                                                // Generate and send chunk, move chunk to state sent
+                                                let mut mp = MessagePacket::new(PacketBuffer::new());
+                                                mp.header_mut().set_message_id(id);
+
+                                                let mut mc = MessageChunk::new(mp);
+                                                mc.set_chunk_idx(chunk.chunk_idx as u64);
+                                                mc.set_chunk_offset(chunk.chunk_offset as u64);
+                                                if let Err(e) = mc.set_chunk_data(
+                                                    &msg.msg.data[chunk.chunk_offset
+                                                        ..chunk.chunk_offset + chunk.chunk_size],
+                                                ) {
+                                                    error!("Failed to generate and send chunk: {e}");
+                                                };
+
+                                                match (msg.msg.src, msg.msg.dst) {
+                                                    (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                                                        message_stack
+                                                            .data_plane
+                                                            .lock()
+                                                            .unwrap()
+                                                            .inject_message_packet(
+                                                                src,
+                                                                dst,
+                                                                mc.into_inner().into_inner(),
+                                                            );
+                                                    }
+                                                    _ => debug!(
+                                                        "Can only send messages between two IPv6 addresses"
+                                                    ),
+                                                }
+                                                chunk.chunk_transmit_state =
+                                                    ChunkTransmitState::Sent(time::Instant::now());
+                                            }
+                                            ChunkTransmitState::Sent(t) => {
+                                                if t.elapsed().as_secs() >= 1 {
+                                                    // retransmit
+                                                    let mut mp = MessagePacket::new(PacketBuffer::new());
+                                                    mp.header_mut().set_message_id(id);
+
+                                                    let mut mc = MessageChunk::new(mp);
+                                                    mc.set_chunk_idx(chunk.chunk_idx as u64);
+                                                    mc.set_chunk_offset(chunk.chunk_offset as u64);
+                                                    if let Err(e) = mc.set_chunk_data(
+                                                        &msg.msg.data[chunk.chunk_offset
+                                                            ..chunk.chunk_offset + chunk.chunk_size],
+                                                    ) {
+                                                        error!("Failed to generate and send chunk: {e}");
+                                                    };
+
+                                                    match (msg.msg.src, msg.msg.dst) {
+                                                        (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                                                            message_stack
+                                                                .data_plane
+                                                                .lock()
+                                                                .unwrap()
+                                                                .inject_message_packet(
+                                                                    src,
+                                                                    dst,
+                                                                    mc.into_inner().into_inner(),
+                                                                );
+                                                        }
+                                                        _ => debug!(
+                                                        "Can only send messages between two IPv6 addresses"
+                                                    ),
+                                                    }
+                                                    chunk.chunk_transmit_state =
+                                                        ChunkTransmitState::Sent(time::Instant::now());
+                                                }
+                                            }
+                                            ChunkTransmitState::Acked => {
+                                                // chunk has been acknowledged, nothing to do here.
+                                            }
+                                        }
+                                    }
+
+                                    // If every chunk is acked, send the done packet.
+                                    if all_acked {
+                                        let mut mp = MessagePacket::new(PacketBuffer::new());
+                                        mp.header_mut().set_message_id(id);
+
+                                        let mut md = MessageDone::new(mp);
+                                        md.set_chunk_count(msg.chunks.len() as u64);
+                                        md.set_checksum(msg.msg.checksum());
+
+                                        match (msg.msg.src, msg.msg.dst) {
+                                            (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                                                message_stack
+                                                    .data_plane
+                                                    .lock()
+                                                    .unwrap()
+                                                    .inject_message_packet(
+                                                        src,
+                                                        dst,
+                                                        md.into_inner().into_inner(),
+                                                    );
+                                            }
+                                            _ => {
+                                                debug!("Can only send messages between two IPv6 addresses")
+                                            }
+                                        };
+                                    }
+                                }
+                                TransmissionState::Received => {
+                                    // Nothing to do if the remote acknowledged receipt.
+                                }
+                                TransmissionState::Read => {
+                                    // Nothing to do if the remote acknowledged that the message is read.
+                                }
+                                TransmissionState::Aborted => {
+                                    // Nothing to do if we aborted the message.
+                                }
+                            };
+                        } else {
+                            // If the message is gone, just exit
+                            return;
+                        }
+                    },
+                    _ = deadline.tick() => {
+                        // The first time we get a tick to abort, abort the message if it is not
+                        // received yet.
+                        // The second time, clean up the storage.
+                        if !aborted {
+                            aborted = true;
+                            if let Some(msg) = message_stack.outbox.lock().unwrap().msges.get_mut(&id) {
+                                if matches!(msg.state, TransmissionState::Init | TransmissionState::InProgress) {
+                                    msg.state = TransmissionState::Aborted;
+
+                                    // Inform receiver of message abortion.
+                                    let mut mp = MessagePacket::new(PacketBuffer::new());
+                                    mp.header_mut().set_message_id(id);
+                                    mp.header_mut().flags_mut().set_aborted();
+
+
+                                    match (msg.msg.src, msg.msg.dst) {
+                                        (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                                            message_stack
+                                                .data_plane
+                                                .lock()
+                                                .unwrap()
+                                                .inject_message_packet(
+                                                    src,
+                                                    dst,
+                                                    mp.into_inner(),
+                                                );
+                                        }
+                                        _ => {
+                                            debug!("Can only send messages between two IPv6 addresses")
+                                        }
+                                    };
+                                }
+                            }
+                            continue
+                        }
+
+                        // Second tick, clean up.
+                        message_stack.outbox.lock().unwrap().msges.remove(&id);
+                        return
+                    }
+                }
+            }
+        });
 
         id
     }
