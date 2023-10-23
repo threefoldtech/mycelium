@@ -491,8 +491,8 @@ impl MessageStack {
 
         let obmi = OutboundMessageInfo {
             state: TransmissionState::Init,
-            created,
-            deadline,
+            _created: created,
+            _deadline: deadline,
             len,
             msg,
             chunks: vec![], // leave Vec empty at start
@@ -799,34 +799,6 @@ impl MessagePacket {
     }
 }
 
-/// A MessagePacketMut exposes the mutable useable body of a `PacketBuffer` for working with messages.
-struct MessagePacketMut<'a> {
-    packet: &'a mut PacketBuffer,
-}
-
-impl<'a> From<&'a mut PacketBuffer> for MessagePacketMut<'a> {
-    fn from(packet: &'a mut PacketBuffer) -> Self {
-        MessagePacketMut { packet }
-    }
-}
-
-impl<'a> MessagePacketMut<'a> {
-    /// Get a mutable reference to the header in this message packet.
-    fn header_mut(&mut self) -> MessagePacketHeaderMut {
-        MessagePacketHeaderMut {
-            header: <&mut [u8] as TryInto<&mut [u8; MESSAGE_HEADER_SIZE]>>::try_into(
-                &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE],
-            )
-            .expect("Buffer is big enough for a header; qed"),
-        }
-    }
-
-    /// Get a mutable reference to the message packet body.
-    fn buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.packet.buffer_mut()[MESSAGE_HEADER_SIZE..]
-    }
-}
-
 /// A reference to a header in a message packet.
 pub struct MessagePacketHeader<'a> {
     header: &'a [u8; MESSAGE_HEADER_SIZE],
@@ -915,6 +887,8 @@ impl FlagsMut<'_, '_> {
     }
 
     /// Sets the MESSAGE_READ flag on the header.
+    // TODO: remove once used
+    #[allow(dead_code)]
     fn set_read(&mut self) {
         self.flags |= FLAG_MESSAGE_READ;
     }
@@ -958,21 +932,14 @@ impl<'a> MessagePacketHeader<'a> {
 //   - 2 bytes flags
 //   - 2 bytes reserved
 impl<'a> MessagePacketHeaderMut<'a> {
-    /// Get the [`MessageId`] from the buffer.
-    fn message_id(&self) -> MessageId {
-        MessageId(
-            self.header[..MESSAGE_ID_SIZE]
-                .try_into()
-                .expect("Buffer is properly sized; qed"),
-        )
-    }
-
     /// Set the [`MessageId`] in the buffer to the provided value.
     fn set_message_id(&mut self, mid: MessageId) {
         self.header[..MESSAGE_ID_SIZE].copy_from_slice(&mid.0[..]);
     }
 
     /// Get a reference to the [`Flags`] in this header.
+    // TODO: fix tests to not use this method
+    #[allow(dead_code)]
     fn flags(&self) -> Flags<'_> {
         let flags = u16::from_be_bytes(
             self.header[MESSAGE_ID_SIZE..MESSAGE_ID_SIZE + 2]
@@ -1039,9 +1006,9 @@ pub struct OutboundMessageInfo {
     /// The current state of the message
     state: TransmissionState,
     /// Timestamp when the message was created (received by this node).
-    created: time::SystemTime,
+    _created: time::SystemTime,
     /// Timestamp indicating when we stop trying to send the message.
-    deadline: time::SystemTime,
+    _deadline: time::SystemTime,
     /// Length of the message.
     len: usize,
     /// The message to send.
