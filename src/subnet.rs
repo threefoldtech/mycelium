@@ -1,6 +1,6 @@
 //! A dedicated subnet module.
 //!
-//! The standard library only exposes [`IpAddr`](std::net::IpAddr), and types related to
+//! The standard library only exposes [`IpAddr`], and types related to
 //! specific IPv4 and IPv6 addresses. It does not however, expose dedicated types to represents
 //! appropriate subnets.
 //!
