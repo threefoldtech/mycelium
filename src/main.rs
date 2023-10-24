@@ -2,14 +2,17 @@ use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
 use log::{debug, error, info};
+use mycelium::api::Http;
 use mycelium::crypto;
 use mycelium::data::DataPlane;
 use mycelium::filters;
+use mycelium::message::MessageStack;
 use mycelium::peer_manager;
 use mycelium::router;
 use mycelium::router::StaticRoute;
 use mycelium::subnet::Subnet;
 use serde::Serialize;
+use std::net::Ipv4Addr;
 use std::{
     error::Error,
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -20,6 +23,9 @@ mod tun;
 
 /// The default port on the inderlay to listen on.
 const DEFAULT_LISTEN_PORT: u16 = 9651;
+/// The default listening address for the HTTP API.
+const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
 
 const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 
@@ -49,6 +55,10 @@ struct Cli {
     /// [priv_key.bin].
     #[arg(short = 'k', long = "key-file")]
     key_file: Option<PathBuf>,
+
+    /// Address of the HTTP API server.
+    #[arg(long = "api-server-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
+    api_server_addr: SocketAddr,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -157,14 +167,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _peer_manager: peer_manager::PeerManager =
         peer_manager::PeerManager::new(router.clone(), static_peers, cli.port);
 
-    let _data_plane = DataPlane::new(
-        router.clone(),
-        rxhalf,
-        txhalf,
-        // TODO: proper sink to message handler
-        futures::sink::drain(),
-        tun_rx,
-    );
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
+    let msg_receiver = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let msg_sender = tokio_util::sync::PollSender::new(tx);
+
+    let data_plane = DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx);
+
+    let ms = MessageStack::new(data_plane, msg_receiver);
+
+    let _api = Http::spawn(ms, &cli.api_server_addr);
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     let mut sigusr1 =

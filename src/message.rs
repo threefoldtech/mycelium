@@ -17,6 +17,7 @@ use std::{
 use futures::{Stream, StreamExt};
 use log::{debug, error, warn};
 use rand::Fill;
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 
 use crate::{
     crypto::PacketBuffer,
@@ -173,10 +174,7 @@ impl MessageStack {
     /// [`Stream`].
     pub fn new<S>(data_plane: DataPlane, message_packet_stream: S) -> Self
     where
-        S: Stream<Item = Result<(PacketBuffer, IpAddr, IpAddr), std::io::Error>>
-            + Send
-            + Unpin
-            + 'static,
+        S: Stream<Item = (PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
     {
         let ms = Self {
             data_plane: Arc::new(Mutex::new(data_plane)),
@@ -195,21 +193,9 @@ impl MessageStack {
     /// Handle incoming messages from the [`DataPlane`].
     async fn handle_incoming_message_packets<S>(self, mut message_packet_stream: S)
     where
-        S: Stream<Item = Result<(PacketBuffer, IpAddr, IpAddr), std::io::Error>>
-            + Send
-            + Unpin
-            + 'static,
+        S: Stream<Item = (PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
     {
-        while let Some(maybe_message) = message_packet_stream.next().await {
-            let (packet, src, dst) = match maybe_message {
-                Ok((packet, src, dst)) => (packet, src, dst),
-                Err(e) => {
-                    error!("Error reading message packet: {e}");
-                    // TODO: is this fatal?
-                    continue;
-                }
-            };
-
+        while let Some((packet, src, dst)) = message_packet_stream.next().await {
             let mp = MessagePacket::new(packet);
 
             if mp.header().flags().ack() {
@@ -491,8 +477,8 @@ impl MessageStack {
 
         let obmi = OutboundMessageInfo {
             state: TransmissionState::Init,
-            _created: created,
-            _deadline: deadline,
+            created,
+            deadline,
             len,
             msg,
             chunks: vec![], // leave Vec empty at start
@@ -737,12 +723,141 @@ impl MessageStack {
 
         id
     }
+
+    /// Peek a [`Message`] from the inbound queue.
+    ///
+    /// The next call to [`MessageStack::peek_message`] or [`MessageStack::pop_message`] will
+    /// return the same message.
+    pub fn peek_message(&self) -> Option<Message> {
+        let inbox = self.inbox.lock().unwrap();
+        let maybe_msg = inbox.complete_msges.front().map(Clone::clone);
+
+        if let Some(ref msg) = maybe_msg {
+            // If a message is popped, notify the sender
+            self.notify_read(msg);
+        }
+
+        maybe_msg
+    }
+
+    /// Read a [`Message`] from the inbound queue and delete it.
+    pub fn pop_message(&self) -> Option<Message> {
+        let mut inbox = self.inbox.lock().unwrap();
+        let maybe_msg = inbox.complete_msges.pop_front();
+
+        if let Some(ref msg) = maybe_msg {
+            // If a message is popped, notify the sender
+            self.notify_read(msg);
+        }
+
+        maybe_msg
+    }
+
+    /// Get information about the status of an outbound message.
+    pub fn message_info(&self, id: MessageId) -> Option<MessageInfo> {
+        let outbox = self.outbox.lock().unwrap();
+        outbox.msges.get(&id).map(|mi| MessageInfo {
+            dst: mi.msg.dst,
+            state: match mi.state {
+                TransmissionState::Init => TransmissionProgress::Pending,
+                TransmissionState::InProgress => {
+                    let (pending, sent, acked) = mi.chunks.iter().fold(
+                        (0, 0, 0),
+                        |(mut pending, mut sent, mut acked), chunk| {
+                            match chunk.chunk_transmit_state {
+                                ChunkTransmitState::Started => pending += 1,
+                                ChunkTransmitState::Sent(_) => sent += 1,
+                                ChunkTransmitState::Acked => acked += 1,
+                            };
+                            (pending, sent, acked)
+                        },
+                    );
+                    TransmissionProgress::Sending {
+                        pending,
+                        sent,
+                        acked,
+                    }
+                }
+                TransmissionState::Received => TransmissionProgress::Received,
+                TransmissionState::Read => TransmissionProgress::Read,
+                TransmissionState::Aborted => TransmissionProgress::Aborted,
+            },
+            created: mi
+                .created
+                .duration_since(time::UNIX_EPOCH)
+                .expect("Message was created after the epoch")
+                .as_secs() as i64,
+            deadline: mi
+                .deadline
+                .duration_since(time::UNIX_EPOCH)
+                .expect("Message expires after the epoch")
+                .as_secs() as i64,
+            msg_len: mi.len,
+        })
+    }
+
+    /// Notify the sender of a message that it has been read.
+    fn notify_read(&self, msg: &Message) {
+        let mut mp = MessagePacket::new(PacketBuffer::new());
+        let mut header = mp.header_mut();
+        header.set_message_id(msg.id);
+        header.flags_mut().set_read();
+
+        match (msg.src, msg.dst) {
+            (IpAddr::V6(src), IpAddr::V6(dst)) => {
+                self.data_plane
+                    .lock()
+                    .unwrap()
+                    .inject_message_packet(src, dst, mp.into_inner());
+            }
+            _ => {
+                debug!("Can only send messages between two IPv6 addresses")
+            }
+        };
+    }
+}
+
+#[derive(Serialize)]
+pub struct MessageInfo {
+    /// The receiver of this message.
+    pub dst: IpAddr,
+    /// Transmission state of the message.
+    pub state: TransmissionProgress,
+    /// Time the message was created (received) by the system.
+    pub created: i64,
+    /// Time at which point we will give up sending the message.
+    pub deadline: i64,
+    /// Size of the message in bytes.
+    pub msg_len: usize,
+}
+
+#[derive(Serialize)]
+pub enum TransmissionProgress {
+    /// Pending transmission, the remote has not yet acknowledged our init message.
+    Pending,
+    /// In transit, the remote acknowledged our init message and we are sending chunks.
+    Sending {
+        /// Chunks which have never been sent.
+        pending: usize,
+        /// Chunks which have been sent at least once, but haven't been acknowledged.
+        sent: usize,
+        /// Chunks which have been acknowledged and won't be sent again.
+        acked: usize,
+    },
+    /// The remote acknowledged full reception, including checksum verficiation.
+    Received,
+    /// The remote notified us that the message has been read at least once.
+    Read,
+    /// We aborted sending this message, the remote __might__ have a full message and process it,
+    /// but that generally won't be the case.
+    Aborted,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MessageId([u8; MESSAGE_ID_SIZE]);
 
 impl MessageId {
+    /// Generate a new random `MessageId`.
     fn new() -> Self {
         let mut id = Self([0u8; 8]);
 
@@ -750,6 +865,53 @@ impl MessageId {
             .expect("Can instantiate new ID from thread RNG generator; qed");
 
         id
+    }
+
+    /// Get a hex representation of the `MessageId`.
+    pub fn as_hex(&self) -> String {
+        faster_hex::hex_string(&self.0)
+    }
+}
+
+impl Serialize for MessageId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.as_hex())
+    }
+}
+
+struct MessageIdVisitor;
+
+impl<'de> Visitor<'de> for MessageIdVisitor {
+    type Value = MessageId;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("A hex encoded message id (16 characters)")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if v.len() != 16 {
+            Err(E::custom(format!("Message ID is 16 characters long")))
+        } else {
+            let mut backing = [0; 8];
+            faster_hex::hex_decode(v.as_bytes(), &mut backing)
+                .map_err(|_| E::custom(format!("MessageID is not valid hex")))?;
+            Ok(MessageId(backing))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MessageId {
+    fn deserialize<D>(deserializer: D) -> Result<MessageId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(MessageIdVisitor)
     }
 }
 
@@ -887,8 +1049,6 @@ impl FlagsMut<'_, '_> {
     }
 
     /// Sets the MESSAGE_READ flag on the header.
-    // TODO: remove once used
-    #[allow(dead_code)]
     fn set_read(&mut self) {
         self.flags |= FLAG_MESSAGE_READ;
     }
@@ -991,6 +1151,7 @@ impl<'a> DerefMut for MessagePacketHeaderMut<'a> {
     }
 }
 
+#[derive(Clone, Serialize)]
 pub struct Message {
     /// Generated ID, used to identify the message on the wire
     id: MessageId,
@@ -1006,9 +1167,9 @@ pub struct OutboundMessageInfo {
     /// The current state of the message
     state: TransmissionState,
     /// Timestamp when the message was created (received by this node).
-    _created: time::SystemTime,
+    created: time::SystemTime,
     /// Timestamp indicating when we stop trying to send the message.
-    _deadline: time::SystemTime,
+    deadline: time::SystemTime,
     /// Length of the message.
     len: usize,
     /// The message to send.
@@ -1021,7 +1182,7 @@ pub struct OutboundMessageInfo {
 pub type MessageChecksum = blake3::Hash;
 
 impl Message {
-    /// Calculates the [`MessageChechsum`] of the message.
+    /// Calculates the [`MessageChecksum`] of the message.
     ///
     /// Currently this is a 32 byte blake3 hash.
     pub fn checksum(&self) -> MessageChecksum {

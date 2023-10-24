@@ -1,4 +1,4 @@
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv6Addr};
 
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
@@ -50,7 +50,7 @@ impl DataPlane {
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
         T: Sink<PacketBuffer> + Send + Unpin + 'static,
         T::Error: std::fmt::Display,
-        U: Sink<PacketBuffer> + Send + Unpin + 'static,
+        U: Sink<(PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
         U::Error: std::fmt::Display,
     {
         let dp = Self { router };
@@ -179,7 +179,7 @@ impl DataPlane {
     ) where
         T: Sink<PacketBuffer> + Send + Unpin + 'static,
         T::Error: std::fmt::Display,
-        U: Sink<PacketBuffer> + Send + Unpin + 'static,
+        U: Sink<(PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
         U::Error: std::fmt::Display,
     {
         while let Some(data_packet) = host_packet_source.recv().await {
@@ -215,7 +215,14 @@ impl DataPlane {
                     }
                 }
                 USER_DATA_MESSAGE_TYPE => {
-                    if let Err(e) = message_packet_sink.send(decrypted_packet).await {
+                    if let Err(e) = message_packet_sink
+                        .send((
+                            decrypted_packet,
+                            IpAddr::V6(data_packet.src_ip),
+                            IpAddr::V6(data_packet.dst_ip),
+                        ))
+                        .await
+                    {
                         error!("Failed to send packet to message handler: {e}",);
                         continue;
                     }
