@@ -204,12 +204,9 @@ impl SharedSecret {
                 .map_err(|_| DecryptionError)?;
         }
 
-        // Set the proper size
-        data.truncate(data_len - AES_TAG_SIZE - AES_NONCE_SIZE);
-
         Ok(PacketBuffer {
-            // We truncated buffer size while respecting the header
-            size: data.len(),
+            // We did not remove the scratch space used for TAG and NONCE.
+            size: data.len() - AES_TAG_SIZE - AES_NONCE_SIZE,
             buf: data,
         })
     }
