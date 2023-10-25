@@ -20,7 +20,7 @@ use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 
 use crate::{
-    crypto::PacketBuffer,
+    crypto::{PacketBuffer, PublicKey},
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
 };
@@ -89,7 +89,7 @@ struct MessageInbox {
     // TODO: MessageID is part of ReceivedMessageInfo, rework this into HashSet?
     pending_msges: HashMap<MessageId, ReceivedMessageInfo>,
     /// Messages which have been completed.
-    complete_msges: VecDeque<Message>,
+    complete_msges: VecDeque<ReceivedMessage>,
 }
 
 struct ReceivedMessageInfo {
@@ -99,6 +99,22 @@ struct ReceivedMessageInfo {
     /// Length of the finished message.
     len: u64,
     chunks: Vec<Option<Chunk>>,
+}
+
+#[derive(Clone)]
+pub struct ReceivedMessage {
+    /// Id of the message.
+    pub id: MessageId,
+    /// The overlay ip of the sender.
+    pub src_ip: IpAddr,
+    /// The public key of the sender of the message.
+    pub src_pk: PublicKey,
+    /// The overlay ip of the receiver.
+    pub dst_ip: IpAddr,
+    /// The public key of the receiver of the message. This is always ours.
+    pub dst_pk: PublicKey,
+    /// Actual message.
+    pub data: Vec<u8>,
 }
 
 /// A chunk of a message. This represents individual data pieces on the receiver side.
@@ -407,6 +423,26 @@ impl MessageStack {
                     );
                     return;
                 }
+
+                // Convert the IP's to PublicKeys.
+                let dp = self.data_plane.lock().unwrap();
+                let src_pubkey = if let Some(pk) = dp.router().get_pubkey(message.src) {
+                    pk
+                } else {
+                    warn!("No publick key entry for IP we just received a message chunk from");
+                    return;
+                };
+                // This always is our own key as we are receiving.
+                let dst_pubkey = dp.router().node_public_key();
+
+                let message = ReceivedMessage {
+                    id: message.id,
+                    src_ip: message.src,
+                    src_pk: src_pubkey,
+                    dst_ip: message.dst,
+                    dst_pk: dst_pubkey,
+                    data: message.data,
+                };
 
                 // Move message to be read.
                 inbox.complete_msges.push_back(message);
@@ -728,7 +764,7 @@ impl MessageStack {
     ///
     /// The next call to [`MessageStack::peek_message`] or [`MessageStack::pop_message`] will
     /// return the same message.
-    pub fn peek_message(&self) -> Option<Message> {
+    pub fn peek_message(&self) -> Option<ReceivedMessage> {
         let inbox = self.inbox.lock().unwrap();
         let maybe_msg = inbox.complete_msges.front().map(Clone::clone);
 
@@ -741,7 +777,7 @@ impl MessageStack {
     }
 
     /// Read a [`Message`] from the inbound queue and delete it.
-    pub fn pop_message(&self) -> Option<Message> {
+    pub fn pop_message(&self) -> Option<ReceivedMessage> {
         let mut inbox = self.inbox.lock().unwrap();
         let maybe_msg = inbox.complete_msges.pop_front();
 
@@ -797,13 +833,13 @@ impl MessageStack {
     }
 
     /// Notify the sender of a message that it has been read.
-    fn notify_read(&self, msg: &Message) {
+    fn notify_read(&self, msg: &ReceivedMessage) {
         let mut mp = MessagePacket::new(PacketBuffer::new());
         let mut header = mp.header_mut();
         header.set_message_id(msg.id);
         header.flags_mut().set_read();
 
-        match (msg.src, msg.dst) {
+        match (msg.src_ip, msg.dst_ip) {
             (IpAddr::V6(src), IpAddr::V6(dst)) => {
                 self.data_plane
                     .lock()
@@ -1151,7 +1187,7 @@ impl<'a> DerefMut for MessagePacketHeaderMut<'a> {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub struct Message {
     /// Generated ID, used to identify the message on the wire
     id: MessageId,

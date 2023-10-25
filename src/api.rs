@@ -12,7 +12,10 @@ use axum::{
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
-use crate::message::{Message, MessageId, MessageInfo, MessageStack};
+use crate::{
+    crypto::PublicKey,
+    message::{MessageId, MessageInfo, MessageStack},
+};
 
 /// Default amount of time to try and send a message if it is not explicitly specified.
 const DEFAULT_MESSAGE_TRY_DURATION: Duration = Duration::from_secs(60 * 5);
@@ -34,6 +37,15 @@ struct HttpServerState {
 #[derive(Debug, Deserialize)]
 struct MessageSendInfo {
     dst: IpAddr,
+    #[serde(with = "base64")]
+    payload: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct MessageReceiveInfo {
+    id: MessageId,
+    src: PublicKey,
+    dst: PublicKey,
     #[serde(with = "base64")]
     payload: Vec<u8>,
 }
@@ -63,22 +75,40 @@ impl Http {
     }
 }
 
-async fn peek_message(State(state): State<HttpServerState>) -> Result<Json<Message>, StatusCode> {
+async fn peek_message(
+    State(state): State<HttpServerState>,
+) -> Result<Json<MessageReceiveInfo>, StatusCode> {
     debug!("Attempt to peek message");
     state
         .message_stack
         .peek_message()
         .ok_or(StatusCode::NO_CONTENT)
-        .map(Json)
+        .map(|m| {
+            Json(MessageReceiveInfo {
+                id: m.id,
+                src: m.src_pk,
+                dst: m.dst_pk,
+                payload: m.data,
+            })
+        })
 }
 
-async fn pop_message(State(state): State<HttpServerState>) -> Result<Json<Message>, StatusCode> {
+async fn pop_message(
+    State(state): State<HttpServerState>,
+) -> Result<Json<MessageReceiveInfo>, StatusCode> {
     debug!("Attempt to pop message");
     state
         .message_stack
         .pop_message()
         .ok_or(StatusCode::NO_CONTENT)
-        .map(Json)
+        .map(|m| {
+            Json(MessageReceiveInfo {
+                id: m.id,
+                src: m.src_pk,
+                dst: m.dst_pk,
+                payload: m.data,
+            })
+        })
 }
 
 #[derive(Serialize)]

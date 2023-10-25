@@ -160,6 +160,23 @@ impl Router {
             .publish();
     }
 
+    /// Get the [`PublicKey`] for an [`Ipv6Addr`] if a mapping exists.
+    pub fn get_pubkey(&self, ip: IpAddr) -> Option<PublicKey> {
+        if let IpAddr::V6(ip) = ip {
+            self.inner_r
+                .enter()
+                .expect(
+                    "Write handle is saved on router so it is not dropped before the read handles",
+                )
+                .dest_pubkey_map
+                .lookup(ip)
+                .map(|(pk, _)| pk)
+                .copied()
+        } else {
+            None
+        }
+    }
+
     /// Gets the cached [`SharedSecret`] for the remote.
     pub fn get_shared_secret_from_dest(&self, dest: Ipv6Addr) -> Option<SharedSecret> {
         self.inner_r
