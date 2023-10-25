@@ -347,7 +347,8 @@ impl MessageStack {
                     return;
                 }
                 // Check max chunk idx.
-                let max_chunk_idx = (message.len + MINIMUM_CHUNK_SIZE - 1) / MINIMUM_CHUNK_SIZE;
+                let max_chunk_idx =
+                    ((message.len + MINIMUM_CHUNK_SIZE - 1) / MINIMUM_CHUNK_SIZE) - 1;
                 if mc.chunk_idx() > max_chunk_idx {
                     debug!("Dropping CHUNK because index is too high");
                     return;
