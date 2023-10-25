@@ -932,11 +932,11 @@ impl<'de> Visitor<'de> for MessageIdVisitor {
         E: serde::de::Error,
     {
         if v.len() != 16 {
-            Err(E::custom(format!("Message ID is 16 characters long")))
+            Err(E::custom("Message ID is 16 characters long"))
         } else {
             let mut backing = [0; 8];
             faster_hex::hex_decode(v.as_bytes(), &mut backing)
-                .map_err(|_| E::custom(format!("MessageID is not valid hex")))?;
+                .map_err(|_| E::custom("MessageID is not valid hex"))?;
             Ok(MessageId(backing))
         }
     }
