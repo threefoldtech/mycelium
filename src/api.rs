@@ -128,7 +128,7 @@ mod base64 {
     use serde::{Deserializer, Serializer};
 
     const B64ENGINE: GeneralPurpose = base64::engine::general_purpose::GeneralPurpose::new(
-        &alphabet::URL_SAFE,
+        &alphabet::STANDARD,
         GeneralPurposeConfig::new(),
     );
 
