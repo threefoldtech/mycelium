@@ -5,6 +5,7 @@
 //! structure. We only care about sending the message to the remote in the most reliable way
 //! possible.
 
+use core::fmt;
 use std::{
     collections::{HashMap, VecDeque},
     marker::PhantomData,
@@ -15,7 +16,7 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 
@@ -214,6 +215,11 @@ impl MessageStack {
         while let Some((packet, src, dst)) = message_packet_stream.next().await {
             let mp = MessagePacket::new(packet);
 
+            trace!(
+                "Received message packet with flags {:b}",
+                mp.header().flags()
+            );
+
             if mp.header().flags().ack() {
                 self.handle_message_reply(mp);
             } else {
@@ -293,7 +299,7 @@ impl MessageStack {
             // future.
             debug!("Received READ ACK");
         } else {
-            debug!("Received unknown ACK message flags {:x}", flags.flags);
+            debug!("Received unknown ACK message flags {:b}", flags);
         }
     }
 
@@ -449,6 +455,8 @@ impl MessageStack {
                     data: message.data,
                 };
 
+                debug!("Message {} reception complete", message.id.as_hex());
+
                 // Move message to be read.
                 inbox.complete_msges.push_back(message);
                 inbox.pending_msges.remove(&message_id);
@@ -464,6 +472,7 @@ impl MessageStack {
                     debug!("Got READ for message which is not in received state");
                     return;
                 }
+                debug!("Receiver confirmed READ of message {}", message_id.as_hex());
                 message.state = TransmissionState::Read;
             }
             None
@@ -476,7 +485,7 @@ impl MessageStack {
             }
             None
         } else {
-            debug!("Received unknown message flags {:x}", flags.flags);
+            debug!("Received unknown message flags {:b}", flags);
             None
         };
         if let Some(reply) = reply {
@@ -1056,6 +1065,12 @@ impl<'a> Flags<'a> {
     /// Check if the MESSAGE_ACK flag is set on the header.
     fn ack(&self) -> bool {
         self.flags & FLAG_MESSAGE_ACK != 0
+    }
+}
+
+impl fmt::Binary for Flags<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{:016b}", self.flags))
     }
 }
 
