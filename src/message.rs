@@ -354,7 +354,11 @@ impl MessageStack {
                 }
                 // Check chunk size, allow exception on last chunk.
                 if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != max_chunk_idx {
-                    debug!("Dropping CHUNK which is too small");
+                    debug!(
+                        "Dropping CHUNK {}/{max_chunk_idx} which is too small ({} bytes / {MINIMUM_CHUNK_SIZE} bytes)",
+                        mc.chunk_idx(),
+                        mc.chunk_size()
+                    );
                     return;
                 }
                 // Finally check if we have sufficient space for our chunks.
