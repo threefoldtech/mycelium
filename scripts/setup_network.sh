@@ -40,7 +40,7 @@ ip l set p6 netns net3
 ip a add 10.0.2.1/24 dev p0 
 ip -n net1 a add 10.0.2.2/24 dev p2
 ip -n net2 a add 10.0.2.3/24 dev p4
-ip -n net2 a add 10.0.2.4/24 dev p6
+ip -n net3 a add 10.0.2.4/24 dev p6
 
 # Set all veth interface to up
 ip l set p0 up
