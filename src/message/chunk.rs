@@ -16,6 +16,7 @@ pub struct MessageChunk {
 impl MessageChunk {
     /// Create a new `MessageChunk` in the provided [`MessagePacket`].
     pub fn new(mut buffer: MessagePacket) -> Self {
+        buffer.set_used_buffer_size(24);
         buffer.header_mut().flags_mut().set_chunk();
         Self { buffer }
     }
@@ -88,6 +89,8 @@ impl MessageChunk {
         buf[24..24 + data.len()].copy_from_slice(data);
 
         self.set_chunk_size(data.len() as u64);
+        // Also set the extra space used by the buffer on the underlying packet.
+        self.buffer.set_used_buffer_size(24 + data.len());
 
         Ok(())
     }

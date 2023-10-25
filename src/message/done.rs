@@ -12,6 +12,7 @@ pub struct MessageDone {
 impl MessageDone {
     /// Create a new `MessageDone` in the provided [`MessagePacket`].
     pub fn new(mut buffer: MessagePacket) -> Self {
+        buffer.set_used_buffer_size(40);
         buffer.header_mut().flags_mut().set_done();
         Self { buffer }
     }

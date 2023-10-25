@@ -958,7 +958,9 @@ pub struct MessagePacket {
 
 impl MessagePacket {
     /// Create a new `MessagePacket` in the given [`PacketBuffer`].
-    pub fn new(packet: PacketBuffer) -> Self {
+    pub fn new(mut packet: PacketBuffer) -> Self {
+        // Set the size used by the buffer to already be sufficient for the header.
+        packet.set_size(MESSAGE_HEADER_SIZE);
         Self { packet }
     }
 
@@ -989,6 +991,11 @@ impl MessagePacket {
             )
             .expect("Packet contains enough data for a header; qed"),
         }
+    }
+
+    /// Sets the size used by the buffer of the `MessagePacket`.
+    pub fn set_used_buffer_size(&mut self, size: usize) {
+        self.packet.set_size(size + MESSAGE_HEADER_SIZE)
     }
 
     /// Consumes this `MessagePacket`, returning the underlying [`PacketBuffer`].
