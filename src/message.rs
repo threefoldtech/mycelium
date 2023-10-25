@@ -860,7 +860,9 @@ impl MessageStack {
                 self.data_plane
                     .lock()
                     .unwrap()
-                    .inject_message_packet(src, dst, mp.into_inner());
+                    // IMPORTANT: dst and src are reversed here. src is the sender of the message,
+                    // which is the destination of this READ notification.
+                    .inject_message_packet(dst, src, mp.into_inner());
             }
             _ => {
                 debug!("Can only send messages between two IPv6 addresses")
