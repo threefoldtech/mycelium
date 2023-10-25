@@ -853,6 +853,8 @@ impl MessageStack {
         header.set_message_id(msg.id);
         header.flags_mut().set_read();
 
+        debug!("Notify sender we read message {}", msg.id.as_hex());
+
         match (msg.src_ip, msg.dst_ip) {
             (IpAddr::V6(src), IpAddr::V6(dst)) => {
                 self.data_plane
