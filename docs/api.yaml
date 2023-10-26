@@ -1,0 +1,211 @@
+openapi: 3.0.2
+info:
+  version: '1.0.0' 
+  
+  title: Mycelium management
+  contact:
+    url: 'https://github.com/threefoldtech/mycelium'
+  license:
+    name: Apache 2.0
+    url: 'https://github.com/threefoldtech/mycelium/LICENSE'
+  
+  description: |
+    This is the specification of the **mycelium** management API. It is used to perform admin tasks on the system, and
+    to perform administrative duties.
+
+externalDocs:
+  description: For full documentation, check out the mycelium github repo.
+  url: 'https://github.com/threefoldtech/mycelium'
+
+tags:
+  - name: Message
+    description: Operations on the embedded message subsystem
+
+servers:
+  - url: 'http://localhost:8989'
+
+paths:
+  '/messages':
+    get:
+      tags:
+        - Message
+      summary: Pop a message from the inbound message queue
+      description: |
+        Pop a message from the inbound message queue. The message is removed from the queue and won't be shown again
+      operationId: popMessage
+      responses:
+        '200':
+          description: Message retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundMessage'
+        '204':
+          description: No message ready
+    post:
+      tags:
+        - Message
+      summary: Submit a new message to the system.
+      description: |
+        Push a new message to the systems outbound message queue. The system will continuously attempt to send the message until
+        it is either fully transmitted, or the send deadline is expired.
+      operationId: pushMessage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushMessageBody'
+      responses:
+        '200':
+          description: Message pushed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushMessageResponse'
+
+  '/messages/peek':
+    get:
+      tags:
+        - Message
+      summary: Peek a message from the inbound queue
+      description: |
+        Peek a message from the inbound message queue. The message is removed from the queue and will be shown
+        again on the next call again to peek or pop
+      operationId: peekMessage
+      responses:
+        '200':
+          description: Message peeked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundMessage'
+        '204':
+          description: No message ready
+
+  '/messages/status/:id':
+    get:
+      tags:
+        - Message
+      summary: Get the status of an outbound message
+      description: |
+        Get information about the current state of an outbound message. This can be used to check the transmission
+        state, size and destination of the message.
+      operationId: getMessageInfo
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageStatusResponse'
+        '404':
+          description: Message not found
+
+
+components:
+  schemas:
+    InboundMessage:
+      description: A message received by the system
+      type: object
+      properties:
+        id:
+          description: Id of the message, hex encoded
+          type: string
+          minLength: 16
+          maxLength: 16
+          example: 0123456789abcdef
+        src:
+          description: Sender public key, hex encoded
+          type: string
+          minLength: 64
+          maxLength: 64
+          example: fedbca9876543210fedbca9876543210fedbca9876543210fedbca9876543210
+        dst:
+          description: Receiver public key, hex encoded. This is the public key of the system
+          type: string
+          minLength: 64
+          maxLength: 64
+          example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf
+        payload:
+          description: The message payload, encoded in standard alphabet base64
+          type: string
+          format: byte
+          example: xuV+
+
+    PushMessageBody:
+      description: A message to send to a given receiver
+      type: object
+      properties:
+        dst:
+          description: An IP in the subnet of the receiver node
+          type: string
+          format: ipv6
+          example: 249:abcd:0123:defa::1
+        payload:
+          description: The message to send, base64 encoded
+          type: string
+          format: byte
+          example: xuV+
+
+    PushMessageResponse:
+      description: The ID generated for a message after pushing it to the system
+      type: object
+      properties:
+        id:
+          description: Id of the message, hex encoded
+          type: string
+          minLength: 16
+          maxLength: 16
+          example: 0123456789abcdef
+
+    MessageStatusResponse:
+      description: Information about an outobund message
+      type: object
+      properties:
+        dst:
+          description: Ip address of the receiving node
+          type: string
+          format: ipv6
+          example: 249:abcd:0123:defa::1
+        state: 
+          $ref: '#/components/schemas/TransmissionState'
+        created:
+          description: Unix timestamp of when this message was created
+          type: integer
+          format: int64
+          example: 1649512789
+        deadline:
+          description: Unix timestamp of when this message will expire. If the message is not received before this, the system will give up
+          type: integer
+          format: int64
+          example: 1649513089
+        msg_len:
+          description: Length of the message in bytes
+          type: integer
+          minimum: 0
+          example: 27
+
+    TransmissionState:
+      description: The state of an outbound message in it's lifetime
+      oneOf:
+        - type: string
+          enum: ['Pending', 'Received', 'Read', 'Aborted']
+          example: 'Received'
+        - type: object
+          properties:
+            sending:
+              type: object
+              properties:
+                pending:
+                  type: integer
+                  minimum: 0
+                  example: 5
+                sent:
+                  type: integer
+                  minimum: 0
+                  example: 17
+                acked:
+                  type: integer
+                  minimum: 0
+                  example: 3
+      example: 'Received'
