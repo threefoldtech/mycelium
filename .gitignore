@@ -7,3 +7,6 @@ priv_key.bin
 *.profraw
 *.profdata
 profile.json
+
+# vscode settings, keep these locally
+.vscode
