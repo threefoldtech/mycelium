@@ -143,7 +143,7 @@ async fn message_status(
     state
         .message_stack
         .message_info(id)
-        .ok_or(StatusCode::NO_CONTENT)
+        .ok_or(StatusCode::NOT_FOUND)
         .map(Json)
 }
 
