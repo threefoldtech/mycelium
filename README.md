@@ -20,8 +20,42 @@ mycelium --peers 203.0.113.5:9651
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
 
-The node uses a `x25519` keypair from which its identity is derived. The private key of this keypair is saved in a local file (32 bytes in binary format). You can
+The node uses a `x25519` keypair from which its identity is derived. The private key of this key pair is saved in a local file (32 bytes in binary format). You can
 specify the path to this file with the `-k` flag. By default, the file is saved in the current working directory as `priv_key.bin`.
+
+### Running without TUN interface
+
+It is possible to run the system without creating a TUN interface. Obviously, this means that your
+node won't be able to send or receive L3 traffic. There is no interface to send packets on, and
+consequently no interface to send received packets out of. From the point of other nodes, your node
+will simply drop all incoming L3 traffic destined for it. The node **will still route traffic** as
+normal. It takes part in routing, exchanges route info, and forwards packets not intended for itself.
+
+The node also still allows access to the [message subsystem](#message-system).
+
+## API
+
+The node starts an HTTP API, which by default listens on `localhost:8989`. A different listening address
+can be specified on the CLI when starting the system through the `--api-server-addr` flag. The API
+allows access to [send and receive messages](#message-system), and will later be expanded to allow
+admin functionality on the system. Note that message are sent using the identity of the node, and a
+future admin API can be used to change the system behavior. As such, care should be taken that this
+API is not accessible to unauthorized users.
+
+## Message system
+
+A message system is provided which allows users to send a message, which is essentially just "some data"
+to a remote. Since the system is end-to-end encrypted, a receiver of a message is sure of the authenticity
+and confidentiality of the content. The system does not interpret the data in any way and handles it
+as an opaque block of bytes. Messages are sent with a deadline. This means the system continuously
+tries to send (part of) the message, until it either succeeds, or the deadline expires. This happens
+similar to the way TCP handles data. Messages are transmitted in chunks, which are embedded in the
+same data stream used by L3 packets. As such, intermediate nodes can't distinguish between regular L3
+and message data.
+
+The primary way to interact with the message system is through [the API](#API). The message API is
+documented in [an OpenAPI spec in the docs folder](docs/api.yaml).
+
 
 ## Inspecting node keys
 
