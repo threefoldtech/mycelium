@@ -882,7 +882,6 @@ impl MessageStack {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "lowercase")]
 pub struct MessageInfo {
     /// The receiver of this message.
     pub dst: IpAddr,
@@ -897,6 +896,7 @@ pub struct MessageInfo {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TransmissionProgress {
     /// Pending transmission, the remote has not yet acknowledged our init message.
     Pending,
