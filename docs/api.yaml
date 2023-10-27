@@ -25,7 +25,7 @@ servers:
   - url: 'http://localhost:8989'
 
 paths:
-  '/messages':
+  '/api/v1/messages':
     get:
       tags:
         - Message
@@ -63,7 +63,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PushMessageResponse'
 
-  '/messages/peek':
+  '/api/v1/messages/peek':
     get:
       tags:
         - Message
@@ -82,7 +82,7 @@ paths:
         '204':
           description: No message ready
 
-  '/messages/status/:id':
+  '/api/v1/messages/status/:id':
     get:
       tags:
         - Message
