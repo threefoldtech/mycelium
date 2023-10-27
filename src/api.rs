@@ -36,9 +36,16 @@ struct HttpServerState {
 
 #[derive(Debug, Deserialize)]
 struct MessageSendInfo {
-    dst: IpAddr,
+    dst: MessageDestination,
     #[serde(with = "base64")]
     payload: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum MessageDestination {
+    Ip(IpAddr),
+    Pk(PublicKey),
 }
 
 #[derive(Serialize)]
@@ -50,6 +57,16 @@ struct MessageReceiveInfo {
     dst_pk: PublicKey,
     #[serde(with = "base64")]
     payload: Vec<u8>,
+}
+
+impl MessageDestination {
+    /// Get the IP address of the destination.
+    fn ip(self) -> IpAddr {
+        match self {
+            MessageDestination::Ip(ip) => ip,
+            MessageDestination::Pk(pk) => IpAddr::V6(pk.address()),
+        }
+    }
 }
 
 impl Http {
@@ -126,17 +143,16 @@ async fn push_message(
     State(state): State<HttpServerState>,
     Json(message_info): Json<MessageSendInfo>,
 ) -> Result<Json<PushMessageResponse>, StatusCode> {
+    let dst = message_info.dst.ip();
     debug!(
-        "Pushing new message of {} bytes to message stack for target {}",
+        "Pushing new message of {} bytes to message stack for target {dst}",
         message_info.payload.len(),
-        message_info.dst
     );
 
-    let id = state.message_stack.push_message(
-        message_info.dst,
-        message_info.payload,
-        DEFAULT_MESSAGE_TRY_DURATION,
-    );
+    let id =
+        state
+            .message_stack
+            .push_message(dst, message_info.payload, DEFAULT_MESSAGE_TRY_DURATION);
 
     Ok(Json(PushMessageResponse { id }))
 }

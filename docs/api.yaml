@@ -118,7 +118,7 @@ components:
           description: Sender overlay IP address
           type: string
           format: ipv6
-          example: 34f:b680:ba6e:7ced:355f:346f:d97b:eecb
+          example: 249:abcd:0123:defa::1
         src_pk:
           description: Sender public key, hex encoded
           type: string
@@ -147,15 +147,31 @@ components:
       type: object
       properties:
         dst:
-          description: An IP in the subnet of the receiver node
-          type: string
-          format: ipv6
-          example: 249:abcd:0123:defa::1
+          $ref: '#/components/schemas/MessageDestination'
         payload:
           description: The message to send, base64 encoded
           type: string
           format: byte
           example: xuV+
+
+    MessageDestination:
+      oneOf:
+        - description: An IP in the subnet of the receiver node
+          type: object 
+          properties:
+            ip:
+              description: The target IP of the message
+              format: ipv6
+              example: 249:abcd:0123:defa::1
+        - description: The hex encoded public key of the receiver node
+          type: object
+          properties:
+            pk:
+              description: The hex encoded public key of the target node
+              type: string
+              minLength: 64
+              maxLength: 64
+              example: bb39b4a3a4efd70f3e05e37887677e02efbda14681d0acd3882bc0f754792c32
 
     PushMessageResponse:
       description: The ID generated for a message after pushing it to the system

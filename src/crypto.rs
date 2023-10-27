@@ -13,7 +13,7 @@ use std::{
 use aes_gcm::{aead::OsRng, AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit};
 use blake2::{Blake2b, Digest};
 use digest::consts::U16;
-use serde::Serialize;
+use serde::{de::Visitor, Deserialize, Serialize};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -276,6 +276,38 @@ impl Serialize for PublicKey {
         S: serde::Serializer,
     {
         serializer.serialize_str(&faster_hex::hex_string(self.as_bytes()))
+    }
+}
+
+struct PublicKeyVisitor;
+impl<'de> Visitor<'de> for PublicKeyVisitor {
+    type Value = PublicKey;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("A hex encoded public key (64 characters)")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if v.len() != 64 {
+            Err(E::custom("Public key is 64 characters long"))
+        } else {
+            let mut backing = [0; 32];
+            faster_hex::hex_decode(v.as_bytes(), &mut backing)
+                .map_err(|_| E::custom("PublicKey is not valid hex"))?;
+            Ok(PublicKey(backing.into()))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(PublicKeyVisitor)
     }
 }
 
