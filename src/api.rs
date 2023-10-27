@@ -4,7 +4,7 @@ use std::{
 };
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
@@ -74,8 +74,7 @@ impl Http {
     pub fn spawn(message_stack: MessageStack, listen_addr: &SocketAddr) -> Self {
         let server_state = HttpServerState { message_stack };
         let msg_routes = Router::new()
-            .route("/messages", get(pop_message).post(push_message))
-            .route("/messages/peek", get(peek_message))
+            .route("/messages", get(get_message).post(push_message))
             .route("/messages/status/:id", get(message_status))
             .with_state(server_state);
         let app = Router::new().nest("/api/v1", msg_routes);
@@ -95,44 +94,52 @@ impl Http {
     }
 }
 
-async fn peek_message(
-    State(state): State<HttpServerState>,
-) -> Result<Json<MessageReceiveInfo>, StatusCode> {
-    debug!("Attempt to peek message");
-    state
-        .message_stack
-        .peek_message()
-        .ok_or(StatusCode::NO_CONTENT)
-        .map(|m| {
-            Json(MessageReceiveInfo {
-                id: m.id,
-                src_ip: m.src_ip,
-                src_pk: m.src_pk,
-                dst_ip: m.dst_ip,
-                dst_pk: m.dst_pk,
-                payload: m.data,
-            })
-        })
+#[derive(Deserialize)]
+struct GetMessageQuery {
+    peek: Option<bool>,
+    timeout: Option<u64>,
 }
 
-async fn pop_message(
+impl GetMessageQuery {
+    /// Did the query indicate we should peek the message instead of pop?
+    fn peek(&self) -> bool {
+        matches!(self.peek, Some(true))
+    }
+
+    /// Amount of seconds to hold and try and get values.
+    fn timeout_secs(&self) -> u64 {
+        self.timeout.unwrap_or(0)
+    }
+}
+
+async fn get_message(
     State(state): State<HttpServerState>,
+    Query(query): Query<GetMessageQuery>,
 ) -> Result<Json<MessageReceiveInfo>, StatusCode> {
-    debug!("Attempt to pop message");
-    state
-        .message_stack
-        .pop_message()
-        .ok_or(StatusCode::NO_CONTENT)
-        .map(|m| {
-            Json(MessageReceiveInfo {
-                id: m.id,
-                src_ip: m.src_ip,
-                src_pk: m.src_pk,
-                dst_ip: m.dst_ip,
-                dst_pk: m.dst_pk,
-                payload: m.data,
-            })
+    debug!(
+        "Attempt to get message, peek {}, timeout {} seconds",
+        query.peek(),
+        query.timeout_secs()
+    );
+    // A timeout of 0 seconds essentially means get a message if there is one, and return
+    // immediatly if there isn't. This is the result of the implementation of Timeout, which does a
+    // poll of the internal future first, before polling the delay.
+    tokio::time::timeout(
+        Duration::from_secs(query.timeout_secs()),
+        state.message_stack.message(!query.peek()),
+    )
+    .await
+    .or(Err(StatusCode::NO_CONTENT))
+    .map(|m| {
+        Json(MessageReceiveInfo {
+            id: m.id,
+            src_ip: m.src_ip,
+            src_pk: m.src_pk,
+            dst_ip: m.dst_ip,
+            dst_pk: m.dst_pk,
+            payload: m.data,
         })
+    })
 }
 
 #[derive(Serialize)]

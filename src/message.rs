@@ -19,6 +19,7 @@ use futures::{Stream, StreamExt};
 use log::{debug, error, trace, warn};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
+use tokio::sync::watch;
 
 use crate::{
     crypto::{PacketBuffer, PublicKey},
@@ -79,6 +80,8 @@ pub struct MessageStack {
     data_plane: Arc<Mutex<DataPlane>>,
     inbox: Arc<Mutex<MessageInbox>>,
     outbox: Arc<Mutex<MessageOutbox>>,
+    /// Receiver handle for inbox listeners (basically a condvar).
+    subscriber: watch::Receiver<()>,
 }
 
 struct MessageOutbox {
@@ -91,6 +94,8 @@ struct MessageInbox {
     pending_msges: HashMap<MessageId, ReceivedMessageInfo>,
     /// Messages which have been completed.
     complete_msges: VecDeque<ReceivedMessage>,
+    /// Notification sender used to allert subscribed listeners.
+    notify: watch::Sender<()>,
 }
 
 struct ReceivedMessageInfo {
@@ -163,10 +168,11 @@ enum TransmissionState {
 }
 
 impl MessageInbox {
-    fn new() -> Self {
+    fn new(notify: watch::Sender<()>) -> Self {
         Self {
             pending_msges: HashMap::new(),
             complete_msges: VecDeque::new(),
+            notify,
         }
     }
 }
@@ -193,10 +199,12 @@ impl MessageStack {
     where
         S: Stream<Item = (PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
     {
+        let (notify, subscriber) = watch::channel(());
         let ms = Self {
             data_plane: Arc::new(Mutex::new(data_plane)),
-            inbox: Arc::new(Mutex::new(MessageInbox::new())),
+            inbox: Arc::new(Mutex::new(MessageInbox::new(notify))),
             outbox: Arc::new(Mutex::new(MessageOutbox::new())),
+            subscriber,
         };
 
         tokio::task::spawn(
@@ -341,7 +349,7 @@ impl MessageStack {
             // case we consider this to be a lingering chunk which was already accepted in the
             // meantime (as the message is complete).
             //
-            // SAFETY: a malcious node could send a lot of empty chunks, which trigger allocations
+            // SAFETY: a malicious node could send a lot of empty chunks, which trigger allocations
             // to hold the chunk array, effectively exhausting memory. As such, we first need to
             // determine if the chunk is feasible.
             let mut inbox = self.inbox.lock().unwrap();
@@ -460,6 +468,8 @@ impl MessageStack {
                 // Move message to be read.
                 inbox.complete_msges.push_back(message);
                 inbox.pending_msges.remove(&message_id);
+                // Notify subscribers we have a new message.
+                inbox.notify.send_replace(());
 
                 Some(md.into_reply().into_inner())
             } else {
@@ -774,35 +784,6 @@ impl MessageStack {
         id
     }
 
-    /// Peek a [`Message`] from the inbound queue.
-    ///
-    /// The next call to [`MessageStack::peek_message`] or [`MessageStack::pop_message`] will
-    /// return the same message.
-    pub fn peek_message(&self) -> Option<ReceivedMessage> {
-        let inbox = self.inbox.lock().unwrap();
-        let maybe_msg = inbox.complete_msges.front().map(Clone::clone);
-
-        if let Some(ref msg) = maybe_msg {
-            // If a message is popped, notify the sender
-            self.notify_read(msg);
-        }
-
-        maybe_msg
-    }
-
-    /// Read a [`Message`] from the inbound queue and delete it.
-    pub fn pop_message(&self) -> Option<ReceivedMessage> {
-        let mut inbox = self.inbox.lock().unwrap();
-        let maybe_msg = inbox.complete_msges.pop_front();
-
-        if let Some(ref msg) = maybe_msg {
-            // If a message is popped, notify the sender
-            self.notify_read(msg);
-        }
-
-        maybe_msg
-    }
-
     /// Get information about the status of an outbound message.
     pub fn message_info(&self, id: MessageId) -> Option<MessageInfo> {
         let outbox = self.outbox.lock().unwrap();
@@ -844,6 +825,35 @@ impl MessageStack {
                 .as_secs() as i64,
             msg_len: mi.len,
         })
+    }
+
+    /// A future which eventually resolves to a new (inbound message)[`ReceivedMessage`], if new messages come in.
+    ///
+    /// If pop is false, the message is not removed and the next call of this method will return
+    /// the same message.
+    pub async fn message(&self, pop: bool) -> ReceivedMessage {
+        // Copy the subscriber since we need mutable access to it.
+        let mut subscriber = self.subscriber.clone();
+
+        loop {
+            // Scope to ensure we drop the lock after we checked for a message and don't hold
+            // it while waiting for a new notification.
+            {
+                let mut inbox = self.inbox.lock().unwrap();
+                if let Some(msg) = if pop {
+                    inbox.complete_msges.pop_front()
+                } else {
+                    inbox.complete_msges.front().map(Clone::clone)
+                } {
+                    self.notify_read(&msg);
+                    return msg;
+                };
+            }
+
+            // Sender can never be dropped since we hold a reference to self which contains the
+            // inbox.
+            let _ = subscriber.changed().await;
+        }
     }
 
     /// Notify the sender of a message that it has been read.

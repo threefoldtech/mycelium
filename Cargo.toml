@@ -37,6 +37,7 @@ axum = { version = "0.6.20", default-features = false, features = [
   "http1",
   "http2",
   "json",
+  "query",
   "tokio",
 ] }
 base64 = "0.21.5"

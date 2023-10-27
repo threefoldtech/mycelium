@@ -29,10 +29,33 @@ paths:
     get:
       tags:
         - Message
-      summary: Pop a message from the inbound message queue
+      summary: Get a message from the inbound message queue
       description: |
-        Pop a message from the inbound message queue. The message is removed from the queue and won't be shown again
+        Get a message from the inbound message queue. By default, the message is removed from the queue and won't be shown again.
+        If the peek query parameter is set to true, the message will be peeked, and the next call to this endpoint will show the same message.
+        This method returns immediately by default: a message is returned if one is ready, and if there isn't nothing is returned. If the timeout
+        query parameter is set, this call won't return for the given amount of seconds, unless a message is received
       operationId: popMessage
+      parameters:
+        - in: query
+          name: peek
+          required: false
+          schema:
+            type: boolean
+          description: Whether to peek the message or not. If this is true, the message won't be removed from the inbound queue when it is read
+          example: true
+        - in: query
+          name: timeout
+          required: false
+          schema: 
+            type: integer
+            format: int64
+            minimum: 0
+          description: |
+            Amount of seconds to wait for a message to arrive if one is not available. Setting this to 0 is valid and will return
+            a message if present, or return immediately if there isn't
+          example: 60
+
       responses:
         '200':
           description: Message retrieved
@@ -62,25 +85,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PushMessageResponse'
-
-  '/api/v1/messages/peek':
-    get:
-      tags:
-        - Message
-      summary: Peek a message from the inbound queue
-      description: |
-        Peek a message from the inbound message queue. The message is removed from the queue and will be shown
-        again on the next call again to peek or pop
-      operationId: peekMessage
-      responses:
-        '200':
-          description: Message peeked successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InboundMessage'
-        '204':
-          description: No message ready
 
   '/api/v1/messages/status/:id':
     get:
