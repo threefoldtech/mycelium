@@ -872,6 +872,7 @@ impl MessageStack {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct MessageInfo {
     /// The receiver of this message.
     pub dst: IpAddr,

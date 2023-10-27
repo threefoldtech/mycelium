@@ -215,8 +215,8 @@ components:
       description: The state of an outbound message in it's lifetime
       oneOf:
         - type: string
-          enum: ['Pending', 'Received', 'Read', 'Aborted']
-          example: 'Received'
+          enum: ['pending', 'received', 'read', 'aborted']
+          example: 'received'
         - type: object
           properties:
             sending:
@@ -234,4 +234,4 @@ components:
                   type: integer
                   minimum: 0
                   example: 3
-      example: 'Received'
+      example: 'received'
