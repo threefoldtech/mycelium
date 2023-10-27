@@ -54,11 +54,12 @@ impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
     pub fn spawn(message_stack: MessageStack, listen_addr: &SocketAddr) -> Self {
         let server_state = HttpServerState { message_stack };
-        let app = Router::new()
+        let msg_routes = Router::new()
             .route("/messages", get(pop_message).post(push_message))
             .route("/messages/peek", get(peek_message))
             .route("/messages/status/:id", get(message_status))
             .with_state(server_state);
+        let app = Router::new().nest("/api/v1", msg_routes);
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         let server = axum::Server::bind(listen_addr)
             .serve(app.into_make_service())
