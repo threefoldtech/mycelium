@@ -44,8 +44,10 @@ struct MessageSendInfo {
 #[derive(Serialize)]
 struct MessageReceiveInfo {
     id: MessageId,
-    src: PublicKey,
-    dst: PublicKey,
+    src_ip: IpAddr,
+    src_pk: PublicKey,
+    dst_ip: IpAddr,
+    dst_pk: PublicKey,
     #[serde(with = "base64")]
     payload: Vec<u8>,
 }
@@ -87,8 +89,10 @@ async fn peek_message(
         .map(|m| {
             Json(MessageReceiveInfo {
                 id: m.id,
-                src: m.src_pk,
-                dst: m.dst_pk,
+                src_ip: m.src_ip,
+                src_pk: m.src_pk,
+                dst_ip: m.dst_ip,
+                dst_pk: m.dst_pk,
                 payload: m.data,
             })
         })
@@ -105,8 +109,10 @@ async fn pop_message(
         .map(|m| {
             Json(MessageReceiveInfo {
                 id: m.id,
-                src: m.src_pk,
-                dst: m.dst_pk,
+                src_ip: m.src_ip,
+                src_pk: m.src_pk,
+                dst_ip: m.dst_ip,
+                dst_pk: m.dst_pk,
                 payload: m.data,
             })
         })

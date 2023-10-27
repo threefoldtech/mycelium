@@ -114,13 +114,23 @@ components:
           minLength: 16
           maxLength: 16
           example: 0123456789abcdef
-        src:
+        src_ip:
+          description: Sender overlay IP address
+          type: string
+          format: ipv6
+          example: 34f:b680:ba6e:7ced:355f:346f:d97b:eecb
+        src_pk:
           description: Sender public key, hex encoded
           type: string
           minLength: 64
           maxLength: 64
           example: fedbca9876543210fedbca9876543210fedbca9876543210fedbca9876543210
-        dst:
+        dst_ip:
+          description: Receiver overlay IP address
+          type: string
+          format: ipv6
+          example: 34f:b680:ba6e:7ced:355f:346f:d97b:eecb
+        dst_pk:
           description: Receiver public key, hex encoded. This is the public key of the system
           type: string
           minLength: 64
