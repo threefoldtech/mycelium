@@ -1,6 +1,7 @@
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
+use log::warn;
 use log::{debug, error, info};
 use mycelium::api::Http;
 use mycelium::crypto;
@@ -167,6 +168,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let msg_sender = tokio_util::sync::PollSender::new(tx);
 
     let data_plane = if cli.no_tun {
+        warn!("Starting data plane witout TUN interface, L3 functionality disabled");
         DataPlane::new(
             router.clone(),
             // No tun so create a dummy stream for l3 packets which never yields
