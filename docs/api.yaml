@@ -7,7 +7,7 @@ info:
     url: 'https://github.com/threefoldtech/mycelium'
   license:
     name: Apache 2.0
-    url: 'https://github.com/threefoldtech/mycelium/LICENSE'
+    url: 'https://github.com/threefoldtech/mycelium/blob/master/LICENSE'
   
   description: |
     This is the specification of the **mycelium** management API. It is used to perform admin tasks on the system, and
