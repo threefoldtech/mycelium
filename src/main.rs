@@ -60,6 +60,9 @@ struct Cli {
     #[arg(long = "api-server-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
     api_server_addr: SocketAddr,
 
+    #[arg(long = "no-tun", default_value_t = false)]
+    no_tun: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -120,14 +123,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let node_addr = node_pub_key.address();
     info!("Node address: {}", node_addr);
 
-    let (rxhalf, txhalf) = tun::new(
-        TUN_NAME,
-        Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
-        Subnet::new(TUN_ROUTE_DEST.into(), TUN_ROUTE_PREFIX)
-            .expect("Static configured TUN route is valid; qed"),
-    )
-    .await?;
-
     debug!("Node public key: {:?}", node_keypair.1);
 
     let static_peers = cli.static_peers;
@@ -171,7 +166,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let msg_receiver = tokio_stream::wrappers::ReceiverStream::new(rx);
     let msg_sender = tokio_util::sync::PollSender::new(tx);
 
-    let data_plane = DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx);
+    let data_plane = if cli.no_tun {
+        DataPlane::new(
+            router.clone(),
+            // No tun so create a dummy stream for l3 packets which never yields
+            tokio_stream::pending(),
+            // Similarly, create a sink which just discards every packet we would receive
+            futures::sink::drain(),
+            msg_sender,
+            tun_rx,
+        )
+    } else {
+        let (rxhalf, txhalf) = tun::new(
+            TUN_NAME,
+            Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
+            Subnet::new(TUN_ROUTE_DEST.into(), TUN_ROUTE_PREFIX)
+                .expect("Static configured TUN route is valid; qed"),
+        )
+        .await?;
+        DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
+    };
 
     let ms = MessageStack::new(data_plane, msg_receiver);
 
