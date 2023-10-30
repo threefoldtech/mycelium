@@ -20,16 +20,18 @@ mycelium --peers 203.0.113.5:9651
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
 
-The node uses a `x25519` keypair from which its identity is derived. The private key of this key pair is saved in a local file (32 bytes in binary format). You can
-specify the path to this file with the `-k` flag. By default, the file is saved in the current working directory as `priv_key.bin`.
+The node uses a `x25519` key pair from which its identity is derived. The private key of this key pair
+is saved in a local file (32 bytes in binary format). You can specify the path to this file with the
+`-k` flag. By default, the file is saved in the current working directory as `priv_key.bin`.
 
 ### Running without TUN interface
 
-It is possible to run the system without creating a TUN interface. Obviously, this means that your
-node won't be able to send or receive L3 traffic. There is no interface to send packets on, and
-consequently no interface to send received packets out of. From the point of other nodes, your node
-will simply drop all incoming L3 traffic destined for it. The node **will still route traffic** as
-normal. It takes part in routing, exchanges route info, and forwards packets not intended for itself.
+It is possible to run the system without creating a TUN interface, by starting with the `--no-tun` flag.
+Obviously, this means that your node won't be able to send or receive L3 traffic. There is no interface
+to send packets on, and consequently no interface to send received packets out of. From the point of
+other nodes, your node will simply drop all incoming L3 traffic destined for it. The node **will still
+route traffic** as normal. It takes part in routing, exchanges route info, and forwards packets not
+intended for itself.
 
 The node also still allows access to the [message subsystem](#message-system).
 
