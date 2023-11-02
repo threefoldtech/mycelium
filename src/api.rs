@@ -1,12 +1,13 @@
 use std::{
     net::{IpAddr, SocketAddr},
+    ops::Deref,
     time::Duration,
 };
 
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use log::{debug, error};
@@ -76,6 +77,7 @@ impl Http {
         let msg_routes = Router::new()
             .route("/messages", get(get_message).post(push_message))
             .route("/messages/status/:id", get(message_status))
+            .route("/messages/reply/:id", post(reply_message))
             .with_state(server_state);
         let app = Router::new().nest("/api/v1", msg_routes);
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
@@ -143,25 +145,110 @@ async fn get_message(
 }
 
 #[derive(Serialize)]
-struct PushMessageResponse {
+struct MessageIdReply {
     id: MessageId,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+#[serde(untagged)]
+enum PushMessageResponse {
+    Id(MessageIdReply),
+    Reply(MessageReceiveInfo),
+}
+
+#[derive(Deserialize)]
+struct PushMessageQuery {
+    reply_timeout: Option<u64>,
+}
+
+impl PushMessageQuery {
+    /// The user requested to wait for the reply or not.
+    fn await_reply(&self) -> bool {
+        self.reply_timeout.is_some()
+    }
+
+    /// Amount of seconds to wait for the reply.
+    fn timeout(&self) -> u64 {
+        self.reply_timeout.unwrap_or(0)
+    }
+}
+
 async fn push_message(
     State(state): State<HttpServerState>,
+    Query(query): Query<PushMessageQuery>,
     Json(message_info): Json<MessageSendInfo>,
-) -> Result<Json<PushMessageResponse>, StatusCode> {
+) -> Result<(StatusCode, Json<PushMessageResponse>), StatusCode> {
     let dst = message_info.dst.ip();
     debug!(
         "Pushing new message of {} bytes to message stack for target {dst}",
         message_info.payload.len(),
     );
 
-    let id =
-        state
-            .message_stack
-            .push_message(dst, message_info.payload, DEFAULT_MESSAGE_TRY_DURATION);
+    let (id, sub) = state.message_stack.new_message(
+        dst,
+        message_info.payload,
+        DEFAULT_MESSAGE_TRY_DURATION,
+        query.await_reply(),
+    );
 
-    Ok(Json(PushMessageResponse { id }))
+    if !query.await_reply() {
+        // If we don't wait for the reply just return here.
+        return Ok((
+            StatusCode::CREATED,
+            Json(PushMessageResponse::Id(MessageIdReply { id })),
+        ));
+    }
+
+    let mut sub = sub.unwrap();
+    tokio::select! {
+        sub_res = sub.changed() => {
+            match sub_res {
+                Ok(_) => {
+                    if let Some(m) = sub.borrow().deref()  {
+                        Ok((StatusCode::OK, Json(PushMessageResponse::Reply(MessageReceiveInfo {
+                            id: m.id,
+                            src_ip: m.src_ip,
+                            src_pk: m.src_pk,
+                            dst_ip: m.dst_ip,
+                            dst_pk: m.dst_pk,
+                            payload: m.data.clone(),
+                        }))))
+                    } else {
+                        // This happens if a none value is send, which should not happen.
+                        Err(StatusCode::INTERNAL_SERVER_ERROR)
+                    }
+                }
+                Err(_)  => {
+                    // This happens if the sender drops, which should not happen.
+                    Err(StatusCode::INTERNAL_SERVER_ERROR)
+                }
+            }
+        },
+        _ = tokio::time::sleep(Duration::from_secs(query.timeout())) => {
+            // Timeout expired while waiting for reply
+            Ok((StatusCode::REQUEST_TIMEOUT, Json(PushMessageResponse::Id(MessageIdReply { id  }))))
+        }
+    }
+}
+
+async fn reply_message(
+    State(state): State<HttpServerState>,
+    Path(id): Path<MessageId>,
+    Json(message_info): Json<MessageSendInfo>,
+) -> StatusCode {
+    let dst = message_info.dst.ip();
+    debug!(
+        "Pushing new reply to {} of {} bytes to message stack for target {dst}",
+        id.as_hex(),
+        message_info.payload.len(),
+    );
+
+    state
+        .message_stack
+        .reply_message(id, dst, message_info.payload, DEFAULT_MESSAGE_TRY_DURATION);
+
+    StatusCode::NO_CONTENT
 }
 
 async fn message_status(

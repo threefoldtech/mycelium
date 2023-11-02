@@ -37,6 +37,9 @@ const MESSAGE_SEND_WINDOW: Duration = Duration::from_secs(60 * 5);
 /// The amount of time to wait before sending a chunk again if receipt is not acknowledged.
 const RETRANSMISSION_DELAY: Duration = Duration::from_secs(1);
 
+/// Amount of time between sweeps of the subscriber list to clear orphaned subscribers.
+const REPLY_SUBSCRIBER_CLEAR_DELAY: Duration = Duration::from_secs(60);
+
 /// The average size of a single chunk. This is mainly intended to preallocate the chunk array on
 /// the receiver size. This value should allow reasonable overhead for standard MTU.
 const AVERAGE_CHUNK_SIZE: usize = 1_300;
@@ -65,6 +68,9 @@ const FLAG_MESSAGE_CHUNK: u16 = 0b0001_0000_0000_0000;
 /// Flag indicating the message with the given ID has been read by the receiver, that is it has
 /// been transfered to an external process.
 const FLAG_MESSAGE_READ: u16 = 0b0000_1000_0000_0000;
+/// Flag indicating we are sending a reply to a received message. The message ID used is the same
+/// as the received message.
+const FLAG_MESSAGE_REPLY: u16 = 0b0000_0100_0000_0000;
 /// Flag acknowledging receipt of a packet. Once this has been received, the packet __should not__ be
 /// transmitted again by the sender.
 const FLAG_MESSAGE_ACK: u16 = 0b0000_0001_0000_0000;
@@ -82,6 +88,11 @@ pub struct MessageStack {
     outbox: Arc<Mutex<MessageOutbox>>,
     /// Receiver handle for inbox listeners (basically a condvar).
     subscriber: watch::Receiver<()>,
+    /// Subscribers for messages with specific ID's. These are intended to be used when waiting for
+    /// a reply.
+    /// This takes an Option as value to avoid the hassle of constructing a dummy value when
+    /// creating the watch channel.
+    reply_subscribers: Arc<Mutex<HashMap<MessageId, watch::Sender<Option<ReceivedMessage>>>>>,
 }
 
 struct MessageOutbox {
@@ -100,6 +111,7 @@ struct MessageInbox {
 
 struct ReceivedMessageInfo {
     id: MessageId,
+    is_reply: bool,
     src: IpAddr,
     dst: IpAddr,
     /// Length of the finished message.
@@ -111,6 +123,8 @@ struct ReceivedMessageInfo {
 pub struct ReceivedMessage {
     /// Id of the message.
     pub id: MessageId,
+    /// This message is a reply to an initial message with the given id.
+    pub is_reply: bool,
     /// The overlay ip of the sender.
     pub src_ip: IpAddr,
     /// The public key of the sender of the message.
@@ -205,6 +219,7 @@ impl MessageStack {
             inbox: Arc::new(Mutex::new(MessageInbox::new(notify))),
             outbox: Arc::new(Mutex::new(MessageOutbox::new())),
             subscriber,
+            reply_subscribers: Arc::new(Mutex::new(HashMap::new())),
         };
 
         tokio::task::spawn(
@@ -212,6 +227,28 @@ impl MessageStack {
                 .handle_incoming_message_packets(message_packet_stream),
         );
 
+        // task to periodically clear leftover reply subscribers
+        {
+            let ms = ms.clone();
+            tokio::task::spawn(async move {
+                loop {
+                    tokio::time::sleep(REPLY_SUBSCRIBER_CLEAR_DELAY).await;
+
+                    let mut subs = ms.reply_subscribers.lock().unwrap();
+                    subs.retain(|id, v| {
+                        if v.receiver_count() == 0 {
+                            debug!(
+                                "Clearing orphaned subscription for message id {}",
+                                id.as_hex()
+                            );
+                            false
+                        } else {
+                            true
+                        }
+                    })
+                }
+            });
+        }
         ms
     }
 
@@ -317,6 +354,7 @@ impl MessageStack {
         let message_id = header.message_id();
         let flags = header.flags();
         let reply = if flags.init() {
+            let is_reply = flags.reply();
             // We receive a new message with an ID. If we already have a complete message, ignore
             // it.
             let mut inbox = self.inbox.lock().unwrap();
@@ -332,6 +370,7 @@ impl MessageStack {
             let chunks = vec![None; expected_chunks];
             let message = ReceivedMessageInfo {
                 id: message_id,
+                is_reply,
                 src,
                 dst,
                 len: mi.length(),
@@ -456,6 +495,7 @@ impl MessageStack {
 
                 let message = ReceivedMessage {
                     id: message.id,
+                    is_reply: inbound_message.is_reply,
                     src_ip: message.src,
                     src_pk: src_pubkey,
                     dst_ip: message.dst,
@@ -465,11 +505,27 @@ impl MessageStack {
 
                 debug!("Message {} reception complete", message.id.as_hex());
 
-                // Move message to be read.
-                inbox.complete_msges.push_back(message);
+                // Check if we have any listeners and try to send the message to those first.
+                let mut subscribers = self.reply_subscribers.lock().unwrap();
+                // Use remove here since we are done with the subscriber
+                // TODO: only check this if the is_reply flag is set?
+                if let Some(sub) = subscribers.remove(&message.id) {
+                    if let Err(e) = sub.send(Some(message)) {
+                        debug!("Subscriber quit before we could send the reply");
+                        // Move message to be read if there were no subscribers.
+                        inbox.complete_msges.push_back(e.0.unwrap());
+                        // Notify subscribers we have a new message.
+                        inbox.notify.send_replace(());
+                    } else {
+                        debug!("Informed subscriber of message reply");
+                    }
+                } else {
+                    // Move message to be read if there were no subscribers.
+                    inbox.complete_msges.push_back(message);
+                    // Notify subscribers we have a new message.
+                    inbox.notify.send_replace(());
+                }
                 inbox.pending_msges.remove(&message_id);
-                // Notify subscribers we have a new message.
-                inbox.notify.send_replace(());
 
                 Some(md.into_reply().into_inner())
             } else {
@@ -516,8 +572,53 @@ impl MessageStack {
 }
 
 impl MessageStack {
-    /// Push a new message to be transmitted, which will be tried for the given duration.
-    pub fn push_message(&self, dst: IpAddr, data: Vec<u8>, try_duration: Duration) -> MessageId {
+    /// Push a new message to be transmitted, which will be tried for the given duration. A
+    /// [message id](MessageId) will be randomly generated, and returned.
+    pub fn new_message(
+        &self,
+        dst: IpAddr,
+        data: Vec<u8>,
+        try_duration: Duration,
+        subscribe_reply: bool,
+    ) -> (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>) {
+        self.push_message(None, dst, data, try_duration, subscribe_reply)
+    }
+
+    /// Push a new message which is a reply to the message with [the provided id](MessageId).
+    pub fn reply_message(
+        &self,
+        reply_to: MessageId,
+        dst: IpAddr,
+        data: Vec<u8>,
+        try_duration: Duration,
+    ) -> MessageId {
+        self.push_message(Some(reply_to), dst, data, try_duration, false)
+            .0
+    }
+
+    /// Subscribe to a new message with the given ID. In practice, this will be a reply.
+    pub fn subscribe_id(&self, id: MessageId) -> watch::Receiver<Option<ReceivedMessage>> {
+        let mut subscribers = self.reply_subscribers.lock().unwrap();
+        if let Some(sub) = subscribers.get(&id) {
+            sub.subscribe()
+        } else {
+            // dummy initial value
+            let (tx, rx) = watch::channel(None);
+            subscribers.insert(id, tx);
+            rx
+        }
+    }
+
+    /// Push a new message. If id is set, it is considered a reply to that id. If not, a new id is
+    /// generated.
+    fn push_message(
+        &self,
+        id: Option<MessageId>,
+        dst: IpAddr,
+        data: Vec<u8>,
+        try_duration: Duration,
+        subscribe: bool,
+    ) -> (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>) {
         let src = self
             .data_plane
             .lock()
@@ -527,7 +628,11 @@ impl MessageStack {
             .address()
             .into();
 
-        let id = MessageId::new();
+        let (id, reply) = if let Some(id) = id {
+            (id, true)
+        } else {
+            (MessageId::new(), false)
+        };
 
         let len = data.len();
         let msg = Message { id, src, dst, data };
@@ -544,6 +649,12 @@ impl MessageStack {
             chunks: vec![], // leave Vec empty at start
         };
 
+        let subscription = if subscribe {
+            Some(self.subscribe_id(id))
+        } else {
+            None
+        };
+
         self.outbox
             .lock()
             .expect("Outbox lock isn't poisoned; qed")
@@ -552,6 +663,9 @@ impl MessageStack {
         // Already send the init packet.
         let mut mp = MessagePacket::new(PacketBuffer::new());
         mp.header_mut().set_message_id(id);
+        if reply {
+            mp.header_mut().flags_mut().set_reply();
+        }
 
         let mut mi = MessageInit::new(mp);
         mi.set_length(len as u64);
@@ -573,7 +687,7 @@ impl MessageStack {
             let mut interval = tokio::time::interval(RETRANSMISSION_DELAY);
             // Avoid a send burst if the system is slow.
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            // intervals tick immediatly, so consume one tick each
+            // intervals tick immediately, so consume one tick each
             deadline.tick().await;
             interval.tick().await;
 
@@ -591,6 +705,9 @@ impl MessageStack {
                                     // Send the init packet.
                                     let mut mp = MessagePacket::new(PacketBuffer::new());
                                     mp.header_mut().set_message_id(id);
+                                    if reply {
+                                        mp.header_mut().flags_mut().set_reply();
+                                    }
 
                                     let mut mi = MessageInit::new(mp);
                                     mi.set_length(len as u64);
@@ -781,7 +898,7 @@ impl MessageStack {
             }
         });
 
-        id
+        (id, subscription)
     }
 
     /// Get information about the status of an outbound message.
@@ -1077,6 +1194,11 @@ impl<'a> Flags<'a> {
         self.flags & FLAG_MESSAGE_READ != 0
     }
 
+    /// Check if the MESSAGE_REPLY flag is set on the header.
+    fn reply(&self) -> bool {
+        self.flags & FLAG_MESSAGE_REPLY != 0
+    }
+
     /// Check if the MESSAGE_ACK flag is set on the header.
     fn ack(&self) -> bool {
         self.flags & FLAG_MESSAGE_ACK != 0
@@ -1129,6 +1251,11 @@ impl FlagsMut<'_, '_> {
     /// Sets the MESSAGE_READ flag on the header.
     fn set_read(&mut self) {
         self.flags |= FLAG_MESSAGE_READ;
+    }
+
+    /// Sets the MESSAGE_REPLY flag on the header.
+    fn set_reply(&mut self) {
+        self.flags |= FLAG_MESSAGE_REPLY;
     }
 
     /// Sets the MESSAGE_ACK flag on the header.
@@ -1321,6 +1448,16 @@ mod tests {
 
         assert!(buf_mut.flags().read());
         assert_eq!(buf_mut.header[8], 0b0000_1000);
+    }
+
+    #[test]
+    fn set_reply_flag() {
+        let mut buf = [0; MESSAGE_HEADER_SIZE];
+        let mut buf_mut = MessagePacketHeaderMut { header: &mut buf };
+        buf_mut.flags_mut().set_reply();
+
+        assert!(buf_mut.flags().reply());
+        assert_eq!(buf_mut.header[8], 0b0000_0100);
     }
 
     #[test]
