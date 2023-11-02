@@ -130,13 +130,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (tun_tx, tun_rx) = tokio::sync::mpsc::unbounded_channel();
 
+    let node_subnet = Subnet::new(
+        // Truncate last 64 bits of address.
+        // TODO: find a better way to do this.
+        Subnet::new(node_addr.into(), 64)
+            .expect("64 is a valid IPv6 prefix size; qed")
+            .network(),
+        64,
+    )
+    .expect("64 is a valid IPv6 prefix size; qed");
+
     // Creating a new Router instance
     let router = match router::Router::new(
         tun_tx,
-        Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
-        vec![StaticRoute::new(
-            Subnet::new(node_addr.into(), 64).expect("64 is a valid IPv6 prefix size; qed"),
-        )],
+        node_subnet,
+        vec![StaticRoute::new(node_subnet)],
         node_keypair.clone(),
         vec![
             Box::new(filters::AllowedSubnet::new(
