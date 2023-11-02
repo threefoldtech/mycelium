@@ -187,14 +187,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tun_rx,
         )
     } else {
-        let (rxhalf, txhalf) = tun::new(
-            TUN_NAME,
-            Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
-            Subnet::new(TUN_ROUTE_DEST.into(), TUN_ROUTE_PREFIX)
-                .expect("Static configured TUN route is valid; qed"),
-        )
-        .await?;
-        DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
+        #[cfg(not(target_os = "linux"))]
+        {
+            panic!("On this platfor, you can only run with --no-tun");
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let (rxhalf, txhalf) = tun::new(
+                TUN_NAME,
+                Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
+                Subnet::new(TUN_ROUTE_DEST.into(), TUN_ROUTE_PREFIX)
+                    .expect("Static configured TUN route is valid; qed"),
+            )
+            .await?;
+            DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
+        }
     };
 
     let ms = MessageStack::new(data_plane, msg_receiver);
