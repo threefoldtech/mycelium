@@ -73,6 +73,19 @@ paths:
         Push a new message to the systems outbound message queue. The system will continuously attempt to send the message until
         it is either fully transmitted, or the send deadline is expired.
       operationId: pushMessage
+      parameters:
+        - in: query
+          name: reply_timeout
+          required: false
+          schema: 
+            type: integer
+            format: int64
+            minimum: 0
+          description: |
+            Amount of seconds to wait for a reply to this message to come in. If not set, the system won't wait for a reply and return
+            the ID of the message, which can be used later. If set, the system will wait for at most the given amount of seconds for a reply
+            to come  in. If a reply arrives, it is returned to the client. If not, the message ID is returned for later use.
+          example: 120
       requestBody:
         content:
           application/json:
@@ -80,13 +93,54 @@ paths:
               $ref: '#/components/schemas/PushMessageBody'
       responses:
         '200':
-          description: Message pushed successfully
+          description: We received a reply withing the specified timeout
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PushMessageResponse'
+                $ref: '#/components/schemas/InboundMessage'
 
-  '/api/v1/messages/status/:id':
+        '201':
+          description: Message pushed successfully, and not waiting for a reply
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushMessageResponseId'
+        '408':
+          description: The system timed out waiting for a reply to the message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushMessageResponseId'
+
+  '/api/v1/messsages/reply/{id}':
+    post:
+      tags:
+        - Message
+      summary: Reply to a message with the given ID
+      description: |
+        Submits a reply message to the system, where ID is an id of a previously received message. If the sender is waiting
+        for a reply, it will bypass the queue of open messages.
+      operationId: pushMessageReply 
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: hex
+            minLength: 16
+            maxLength: 16
+          example: abcdef0123456789
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushMessageBody'
+      responses:
+        '204':
+          description: successfully submitted the reply
+
+  '/api/v1/messages/status/{id}':
     get:
       tags:
         - Message
@@ -95,6 +149,16 @@ paths:
         Get information about the current state of an outbound message. This can be used to check the transmission
         state, size and destination of the message.
       operationId: getMessageInfo
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: hex
+            minLength: 16
+            maxLength: 16
+          example: abcdef0123456789
       responses:
         '200':
           description: Success
@@ -115,6 +179,7 @@ components:
         id:
           description: Id of the message, hex encoded
           type: string
+          format: hex
           minLength: 16
           maxLength: 16
           example: 0123456789abcdef
@@ -126,6 +191,7 @@ components:
         src_pk:
           description: Sender public key, hex encoded
           type: string
+          format: hex
           minLength: 64
           maxLength: 64
           example: fedbca9876543210fedbca9876543210fedbca9876543210fedbca9876543210
@@ -137,6 +203,7 @@ components:
         dst_pk:
           description: Receiver public key, hex encoded. This is the public key of the system
           type: string
+          format: hex
           minLength: 64
           maxLength: 64
           example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf
@@ -177,13 +244,14 @@ components:
               maxLength: 64
               example: bb39b4a3a4efd70f3e05e37887677e02efbda14681d0acd3882bc0f754792c32
 
-    PushMessageResponse:
+    PushMessageResponseId:
       description: The ID generated for a message after pushing it to the system
       type: object
       properties:
         id:
           description: Id of the message, hex encoded
           type: string
+          format: hex
           minLength: 16
           maxLength: 16
           example: 0123456789abcdef
