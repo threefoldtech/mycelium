@@ -1,21 +1,13 @@
 use crate::packet::{ControlPacket, DataPacket};
 use crate::peer::Peer;
 use crate::router::Router;
-use log::{debug, error, info};
-use serde::Deserialize;
+use log::{error, info};
 use std::io;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
-
-pub const NODE_CONFIG_FILE_PATH: &str = "nodeconfig.toml";
-
-#[derive(Deserialize)]
-struct PeersConfig {
-    peers: Vec<SocketAddr>,
-}
 
 #[derive(Clone)]
 pub struct PeerManager {
@@ -31,113 +23,12 @@ impl PeerManager {
         };
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
         tokio::spawn(PeerManager::start_listener(peer_manager.clone(), port));
-        // Reads the nodeconfig.toml file and connects to the peers in the file.
-        tokio::spawn(PeerManager::get_peers_from_config(peer_manager.clone()));
-        // Remote nodes can also be read from CLI arg
-        tokio::spawn(PeerManager::get_peers_from_cli(
-            peer_manager.clone(),
-            static_peers_sockets,
-        ));
 
         tokio::spawn(PeerManager::reconnect_to_initial_peers(
             peer_manager.clone(),
         ));
 
         peer_manager
-    }
-
-    async fn get_peers_from_config(self) {
-        if let Ok(file_content) = std::fs::read_to_string(NODE_CONFIG_FILE_PATH) {
-            let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
-                ip
-            } else {
-                panic!("Non IPv6 node tun not support currently")
-            };
-            let config: PeersConfig = toml::from_str(&file_content).unwrap();
-
-            for peer_addr in config.peers {
-                if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
-                    let mut buffer = [0u8; 17];
-                    peer_stream.read_exact(&mut buffer).await.unwrap();
-                    let received_overlay_ip = match buffer[0] {
-                        0 => IpAddr::from(
-                            <&[u8] as TryInto<[u8; 4]>>::try_into(&buffer[1..5]).unwrap(),
-                        ),
-                        1 => IpAddr::from(
-                            <&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap(),
-                        ),
-                        _ => {
-                            debug!("Invalid address encoding byte");
-                            continue;
-                        }
-                    };
-
-                    let mut buf = [0u8; 17];
-                    // only using IPv6
-                    buf[0] = 1;
-                    buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
-
-                    peer_stream.write_all(&buf).await.unwrap();
-
-                    let peer_stream_ip = peer_addr.ip();
-                    if let Ok(new_peer) = Peer::new(
-                        peer_stream_ip,
-                        self.router.router_data_tx(),
-                        self.router.router_control_tx(),
-                        peer_stream,
-                        received_overlay_ip,
-                    ) {
-                        self.router.add_peer_interface(new_peer);
-                    }
-                }
-            }
-        } else {
-            error!("Error reading nodeconfig.toml file");
-        }
-    }
-
-    async fn get_peers_from_cli(self, socket_addresses: Vec<SocketAddr>) {
-        let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
-            ip
-        } else {
-            panic!("Non IPv6 node tun not support currently")
-        };
-        for peer_addr in socket_addresses {
-            if let Ok(mut peer_stream) = TcpStream::connect(peer_addr).await {
-                let mut buffer = [0u8; 17];
-                peer_stream.read_exact(&mut buffer).await.unwrap();
-                let received_overlay_ip = match buffer[0] {
-                    0 => {
-                        IpAddr::from(<&[u8] as TryInto<[u8; 4]>>::try_into(&buffer[1..5]).unwrap())
-                    }
-                    1 => {
-                        IpAddr::from(<&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap())
-                    }
-                    _ => {
-                        error!("Invalid address encoding byte");
-                        continue;
-                    }
-                };
-
-                let mut buf = [0u8; 17];
-                // only using IPv6
-                buf[0] = 1;
-                buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
-
-                peer_stream.write_all(&buf).await.unwrap();
-
-                let peer_stream_ip = peer_addr.ip();
-                if let Ok(new_peer) = Peer::new(
-                    peer_stream_ip,
-                    self.router.router_data_tx(),
-                    self.router.router_control_tx(),
-                    peer_stream,
-                    received_overlay_ip,
-                ) {
-                    self.router.add_peer_interface(new_peer);
-                }
-            }
-        }
     }
 
     // this is used to reconnect to the provided static peers in case the connection is lost
@@ -148,8 +39,6 @@ impl PeerManager {
             panic!("Non IPv6 node tun not support currently")
         };
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
             // check if there is an entry for the peer in the router's peer list
             for peer in self.initial_peers.iter() {
                 if !self.router.peer_exists(peer.ip()) {
@@ -189,6 +78,8 @@ impl PeerManager {
                     }
                 }
             }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     }
 
