@@ -21,13 +21,7 @@ const PACKET_COALESCE_WINDOW: usize = 5;
 #[derive(Debug, Clone)]
 /// A peer represents a directly connected participant in the network.
 pub struct Peer {
-    inner: Arc<RwLock<PeerInner>>,
-    to_peer_data: mpsc::UnboundedSender<DataPacket>,
-    to_peer_control: mpsc::UnboundedSender<ControlPacket>,
-    /// Used to identify peer based on its connection params
-    stream_ip: IpAddr,
-    // TODO: not needed
-    overlay_ip: IpAddr,
+    inner: Arc<PeerInner>,
 }
 
 impl Peer {
@@ -46,11 +40,13 @@ impl Peer {
         // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
         stream.set_nodelay(true)?;
         let peer = Peer {
-            inner: Arc::new(RwLock::new(PeerInner::new())),
-            to_peer_data,
-            to_peer_control,
-            stream_ip,
-            overlay_ip,
+            inner: Arc::new(PeerInner {
+                state: RwLock::new(PeerState::new()),
+                to_peer_data,
+                to_peer_control,
+                stream_ip,
+                overlay_ip,
+            }),
         };
 
         // Framed for peer
@@ -130,59 +126,59 @@ impl Peer {
 
     /// Get current sequence number for this peer.
     pub fn hello_seqno(&self) -> SeqNo {
-        self.inner.read().unwrap().hello_seqno
+        self.inner.state.read().unwrap().hello_seqno
     }
 
     /// Adds 1 to the sequence number of this peer .
     pub fn increment_hello_seqno(&self) {
-        self.inner.write().unwrap().hello_seqno += 1;
+        self.inner.state.write().unwrap().hello_seqno += 1;
     }
 
     pub fn time_last_received_hello(&self) -> tokio::time::Instant {
-        self.inner.read().unwrap().time_last_received_hello
+        self.inner.state.read().unwrap().time_last_received_hello
     }
 
     pub fn set_time_last_received_hello(&self, time: tokio::time::Instant) {
-        self.inner.write().unwrap().time_last_received_hello = time
+        self.inner.state.write().unwrap().time_last_received_hello = time
     }
 
     /// Get overlay IP for this peer
     pub fn overlay_ip(&self) -> IpAddr {
-        self.overlay_ip
+        self.inner.overlay_ip
     }
 
     /// For sending data packets towards a peer instance on this node.
     /// It's send over the to_peer_data channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
     pub fn send_data_packet(&self, data_packet: DataPacket) -> Result<(), Box<dyn Error>> {
-        Ok(self.to_peer_data.send(data_packet)?)
+        Ok(self.inner.to_peer_data.send(data_packet)?)
     }
 
     /// For sending control packets towards a peer instance on this node.
     /// It's send over the to_peer_control channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
     pub fn send_control_packet(&self, control_packet: ControlPacket) -> Result<(), Box<dyn Error>> {
-        Ok(self.to_peer_control.send(control_packet)?)
+        Ok(self.inner.to_peer_control.send(control_packet)?)
     }
 
     pub fn link_cost(&self) -> u16 {
-        self.inner.read().unwrap().link_cost
+        self.inner.state.read().unwrap().link_cost
     }
 
     pub fn set_link_cost(&self, link_cost: u16) {
-        self.inner.write().unwrap().link_cost = link_cost
+        self.inner.state.write().unwrap().link_cost = link_cost
     }
 
     pub fn underlay_ip(&self) -> IpAddr {
-        self.stream_ip
+        self.inner.stream_ip
     }
 
     pub fn time_last_received_ihu(&self) -> tokio::time::Instant {
-        self.inner.read().unwrap().time_last_received_ihu
+        self.inner.state.read().unwrap().time_last_received_ihu
     }
 
     pub fn set_time_last_received_ihu(&self, time: tokio::time::Instant) {
-        self.inner.write().unwrap().time_last_received_ihu = time
+        self.inner.state.write().unwrap().time_last_received_ihu = time
     }
 }
 
@@ -194,13 +190,24 @@ impl PartialEq for Peer {
 
 #[derive(Debug)]
 struct PeerInner {
+    state: RwLock<PeerState>,
+    to_peer_data: mpsc::UnboundedSender<DataPacket>,
+    to_peer_control: mpsc::UnboundedSender<ControlPacket>,
+    /// Used to identify peer based on its connection params
+    stream_ip: IpAddr,
+    // TODO: not needed
+    overlay_ip: IpAddr,
+}
+
+#[derive(Debug)]
+struct PeerState {
     hello_seqno: SeqNo,
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
     time_last_received_ihu: tokio::time::Instant,
 }
 
-impl PeerInner {
+impl PeerState {
     /// Create a new `PeerInner`, holding the mutable state of a [`Peer`]
     pub fn new() -> Self {
         // Initialize last_sent_hello_seqno to 0
