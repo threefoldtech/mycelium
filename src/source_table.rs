@@ -1,3 +1,4 @@
+use core::fmt;
 use std::collections::HashMap;
 
 use crate::{babel, metric::Metric, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
@@ -86,5 +87,19 @@ impl SourceTable {
             }
             None => true,
         }
+    }
+
+    /// Get an iterator over the `SourceTable`.
+    pub fn iter(&self) -> impl Iterator<Item = (&SourceKey, &FeasibilityDistance)> {
+        self.table.iter()
+    }
+}
+
+impl fmt::Display for SourceKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!(
+            "{} advertised by {}",
+            self.subnet, self.router_id
+        ))
     }
 }

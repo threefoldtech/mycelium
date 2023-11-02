@@ -214,6 +214,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         while let Some(()) = sigusr1.recv().await {
             println!("----------- Current selected routes -----------\n");
             router.print_selected_routes();
+            println!("----------- Current fallback routes -----------\n");
+            router.print_fallback_routes();
+            println!("----------- Current source table -----------\n");
+            router.print_source_table();
 
             println!("\n----------- Current peers: -----------");
             for p in router.peer_interfaces() {

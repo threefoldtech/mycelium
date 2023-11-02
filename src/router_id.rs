@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::crypto::PublicKey;
 
 /// A `RouterId` uniquely identifies a router in the network.
@@ -24,5 +26,11 @@ impl RouterId {
 impl From<[u8; 32]> for RouterId {
     fn from(bytes: [u8; 32]) -> RouterId {
         RouterId(PublicKey::from(bytes))
+    }
+}
+
+impl fmt::Display for RouterId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
     }
 }

@@ -205,9 +205,9 @@ impl Router {
 
         let routing_table = &inner.selected_routing_table;
         for (route_key, route_entry) in routing_table.iter() {
-            println!("Route key: {:?}", route_key);
+            println!("Route key: {}", route_key);
             println!(
-                "Route: {} (with next-hop: {:?}, metric: {}, selected: {})",
+                "Route: {} (with next-hop: {}, metric: {}, selected: {})",
                 route_key.subnet(),
                 route_entry.neighbour().overlay_ip(),
                 route_entry.metric(),
@@ -217,30 +217,39 @@ impl Router {
         }
     }
 
-    // pub fn print_fallback_routes(&self) {
-    //     let inner = self.inner.read().unwrap();
+    pub fn print_fallback_routes(&self) {
+        let inner = self
+            .inner_r
+            .enter()
+            .expect("Write handle is saved on router so it is not dropped before the read handles");
 
-    //     let routing_table = &inner.fallback_routing_table;
-    //     for route in routing_table.table.iter() {
-    //         println!("Route key: {:?}", route.0);
-    //         println!(
-    //             "Route: {:?}/{:?} (with next-hop: {:?}, metric: {}, selected: {})",
-    //             route.0.prefix, route.0.plen, route.1.next_hop, route.1.metric, route.1.selected
-    //         );
-    //         println!("As advertised by: {:?}", route.1.source.router_id);
-    //     }
-    // }
+        let routing_table = &inner.fallback_routing_table;
+        for (route_key, route_entry) in routing_table.iter() {
+            println!("Route key: {}", route_key);
+            println!(
+                "Route: {} (with next-hop: {:?}, metric: {}, selected: {})",
+                route_key.subnet(),
+                route_entry.neighbour().overlay_ip(),
+                route_entry.metric(),
+                route_entry.selected()
+            );
+            //println!("As advertised by: {:?}", route.1.source.router_id);
+        }
+    }
 
-    // pub fn print_source_table(&self) {
-    //     let inner = self.inner.read().unwrap();
+    pub fn print_source_table(&self) {
+        let inner = self
+            .inner_r
+            .enter()
+            .expect("Write handle is saved on router so it is not dropped before the read handles");
 
-    //     let source_table = &inner.source_table;
-    //     for (sk, se) in source_table.table.iter() {
-    //         println!("Source key: {:?}", sk);
-    //         println!("Source entry: {:?}", se);
-    //         println!("\n");
-    //     }
-    // }
+        let source_table = &inner.source_table;
+        for (sk, se) in source_table.iter() {
+            println!("Source key: {}", sk);
+            println!("Source entry: {:?}", se);
+            println!("\n");
+        }
+    }
 
     async fn check_for_dead_peers(self, router_id: RouterId) {
         let ihu_threshold = tokio::time::Duration::from_secs(8);
@@ -404,7 +413,10 @@ impl Router {
             } else {
                 // this means that the update is feasible and the metric is not infinite
                 // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
-                info!("Learned route for previously unknown subnet {}", subnet);
+                info!(
+                    "Learned route for previously unknown subnet {} and neighbour",
+                    subnet
+                );
 
                 let source_key = SourceKey::new(subnet, router_id);
                 let fd = FeasibilityDistance::new(metric, seqno);
@@ -471,8 +483,6 @@ impl Router {
                 inner_w.append(RouterOpLogEntry::RemoveSourceEntry(source_key));
                 return;
             }
-            // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
-            // to the router-id of the entry, then we ignore the update
             let possible_entry = inner_w
                 .enter()
                 .expect("We deref through a write handle so this enter never fails")
@@ -482,6 +492,8 @@ impl Router {
                 .cloned();
 
             if let Some(route_entry) = possible_entry {
+                // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
+                // to the router-id of the entry, then we ignore the update
                 if !update_feasible && route_entry.source().router_id() == router_id {
                     return;
                 }

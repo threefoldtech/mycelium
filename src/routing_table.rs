@@ -4,6 +4,7 @@ use crate::{
     metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
     source_table::SourceKey, subnet::Subnet,
 };
+use core::fmt;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -20,17 +21,29 @@ pub struct RouteKey {
 }
 
 impl Eq for RouteKey {}
+
 impl PartialOrd for RouteKey {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl Ord for RouteKey {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.subnet.cmp(&other.subnet) {
             Ordering::Equal => self.neighbor.overlay_ip().cmp(&other.neighbor.overlay_ip()),
             ord => ord,
         }
+    }
+}
+
+impl fmt::Display for RouteKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!(
+            "{} via {}",
+            self.subnet,
+            self.neighbor.underlay_ip()
+        ))
     }
 }
 
