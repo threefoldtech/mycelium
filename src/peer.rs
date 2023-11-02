@@ -184,7 +184,7 @@ impl Peer {
 
 impl PartialEq for Peer {
     fn eq(&self, other: &Self) -> bool {
-        self.overlay_ip() == other.overlay_ip()
+        Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
