@@ -202,7 +202,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         #[cfg(not(target_os = "linux"))]
         {
-            panic!("On this platfor, you can only run with --no-tun");
+            panic!("On this platform, you can only run with --no-tun");
         }
         #[cfg(target_os = "linux")]
         {
