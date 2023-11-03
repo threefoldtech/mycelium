@@ -55,7 +55,17 @@ paths:
             Amount of seconds to wait for a message to arrive if one is not available. Setting this to 0 is valid and will return
             a message if present, or return immediately if there isn't
           example: 60
-
+        - in: query
+          name: filter
+          required: false
+          schema: 
+            type: string 
+            minLength: 0
+            maxLength: 255
+          description: |
+            Optional filter for loading messages. If set, the system checks if the message has the given string at the start. This way
+            a topic can be encoded.
+          example: example.topic
       responses:
         '200':
           description: Message retrieved
@@ -183,24 +193,24 @@ components:
           minLength: 16
           maxLength: 16
           example: 0123456789abcdef
-        src_ip:
+        srcIp:
           description: Sender overlay IP address
           type: string
           format: ipv6
           example: 249:abcd:0123:defa::1
-        src_pk:
+        srcPk:
           description: Sender public key, hex encoded
           type: string
           format: hex
           minLength: 64
           maxLength: 64
           example: fedbca9876543210fedbca9876543210fedbca9876543210fedbca9876543210
-        dst_ip:
+        dstIp:
           description: Receiver overlay IP address
           type: string
           format: ipv6
           example: 34f:b680:ba6e:7ced:355f:346f:d97b:eecb
-        dst_pk:
+        dstPk:
           description: Receiver public key, hex encoded. This is the public key of the system
           type: string
           format: hex
@@ -277,7 +287,7 @@ components:
           type: integer
           format: int64
           example: 1649513089
-        msg_len:
+        msgLen:
           description: Length of the message in bytes
           type: integer
           minimum: 0
