@@ -37,8 +37,14 @@ pub async fn new(
 
     let tun_index = link_index_by_name(handle.clone(), name.to_string()).await?;
 
-    add_address(handle.clone(), tun_index, node_subnet).await?;
-    add_route(handle.clone(), tun_index, route_subnet).await?;
+    if let Err(e) = add_address(handle.clone(), tun_index, node_subnet).await {
+        error!("Failed to add address {node_subnet} to TUN interface: {e}");
+        return Err(e);
+    }
+    if let Err(e) = add_route(handle.clone(), tun_index, route_subnet).await {
+        error!("Failed to add route for {route_subnet} to TUN interface: {e}");
+        return Err(e);
+    }
 
     // We are done with our netlink connection, abort the task so we can properly clean up.
     netlink_task_handle.abort();
