@@ -1,8 +1,8 @@
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
-use log::warn;
 use log::{debug, error, info};
+use log::{warn, LevelFilter};
 use mycelium::api::Http;
 use mycelium::crypto;
 use mycelium::data::DataPlane;
@@ -64,6 +64,10 @@ struct Cli {
     #[arg(long = "no-tun", default_value_t = false)]
     no_tun: bool,
 
+    /// Enable debug logging
+    #[arg(short = 'd', long = "debug", default_value_t = false)]
+    debug: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -86,7 +90,16 @@ pub enum Command {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    pretty_env_logger::init_timed();
+    pretty_env_logger::formatted_timed_builder()
+        .filter_module(
+            "mycelium",
+            if cli.debug {
+                LevelFilter::Debug
+            } else {
+                LevelFilter::Info
+            },
+        )
+        .init();
 
     let key_path = if let Some(path) = cli.key_file {
         path
