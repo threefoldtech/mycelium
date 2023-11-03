@@ -61,6 +61,11 @@ struct Cli {
     #[arg(long = "api-server-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
     api_server_addr: SocketAddr,
 
+    /// Run without creating a TUN interface.
+    ///
+    /// The system will participate in the network as usual, but won't be able to send out L3
+    /// packets. Inbound L3 traffic will be silently discarded. The message subsystem will still
+    /// work however.
     #[arg(long = "no-tun", default_value_t = false)]
     no_tun: bool,
 
