@@ -119,7 +119,7 @@ pub enum MessageCommand {
         #[arg(long = "msg-path")]
         msg_path: Option<PathBuf>,
         /// Optional message ID to reply to.
-        #[arg(long = "reply_to")]
+        #[arg(long = "reply-to")]
         reply_to: Option<String>,
         /// Destination of the message, either a hex encoded public key, or an IPv6 address in the
         /// 200::/7 range.
