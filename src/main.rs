@@ -517,6 +517,9 @@ async fn send_msg(
     });
 
     let mut url = format!("http://{server_addr}/api/v1/messages");
+    if let Some(reply_to) = reply_to {
+        url.push_str(&format!("/reply/{reply_to}"));
+    }
     if wait {
         // A year should be sufficient to wait
         let reply_timeout = timeout.unwrap_or(60 * 60 * 24 * 365);
