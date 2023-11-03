@@ -56,7 +56,8 @@ same data stream used by L3 packets. As such, intermediate nodes can't distingui
 and message data.
 
 The primary way to interact with the message system is through [the API](#API). The message API is
-documented in [an OpenAPI spec in the docs folder](docs/api.yaml).
+documented in [an OpenAPI spec in the docs folder](docs/api.yaml). For some more info about how to
+use the message system, see [the message docs](/docs/message.md).
 
 
 ## Inspecting node keys
