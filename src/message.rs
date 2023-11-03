@@ -948,15 +948,31 @@ impl MessageStack {
     ///
     /// If pop is false, the message is not removed and the next call of this method will return
     /// the same message.
-    pub async fn message(&self, pop: bool) -> ReceivedMessage {
+    pub async fn message(&self, pop: bool, filter: Option<Vec<u8>>) -> ReceivedMessage {
         // Copy the subscriber since we need mutable access to it.
         let mut subscriber = self.subscriber.clone();
 
         loop {
             // Scope to ensure we drop the lock after we checked for a message and don't hold
             // it while waiting for a new notification.
-            {
+            'check: {
                 let mut inbox = self.inbox.lock().unwrap();
+                // If a filter is set only check for those messages.
+                if let Some(ref filter) = filter {
+                    if let Some((idx, _)) =
+                        inbox.complete_msges.iter().enumerate().find(|(_, v)| {
+                            if v.data.len() < filter.len() + 1 {
+                                return false;
+                            }
+                            v.data[0] == filter.len() as u8
+                                && v.data[1..filter.len() + 1] == filter[..]
+                        })
+                    {
+                        return inbox.complete_msges.remove(idx).unwrap();
+                    } else {
+                        break 'check;
+                    }
+                }
                 if let Some(msg) = if pop {
                     inbox.complete_msges.pop_front()
                 } else {

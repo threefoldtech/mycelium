@@ -1,18 +1,22 @@
+use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
+use base64::{alphabet, Engine};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
 use log::{debug, error, info};
 use log::{warn, LevelFilter};
-use mycelium::api::Http;
+use mycelium::api::{Http, MessageDestination, MessageReceiveInfo, MessageSendInfo};
 use mycelium::crypto;
 use mycelium::data::DataPlane;
 use mycelium::filters;
-use mycelium::message::MessageStack;
+use mycelium::message::{MessageId, MessageStack};
 use mycelium::peer_manager;
 use mycelium::router;
 use mycelium::router::StaticRoute;
 use mycelium::subnet::Subnet;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
+use std::io::Write;
+use std::mem;
 use std::net::Ipv4Addr;
 use std::{
     error::Error,
@@ -58,8 +62,8 @@ struct Cli {
     key_file: Option<PathBuf>,
 
     /// Address of the HTTP API server.
-    #[arg(long = "api-server-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
-    api_server_addr: SocketAddr,
+    #[arg(long = "api-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
+    api_addr: SocketAddr,
 
     /// Run without creating a TUN interface.
     ///
@@ -88,6 +92,55 @@ pub enum Command {
 
         /// The key to inspect.
         key: Option<String>,
+    },
+
+    /// Actions on the message subsystem
+    Message {
+        #[command(subcommand)]
+        command: MessageCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MessageCommand {
+    Send {
+        /// Wait for a reply from the receiver.
+        #[arg(short = 'w', long = "wait", default_value_t = false)]
+        wait: bool,
+        /// An optional timeout to wait for. This does nothing if the `--wait` flag is not set. If
+        /// `--wait` is set and this flag isn't, wait forever for a reply.
+        #[arg(long = "timeout")]
+        timeout: Option<u64>,
+        /// Optional topic of the message. Receivers can filter on this to only recieve messages
+        /// for a chosen topic.
+        #[arg(short = 't', long = "topic")]
+        topic: Option<String>,
+        /// Optional file to use as messge body.
+        #[arg(long = "msg-path")]
+        msg_path: Option<PathBuf>,
+        /// Optional message ID to reply to.
+        #[arg(long = "reply_to")]
+        reply_to: Option<String>,
+        /// Destination of the message, either a hex encoded public key, or an IPv6 address in the
+        /// 200::/7 range.
+        destination: String,
+        /// The message to send. This is required if `--msg_path` is not set
+        message: Option<String>,
+    },
+    Receive {
+        /// An optional timeout to wait for a message. If this is not set, wait forever.
+        #[arg(long = "timeout")]
+        timeout: Option<u64>,
+        /// Optional topic of the message. Only messages with this topic will be received by this
+        /// command.
+        #[arg(short = 't', long = "topic")]
+        topic: Option<String>,
+        /// Optional file in which the message body will be saved.
+        #[arg(long = "msg-path")]
+        msg_path: Option<PathBuf>,
+        /// Don't print the metadata
+        #[arg(long = "raw")]
+        raw: bool,
     },
 }
 
@@ -135,6 +188,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 return Ok(());
             }
+            Command::Message { command } => match command {
+                MessageCommand::Send {
+                    wait,
+                    timeout,
+                    topic,
+                    msg_path,
+                    reply_to,
+                    destination,
+                    message,
+                } => {
+                    return send_msg(
+                        destination,
+                        message,
+                        wait,
+                        timeout,
+                        reply_to,
+                        topic,
+                        msg_path,
+                        cli.api_addr,
+                    )
+                    .await
+                }
+                MessageCommand::Receive {
+                    timeout,
+                    topic,
+                    msg_path,
+                    raw,
+                } => return recv_msg(timeout, topic, msg_path, raw, cli.api_addr).await,
+            },
         }
     }
 
@@ -224,7 +306,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let ms = MessageStack::new(data_plane, msg_receiver);
 
-    let _api = Http::spawn(ms, &cli.api_server_addr);
+    let _api = Http::spawn(ms, &cli.api_addr);
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     let mut sigusr1 =
@@ -286,6 +368,282 @@ fn inspect(pubkey: PublicKey, json: bool) -> Result<(), Box<dyn std::error::Erro
     } else {
         println!("Public key: {pubkey}");
         println!("Address: {address}");
+    }
+
+    Ok(())
+}
+
+enum Payload {
+    Readable(String),
+    NotReadable(Vec<u8>),
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliMessage {
+    id: MessageId,
+    topic: Option<String>,
+    src_ip: IpAddr,
+    src_pk: PublicKey,
+    dst_ip: IpAddr,
+    dst_pk: PublicKey,
+    #[serde(serialize_with = "serialize_payload")]
+    payload: Option<Payload>,
+}
+
+const B64ENGINE: GeneralPurpose = base64::engine::general_purpose::GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new(),
+);
+fn serialize_payload<S: Serializer>(p: &Option<Payload>, s: S) -> Result<S::Ok, S::Error> {
+    let base64 = match p {
+        None => None,
+        Some(Payload::Readable(data)) => Some(data.clone()),
+        Some(Payload::NotReadable(data)) => Some(B64ENGINE.encode(data)),
+    };
+    <Option<String>>::serialize(&base64, s)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadableCliMessage {
+    id: MessageId,
+    topic: Option<String>,
+    src_ip: IpAddr,
+    src_pk: PublicKey,
+    dst_ip: IpAddr,
+    dst_pk: PublicKey,
+    payload: String,
+}
+
+/// Send a message to a receiver.
+#[allow(clippy::too_many_arguments)]
+async fn send_msg(
+    destination: String,
+    msg: Option<String>,
+    wait: bool,
+    timeout: Option<u64>,
+    reply_to: Option<String>,
+    topic: Option<String>,
+    msg_path: Option<PathBuf>,
+    server_addr: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if reply_to.is_some() && wait {
+        error!("Can't wait on a reply for a reply, either use --reply-to or --wait");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Only one of --reply-to or --wait is allowed",
+        )
+        .into());
+    }
+    let destination = if destination.len() == 64 {
+        // Public key in hex format
+        match PublicKey::try_from(&*destination) {
+            Err(_) => {
+                error!("{destination} is not a valid hex encoded public key");
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid hex encoded public key",
+                )
+                .into());
+            }
+            Ok(pk) => MessageDestination::Pk(pk),
+        }
+    } else {
+        match destination.parse() {
+            Err(e) => {
+                error!("{destination} is not a valid IPv6 address: {e}");
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid IPv6 address",
+                )
+                .into());
+            }
+            Ok(ip) => {
+                let global_subnet =
+                    Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN).unwrap();
+                if !global_subnet.contains_ip(ip) {
+                    error!("{destination} is not a part of {global_subnet}");
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "IPv6 address is not part of the mycelium subnet",
+                    )
+                    .into());
+                }
+                MessageDestination::Ip(ip)
+            }
+        }
+    };
+
+    // Load msg, files have prio. If a topic is present, include that first
+    // The layout of these messages (in binary) is:
+    // - 1 byte topic length
+    // - topic
+    // - actual message
+    //
+    // Meaning a message without topic has length 0.
+    let mut msg_buf = if let Some(topic) = topic {
+        if topic.len() > 255 {
+            error!("{topic} is longer than the maximum allowed topic length of 255");
+            return Err(
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Topic too long").into(),
+            );
+        }
+        let mut tmp = Vec::with_capacity(topic.len() + 1);
+        tmp.push(topic.len() as u8);
+        tmp.extend_from_slice(topic.as_bytes());
+        tmp
+    } else {
+        vec![0; 1]
+    };
+
+    msg_buf.extend_from_slice(&if let Some(path) = msg_path {
+        match tokio::fs::read(&path).await {
+            Err(e) => {
+                error!("Could not read file at {:?}: {e}", path);
+                return Err(e.into());
+            }
+            Ok(data) => data,
+        }
+    } else if let Some(msg) = msg {
+        msg.into_bytes()
+    } else {
+        error!("Message is a required argument if `--msg-path` is not provided");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Message is a required argument if `--msg-path` is not provided",
+        )
+        .into());
+    });
+
+    let mut url = format!("http://{server_addr}/api/v1/messages");
+    if wait {
+        // A year should be sufficient to wait
+        let reply_timeout = timeout.unwrap_or(60 * 60 * 24 * 365);
+        url.push_str("?reply_timeout=");
+        url.push_str(&format!("{reply_timeout}"));
+    }
+
+    match reqwest::Client::new()
+        .post(url)
+        .json(&MessageSendInfo {
+            dst: destination,
+            payload: msg_buf,
+        })
+        .send()
+        .await
+    {
+        Err(e) => {
+            error!("Failed to send request: {e}");
+            return Err(e.into());
+        }
+        Ok(res) => match res.bytes().await {
+            Err(e) => {
+                error!("Failed to load response body {e}");
+                return Err(e.into());
+            }
+            Ok(data) => {
+                let _ = std::io::stdout().write_all(&data);
+                println!();
+            }
+        },
+    }
+
+    Ok(())
+}
+
+async fn recv_msg(
+    timeout: Option<u64>,
+    topic: Option<String>,
+    msg_path: Option<PathBuf>,
+    raw: bool,
+    server_addr: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // One year timeout should be sufficient
+    let timeout = timeout.unwrap_or(60 * 60 * 24 * 365);
+    let mut url = format!("http:{server_addr}/api/v1/messages?timeout={timeout}");
+    let filter_len = if let Some(ref filter) = topic {
+        if filter.len() > 255 {
+            error!("{filter} is longer than the maximum allowed topic length of 255");
+            return Err(
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Topic too long").into(),
+            );
+        }
+        url.push_str(&format!("&filter={filter}"));
+        filter.len() + 1
+    } else {
+        1
+    };
+    let mut cm = match reqwest::get(url).await {
+        Err(e) => {
+            error!("Failed to wait for message: {e}");
+            return Err(e.into());
+        }
+        Ok(resp) => {
+            debug!("Received message response");
+            match resp.json::<MessageReceiveInfo>().await {
+                Err(e) => {
+                    error!("Failed to load response json: {e}");
+                    return Err(e.into());
+                }
+                Ok(mri) => CliMessage {
+                    id: mri.id,
+                    topic: if filter_len == 1 {
+                        None
+                    } else {
+                        Some(
+                            String::from_utf8(mri.payload[1..filter_len].to_vec()).map_err(
+                                |e| {
+                                    error!("Failed to parse topic, not valid UTF-8 ({e})");
+                                    e
+                                },
+                            )?,
+                        )
+                    },
+                    src_ip: mri.src_ip,
+                    src_pk: mri.src_pk,
+                    dst_ip: mri.dst_ip,
+                    dst_pk: mri.dst_pk,
+                    payload: Some({
+                        let p = mri.payload[filter_len..].to_vec();
+                        if let Ok(s) = String::from_utf8(p.clone()) {
+                            Payload::Readable(s)
+                        } else {
+                            Payload::NotReadable(p)
+                        }
+                    }),
+                },
+            }
+        }
+    };
+
+    if let Some(ref file_path) = msg_path {
+        if let Err(e) = tokio::fs::write(
+            &file_path,
+            match mem::take(&mut cm.payload).unwrap() {
+                Payload::Readable(ref s) => s as &dyn AsRef<[u8]>,
+                Payload::NotReadable(ref v) => v,
+            },
+        )
+        .await
+        {
+            error!("Failed to write response payload to file: {e}");
+            return Err(e.into());
+        }
+    }
+
+    if raw {
+        // only print payload if not already written
+        if msg_path.is_none() {
+            let _ = std::io::stdout().write_all(match cm.payload.unwrap() {
+                Payload::Readable(ref s) => s.as_bytes(),
+                Payload::NotReadable(ref v) => v,
+            });
+            println!();
+        }
+    } else {
+        let _ = serde_json::to_writer(std::io::stdout(), &cm);
+        println!();
     }
 
     Ok(())

@@ -35,29 +35,31 @@ struct HttpServerState {
     message_stack: MessageStack,
 }
 
-#[derive(Debug, Deserialize)]
-struct MessageSendInfo {
-    dst: MessageDestination,
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSendInfo {
+    pub dst: MessageDestination,
     #[serde(with = "base64")]
-    payload: Vec<u8>,
+    pub payload: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum MessageDestination {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MessageDestination {
     Ip(IpAddr),
     Pk(PublicKey),
 }
 
-#[derive(Serialize)]
-struct MessageReceiveInfo {
-    id: MessageId,
-    src_ip: IpAddr,
-    src_pk: PublicKey,
-    dst_ip: IpAddr,
-    dst_pk: PublicKey,
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageReceiveInfo {
+    pub id: MessageId,
+    pub src_ip: IpAddr,
+    pub src_pk: PublicKey,
+    pub dst_ip: IpAddr,
+    pub dst_pk: PublicKey,
     #[serde(with = "base64")]
-    payload: Vec<u8>,
+    pub payload: Vec<u8>,
 }
 
 impl MessageDestination {
@@ -100,6 +102,8 @@ impl Http {
 struct GetMessageQuery {
     peek: Option<bool>,
     timeout: Option<u64>,
+    /// Optional filter for start of the message.
+    filter: Option<String>,
 }
 
 impl GetMessageQuery {
@@ -128,7 +132,9 @@ async fn get_message(
     // poll of the internal future first, before polling the delay.
     tokio::time::timeout(
         Duration::from_secs(query.timeout_secs()),
-        state.message_stack.message(!query.peek()),
+        state
+            .message_stack
+            .message(!query.peek(), query.filter.map(String::into_bytes)),
     )
     .await
     .or(Err(StatusCode::NO_CONTENT))
@@ -144,15 +150,16 @@ async fn get_message(
     })
 }
 
-#[derive(Serialize)]
-struct MessageIdReply {
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageIdReply {
     id: MessageId,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 #[serde(untagged)]
-enum PushMessageResponse {
+pub enum PushMessageResponse {
     Id(MessageIdReply),
     Reply(MessageReceiveInfo),
 }
@@ -279,7 +286,6 @@ mod base64 {
         GeneralPurposeConfig::new(),
     );
 
-    #[allow(dead_code)]
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
         let base64 = B64ENGINE.encode(v);
         String::serialize(&base64, s)
