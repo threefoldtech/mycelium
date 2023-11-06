@@ -144,6 +144,11 @@ impl RouteEntry {
         self.source
     }
 
+    /// Returns the [`SeqNo`] associated with this `RouteEntry`.
+    pub const fn seqno(&self) -> SeqNo {
+        self.seqno
+    }
+
     /// Returns the metric associated with this `RouteEntry`.
     pub const fn metric(&self) -> Metric {
         self.metric

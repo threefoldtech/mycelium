@@ -747,12 +747,12 @@ impl RouterInner {
 
     fn propagate_selected_routes(&self, router_id: RouterId) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
-        for sr in self.selected_routing_table.iter() {
+        for (sre, srk) in self.selected_routing_table.iter() {
             for peer in self.peer_interfaces.iter() {
                 let peer_link_cost = peer.link_cost();
 
                 // convert sr.0.prefix to ipv6 addr
-                let addr = if let IpAddr::V6(addr) = sr.0.subnet().address() {
+                let addr = if let IpAddr::V6(addr) = sre.subnet().address() {
                     addr
                 } else {
                     continue;
@@ -768,10 +768,10 @@ impl RouterInner {
 
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
-                    self.router_seqno, // updates receive the seqno of the router
-                    sr.1.metric() + Metric::from(peer_link_cost),
+                    srk.seqno(), // updates receive the seqno of the router
+                    srk.metric() + Metric::from(peer_link_cost),
                     // the cost of the route is the cost of the route + the cost of the link to the peer
-                    sr.0.subnet(),
+                    sre.subnet(),
                     // we looked for the router_id, which is a public key, in the dest_pubkey_map
                     // if the router_id is not in the map, then the route came from the node itself
                     og_sender_pubkey,
