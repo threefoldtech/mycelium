@@ -5,7 +5,9 @@ use clap::{Parser, Subcommand};
 use crypto::PublicKey;
 use log::{debug, error, info};
 use log::{warn, LevelFilter};
-use mycelium::api::{Http, MessageDestination, MessageReceiveInfo, MessageSendInfo};
+use mycelium::api::{
+    Http, MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse,
+};
 use mycelium::crypto;
 use mycelium::data::DataPlane;
 use mycelium::filters;
@@ -540,13 +542,47 @@ async fn send_msg(
             error!("Failed to send request: {e}");
             return Err(e.into());
         }
-        Ok(res) => match res.bytes().await {
+        Ok(res) => match res.json::<PushMessageResponse>().await {
             Err(e) => {
                 error!("Failed to load response body {e}");
                 return Err(e.into());
             }
-            Ok(data) => {
-                let _ = std::io::stdout().write_all(&data);
+            Ok(resp) => {
+                match resp {
+                    PushMessageResponse::Id(id) => {
+                        let _ = serde_json::to_writer(std::io::stdout(), &id);
+                    }
+                    PushMessageResponse::Reply(mri) => {
+                        let filter_len = mri.payload[0] as usize;
+                        let cm = CliMessage {
+                            id: mri.id,
+                            topic: if filter_len == 1 {
+                                None
+                            } else {
+                                Some(
+                                    String::from_utf8(mri.payload[1..filter_len].to_vec())
+                                        .map_err(|e| {
+                                            error!("Failed to parse topic, not valid UTF-8 ({e})");
+                                            e
+                                        })?,
+                                )
+                            },
+                            src_ip: mri.src_ip,
+                            src_pk: mri.src_pk,
+                            dst_ip: mri.dst_ip,
+                            dst_pk: mri.dst_pk,
+                            payload: Some({
+                                let p = mri.payload[filter_len..].to_vec();
+                                if let Ok(s) = String::from_utf8(p.clone()) {
+                                    Payload::Readable(s)
+                                } else {
+                                    Payload::NotReadable(p)
+                                }
+                            }),
+                        };
+                        let _ = serde_json::to_writer(std::io::stdout(), &cm);
+                    }
+                }
                 println!();
             }
         },
