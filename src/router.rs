@@ -776,11 +776,11 @@ impl RouterInner {
                     // if the router_id is not in the map, then the route came from the node itself
                     og_sender_pubkey,
                 );
-                // println!(
-                //     "\n\n\n\nPropagting route update to: {}\n {:?}\n\n",
-                //     peer.overlay_ip(),
-                //     update
-                // );
+                debug!(
+                    "Propagating route update for {} to {}",
+                    sre.subnet(),
+                    peer.underlay_ip()
+                );
                 updates.push((peer.clone(), update));
             }
         }
