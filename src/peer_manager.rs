@@ -140,9 +140,9 @@ impl PeerManager {
         buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
         // Step 1
-        stream.write_all(&buf).await.unwrap();
+        stream.write_all(&buf).await?;
         // Step 2
-        stream.read_exact(&mut buf).await.unwrap();
+        stream.read_exact(&mut buf).await?;
         let received_overlay_ip = match buf[0] {
             0 => IpAddr::from(<&[u8] as TryInto<[u8; 4]>>::try_into(&buf[1..5]).unwrap()),
             1 => IpAddr::from(<&[u8] as TryInto<[u8; 16]>>::try_into(&buf[1..]).unwrap()),
