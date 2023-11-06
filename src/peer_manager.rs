@@ -73,6 +73,7 @@ impl PeerManager {
                             peer_stream,
                             received_overlay_ip,
                         ) {
+                            info!("Connected to new peer {}", new_peer.underlay_ip());
                             self.router.add_peer_interface(new_peer);
                         }
                     }
