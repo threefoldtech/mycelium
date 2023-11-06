@@ -25,6 +25,8 @@ use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSend
 const HELLO_INTERVAL: u16 = 4;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
 const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
+const ROUTE_PROPAGATION_INTERVAL: u64 = 3;
+const DEAD_PEER_TRESHOLD: u64 = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct StaticRoute {
@@ -252,7 +254,7 @@ impl Router {
     }
 
     async fn check_for_dead_peers(self, router_id: RouterId) {
-        let ihu_threshold = tokio::time::Duration::from_secs(8);
+        let ihu_threshold = tokio::time::Duration::from_secs(DEAD_PEER_TRESHOLD);
 
         loop {
             // check for dead peers every second
@@ -600,7 +602,7 @@ impl Router {
 
     pub async fn propagate_static_route(self) {
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(ROUTE_PROPAGATION_INTERVAL)).await;
 
             trace!("Propagating static routes");
 
@@ -618,7 +620,7 @@ impl Router {
 
     pub async fn propagate_selected_routes(self) {
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(ROUTE_PROPAGATION_INTERVAL)).await;
 
             trace!("Propagating selected routes");
 
