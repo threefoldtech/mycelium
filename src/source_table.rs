@@ -86,7 +86,7 @@ impl SourceTable {
         let source_key = SourceKey::new(update.subnet(), update.router_id());
         match self.get(&source_key) {
             Some(entry) => {
-                (!update.seqno().lt(&entry.seqno()))
+                (update.seqno().gt(&entry.seqno()))
                     || (update.seqno() == entry.seqno() && update.metric() < entry.metric())
                     || update.metric().is_infinite()
             }

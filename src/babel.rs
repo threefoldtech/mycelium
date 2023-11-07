@@ -137,6 +137,7 @@ impl Decoder for Codec {
             TLV_TYPE_SEQNO_REQUEST => SeqNoRequest::from_bytes(src, body_len).map(From::from),
             _ => {
                 // unrecoginized body type, silently drop
+                trace!("Dropping unrecognized tlv");
                 src.advance(header.body_length as usize - 1);
                 self.reset();
                 return Ok(None);

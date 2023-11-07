@@ -28,7 +28,7 @@ const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 const ROUTE_PROPAGATION_INTERVAL: u64 = 3;
 const DEAD_PEER_TRESHOLD: u64 = 8;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticRoute {
     subnet: Subnet,
 }
@@ -387,7 +387,11 @@ impl Router {
                     || !route_entry.seqno().lt(&seqno_request.seqno()))
             {
                 // we have a more up to date route or a different route, send an update
-
+                debug!(
+                    "Replying to seqno request for seqno {} of {} with update packet",
+                    seqno_request.seqno(),
+                    seqno_request.prefix()
+                );
                 drop(inner);
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
@@ -413,35 +417,44 @@ impl Router {
 
                 return;
             }
+        }
 
-            // Otherwise, if the router id in the request matches the router id in our selected route
-            // and the requested sequence number is larger than the one on our selected route, compare
-            // the router id with our own router id. If it matches, bump our own sequence number by 1.
-            // At this point, we also send an update for the route (triggered update), to distribute
-            // the route.
-            if seqno_request.router_id() == route_entry.source().router_id()
-                && seqno_request.seqno().gt(&route_entry.seqno())
-                && seqno_request.router_id() == self.router_id
-            {
-                // Bump router seqno
-                // TODO: should we only send an update to the peer who sent the seqno request
-                // instad of updating all our peers?
-                drop(inner);
-                let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
-                inner_w.append(RouterOpLogEntry::BumpSequenceNumber);
-                // We already need to publish here so the sequence number is set correctly when
-                // calling the method to propagate the static routes.
-                inner_w.publish();
+        // Otherwise, if the router id in the request matches the router id in our selected route
+        // and the requested sequence number is larger than the one on our selected route, compare
+        // the router id with our own router id. If it matches, bump our own sequence number by 1.
+        // At this point, we also send an update for the route (triggered update), to distribute
+        // the route.
+        //
+        // Note that we currently don't install local routes in the routing table and as such
+        // can't check on this. Therefore this condition is reworked. We always advertise local
+        // routes with the current router id and the current router seqno. So we check if the
+        // prefix is part of our static routes, if the router id is our own, and if the
+        // requested seqno is greater than our own.
+        if seqno_request.router_id() == self.router_id
+            && seqno_request.seqno().gt(&inner.router_seqno)
+            && inner.static_routes.contains(&StaticRoute {
+                subnet: seqno_request.prefix(),
+            })
+        {
+            // Bump router seqno
+            // TODO: should we only send an update to the peer who sent the seqno request
+            // instad of updating all our peers?
+            drop(inner);
+            let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
+            debug!("Bumping local router sequence number");
+            inner_w.append(RouterOpLogEntry::BumpSequenceNumber);
+            // We already need to publish here so the sequence number is set correctly when
+            // calling the method to propagate the static routes.
+            inner_w.publish();
 
-                let ops = inner_w
-                    .enter()
-                    .expect("We enter through a write handle so this can never be None")
-                    .propagate_static_route(self.router_id);
+            let ops = inner_w
+                .enter()
+                .expect("We enter through a write handle so this can never be None")
+                .propagate_static_route(self.router_id);
 
-                inner_w.extend(ops);
-                inner_w.publish();
-                return;
-            }
+            inner_w.extend(ops);
+            inner_w.publish();
+            return;
         }
 
         // Otherwise, if the router-id from the request is not our own, we check the hop count
@@ -458,6 +471,12 @@ impl Router {
             // First only consider feasible routes.
             for re in &possible_routes {
                 if !re.metric().is_infinite() && re.neighbour() != &source_peer {
+                    debug!(
+                        "Forwarding seqno request {} for {} to {}",
+                        seqno_request.seqno(),
+                        seqno_request.prefix(),
+                        re.neighbour().underlay_ip()
+                    );
                     if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
                         error!("Failed to foward seqno request: {e}");
                     }
@@ -468,6 +487,12 @@ impl Router {
             // Finally consider infeasible routes as well.
             for re in possible_routes {
                 if re.neighbour() != &source_peer {
+                    debug!(
+                        "Forwarding seqno request {} for {} to {}",
+                        seqno_request.seqno(),
+                        seqno_request.prefix(),
+                        re.neighbour().underlay_ip()
+                    );
                     if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
                         error!("Failed to foward seqno request: {e}");
                     }
@@ -522,6 +547,15 @@ impl Router {
                 inner.source_table.is_update_feasible(&update),
             )
         };
+
+        debug!(
+            "Got update packet from {} for subnet {} with metric {} and seqno {} and router-id {}. Route entry exists: {route_entry_exists} and update is feasible: {update_feasible}",
+            source_peer.underlay_ip(),
+            update.subnet(),
+            update.metric(),
+            update.seqno(),
+            update.router_id()
+        );
 
         // if no entry exists (based on prefix, plen AND neighbor field)
         if !route_entry_exists {
@@ -604,6 +638,7 @@ impl Router {
                 inner_w.append(RouterOpLogEntry::RemoveSourceEntry(source_key));
                 return;
             }
+
             let possible_entry = inner_w
                 .enter()
                 .expect("We deref through a write handle so this enter never fails")
@@ -628,7 +663,12 @@ impl Router {
                             )
                         });
 
-                    debug!("Sending seqno_request to {}", source_peer.underlay_ip());
+                    debug!(
+                        "Sending seqno_request to {} for seqno {} of {}",
+                        source_peer.underlay_ip(),
+                        fd.seqno() + 1,
+                        update.subnet(),
+                    );
                     if let Err(e) = source_peer.send_control_packet(
                         SeqNoRequest::new(
                             fd.seqno() + 1,
@@ -648,6 +688,7 @@ impl Router {
                 if !update_feasible && route_entry.source().router_id() == router_id {
                     return;
                 }
+
                 inner_w.append(RouterOpLogEntry::UpdateSelectedRouteEntry(
                     route_key_from_update,
                     seqno,
