@@ -424,6 +424,7 @@ impl Router {
                 // Bump router seqno
                 // TODO: should we only send an update to the peer who sent the seqno request
                 // instad of updating all our peers?
+                drop(inner);
                 let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
                 inner_w.append(RouterOpLogEntry::BumpSequenceNumber);
                 // We already need to publish here so the sequence number is set correctly when
