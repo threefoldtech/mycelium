@@ -209,10 +209,11 @@ impl Router {
         for (route_key, route_entry) in routing_table.iter() {
             println!("Route key: {}", route_key);
             println!(
-                "Route: {} (with next-hop: {}, metric: {}, selected: {})",
+                "Route: {} (with next-hop: {}, metric: {}, seqno: {}, selected: {})",
                 route_key.subnet(),
-                route_entry.neighbour().overlay_ip(),
+                route_entry.neighbour().underlay_ip(),
                 route_entry.metric(),
+                route_entry.seqno(),
                 route_entry.selected()
             );
             // println!("As advertised by: {:?}", route.1.source.router_id);
@@ -229,10 +230,11 @@ impl Router {
         for (route_key, route_entry) in routing_table.iter() {
             println!("Route key: {}", route_key);
             println!(
-                "Route: {} (with next-hop: {:?}, metric: {}, selected: {})",
+                "Route: {} (with next-hop: {:?}, metric: {}, seqno: {}, selected: {})",
                 route_key.subnet(),
-                route_entry.neighbour().overlay_ip(),
+                route_entry.neighbour().underlay_ip(),
                 route_entry.metric(),
+                route_entry.seqno(),
                 route_entry.selected()
             );
             //println!("As advertised by: {:?}", route.1.source.router_id);
