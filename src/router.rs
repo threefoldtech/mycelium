@@ -611,6 +611,36 @@ impl Router {
                 .cloned();
 
             if let Some(route_entry) = possible_entry {
+                // If the update is unfeasible, and it is for the selected route, send a seqno
+                // request.
+                if !update_feasible {
+                    let fd = *inner_w
+                        .enter()
+                        .expect("We deref through a write handle so this enter never fails")
+                        .source_table
+                        .get(&route_entry.source())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "A selected route for {} exists so a source entry must also exist",
+                                route_entry.source().subnet()
+                            )
+                        });
+
+                    debug!("Sending seqno_request to {}", source_peer.underlay_ip());
+                    if let Err(e) = source_peer.send_control_packet(
+                        SeqNoRequest::new(
+                            fd.seqno() + 1,
+                            route_entry.source().router_id(),
+                            update.subnet(),
+                        )
+                        .into(),
+                    ) {
+                        error!(
+                            "Failed to send seqno request to {}: {e}",
+                            source_peer.underlay_ip()
+                        );
+                    }
+                }
                 // if the entry is currently selected, the update is unfeasible, and the router-id of the update is equal
                 // to the router-id of the entry, then we ignore the update
                 if !update_feasible && route_entry.source().router_id() == router_id {
