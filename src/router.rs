@@ -529,8 +529,9 @@ impl Router {
                 // this means that the update is feasible and the metric is not infinite
                 // create a new route entry and add it to the routing table (which requires a new source entry to be created as well)
                 info!(
-                    "Learned route for previously unknown subnet {} and neighbour",
-                    subnet
+                    "Learned route for previously unknown subnet {} and neighbour {}",
+                    subnet,
+                    source_peer.underlay_ip(),
                 );
 
                 let source_key = SourceKey::new(subnet, router_id);
