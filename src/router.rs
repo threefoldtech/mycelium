@@ -561,7 +561,7 @@ impl Router {
                 if add_fallback {
                     debug!(
                         "Added new route for {subnet} via {} as fallback route",
-                        source_peer.overlay_ip()
+                        source_peer.underlay_ip()
                     );
                     inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
                         route_key,
@@ -571,7 +571,10 @@ impl Router {
                 }
 
                 if let Some(rk) = to_remove {
-                    debug!("Moved existing route for {subnet} to fallback route",);
+                    debug!(
+                        "Moved existing route for {subnet} via {} to fallback route",
+                        rk.neighbour().underlay_ip()
+                    );
                     inner_w.append(RouterOpLogEntry::UnselectRoute(rk));
                 }
 
