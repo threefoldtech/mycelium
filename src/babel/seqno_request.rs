@@ -110,13 +110,13 @@ impl SeqNoRequest {
             }
             AE_IPV4 => {
                 let mut raw_ip = [0; 4];
-                raw_ip.copy_from_slice(&src[..prefix_size]);
+                raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
                 src.advance(prefix_size);
                 Ipv4Addr::from(raw_ip).into()
             }
             AE_IPV6 => {
                 let mut raw_ip = [0; 16];
-                raw_ip.copy_from_slice(&src[..prefix_size]);
+                raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
                 src.advance(prefix_size);
                 Ipv6Addr::from(raw_ip).into()
             }
@@ -173,5 +173,170 @@ impl SeqNoRequest {
             IpAddr::V4(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
             IpAddr::V6(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{Ipv4Addr, Ipv6Addr},
+        num::NonZeroU8,
+    };
+
+    use crate::{router_id::RouterId, subnet::Subnet};
+    use bytes::Buf;
+
+    #[test]
+    fn encoding() {
+        let mut buf = bytes::BytesMut::new();
+
+        let snr = super::SeqNoRequest {
+            seqno: 17.into(),
+            hop_count: NonZeroU8::new(64).unwrap(),
+            prefix: Subnet::new(Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(), 64)
+                .expect("64 is a valid IPv6 prefix size; qed"),
+            router_id: RouterId::from([1u8; 32]),
+        };
+
+        snr.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 46);
+        assert_eq!(
+            buf[..46],
+            [
+                2, 64, 0, 17, 64, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 25, 0, 26, 0, 27,
+            ]
+        );
+
+        let mut buf = bytes::BytesMut::new();
+
+        let snr = super::SeqNoRequest {
+            seqno: 170.into(),
+            hop_count: NonZeroU8::new(111).unwrap(),
+            prefix: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
+                .expect("32 is a valid IPv4 prefix size; qed"),
+            router_id: RouterId::from([2u8; 32]),
+        };
+
+        snr.write_bytes(&mut buf);
+
+        assert_eq!(buf.len(), 42);
+        assert_eq!(
+            buf[..42],
+            [
+                1, 32, 0, 170, 111, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 101, 4, 1,
+            ]
+        );
+    }
+
+    #[test]
+    fn decoding() {
+        let mut buf = bytes::BytesMut::from(
+            &[
+                0, 0, 0, 0, 1, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            ][..],
+        );
+
+        let snr = super::SeqNoRequest {
+            hop_count: NonZeroU8::new(1).unwrap(),
+            seqno: 0.into(),
+            prefix: Subnet::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0)
+                .expect("0 is a valid IPv6 prefix size; qed"),
+            router_id: RouterId::from([3u8; 32]),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(
+            super::SeqNoRequest::from_bytes(&mut buf, buf_len as u8),
+            Some(snr)
+        );
+        assert_eq!(buf.remaining(), 0);
+
+        let mut buf = bytes::BytesMut::from(
+            &[
+                3, 92, 0, 42, 232, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0, 40,
+            ][..],
+        );
+
+        let snr = super::SeqNoRequest {
+            seqno: 42.into(),
+            hop_count: NonZeroU8::new(232).unwrap(),
+            prefix: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
+                .expect("92 is a valid IPv6 prefix size; qed"),
+            router_id: RouterId::from([4u8; 32]),
+        };
+
+        let buf_len = buf.len();
+        assert_eq!(
+            super::SeqNoRequest::from_bytes(&mut buf, buf_len as u8),
+            Some(snr)
+        );
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn decode_ignores_invalid_ae_encoding() {
+        // AE 4 as it is the first one which should be used in protocol extension, causing this
+        // test to fail if we forget to update something
+        let mut buf = bytes::BytesMut::from(
+            &[
+                4, 64, 0, 0, 44, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+                5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21,
+            ][..],
+        );
+
+        let buf_len = buf.len();
+
+        assert_eq!(
+            super::SeqNoRequest::from_bytes(&mut buf, buf_len as u8),
+            None
+        );
+        // Decode function should still consume the required amount of bytes to leave parser in a
+        // good state (assuming the length in the tlv preamble is good).
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn decode_ignores_invalid_hop_count() {
+        // Set all flag bits, only allowed bits should be set on the decoded value
+        let mut buf = bytes::BytesMut::from(
+            &[
+                3, 64, 92, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0, 40,
+            ][..],
+        );
+
+        let buf_len = buf.len();
+        assert_eq!(
+            super::SeqNoRequest::from_bytes(&mut buf, buf_len as u8),
+            None
+        );
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn roundtrip() {
+        let mut buf = bytes::BytesMut::new();
+
+        let seqno_src = super::SeqNoRequest::new(
+            64.into(),
+            RouterId::from([6; 32]),
+            Subnet::new(
+                Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0, 0, 0, 0).into(),
+                64,
+            )
+            .expect("64 is a valid IPv6 prefix size; qed"),
+        );
+        seqno_src.write_bytes(&mut buf);
+        let buf_len = buf.len();
+        let decoded = super::SeqNoRequest::from_bytes(&mut buf, buf_len as u8);
+
+        assert_eq!(Some(seqno_src), decoded);
+        assert_eq!(buf.remaining(), 0);
     }
 }
