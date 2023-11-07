@@ -86,7 +86,7 @@ impl SeqNoRequest {
     /// # Panics
     ///
     /// This function will panic if there are insufficient bytes present in the provided buffer to
-    /// decode a complete `Update`.
+    /// decode a complete `SeqNoRequest`.
     pub fn from_bytes(src: &mut bytes::BytesMut, len: u8) -> Option<Self> {
         let ae = src.get_u8();
         let plen = src.get_u8();
