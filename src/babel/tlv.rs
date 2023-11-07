@@ -1,3 +1,4 @@
+use super::SeqNoRequest;
 pub use super::{hello::Hello, ihu::Ihu, update::Update};
 
 /// A single `Tlv` in a babel packet body.
@@ -5,10 +6,12 @@ pub use super::{hello::Hello, ihu::Ihu, update::Update};
 pub enum Tlv {
     /// Hello Tlv type.
     Hello(Hello),
-    /// Hello Tlv type.
+    /// Ihu Tlv type.
     Ihu(Ihu),
-    /// Hello Tlv type.
+    /// Update Tlv type.
     Update(Update),
+    /// SeqNoRequest Tlv type
+    SeqNoRequest(SeqNoRequest),
 }
 
 impl Tlv {
@@ -19,6 +22,7 @@ impl Tlv {
             Self::Hello(hello) => hello.wire_size(),
             Self::Ihu(ihu) => ihu.wire_size(),
             Self::Update(update) => update.wire_size(),
+            Self::SeqNoRequest(seqno_request) => seqno_request.wire_size(),
         }
     }
 
@@ -28,7 +32,14 @@ impl Tlv {
             Self::Hello(hello) => hello.write_bytes(dst),
             Self::Ihu(ihu) => ihu.write_bytes(dst),
             Self::Update(update) => update.write_bytes(dst),
+            Self::SeqNoRequest(seqno_request) => seqno_request.write_bytes(dst),
         }
+    }
+}
+
+impl From<SeqNoRequest> for Tlv {
+    fn from(v: SeqNoRequest) -> Self {
+        Self::SeqNoRequest(v)
     }
 }
 

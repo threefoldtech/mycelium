@@ -32,6 +32,21 @@ impl SeqNo {
             other.0.wrapping_sub(self.0) < SEQNO_COMPARE_TRESHOLD
         }
     }
+
+    /// Custom PartialOrd implementation as defined in [the babel rfc](https://datatracker.ietf.org/doc/html/rfc8966#section-3.2.1).
+    /// Note that we don't implement the [`PartialOrd`](std::cmd::PartialOrd) trait, as the contract on
+    /// that trait specifically defines that it is transitive, which is clearly not the case here.
+    ///
+    /// There is a quirk in this equality comparison where values which are exactly 32_768 apart,
+    /// will result in false in either way of ordering the arguments, which is counterintuitive to
+    /// our understanding that a < b generally implies !(b < a).
+    pub fn gt(&self, other: &Self) -> bool {
+        if self.0 == other.0 {
+            false
+        } else {
+            other.0.wrapping_sub(self.0) > SEQNO_COMPARE_TRESHOLD
+        }
+    }
 }
 
 impl fmt::Display for SeqNo {

@@ -10,12 +10,13 @@ use bytes::{Buf, BufMut};
 use log::trace;
 use tokio_util::codec::{Decoder, Encoder};
 
-pub use self::{hello::Hello, ihu::Ihu, update::Update};
+pub use self::{hello::Hello, ihu::Ihu, seqno_request::SeqNoRequest, update::Update};
 
 pub use self::tlv::Tlv;
 
 mod hello;
 mod ihu;
+mod seqno_request;
 mod tlv;
 mod update;
 
@@ -33,6 +34,8 @@ const TLV_TYPE_HELLO: u8 = 4;
 const TLV_TYPE_IHU: u8 = 5;
 /// TLV type for the [`Update`] tlv
 const TLV_TYPE_UPDATE: u8 = 8;
+/// TLV type for the [`SeqNoRequest`] tlv
+const TLV_TYPE_SEQNO_REQUEST: u8 = 10;
 
 /// Wildcard address, the value is empty (0 bytes length).
 const AE_WILDCARD: u8 = 0;
@@ -131,6 +134,7 @@ impl Decoder for Codec {
             TLV_TYPE_HELLO => Some(Hello::from_bytes(src).into()),
             TLV_TYPE_IHU => Ihu::from_bytes(src, body_len).map(From::from),
             TLV_TYPE_UPDATE => Update::from_bytes(src, body_len).map(From::from),
+            TLV_TYPE_SEQNO_REQUEST => SeqNoRequest::from_bytes(src, body_len).map(From::from),
             _ => {
                 // unrecoginized body type, silently drop
                 src.advance(header.body_length as usize - 1);
@@ -159,6 +163,7 @@ impl Encoder<Tlv> for Codec {
             Tlv::Hello(_) => dst.put_u8(TLV_TYPE_HELLO),
             Tlv::Ihu(_) => dst.put_u8(TLV_TYPE_IHU),
             Tlv::Update(_) => dst.put_u8(TLV_TYPE_UPDATE),
+            Tlv::SeqNoRequest(_) => dst.put_u8(TLV_TYPE_SEQNO_REQUEST),
         }
         dst.put_u8(item.wire_size());
         item.write_bytes(dst);

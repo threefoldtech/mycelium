@@ -48,6 +48,11 @@ impl SourceKey {
         self.router_id
     }
 
+    /// Returns the [`Subnet`] for this `SourceKey`.
+    pub const fn subnet(&self) -> Subnet {
+        self.subnet
+    }
+
     /// Updates the [`RouterId`] of this `SourceKey`
     pub fn set_router_id(&mut self, router_id: RouterId) {
         self.router_id = router_id

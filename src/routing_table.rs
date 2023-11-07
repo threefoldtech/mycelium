@@ -319,6 +319,22 @@ impl RoutingTable {
             })
             .cloned()
     }
+
+    /// Get a copy of all route entries for an [`IpAddr`] in the `RoutingTable`.
+    ///
+    /// Currently only IPv6 is supported, looking up an IPv4 address always returns an empty
+    /// [`Vec`].
+    pub fn lookup_all(&self, ip: IpAddr) -> Vec<RouteEntry> {
+        let addr = match ip {
+            IpAddr::V6(addr) => addr,
+            _ => return Vec::new(),
+        };
+        self.table
+            .longest_match(addr)
+            .map_or_else(Vec::new, |(_, _, set)| {
+                set.iter().map(|e| &e.0).cloned().collect()
+            })
+    }
 }
 
 impl Clone for RoutingTable {
