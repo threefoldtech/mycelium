@@ -837,7 +837,7 @@ impl Router {
             let ops = inner_w
                 .enter()
                 .expect("We deref through a write handle so this enter never fails")
-                .propagate_selected_routes(self.router_id);
+                .propagate_selected_routes();
             for op in ops {
                 inner_w.append(op);
             }
@@ -956,26 +956,11 @@ impl RouterInner {
             .collect()
     }
 
-    fn propagate_selected_routes(&self, router_id: RouterId) -> Vec<RouterOpLogEntry> {
+    fn propagate_selected_routes(&self) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
         for (sre, srk) in self.selected_routing_table.iter() {
             for peer in self.peer_interfaces.iter() {
                 let peer_link_cost = peer.link_cost();
-
-                // convert sr.0.prefix to ipv6 addr
-                let addr = if let IpAddr::V6(addr) = sre.subnet().address() {
-                    addr
-                } else {
-                    continue;
-                };
-
-                let og_sender_pubkey = if let Some((pubkey, _)) = self.dest_pubkey_map.lookup(addr)
-                {
-                    RouterId::new(*pubkey)
-                } else {
-                    // if the prefix is not in the dest_pubkey_map, then we use the router_id of the node itself
-                    router_id
-                };
 
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
@@ -983,9 +968,7 @@ impl RouterInner {
                     srk.metric() + Metric::from(peer_link_cost),
                     // the cost of the route is the cost of the route + the cost of the link to the peer
                     sre.subnet(),
-                    // we looked for the router_id, which is a public key, in the dest_pubkey_map
-                    // if the router_id is not in the map, then the route came from the node itself
-                    og_sender_pubkey,
+                    srk.source().router_id(),
                 );
                 debug!(
                     "Propagating route update for {} to {}",
