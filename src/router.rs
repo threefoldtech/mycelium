@@ -516,7 +516,7 @@ impl Router {
         let seqno = update.seqno();
         let subnet = update.subnet();
 
-        // add it to the mapping
+        // Make sure the shared secret is known for a destination.
         self.add_dest_pubkey_map_entry(subnet, router_id.to_pubkey());
 
         // create route key from incoming update control struct

@@ -18,6 +18,7 @@ impl<const N: u8> RouteUpdateFilter for MaxSubnetSize<N> {
     }
 }
 
+/// Limit the subnet announced to be included in the given subnet.
 pub struct AllowedSubnet {
     subnet: Subnet,
 }
@@ -33,5 +34,16 @@ impl AllowedSubnet {
 impl RouteUpdateFilter for AllowedSubnet {
     fn allow(&self, update: &babel::Update) -> bool {
         self.subnet.contains_subnet(&update.subnet())
+    }
+}
+
+/// Limit the announced subnets to those which contain the derived IP from the [`crate::router_id::RouterId`].
+pub struct RouterIdOwnsSubnet;
+
+impl RouteUpdateFilter for RouterIdOwnsSubnet {
+    fn allow(&self, update: &babel::Update) -> bool {
+        update
+            .subnet()
+            .contains_ip(update.router_id().to_pubkey().address().into())
     }
 }

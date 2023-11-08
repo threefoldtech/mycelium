@@ -254,6 +254,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .expect("Global subnet is properly defined; qed"),
             )),
             Box::new(filters::MaxSubnetSize::<64>),
+            Box::new(filters::RouterIdOwnsSubnet),
         ],
     ) {
         Ok(router) => {
