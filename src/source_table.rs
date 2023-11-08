@@ -70,6 +70,8 @@ impl SourceTable {
         self.table.insert(key, feas_dist);
     }
 
+    /// Remove an entry from the source table.
+    #[allow(dead_code)]
     pub fn remove(&mut self, key: &SourceKey) {
         self.table.remove(key);
     }

@@ -1112,18 +1112,10 @@ enum RouterOpLogEntry {
     InsertFallbackRoute(RouteKey, RouteEntry),
     /// Insert a new entry in the selected routing table.
     InsertSelectedRoute(RouteKey, RouteEntry),
-    /// Removes a source entry with the given source key.
-    RemoveSourceEntry(SourceKey),
     /// Removes a fallback route with the given route key.
     RemoveFallbackRoute(RouteKey),
     /// Removes a selected route with the given route key.
     RemoveSelectedRoute(RouteKey),
-    /// Move a previously selected route from the selected routing table to the fallback routing
-    /// table
-    UnselectRoute(RouteKey),
-    /// Update the route entry associated to the given route key in the fallback route table, if
-    /// one exists
-    UpdateFallbackRouteEntry(RouteKey, SeqNo, Metric, RouterId),
     /// Update the route entry associated to the given route key in the selected route table, if
     /// one exists
     UpdateSelectedRouteEntry(RouteKey, SeqNo, Metric, RouterId),
@@ -1155,27 +1147,11 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::InsertSelectedRoute(rk, re) => {
                 self.selected_routing_table.insert(rk.clone(), re.clone());
             }
-            RouterOpLogEntry::UnselectRoute(rk) => {
-                if let Some(mut old_selected) = self.selected_routing_table.remove(rk) {
-                    old_selected.set_selected(false);
-                    self.fallback_routing_table.insert(rk.clone(), old_selected);
-                }
-            }
-            RouterOpLogEntry::RemoveSourceEntry(se) => self.source_table.remove(se),
             RouterOpLogEntry::RemoveFallbackRoute(rk) => {
                 self.fallback_routing_table.remove(rk);
             }
             RouterOpLogEntry::RemoveSelectedRoute(rk) => {
                 self.selected_routing_table.remove(rk);
-            }
-            // TODO: this is very inneficient as it might delete the routing table set
-            RouterOpLogEntry::UpdateFallbackRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(mut re) = self.fallback_routing_table.remove(rk) {
-                    re.update_seqno(*seqno);
-                    re.update_metric(*metric);
-                    re.update_router_id(*pk);
-                    self.fallback_routing_table.insert(rk.clone(), re)
-                }
             }
             // TODO: this is very inneficient as it might delete the routing table set
             RouterOpLogEntry::UpdateSelectedRouteEntry(rk, seqno, metric, pk) => {

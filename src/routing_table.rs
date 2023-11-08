@@ -119,12 +119,6 @@ impl RouteKey {
     pub const fn subnet(&self) -> Subnet {
         self.subnet
     }
-
-    /// Returns the [`neighbour`](Peer) associated with this `RouteKey`.
-    #[inline]
-    pub const fn neighbour(&self) -> &Peer {
-        &self.neighbor
-    }
 }
 
 impl RouteEntry {
