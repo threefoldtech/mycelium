@@ -1,7 +1,10 @@
 use core::fmt;
 use std::collections::HashMap;
 
-use crate::{babel, metric::Metric, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
+use crate::{
+    babel, metric::Metric, router_id::RouterId, routing_table::RouteEntry, sequence_number::SeqNo,
+    subnet::Subnet,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
@@ -91,6 +94,17 @@ impl SourceTable {
                 (update.seqno().gt(&entry.seqno()))
                     || (update.seqno() == entry.seqno() && update.metric() < entry.metric())
                     || update.metric().is_infinite()
+            }
+            None => true,
+        }
+    }
+
+    /// Indicates if a [`RouteEntry`] is feasible according to the `SourceTable`.
+    pub fn route_feasible(&self, route: &RouteEntry) -> bool {
+        match self.get(&route.source()) {
+            Some(fd) => {
+                (route.seqno().gt(&fd.seqno))
+                    || (route.seqno() == fd.seqno && route.metric() < fd.metric)
             }
             None => true,
         }

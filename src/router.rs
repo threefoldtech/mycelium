@@ -28,6 +28,9 @@ const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 const ROUTE_PROPAGATION_INTERVAL: u64 = 3;
 const DEAD_PEER_TRESHOLD: u64 = 8;
 
+/// Metric change of more than 10 is considered a large change.
+const BIG_METRIC_CHANGE_TRESHOLD: Metric = Metric::new(10);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticRoute {
     subnet: Subnet,
@@ -502,6 +505,14 @@ impl Router {
         }
     }
 
+    /// Finds the best feasible route for a subnet from the given [`RouteEntryIter`].
+    fn find_best_route<'a>(&'a self, routes: RouteEntryIter<'a>) -> Option<&RouteEntry> {
+        let inner = self.inner_r.enter().expect("Write handle is saved on router so it can never go out of scope before this read handle; qed.");
+        routes
+            .filter(|re| inner.source_table.route_feasible(re) && !re.metric().is_infinite())
+            .min_by_key(move |re| re.metric())
+    }
+
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {
         // Check if we actually allow this update based on filters.
         for filter in &*self.update_filters {
@@ -602,7 +613,7 @@ impl Router {
                         route_entry,
                     ));
                     inner_w.publish();
-                    Router::trigger_update(&mut inner_w, subnet);
+                    Router::trigger_update(&mut inner_w, subnet, self.router_id);
                     return;
                 }
 
@@ -624,12 +635,14 @@ impl Router {
             ));
 
             inner_w.publish();
-            Router::trigger_update(&mut inner_w, subnet);
+            Router::trigger_update(&mut inner_w, subnet, self.router_id);
             return;
         }
 
+        let mut large_change = false;
+
         // At this point we know a route entry exists. Load the currently selected route entry.
-        let maybe_selected_re = inner_w
+        let mut maybe_selected_re = inner_w
             .enter()
             .expect("We deref through a write handle so this enter never fails")
             .selected_routing_table
@@ -640,7 +653,7 @@ impl Router {
         // selected, we check if the neighbour field on the selected_rk matches the source_peer.
         //
         // Essentially we don't apply an unfeasible update to the selected route.
-        if let Some(ref selected_re) = maybe_selected_re {
+        if let Some(ref mut selected_re) = maybe_selected_re {
             if selected_re.neighbour() == &source_peer
                 && !update_feasible
                 && selected_re.source().router_id() == router_id
@@ -648,6 +661,7 @@ impl Router {
                 debug!(
                 "Ignore unfeasible update for selected route to {subnet}, but send seqno request"
             );
+                // We do however request a new sequence number, to make sure the route holds.
                 let fd = *inner_w
                     .enter()
                     .expect("We deref through a write handle so this enter never fails")
@@ -682,128 +696,118 @@ impl Router {
                 return;
             }
 
-            // At this point the update is applied, even if unfeasible. To avoid too many coniditions,
-            // we start by unilaterally removing the selected route.
-
-            // We deviate a bit here and first check if the update is for the selected route.
-            // Specifically, in our current setup router-id and subnets are tied together, so the
-            // router id for a subnet can't change. If the update is feasible, we thus just update this
-            // entry.
-            // TODO: handle case were router id changes for completenes and to prepare if we ever
-            // support anycasting.
-            let selected_rk = RouteKey::new(subnet, selected_re.neighbour().clone());
-            if selected_re.neighbour() == &source_peer && update_feasible {
-                debug!("Updating selected route with feasible update from seqno {} to {seqno} and metric {} to {metric}", selected_re.seqno(), selected_re.metric());
-                inner_w.append(RouterOpLogEntry::UpdateSelectedRouteEntry(
-                    selected_rk.clone(),
-                    seqno,
-                    metric,
-                    router_id,
-                ));
-                inner_w.publish();
-                // At this point, advertise our updated selected route
-                Router::trigger_update(&mut inner_w, subnet);
-                return;
+            // If it is however the selected route here, apply the update
+            if selected_re.neighbour() == &source_peer {
+                // TODO: seqno bump is not a large change
+                if selected_re.source().router_id() != update.router_id()
+                    || update.seqno().gt(&selected_re.seqno())
+                    || selected_re.metric().delta(&update.metric()) > BIG_METRIC_CHANGE_TRESHOLD
+                {
+                    large_change = true;
+                }
+                selected_re.update_seqno(update.seqno());
+                selected_re.update_metric(update.metric());
+                selected_re.update_router_id(update.router_id());
             }
+
+            // Remove the selected route and insert it into the fallback table. This simplifies
+            // some things later on.
+            let selected_rk = RouteKey::new(subnet, selected_re.neighbour().clone());
+            inner_w.append(RouterOpLogEntry::RemoveSelectedRoute(selected_rk.clone()));
+            selected_re.set_selected(false);
+            inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
+                selected_rk,
+                selected_re.clone(),
+            ));
         }
 
-        // At this point the update is either for a fallback route or from a peer we didn't receive
-        // anything for this subnet before.
-        let maybe_fallback_route = inner_w
+        let mut fallback_routes = inner_w
             .enter()
             .expect("We deref through a write handle so this enter never fails")
             .fallback_routing_table
-            .get(&update_route_key)
-            .cloned();
+            .lookup_all(update.subnet().address());
 
-        let mut fallback_route = if let Some(re) = maybe_fallback_route {
-            // Make sure the entry is removed from the fallbackroute table
-            inner_w.append(RouterOpLogEntry::RemoveFallbackRoute(
-                update_route_key.clone(),
-            ));
-            re
-        } else {
-            RouteEntry::new(
-                SourceKey::new(subnet, router_id),
-                source_peer.clone(),
-                metric,
-                seqno,
-                false,
-            )
+        // Find and upate the fallback route
+        for route in &mut fallback_routes {
+            if route.neighbour() == &source_peer {
+                route.update_seqno(update.seqno());
+                route.update_metric(update.metric());
+                route.update_router_id(update.router_id());
+                // Update the route in the fallback table
+                inner_w.append(RouterOpLogEntry::UpdateFallbackRouteEntry(
+                    RouteKey::new(subnet, source_peer.clone()),
+                    update.seqno(),
+                    update.metric(),
+                    update.router_id(),
+                ));
+            }
+        }
+
+        let rei = RouteEntryIter::new(&maybe_selected_re, &fallback_routes);
+        let maybe_new_best_route = self.find_best_route(rei);
+
+        // If there is a selected route, it previously was in the fallback route table, so move it
+        // over.
+        if let Some(new_best_route) = maybe_new_best_route {
+            debug!(
+                "installing new best route for {subnet} via {} with D({}, {})",
+                new_best_route.neighbour().underlay_ip(),
+                new_best_route.seqno(),
+                new_best_route.metric()
+            );
+            let rk = RouteKey::new(subnet, new_best_route.neighbour().clone());
+            inner_w.append(RouterOpLogEntry::RemoveFallbackRoute(rk.clone()));
+            let mut nbr = new_best_route.clone();
+            nbr.set_selected(true);
+            inner_w.append(RouterOpLogEntry::InsertSelectedRoute(rk, nbr));
+        }
+
+        // At this point we are done, though we would like to understand if we need to send a
+        // triggered update to our peers. This is done if there is a sufficiently large change. We
+        // consider a sufficiently large change to be:
+        // - change in router_id,
+        // - aquired a route, i.e. previously there was no selected route but there is now,
+        // - lost the route (i.e. it is retracted).
+        // - significant metric change
+        // What doesn't constitue a large change:
+        // - small metric change
+        // - seqno increase (unless it is requested by a peer)
+        // TODO: we don't memorize seqno requests for now so consider broadcasting this anyway
+        large_change = match (&maybe_selected_re, &maybe_new_best_route) {
+            (Some(sre), Some(nbr)) => {
+                // This is needed again because the selected route is only updated if it was the
+                // route being updated, but here we mightt have a new best route which was
+                // previously a fallback route.
+                if sre.source().router_id() != nbr.source().router_id()
+                    || nbr.seqno().gt(&sre.seqno())
+                    || sre.metric().delta(&nbr.metric()) > BIG_METRIC_CHANGE_TRESHOLD
+                {
+                    true
+                } else {
+                    large_change
+                }
+            }
+            (Some(sre), None) => {
+                info!(
+                    "Lost route to {subnet} via {}",
+                    sre.neighbour().underlay_ip()
+                );
+                true
+            }
+            (None, Some(nbr)) => {
+                info!(
+                    "Aquired route to {subnet} via {}",
+                    nbr.neighbour().underlay_ip()
+                );
+                true
+            }
+            (None, None) => false,
         };
 
-        // At this point the fallback route is not present anymore for sure. Make sure update is
-        // applied.
-        fallback_route.update_seqno(seqno);
-        fallback_route.update_metric(metric);
-        fallback_route.update_router_id(router_id);
-
-        // Depending on whether we have a selected route or not.
-        match (maybe_selected_re, update_feasible) {
-            // No selected route, update unfeasible. Simply update the fallback route.
-            (None, false) => {
-                debug!("Apply unfeasible update to fallback route");
-                inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
-                    update_route_key,
-                    fallback_route,
-                ));
-
-                inner_w.publish();
-            }
-            // No selected route, update feasible. This becomes the selected route.
-            (None, true) => {
-                debug!("Apply feasible update to fallback route makes it selected as there is no current selected route");
-                fallback_route.set_selected(true);
-                inner_w.append(RouterOpLogEntry::InsertSelectedRoute(
-                    update_route_key,
-                    fallback_route,
-                ));
-
-                // Trigger an update for the new selected route.
-                Router::trigger_update(&mut inner_w, subnet);
-                inner_w.publish();
-            }
-            (Some(mut selected_re), _) => {
-                // Compare against selected route and check if this is better. Important, we only update
-                // the selected route if it is strictly better, not equal, to the selected route.
-                if fallback_route.seqno().gt(&selected_re.seqno())
-                    || (fallback_route.seqno() == selected_re.seqno()
-                        && fallback_route.metric() < selected_re.metric())
-                {
-                    let selected_rk = RouteKey::new(subnet, selected_re.neighbour().clone());
-                    info!(
-                        "Promoting fallback route for {subnet} via {} to selected route",
-                        source_peer.underlay_ip()
-                    );
-                    // Remove selected route.
-                    inner_w.append(RouterOpLogEntry::RemoveSelectedRoute(selected_rk.clone()));
-                    // Move it to fallback route.
-                    selected_re.set_selected(false);
-                    inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
-                        selected_rk,
-                        selected_re,
-                    ));
-                    // And install fallback route as new selected route.
-                    fallback_route.set_selected(true);
-                    inner_w.append(RouterOpLogEntry::InsertSelectedRoute(
-                        update_route_key,
-                        fallback_route,
-                    ));
-                    inner_w.publish();
-                    // Trigger an update for the new selected route.
-                    Router::trigger_update(&mut inner_w, subnet);
-                    return;
-                }
-
-                // At this point the fallback route just got worse
-                debug!("Apply unfeasible update to fallback route");
-                inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
-                    update_route_key,
-                    fallback_route,
-                ));
-
-                inner_w.publish();
-            }
+        inner_w.publish();
+        if large_change {
+            debug!("Send triggered update for {subnet} in response to update");
+            Router::trigger_update(&mut inner_w, subnet, router_id);
         }
     }
 
@@ -811,11 +815,12 @@ impl Router {
     fn trigger_update(
         inner_w: &mut left_right::WriteHandle<RouterInner, RouterOpLogEntry>,
         subnet: Subnet,
+        router_id: RouterId,
     ) {
         let ops = inner_w
             .enter()
             .expect("Deref through write handle never fails")
-            .propagate_selected_route(subnet);
+            .propagate_selected_route(subnet, router_id);
         inner_w.extend(ops);
         inner_w.publish();
     }
@@ -1042,24 +1047,31 @@ impl RouterInner {
             .collect()
     }
 
-    fn propagate_selected_route(&self, subnet: Subnet) -> Vec<RouterOpLogEntry> {
+    fn propagate_selected_route(
+        &self,
+        subnet: Subnet,
+        router_id: RouterId,
+    ) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
-        let sre = if let Some(sre) = self.selected_routing_table.lookup(subnet.address()) {
-            sre
-        } else {
-            return vec![];
-        };
+        let (seqno, metric, router_id) =
+            if let Some(sre) = self.selected_routing_table.lookup(subnet.address()) {
+                (sre.seqno(), sre.metric(), sre.source().router_id())
+            } else {
+                // TODO: fix this by retaining the route for some time after a retraction.
+                info!("Retracting route for {subnet}");
+                (self.router_seqno, Metric::infinite(), router_id)
+            };
 
         for peer in self.peer_interfaces.iter() {
             let peer_link_cost = peer.link_cost();
 
             let update = babel::Update::new(
                 UPDATE_INTERVAL,
-                sre.seqno(), // updates receive the seqno of the router
-                sre.metric() + Metric::from(peer_link_cost),
+                seqno, // updates receive the seqno of the router
+                metric + Metric::from(peer_link_cost),
                 // the cost of the route is the cost of the route + the cost of the link to the peer
                 subnet,
-                sre.source().router_id(),
+                router_id,
             );
             debug!(
                 "Propagating route update for {} to {}",
@@ -1090,9 +1102,11 @@ impl RouterInner {
                     sre.source().router_id(),
                 );
                 debug!(
-                    "Propagating route update for {} to {}",
+                    "Propagating route update for {} to {} | D({}, {})",
                     srk.subnet(),
-                    peer.underlay_ip()
+                    peer.underlay_ip(),
+                    sre.seqno(),
+                    sre.metric() + Metric::from(peer_link_cost),
                 );
                 updates.push((peer.clone(), update));
             }
@@ -1128,9 +1142,9 @@ enum RouterOpLogEntry {
     RemoveFallbackRoute(RouteKey),
     /// Removes a selected route with the given route key.
     RemoveSelectedRoute(RouteKey),
-    /// Update the route entry associated to the given route key in the selected route table, if
+    /// Update the route entry associated to the given route key in the fallback route table, if
     /// one exists
-    UpdateSelectedRouteEntry(RouteKey, SeqNo, Metric, RouterId),
+    UpdateFallbackRouteEntry(RouteKey, SeqNo, Metric, RouterId),
     /// Sets the static routes of the router to the provided value.
     SetStaticRoutes(Vec<StaticRoute>),
     /// Increment the sequence number of the router.
@@ -1166,12 +1180,12 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.selected_routing_table.remove(rk);
             }
             // TODO: this is very inneficient as it might delete the routing table set
-            RouterOpLogEntry::UpdateSelectedRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(mut re) = self.selected_routing_table.remove(rk) {
+            RouterOpLogEntry::UpdateFallbackRouteEntry(rk, seqno, metric, pk) => {
+                if let Some(mut re) = self.fallback_routing_table.remove(rk) {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
-                    self.selected_routing_table.insert(rk.clone(), re);
+                    self.fallback_routing_table.insert(rk.clone(), re);
                 }
             }
             RouterOpLogEntry::SetStaticRoutes(static_routes) => {
@@ -1185,5 +1199,48 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
 
     fn sync_with(&mut self, first: &Self) {
         *self = first.clone()
+    }
+}
+
+/// Helper struct to iterate over a list of route_entries and a possible standalone selected route.
+/// This avoids having to push the additional route, if any, on the list of route entries which
+/// would likely triggera reallocation and memmove.
+struct RouteEntryIter<'a> {
+    maybe_selected: &'a Option<RouteEntry>,
+    fallbacks: &'a [RouteEntry],
+    processed_selected: bool,
+    fallbacks_processed: usize,
+}
+
+impl<'a> RouteEntryIter<'a> {
+    /// Create a new RouteEntryList from the given [`route entries`](RouteEntry).
+    fn new(maybe_selected: &'a Option<RouteEntry>, fallbacks: &'a [RouteEntry]) -> Self {
+        Self {
+            maybe_selected,
+            fallbacks,
+            processed_selected: false,
+            fallbacks_processed: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for RouteEntryIter<'a> {
+    type Item = &'a RouteEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.processed_selected {
+            self.processed_selected = true;
+            if let Some(re) = self.maybe_selected {
+                return Some(re);
+            }
+        }
+
+        if self.fallbacks_processed == self.fallbacks.len() {
+            return None;
+        }
+
+        self.fallbacks_processed += 1;
+
+        Some(&self.fallbacks[self.fallbacks_processed - 1])
     }
 }
