@@ -15,6 +15,11 @@ const METRIC_INFINITE: u16 = 0xFFFF;
 pub struct Metric(u16);
 
 impl Metric {
+    /// Create a new `Metric` with the given value.
+    pub const fn new(value: u16) -> Self {
+        Metric(value)
+    }
+
     /// Creates a new infinite `Metric`.
     pub const fn infinite() -> Self {
         Metric(METRIC_INFINITE)
@@ -23,6 +28,15 @@ impl Metric {
     /// Checks if this metric indicates a retracted route.
     pub const fn is_infinite(&self) -> bool {
         self.0 == METRIC_INFINITE
+    }
+
+    /// Computes the absolute value of the difference between this and another `Metric`.
+    pub fn delta(&self, rhs: &Self) -> Metric {
+        Metric(if self > rhs {
+            self.0 - rhs.0
+        } else {
+            rhs.0 - self.0
+        })
     }
 }
 
@@ -52,6 +66,9 @@ impl Add for Metric {
     type Output = Self;
 
     fn add(self, rhs: Metric) -> Self::Output {
+        if self.is_infinite() || rhs.is_infinite() {
+            return Metric::infinite();
+        }
         Metric(
             self.0
                 .checked_add(rhs.0)
@@ -65,6 +82,9 @@ impl Add<&Metric> for &Metric {
     type Output = Metric;
 
     fn add(self, rhs: &Metric) -> Self::Output {
+        if self.is_infinite() || rhs.is_infinite() {
+            return Metric::infinite();
+        }
         Metric(
             self.0
                 .checked_add(rhs.0)
@@ -78,6 +98,9 @@ impl Add<&Metric> for Metric {
     type Output = Self;
 
     fn add(self, rhs: &Metric) -> Self::Output {
+        if self.is_infinite() || rhs.is_infinite() {
+            return Metric::infinite();
+        }
         Metric(
             self.0
                 .checked_add(rhs.0)
@@ -91,6 +114,9 @@ impl<'a> Add<Metric> for &'a Metric {
     type Output = Metric;
 
     fn add(self, rhs: Metric) -> Self::Output {
+        if self.is_infinite() || rhs.is_infinite() {
+            return Metric::infinite();
+        }
         Metric(
             self.0
                 .checked_add(rhs.0)
