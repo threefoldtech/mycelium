@@ -19,6 +19,7 @@ use std::{
     fmt::Debug,
     net::{IpAddr, Ipv6Addr},
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 
@@ -27,6 +28,8 @@ const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
 const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
 const ROUTE_PROPAGATION_INTERVAL: u64 = 3;
 const DEAD_PEER_TRESHOLD: u64 = 8;
+/// Amount of time to wait between consecutive seqno bumps of the local router seqno.
+const SEQNO_BUMP_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Metric change of more than 10 is considered a large change.
 const BIG_METRIC_CHANGE_TRESHOLD: Metric = Metric::new(10);
@@ -459,13 +462,17 @@ impl Router {
                 subnet: seqno_request.prefix(),
             })
         {
+            if inner.last_seqno_bump.elapsed() >= SEQNO_BUMP_TIMEOUT {
+                trace!("Ignoring seqno bump request which happened too fast");
+                return;
+            }
             // Bump router seqno
             // TODO: should we only send an update to the peer who sent the seqno request
             // instad of updating all our peers?
             drop(inner);
             let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
             debug!("Bumping local router sequence number");
-            inner_w.append(RouterOpLogEntry::BumpSequenceNumber);
+            inner_w.append(RouterOpLogEntry::BumpSequenceNumber(Instant::now()));
             // We already need to publish here so the sequence number is set correctly when
             // calling the method to propagate the static routes.
             inner_w.publish();
@@ -978,6 +985,7 @@ pub struct RouterInner {
     fallback_routing_table: RoutingTable,
     source_table: SourceTable,
     router_seqno: SeqNo,
+    last_seqno_bump: Instant,
     static_routes: Vec<StaticRoute>,
     // map that contains the overlay ips of peers and their respective public keys
     dest_pubkey_map: IpPubkeyMap,
@@ -992,6 +1000,7 @@ impl RouterInner {
             fallback_routing_table: RoutingTable::new(),
             source_table: SourceTable::new(),
             router_seqno: SeqNo::default(),
+            last_seqno_bump: Instant::now(),
             static_routes: vec![],
             dest_pubkey_map: IpPubkeyMap::new(),
             expired_source_key_sink,
@@ -1190,7 +1199,7 @@ enum RouterOpLogEntry {
     /// Sets the static routes of the router to the provided value.
     SetStaticRoutes(Vec<StaticRoute>),
     /// Increment the sequence number of the router.
-    BumpSequenceNumber,
+    BumpSequenceNumber(Instant),
 }
 
 impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
@@ -1237,8 +1246,9 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::SetStaticRoutes(static_routes) => {
                 self.static_routes = static_routes.clone();
             }
-            RouterOpLogEntry::BumpSequenceNumber => {
+            RouterOpLogEntry::BumpSequenceNumber(ts) => {
                 self.router_seqno += 1;
+                self.last_seqno_bump = *ts;
             }
         }
     }
@@ -1299,6 +1309,7 @@ impl Clone for RouterInner {
             fallback_routing_table,
             source_table,
             router_seqno,
+            last_seqno_bump,
             static_routes,
             dest_pubkey_map,
             expired_source_key_sink,
@@ -1313,6 +1324,7 @@ impl Clone for RouterInner {
             fallback_routing_table: fallback_routing_table.clone(),
             source_table: new_source_table,
             router_seqno: *router_seqno,
+            last_seqno_bump: *last_seqno_bump,
             static_routes: static_routes.clone(),
             dest_pubkey_map: dest_pubkey_map.clone(),
             expired_source_key_sink: expired_source_key_sink.clone(),
