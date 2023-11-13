@@ -1033,7 +1033,7 @@ impl RouterInner {
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
                     self.router_seqno, // updates receive the seqno of the router
-                    peer.link_cost().into(), // direct connection to other peer, so the only cost is the cost towards the peer
+                    Metric::from(0),   // Static route has no further hop costs
                     sr.subnet,
                     router_id,
                 );
@@ -1053,9 +1053,13 @@ impl RouterInner {
         router_id: RouterId,
     ) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
-        let (seqno, metric, router_id) =
+        let (seqno, cost, router_id) =
             if let Some(sre) = self.selected_routing_table.lookup(subnet.address()) {
-                (sre.seqno(), sre.metric(), sre.source().router_id())
+                (
+                    sre.seqno(),
+                    sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                    sre.source().router_id(),
+                )
             } else {
                 // TODO: fix this by retaining the route for some time after a retraction.
                 info!("Retracting route for {subnet}");
@@ -1063,13 +1067,10 @@ impl RouterInner {
             };
 
         for peer in self.peer_interfaces.iter() {
-            let peer_link_cost = peer.link_cost();
-
             let update = babel::Update::new(
                 UPDATE_INTERVAL,
                 seqno, // updates receive the seqno of the router
-                metric + Metric::from(peer_link_cost),
-                // the cost of the route is the cost of the route + the cost of the link to the peer
+                cost,
                 subnet,
                 router_id,
             );
@@ -1090,13 +1091,12 @@ impl RouterInner {
     fn propagate_selected_routes(&self) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
         for (srk, sre) in self.selected_routing_table.iter() {
+            let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             for peer in self.peer_interfaces.iter() {
-                let peer_link_cost = peer.link_cost();
-
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
                     sre.seqno(), // updates receive the seqno of the router
-                    sre.metric() + Metric::from(peer_link_cost),
+                    sre.metric() + neigh_link_cost,
                     // the cost of the route is the cost of the route + the cost of the link to the peer
                     srk.subnet(),
                     sre.source().router_id(),
@@ -1106,7 +1106,7 @@ impl RouterInner {
                     srk.subnet(),
                     peer.underlay_ip(),
                     sre.seqno(),
-                    sre.metric() + Metric::from(peer_link_cost),
+                    sre.metric() + neigh_link_cost,
                 );
                 updates.push((peer.clone(), update));
             }
