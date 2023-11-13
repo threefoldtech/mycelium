@@ -67,8 +67,9 @@ impl Router {
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel();
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
         let (router_data_tx, router_data_rx) = mpsc::channel::<DataPacket>(1000);
+        let (expired_source_key_sink, expired_source_key_stream) = mpsc::channel(1);
 
-        let router_inner = RouterInner::new()?;
+        let router_inner = RouterInner::new(expired_source_key_sink)?;
         let (mut inner_w, inner_r) = left_right::new_from_empty(router_inner);
         inner_w.append(RouterOpLogEntry::SetStaticRoutes(static_routes));
         inner_w.publish();
@@ -100,6 +101,11 @@ impl Router {
         tokio::spawn(Router::check_for_dead_peers(
             router.clone(),
             RouterId::new(router.node_keypair.1),
+        ));
+
+        tokio::spawn(Router::process_expired_source_keys(
+            router.clone(),
+            expired_source_key_stream,
         ));
 
         Ok(router)
@@ -327,6 +333,20 @@ impl Router {
                 }
             }
         }
+    }
+
+    /// Remove expired source keys from the router state.
+    async fn process_expired_source_keys(
+        self,
+        mut expired_source_key_stream: mpsc::Receiver<SourceKey>,
+    ) {
+        while let Some(sk) = expired_source_key_stream.recv().await {
+            let mut inner = self.inner_w.lock().unwrap();
+            debug!("Removing expired source entry {sk}");
+            inner.append(RouterOpLogEntry::RemoveSourceEntry(sk));
+            inner.publish();
+        }
+        warn!("Expired source key processing halted");
     }
 
     async fn handle_incoming_control_packet(
@@ -952,7 +972,6 @@ impl Router {
     }
 }
 
-#[derive(Clone)]
 pub struct RouterInner {
     peer_interfaces: Vec<Peer>,
     selected_routing_table: RoutingTable,
@@ -962,10 +981,11 @@ pub struct RouterInner {
     static_routes: Vec<StaticRoute>,
     // map that contains the overlay ips of peers and their respective public keys
     dest_pubkey_map: IpPubkeyMap,
+    expired_source_key_sink: mpsc::Sender<SourceKey>,
 }
 
 impl RouterInner {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new(expired_source_key_sink: mpsc::Sender<SourceKey>) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
             peer_interfaces: Vec::new(),
             selected_routing_table: RoutingTable::new(),
@@ -974,6 +994,7 @@ impl RouterInner {
             router_seqno: SeqNo::default(),
             static_routes: vec![],
             dest_pubkey_map: IpPubkeyMap::new(),
+            expired_source_key_sink,
         };
 
         Ok(router_inner)
@@ -1138,6 +1159,8 @@ enum RouterOpLogEntry {
     RemovePeer(Peer),
     /// Insert a new entry in the source table.
     InsertSourceEntry(SourceKey, FeasibilityDistance),
+    /// Remove an entry from the source table.
+    RemoveSourceEntry(SourceKey),
     /// Insert a new entry in the fallback routing table.
     InsertFallbackRoute(RouteKey, RouteEntry),
     /// Insert a new entry in the selected routing table.
@@ -1169,7 +1192,11 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.fallback_routing_table.remove_peer(peer.clone());
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
-                self.source_table.insert(*sk, *fd);
+                self.source_table
+                    .insert(*sk, *fd, self.expired_source_key_sink.clone());
+            }
+            RouterOpLogEntry::RemoveSourceEntry(sk) => {
+                self.source_table.remove(sk);
             }
             RouterOpLogEntry::InsertFallbackRoute(rk, re) => {
                 self.fallback_routing_table.insert(rk.clone(), re.clone());
@@ -1246,5 +1273,34 @@ impl<'a> Iterator for RouteEntryIter<'a> {
         self.fallbacks_processed += 1;
 
         Some(&self.fallbacks[self.fallbacks_processed - 1])
+    }
+}
+
+impl Clone for RouterInner {
+    fn clone(&self) -> Self {
+        let RouterInner {
+            peer_interfaces,
+            selected_routing_table,
+            fallback_routing_table,
+            source_table,
+            router_seqno,
+            static_routes,
+            dest_pubkey_map,
+            expired_source_key_sink,
+        } = self;
+        let mut new_source_table = SourceTable::new();
+        for (k, v) in source_table.iter() {
+            new_source_table.insert(*k, *v, expired_source_key_sink.clone());
+        }
+        RouterInner {
+            peer_interfaces: peer_interfaces.clone(),
+            selected_routing_table: selected_routing_table.clone(),
+            fallback_routing_table: fallback_routing_table.clone(),
+            source_table: new_source_table,
+            router_seqno: *router_seqno,
+            static_routes: static_routes.clone(),
+            dest_pubkey_map: dest_pubkey_map.clone(),
+            expired_source_key_sink: expired_source_key_sink.clone(),
+        }
     }
 }

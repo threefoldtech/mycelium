@@ -1,10 +1,16 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
+
+use log::error;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
     babel, metric::Metric, router_id::RouterId, routing_table::RouteEntry, sequence_number::SeqNo,
     subnet::Subnet,
 };
+
+/// Duration after which a source entry is deleted if it is not updated.
+const SOURCE_HOLD_DURATION: Duration = Duration::from_secs(60 * 5);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {
@@ -18,10 +24,9 @@ pub struct FeasibilityDistance {
     seqno: SeqNo,
 }
 
-// Store (prefix, plen, router_id) -> feasibility distance mapping
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SourceTable {
-    table: HashMap<SourceKey, FeasibilityDistance>,
+    table: HashMap<SourceKey, (JoinHandle<()>, FeasibilityDistance)>,
 }
 
 impl FeasibilityDistance {
@@ -69,18 +74,35 @@ impl SourceTable {
         }
     }
 
-    pub fn insert(&mut self, key: SourceKey, feas_dist: FeasibilityDistance) {
-        self.table.insert(key, feas_dist);
+    pub fn insert(
+        &mut self,
+        key: SourceKey,
+        feas_dist: FeasibilityDistance,
+        sink: mpsc::Sender<SourceKey>,
+    ) {
+        let expiration_handle = tokio::spawn(async move {
+            tokio::time::sleep(SOURCE_HOLD_DURATION).await;
+
+            if let Err(e) = sink.send(key).await {
+                error!("Failed to notify router of expired source key {e}");
+            }
+        });
+        // Abort the old task if present.
+        if let Some((old_timeout, _)) = self.table.insert(key, (expiration_handle, feas_dist)) {
+            old_timeout.abort();
+        }
     }
 
     /// Remove an entry from the source table.
-    #[allow(dead_code)]
     pub fn remove(&mut self, key: &SourceKey) {
-        self.table.remove(key);
+        if let Some((old_timeout, _)) = self.table.remove(key) {
+            old_timeout.abort();
+        };
     }
 
+    /// Get the [`FeasibilityDistance`] currently associated with the [`SourceKey`].
     pub fn get(&self, key: &SourceKey) -> Option<&FeasibilityDistance> {
-        self.table.get(key)
+        self.table.get(key).map(|(_, v)| v)
     }
 
     /// Indicates if an update is feasible in the context of the current `SoureTable`.
@@ -112,7 +134,7 @@ impl SourceTable {
 
     /// Get an iterator over the `SourceTable`.
     pub fn iter(&self) -> impl Iterator<Item = (&SourceKey, &FeasibilityDistance)> {
-        self.table.iter()
+        self.table.iter().map(|(k, (_, v))| (k, v))
     }
 }
 
