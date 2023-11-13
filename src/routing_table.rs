@@ -6,11 +6,7 @@ use crate::{
 };
 use core::fmt;
 use std::{
-    borrow::Borrow,
     cmp::Ordering,
-    collections::HashSet,
-    hash::Hash,
-    mem,
     net::{IpAddr, Ipv6Addr},
 };
 
@@ -51,60 +47,9 @@ impl fmt::Display for RouteKey {
 pub struct RouteEntry {
     source: SourceKey,
     neighbor: Peer,
-    metric: Metric, // If metric is 0xFFFF, the route has recently been retracted
+    metric: Metric,
     seqno: SeqNo,
     selected: bool,
-}
-
-/// The routing table uses only the IP as key, but we also want to include the (neighbour)[`Peer`]
-/// in the key (see [`RouteKey`]). We use a [`HashSet`] for this, which means [`RouteEntry`] would
-/// need to implement both [`Eq`] and [`Hash`]. While doable, using the [`HashSet::get`] method
-/// with a [`Peer`] requires [`RouteEntry`] (the value in the [`HashSet`]) to implement
-/// [`Borrow`]. And, problematically, the [`Borrow`] target must have the
-/// same result for [`Hash`] and [`Eq`]. This is again doable, but would pollute the base type
-/// which is public. As such, we create a private newtype here, to implement these methods, so we
-/// don't leak the public value.
-#[repr(transparent)]
-struct RouteEntryPeerIndexed(RouteEntry);
-
-impl PartialEq for RouteEntryPeerIndexed {
-    fn eq(&self, other: &Self) -> bool {
-        self.0
-            .neighbor
-            .overlay_ip()
-            .eq(&other.0.neighbor.overlay_ip())
-    }
-}
-
-impl Eq for RouteEntryPeerIndexed {}
-
-impl Hash for RouteEntryPeerIndexed {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.neighbor.overlay_ip().hash(state)
-    }
-}
-
-impl Borrow<PeerIpEq> for RouteEntryPeerIndexed {
-    fn borrow(&self) -> &PeerIpEq {
-        // SAFETY: we are transmuting to a struct annotated with repr(transparent).
-        unsafe { mem::transmute(&self.0.neighbor) }
-    }
-}
-
-struct PeerIpEq(Peer);
-
-impl PartialEq for PeerIpEq {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.overlay_ip().eq(&other.0.overlay_ip())
-    }
-}
-
-impl Eq for PeerIpEq {}
-
-impl Hash for PeerIpEq {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.overlay_ip().hash(state)
-    }
 }
 
 impl RouteKey {
@@ -187,7 +132,7 @@ impl RouteEntry {
 
 /// The `RoutingTable` contains all known subnets, and the associated [`RouteEntry`]'s.
 pub struct RoutingTable {
-    table: IpLookupTable<Ipv6Addr, HashSet<RouteEntryPeerIndexed>>,
+    table: IpLookupTable<Ipv6Addr, Vec<RouteEntry>>,
 }
 
 impl RoutingTable {
@@ -206,10 +151,10 @@ impl RoutingTable {
             _ => return None,
         };
 
-        let set = self
-            .table
-            .exact_match(addr, key.subnet.prefix_len() as u32)?;
-        set.get(&PeerIpEq(key.neighbor.clone())).map(|p| &p.0)
+        self.table
+            .exact_match(addr, key.subnet.prefix_len() as u32)?
+            .iter()
+            .find(|entry| entry.neighbor == key.neighbor)
     }
 
     /// Insert a new [`RouteEntry`] in the table. If there is already an entry for the
@@ -225,13 +170,20 @@ impl RoutingTable {
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
         {
-            Some(set) => {
-                set.insert(RouteEntryPeerIndexed(entry));
+            Some(entries) => {
+                if let Some(idx) = entries
+                    .iter()
+                    .position(|entry| entry.neighbor == key.neighbor)
+                {
+                    // Overwrite entry if one exists for the key
+                    entries[idx] = entry;
+                    return;
+                }
+                entries.push(entry);
             }
             None => {
-                let mut set = HashSet::new();
-                set.insert(RouteEntryPeerIndexed(entry));
-                self.table.insert(addr, key.subnet.prefix_len() as u32, set);
+                self.table
+                    .insert(addr, key.subnet.prefix_len() as u32, vec![entry]);
             }
         };
     }
@@ -249,15 +201,18 @@ impl RoutingTable {
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
         {
-            Some(set) => {
-                let val = set.take(&PeerIpEq(key.neighbor.clone()));
-                // Remove the table entry entirely if the set is empty
+            Some(entries) => {
+                let elem = entries
+                    .iter()
+                    .position(|entry| entry.neighbor == key.neighbor)
+                    .map(|idx| entries.swap_remove(idx));
+                // Remove the table entry entirely if the vec is empty
                 // NOTE: we don't care if val is some, we only care that no empty set is left
                 // behind.
-                if set.is_empty() {
+                if entries.is_empty() {
                     self.table.remove(addr, key.subnet.prefix_len() as u32);
                 }
-                val.map(|e| e.0)
+                elem
             }
             None => None,
         }
@@ -266,15 +221,15 @@ impl RoutingTable {
     /// Create an iterator over all key value pairs in the table.
     // TODO: remove this?
     pub fn iter(&self) -> impl Iterator<Item = (RouteKey, &'_ RouteEntry)> {
-        self.table.iter().flat_map(|(addr, prefix, set)| {
-            set.iter().map(move |value| {
+        self.table.iter().flat_map(|(addr, prefix, entries)| {
+            entries.iter().map(move |value| {
                 (
                     RouteKey::new(
                         Subnet::new(addr.into(), prefix as u8)
                             .expect("Only proper subnets are inserted in the table; qed"),
-                        value.0.neighbor.clone(),
+                        value.neighbor.clone(),
                     ),
-                    &value.0,
+                    value,
                 )
             })
         })
@@ -282,11 +237,9 @@ impl RoutingTable {
 
     /// Remove all [`RouteKey`] and [`RouteEntry`] pairs where the [`RouteEntry`]'s neighbour value
     /// is the given [`Peer`].
-    // TODO: performance
     pub fn remove_peer(&mut self, peer: Peer) {
-        let q = PeerIpEq(peer);
-        for (_, _, set) in self.table.iter_mut() {
-            set.remove(&q);
+        for (_, _, entries) in self.table.iter_mut() {
+            entries.retain(|entry| entry.neighbor != peer);
         }
     }
 
@@ -300,23 +253,7 @@ impl RoutingTable {
         };
         self.table
             .longest_match(addr)
-            .and_then(|(_, _, set)| {
-                let mut lowest_metric = None;
-                for entry in set {
-                    match lowest_metric {
-                        None => {
-                            lowest_metric = Some(&entry.0);
-                        }
-                        Some(e) => {
-                            if entry.0.metric < e.metric {
-                                lowest_metric = Some(&entry.0);
-                            }
-                        }
-                    }
-                }
-                // TODO: Verify how we can get an empty map here.
-                lowest_metric
-            })
+            .and_then(|(_, _, entries)| entries.iter().min_by_key(|entry| entry.metric))
             .cloned()
     }
 
@@ -331,9 +268,9 @@ impl RoutingTable {
         };
         self.table
             .longest_match(addr)
-            .map_or_else(Vec::new, |(_, _, set)| {
-                set.iter().map(|e| &e.0).cloned().collect()
-            })
+            .map(|(_, _, entries)| entries)
+            .cloned()
+            .unwrap_or_else(Vec::new)
     }
 }
 
