@@ -1,4 +1,5 @@
 use ip_network_table_deps_treebitmap::IpLookupTable;
+use log::warn;
 
 use crate::{
     metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
@@ -162,24 +163,36 @@ impl RoutingTable {
     ///
     /// Currenly only IPv6 is supported, attempting to insert an IPv4 network does nothing.
     pub fn insert(&mut self, key: RouteKey, entry: RouteEntry) {
+        // We make sure that the selected route has index 0 in the entry list (if there is one).
+        // This effectively makes the lookup of a selected route O(1), whereas a lookup of a non
+        // selected route is O(n), n being the amount of Peers (as this is the differentiating part
+        // in a key for a subnet).
         let addr = match key.subnet.network() {
             IpAddr::V6(addr) => addr,
             _ => return,
         };
+        let selected = entry.selected;
         match self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
         {
             Some(entries) => {
-                if let Some(idx) = entries
+                let new_elem_idx = if let Some(idx) = entries
                     .iter()
                     .position(|entry| entry.neighbor == key.neighbor)
                 {
                     // Overwrite entry if one exists for the key
                     entries[idx] = entry;
-                    return;
+                    idx
+                } else {
+                    entries.push(entry);
+                    entries.len() - 1
+                };
+                // If the inserted entry is selected, swap it to index 0 so it is at the start of
+                // the list.
+                if selected {
+                    entries.swap(0, new_elem_idx);
                 }
-                entries.push(entry);
             }
             None => {
                 self.table
@@ -254,15 +267,17 @@ impl RoutingTable {
             IpAddr::V6(addr) => addr,
             _ => return None,
         };
-        self.table
-            .longest_match(addr)
-            .and_then(|(_, _, entries)| {
-                entries
-                    .iter()
-                    .filter(|entry| entry.selected)
-                    .min_by_key(|entry| entry.metric)
-            })
-            .cloned()
+        let entries = self.table.longest_match(addr)?.2;
+        if entries.is_empty() {
+            // This is a logic error in our code, but don't crash as it is recoverable.
+            warn!("Empty route entry list for {ip}, this is a bug");
+            return None;
+        }
+        if entries[0].selected {
+            Some(entries[0].clone())
+        } else {
+            None
+        }
     }
 
     /// Get a copy of all fallback route entries for an [`IpAddr`] in the `RoutingTable`.
