@@ -217,8 +217,7 @@ impl Router {
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
-        let routing_table = &inner.selected_routing_table;
-        for (route_key, route_entry) in routing_table.iter() {
+        for (route_key, route_entry) in inner.routing_table.iter().filter(|(_, re)| re.selected()) {
             println!("Route key: {}", route_key);
             println!(
                 "Route: {} (with next-hop: {}, metric: {}, seqno: {}, selected: {})",
@@ -238,8 +237,8 @@ impl Router {
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
-        let routing_table = &inner.fallback_routing_table;
-        for (route_key, route_entry) in routing_table.iter() {
+        for (route_key, route_entry) in inner.routing_table.iter().filter(|(_, re)| !re.selected())
+        {
             println!("Route key: {}", route_key);
             println!(
                 "Route: {} (with next-hop: {:?}, metric: {}, seqno: {}, selected: {})",
@@ -405,8 +404,8 @@ impl Router {
         // not smaller than the sequence number of the selected route, send an update for the route
         // to the peer (triggered update).
         if let Some(route_entry) = inner
-            .selected_routing_table
-            .lookup(seqno_request.prefix().address())
+            .routing_table
+            .lookup_selected(seqno_request.prefix().address())
         {
             if !route_entry.metric().is_infinite()
                 && (seqno_request.router_id() != route_entry.source().router_id()
@@ -573,14 +572,7 @@ impl Router {
                 .expect("We deref through a write handle so this enter never fails");
 
             (
-                inner
-                    .selected_routing_table
-                    .get(&update_route_key)
-                    .is_some()
-                    || inner
-                        .fallback_routing_table
-                        .get(&update_route_key)
-                        .is_some(),
+                inner.routing_table.get(&update_route_key).is_some(),
                 inner.source_table.is_update_feasible(&update),
             )
         };
@@ -620,8 +612,8 @@ impl Router {
             let maybe_selected_re = inner_w
                 .enter()
                 .expect("We deref through a write handle so this enter never fails")
-                .selected_routing_table
-                .lookup(subnet.address());
+                .routing_table
+                .lookup_selected(subnet.address());
 
             if let Some(mut selected_re) = maybe_selected_re {
                 if route_entry.seqno().gt(&selected_re.seqno())
@@ -672,8 +664,8 @@ impl Router {
         let mut maybe_selected_re = inner_w
             .enter()
             .expect("We deref through a write handle so this enter never fails")
-            .selected_routing_table
-            .lookup(subnet.address());
+            .routing_table
+            .lookup_selected(subnet.address());
 
         // If the entry is currently selected, the update is unfeasible, and the router id of the
         // entry is the router id op the update, it may be ignored. Note that to check if this is
@@ -751,8 +743,8 @@ impl Router {
         let mut fallback_routes = inner_w
             .enter()
             .expect("We deref through a write handle so this enter never fails")
-            .fallback_routing_table
-            .lookup_all(update.subnet().address());
+            .routing_table
+            .lookup_fallbacks(update.subnet().address());
 
         // Find and upate the fallback route
         for route in &mut fallback_routes {
@@ -905,7 +897,7 @@ impl Router {
             .inner_r
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles");
-        inner.selected_routing_table.lookup(dest_ip)
+        inner.routing_table.lookup_selected(dest_ip)
     }
 
     /// Find all routes in both the selected and fallback routing table for a destination.
@@ -916,11 +908,11 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
         let mut routes = vec![];
-        if let Some(re) = inner.selected_routing_table.lookup(subnet.address()) {
+        if let Some(re) = inner.routing_table.lookup_selected(subnet.address()) {
             routes.push(re);
         }
 
-        for entry in inner.fallback_routing_table.lookup_all(subnet.address()) {
+        for entry in inner.routing_table.lookup_fallbacks(subnet.address()) {
             routes.push(entry);
         }
 
@@ -981,8 +973,7 @@ impl Router {
 
 pub struct RouterInner {
     peer_interfaces: Vec<Peer>,
-    selected_routing_table: RoutingTable,
-    fallback_routing_table: RoutingTable,
+    routing_table: RoutingTable,
     source_table: SourceTable,
     router_seqno: SeqNo,
     last_seqno_bump: Instant,
@@ -996,8 +987,7 @@ impl RouterInner {
     pub fn new(expired_source_key_sink: mpsc::Sender<SourceKey>) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
             peer_interfaces: Vec::new(),
-            selected_routing_table: RoutingTable::new(),
-            fallback_routing_table: RoutingTable::new(),
+            routing_table: RoutingTable::new(),
             source_table: SourceTable::new(),
             router_seqno: SeqNo::default(),
             last_seqno_bump: Instant::now(),
@@ -1088,7 +1078,7 @@ impl RouterInner {
     ) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
         let (seqno, cost, router_id, maybe_neigh) =
-            if let Some(sre) = self.selected_routing_table.lookup(subnet.address()) {
+            if let Some(sre) = self.routing_table.lookup_selected(subnet.address()) {
                 (
                     sre.seqno(),
                     sre.metric() + Metric::from(sre.neighbour().link_cost()),
@@ -1133,7 +1123,7 @@ impl RouterInner {
 
     fn propagate_selected_routes(&self) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
-        for (srk, sre) in self.selected_routing_table.iter() {
+        for (srk, sre) in self.routing_table.iter().filter(|(_, sre)| sre.selected()) {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             for peer in self.peer_interfaces.iter() {
                 // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1212,8 +1202,7 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::RemovePeer(peer) => {
                 self.remove_peer_interface(peer.clone());
                 // remove the peer's routes from all routing tables (= all the peers that use the peer as next-hop)
-                self.selected_routing_table.remove_peer(peer.clone());
-                self.fallback_routing_table.remove_peer(peer.clone());
+                self.routing_table.remove_peer(peer.clone());
             }
             RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
                 self.source_table
@@ -1223,24 +1212,27 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.source_table.remove(sk);
             }
             RouterOpLogEntry::InsertFallbackRoute(rk, re) => {
-                self.fallback_routing_table.insert(rk.clone(), re.clone());
+                debug_assert!(!re.selected());
+                self.routing_table.insert(rk.clone(), re.clone());
             }
             RouterOpLogEntry::InsertSelectedRoute(rk, re) => {
-                self.selected_routing_table.insert(rk.clone(), re.clone());
+                debug_assert!(re.selected());
+                self.routing_table.insert(rk.clone(), re.clone());
             }
             RouterOpLogEntry::RemoveFallbackRoute(rk) => {
-                self.fallback_routing_table.remove(rk);
+                self.routing_table.remove(rk);
             }
             RouterOpLogEntry::RemoveSelectedRoute(rk) => {
-                self.selected_routing_table.remove(rk);
+                self.routing_table.remove(rk);
             }
             // TODO: this is very inneficient as it might delete the routing table set
             RouterOpLogEntry::UpdateFallbackRouteEntry(rk, seqno, metric, pk) => {
-                if let Some(mut re) = self.fallback_routing_table.remove(rk) {
+                if let Some(mut re) = self.routing_table.remove(rk) {
+                    debug_assert!(!re.selected());
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
-                    self.fallback_routing_table.insert(rk.clone(), re);
+                    self.routing_table.insert(rk.clone(), re);
                 }
             }
             RouterOpLogEntry::SetStaticRoutes(static_routes) => {
@@ -1305,8 +1297,7 @@ impl Clone for RouterInner {
     fn clone(&self) -> Self {
         let RouterInner {
             peer_interfaces,
-            selected_routing_table,
-            fallback_routing_table,
+            routing_table,
             source_table,
             router_seqno,
             last_seqno_bump,
@@ -1320,8 +1311,7 @@ impl Clone for RouterInner {
         }
         RouterInner {
             peer_interfaces: peer_interfaces.clone(),
-            selected_routing_table: selected_routing_table.clone(),
-            fallback_routing_table: fallback_routing_table.clone(),
+            routing_table: routing_table.clone(),
             source_table: new_source_table,
             router_seqno: *router_seqno,
             last_seqno_bump: *last_seqno_bump,

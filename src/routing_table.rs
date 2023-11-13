@@ -243,34 +243,45 @@ impl RoutingTable {
         }
     }
 
-    /// Look up a route for an [`IpAddr`] in the `RoutingTable`.
+    /// Look up a selected route for an [`IpAddr`] in the `RoutingTable`.
     ///
     /// Currently only IPv6 is supported, looking up an IPv4 address always returns [`Option::None`].
-    pub fn lookup(&self, ip: IpAddr) -> Option<RouteEntry> {
+    /// In the event where 2 distinc routes are inserted with selected set to true, the entry with
+    /// the minimum `Metric` is selected. Note that it is an error to have 2 such entries, and this
+    /// might result in a panic later.
+    pub fn lookup_selected(&self, ip: IpAddr) -> Option<RouteEntry> {
         let addr = match ip {
             IpAddr::V6(addr) => addr,
             _ => return None,
         };
         self.table
             .longest_match(addr)
-            .and_then(|(_, _, entries)| entries.iter().min_by_key(|entry| entry.metric))
+            .and_then(|(_, _, entries)| {
+                entries
+                    .iter()
+                    .filter(|entry| entry.selected)
+                    .min_by_key(|entry| entry.metric)
+            })
             .cloned()
     }
 
-    /// Get a copy of all route entries for an [`IpAddr`] in the `RoutingTable`.
+    /// Get a copy of all fallback route entries for an [`IpAddr`] in the `RoutingTable`.
     ///
     /// Currently only IPv6 is supported, looking up an IPv4 address always returns an empty
     /// [`Vec`].
-    pub fn lookup_all(&self, ip: IpAddr) -> Vec<RouteEntry> {
+    pub fn lookup_fallbacks(&self, ip: IpAddr) -> Vec<RouteEntry> {
         let addr = match ip {
             IpAddr::V6(addr) => addr,
             _ => return Vec::new(),
         };
         self.table
             .longest_match(addr)
-            .map(|(_, _, entries)| entries)
+            .map(|(_, _, entries)| entries.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .filter(|entry| !entry.selected)
             .cloned()
-            .unwrap_or_else(Vec::new)
+            .collect()
     }
 }
 
