@@ -615,22 +615,16 @@ impl Router {
                 .routing_table
                 .lookup_selected(subnet.address());
 
-            if let Some(mut selected_re) = maybe_selected_re {
+            if let Some(selected_re) = maybe_selected_re {
                 if route_entry.seqno().gt(&selected_re.seqno())
                     || (route_entry.seqno() == selected_re.seqno()
                         && route_entry.metric() < selected_re.metric())
                 {
                     let rk = RouteKey::new(subnet, selected_re.neighbour().clone());
                     // Uninstall selected route.
-                    inner_w.append(RouterOpLogEntry::RemoveSelectedRoute(rk.clone()));
-                    // Insert previous selected route as fallback route.
-                    selected_re.set_selected(false);
-                    inner_w.append(RouterOpLogEntry::InsertFallbackRoute(rk, selected_re));
+                    inner_w.append(RouterOpLogEntry::UnselectRoute(rk));
                     // Now insert the new selected route.
-                    inner_w.append(RouterOpLogEntry::InsertSelectedRoute(
-                        update_route_key,
-                        route_entry,
-                    ));
+                    inner_w.append(RouterOpLogEntry::InsertRoute(update_route_key, route_entry));
                     inner_w.publish();
                     Router::trigger_update(&mut inner_w, subnet, self.router_id);
                     return;
@@ -638,20 +632,14 @@ impl Router {
 
                 // If it is not better, just make it a fallback.
                 route_entry.set_selected(false);
-                inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
-                    update_route_key,
-                    route_entry,
-                ));
+                inner_w.append(RouterOpLogEntry::InsertRoute(update_route_key, route_entry));
                 inner_w.publish();
                 return;
             }
 
             // We already established that there is no selected route here for the prefix, and since this
             // update is accepted it is immediately the selected route.
-            inner_w.append(RouterOpLogEntry::InsertSelectedRoute(
-                update_route_key,
-                route_entry,
-            ));
+            inner_w.append(RouterOpLogEntry::InsertRoute(update_route_key, route_entry));
 
             inner_w.publish();
             Router::trigger_update(&mut inner_w, subnet, self.router_id);
@@ -732,12 +720,7 @@ impl Router {
             // Remove the selected route and insert it into the fallback table. This simplifies
             // some things later on.
             let selected_rk = RouteKey::new(subnet, selected_re.neighbour().clone());
-            inner_w.append(RouterOpLogEntry::RemoveSelectedRoute(selected_rk.clone()));
-            selected_re.set_selected(false);
-            inner_w.append(RouterOpLogEntry::InsertFallbackRoute(
-                selected_rk,
-                selected_re.clone(),
-            ));
+            inner_w.append(RouterOpLogEntry::UnselectRoute(selected_rk));
         }
 
         let mut fallback_routes = inner_w
@@ -775,10 +758,7 @@ impl Router {
                 new_best_route.metric()
             );
             let rk = RouteKey::new(subnet, new_best_route.neighbour().clone());
-            inner_w.append(RouterOpLogEntry::RemoveFallbackRoute(rk.clone()));
-            let mut nbr = new_best_route.clone();
-            nbr.set_selected(true);
-            inner_w.append(RouterOpLogEntry::InsertSelectedRoute(rk, nbr));
+            inner_w.append(RouterOpLogEntry::SelectRoute(rk));
         }
 
         // At this point we are done, though we would like to understand if we need to send a
@@ -1175,14 +1155,15 @@ enum RouterOpLogEntry {
     InsertSourceEntry(SourceKey, FeasibilityDistance),
     /// Remove an entry from the source table.
     RemoveSourceEntry(SourceKey),
-    /// Insert a new entry in the fallback routing table.
-    InsertFallbackRoute(RouteKey, RouteEntry),
-    /// Insert a new entry in the selected routing table.
-    InsertSelectedRoute(RouteKey, RouteEntry),
-    /// Removes a fallback route with the given route key.
-    RemoveFallbackRoute(RouteKey),
-    /// Removes a selected route with the given route key.
-    RemoveSelectedRoute(RouteKey),
+    /// Insert a new entry in the routing table.
+    InsertRoute(RouteKey, RouteEntry),
+    /// Removes a route with the given route key.
+    #[allow(dead_code)]
+    RemoveRoute(RouteKey),
+    /// Unselect the route defined by the route key.
+    UnselectRoute(RouteKey),
+    /// Select the route defined by the route key.
+    SelectRoute(RouteKey),
     /// Update the route entry associated to the given route key in the fallback route table, if
     /// one exists
     UpdateFallbackRouteEntry(RouteKey, SeqNo, Metric, RouterId),
@@ -1211,19 +1192,17 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::RemoveSourceEntry(sk) => {
                 self.source_table.remove(sk);
             }
-            RouterOpLogEntry::InsertFallbackRoute(rk, re) => {
-                debug_assert!(!re.selected());
+            RouterOpLogEntry::InsertRoute(rk, re) => {
                 self.routing_table.insert(rk.clone(), re.clone());
             }
-            RouterOpLogEntry::InsertSelectedRoute(rk, re) => {
-                debug_assert!(re.selected());
-                self.routing_table.insert(rk.clone(), re.clone());
-            }
-            RouterOpLogEntry::RemoveFallbackRoute(rk) => {
+            RouterOpLogEntry::RemoveRoute(rk) => {
                 self.routing_table.remove(rk);
             }
-            RouterOpLogEntry::RemoveSelectedRoute(rk) => {
-                self.routing_table.remove(rk);
+            RouterOpLogEntry::UnselectRoute(rk) => {
+                self.routing_table.unselect_route(rk);
+            }
+            RouterOpLogEntry::SelectRoute(rk) => {
+                self.routing_table.select_route(rk);
             }
             // TODO: this is very inneficient as it might delete the routing table set
             RouterOpLogEntry::UpdateFallbackRouteEntry(rk, seqno, metric, pk) => {

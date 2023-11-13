@@ -188,6 +188,11 @@ impl RoutingTable {
                     entries.push(entry);
                     entries.len() - 1
                 };
+                // In debug mode, verify that we only have 1 selected route at most. We do this by
+                // checking if entry 0 is not overwritten (the possibly selectd route) and if
+                // that is selected. This will also panic if we add a selected route to an existing
+                // but empty route list. That is fine, since we don't want that condition either.
+                debug_assert!(new_elem_idx != 0 && selected && !entries[0].selected);
                 // If the inserted entry is selected, swap it to index 0 so it is at the start of
                 // the list.
                 if selected {
@@ -297,6 +302,65 @@ impl RoutingTable {
             .filter(|entry| !entry.selected)
             .cloned()
             .collect()
+    }
+
+    /// Unselects a route defined by the [`RouteKey`]. This means there will no longer be a
+    /// selected route for the subnet defined by the [`RouteKey`].
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the [`RouteKey`] does not exist, or the associated [`RouteEntry`]
+    /// is not selected.
+    pub fn unselect_route(&mut self, key: &RouteKey) {
+        let addr = match key.subnet.network() {
+            IpAddr::V6(addr) => addr,
+            // Panic is fine here as we documented that the RouteKey must exist and that is
+            // obviously not the case.
+            _ => panic!("RouteKey must exist, so it can't be IPv4"),
+        };
+        let entries = self
+            .table
+            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
+            .expect("There is an entry for the provided RouteKey");
+        // No need for bounds check, RouteKey must exist so there must be at least 1 element.
+        // The message on this assert assumes the invariant that the selected route is the first
+        // element holds
+        assert!(
+            entries[0].neighbor == key.neighbor,
+            "Attempted to unselect route which has a different RouteKey"
+        );
+        assert!(
+            entries[0].selected,
+            "Attempted to unselected a route which isn't selected"
+        );
+        entries[0].selected = false;
+    }
+
+    pub fn select_route(&mut self, key: &RouteKey) {
+        let addr = match key.subnet.network() {
+            IpAddr::V6(addr) => addr,
+            // Panic is fine here as we documented that the RouteKey must exist and that is
+            // obviously not the case.
+            _ => panic!("RouteKey must exist, so it can't be IPv4"),
+        };
+        let entries = self
+            .table
+            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
+            .expect("There is an entry for the provided RouteKey");
+        // No need for bounds check, RouteKey must exist so there must be at least 1 element.
+        // The message on this assert assumes the invariant that the selected route is the first
+        // element holds
+        assert!(
+            !entries[0].selected,
+            "Attempted to select a route for a subnet while we already have a selected route"
+        );
+        let entry_idx = entries
+            .iter()
+            .position(|entry| entry.neighbor == key.neighbor)
+            .expect("Route entry must be present in route table to select it");
+        entries[entry_idx].selected = true;
+        // Maintain invariant that selected route comes first.
+        entries.swap(0, entry_idx);
     }
 }
 
