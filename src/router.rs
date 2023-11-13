@@ -1078,20 +1078,29 @@ impl RouterInner {
         router_id: RouterId,
     ) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
-        let (seqno, cost, router_id) =
+        let (seqno, cost, router_id, maybe_neigh) =
             if let Some(sre) = self.selected_routing_table.lookup(subnet.address()) {
                 (
                     sre.seqno(),
                     sre.metric() + Metric::from(sre.neighbour().link_cost()),
                     sre.source().router_id(),
+                    Some(sre.neighbour().clone()),
                 )
             } else {
                 // TODO: fix this by retaining the route for some time after a retraction.
                 info!("Retracting route for {subnet}");
-                (self.router_seqno, Metric::infinite(), router_id)
+                (self.router_seqno, Metric::infinite(), router_id, None)
             };
 
         for peer in self.peer_interfaces.iter() {
+            // Don't send updates for a route to the next hop of the route, as that peer will never
+            // select the route through us (that would caus a routing loop). The protocol can
+            // handle this just fine, leaving this out is essentially an easy optimization.
+            if let Some(ref neigh) = maybe_neigh {
+                if peer == neigh {
+                    continue;
+                }
+            }
             let update = babel::Update::new(
                 UPDATE_INTERVAL,
                 seqno, // updates receive the seqno of the router
@@ -1118,11 +1127,17 @@ impl RouterInner {
         for (srk, sre) in self.selected_routing_table.iter() {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             for peer in self.peer_interfaces.iter() {
+                // Don't send updates for a route to the next hop of the route, as that peer will never
+                // select the route through us (that would caus a routing loop). The protocol can
+                // handle this just fine, leaving this out is essentially an easy optimization.
+                if peer == sre.neighbour() {
+                    continue;
+                }
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
                     sre.seqno(), // updates receive the seqno of the router
+                    // the cost of the route is the cost of the route + the cost of the link to the next-hop
                     sre.metric() + neigh_link_cost,
-                    // the cost of the route is the cost of the route + the cost of the link to the peer
                     srk.subnet(),
                     sre.source().router_id(),
                 );
