@@ -18,6 +18,15 @@ use crate::{
 /// received.
 const PACKET_COALESCE_WINDOW: usize = 5;
 
+/// Cost to add to the peer_link_cost for "local processing".
+///
+/// The current peer link cost is calculated from a HELLO rtt. This is great to measure link
+/// latency, since packets are processed in order. However, on local idle links, this value will
+/// likely be 0 since we round down (from the amount of ms it took to process), which does not
+/// accurately reflect the fact that there is in fact a cost associated with using a peer, even on
+/// these local links.
+const PACKET_PROCESSING_COST: u16 = 1;
+
 #[derive(Debug, Clone)]
 /// A peer represents a directly connected participant in the network.
 pub struct Peer {
@@ -162,7 +171,7 @@ impl Peer {
     }
 
     pub fn link_cost(&self) -> u16 {
-        self.inner.state.read().unwrap().link_cost
+        self.inner.state.read().unwrap().link_cost + PACKET_PROCESSING_COST
     }
 
     pub fn set_link_cost(&self, link_cost: u16) {
