@@ -984,8 +984,12 @@ impl RouterInner {
 
     fn send_update(&self, peer: &Peer, update: babel::Update) -> Option<RouterOpLogEntry> {
         // before sending an update, the source table might need to be updated
-        let seqno = update.seqno();
         let metric = update.metric();
+        // Nothing to do on route retraction.
+        if metric.is_infinite() {
+            return None;
+        }
+        let seqno = update.seqno();
         let router_id = update.router_id();
         let subnet = update.subnet();
 
