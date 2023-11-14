@@ -7,7 +7,7 @@ use crate::{
     packet::{ControlPacket, DataPacket},
     peer::Peer,
     router_id::RouterId,
-    routing_table::{RouteEntry, RouteKey, RoutingTable},
+    routing_table::{RouteEntry, RouteExpirationType, RouteKey, RoutingTable},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     subnet::Subnet,
@@ -71,8 +71,9 @@ impl Router {
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
         let (router_data_tx, router_data_rx) = mpsc::channel::<DataPacket>(1000);
         let (expired_source_key_sink, expired_source_key_stream) = mpsc::channel(1);
+        let (expired_route_entry_sink, expired_route_entry_stream) = mpsc::channel(1);
 
-        let router_inner = RouterInner::new(expired_source_key_sink)?;
+        let router_inner = RouterInner::new(expired_source_key_sink, expired_route_entry_sink)?;
         let (mut inner_w, inner_r) = left_right::new_from_empty(router_inner);
         inner_w.append(RouterOpLogEntry::SetStaticRoutes(static_routes));
         inner_w.publish();
@@ -109,6 +110,11 @@ impl Router {
         tokio::spawn(Router::process_expired_source_keys(
             router.clone(),
             expired_source_key_stream,
+        ));
+
+        tokio::spawn(Router::process_expired_route_keys(
+            router.clone(),
+            expired_route_entry_stream,
         ));
 
         Ok(router)
@@ -349,6 +355,74 @@ impl Router {
             inner.publish();
         }
         warn!("Expired source key processing halted");
+    }
+
+    /// Remove expired route keys from the router state.
+    async fn process_expired_route_keys(
+        self,
+        mut expired_route_key_stream: mpsc::Receiver<(RouteKey, RouteExpirationType)>,
+    ) {
+        while let Some((rk, expiration_type)) = expired_route_key_stream.recv().await {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            debug!("Got expiration event for route {rk}");
+            let subnet = rk.subnet();
+            let mut inner = self.inner_w.lock().unwrap();
+            // Load current key
+            let entry = inner
+                .enter()
+                .expect("We enter through a write handle so this can never be None")
+                .routing_table
+                .get(&rk)
+                .cloned();
+            if entry.is_none() {
+                continue;
+            }
+            let entry = entry.unwrap();
+            if !entry.metric().is_infinite()
+                && matches!(expiration_type, RouteExpirationType::Retract)
+            {
+                debug!("Route {rk} expired, increasing metric to infinity");
+                inner.append(RouterOpLogEntry::UpdateRouteEntry(
+                    rk,
+                    entry.seqno(),
+                    Metric::infinite(),
+                    entry.source().router_id(),
+                ));
+            } else if entry.metric().is_infinite()
+                && matches!(expiration_type, RouteExpirationType::Remove)
+            {
+                debug!("Route {rk} expired, removing retracted route");
+                inner.append(RouterOpLogEntry::RemoveRoute(rk));
+            } else {
+                continue;
+            }
+            inner.publish();
+            // Re run route selection if this was the selected route. We should do this before
+            // publishing to potentially select a new route, however a time based expiraton of a
+            // selected route generally means no other routes are viable anyway, so the short lived
+            // black hole this could create is not really a concern.
+            if entry.selected() {
+                let routes = inner
+                    .enter()
+                    .expect("We enter through a write handle so this can never be None")
+                    .routing_table
+                    .entries(subnet);
+                if let Some(r) = self.find_best_route(&routes) {
+                    debug!("Rerun route selection after expiration event");
+                    inner
+                        .append(RouterOpLogEntry::SelectRoute(RouteKey::new(
+                            subnet,
+                            r.neighbour().clone(),
+                        )))
+                        .publish();
+                    // If the entry wasn't retracted yet, notify our peers.
+                    if !entry.metric().is_infinite() {
+                        Router::trigger_update(&mut inner, subnet, self.router_id);
+                    }
+                }
+            }
+        }
+        warn!("Expired route key processing halted");
     }
 
     async fn handle_incoming_control_packet(
@@ -897,10 +971,14 @@ pub struct RouterInner {
     // map that contains the overlay ips of peers and their respective public keys
     dest_pubkey_map: IpPubkeyMap,
     expired_source_key_sink: mpsc::Sender<SourceKey>,
+    expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
 }
 
 impl RouterInner {
-    pub fn new(expired_source_key_sink: mpsc::Sender<SourceKey>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(
+        expired_source_key_sink: mpsc::Sender<SourceKey>,
+        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
+    ) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
             peer_interfaces: Vec::new(),
             routing_table: RoutingTable::new(),
@@ -910,6 +988,7 @@ impl RouterInner {
             static_routes: vec![],
             dest_pubkey_map: IpPubkeyMap::new(),
             expired_source_key_sink,
+            expired_route_entry_sink,
         };
 
         Ok(router_inner)
@@ -1094,7 +1173,6 @@ enum RouterOpLogEntry {
     /// Insert a new entry in the routing table.
     InsertRoute(RouteKey, RouteEntry),
     /// Removes a route with the given route key.
-    #[allow(dead_code)]
     RemoveRoute(RouteKey),
     /// Unselect the route defined by the route key.
     UnselectRoute(RouteKey),
@@ -1129,7 +1207,11 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                 self.source_table.remove(sk);
             }
             RouterOpLogEntry::InsertRoute(rk, re) => {
-                self.routing_table.insert(rk.clone(), re.clone());
+                self.routing_table.insert(
+                    rk.clone(),
+                    re.clone(),
+                    self.expired_route_entry_sink.clone(),
+                );
             }
             RouterOpLogEntry::RemoveRoute(rk) => {
                 self.routing_table.remove(rk);
@@ -1145,6 +1227,8 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
+                    self.routing_table
+                        .reset_route_timer(rk, self.expired_route_entry_sink.clone());
                 }
             }
             RouterOpLogEntry::SetStaticRoutes(static_routes) => {
@@ -1173,20 +1257,26 @@ impl Clone for RouterInner {
             static_routes,
             dest_pubkey_map,
             expired_source_key_sink,
+            expired_route_entry_sink,
         } = self;
         let mut new_source_table = SourceTable::new();
         for (k, v) in source_table.iter() {
             new_source_table.insert(*k, *v, expired_source_key_sink.clone());
         }
+        let mut new_routing_table = RoutingTable::new();
+        for (k, v) in routing_table.iter() {
+            new_routing_table.insert(k.clone(), v.clone(), expired_route_entry_sink.clone());
+        }
         RouterInner {
             peer_interfaces: peer_interfaces.clone(),
-            routing_table: routing_table.clone(),
+            routing_table: new_routing_table,
             source_table: new_source_table,
             router_seqno: *router_seqno,
             last_seqno_bump: *last_seqno_bump,
             static_routes: static_routes.clone(),
             dest_pubkey_map: dest_pubkey_map.clone(),
             expired_source_key_sink: expired_source_key_sink.clone(),
+            expired_route_entry_sink: expired_route_entry_sink.clone(),
         }
     }
 }

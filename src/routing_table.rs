@@ -1,5 +1,6 @@
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use log::warn;
+use log::{error, warn};
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
     metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
@@ -9,7 +10,19 @@ use core::fmt;
 use std::{
     cmp::Ordering,
     net::{IpAddr, Ipv6Addr},
+    time::Duration,
 };
+
+/// Default time before a route expires.
+const DEFAULT_ROUTE_EXPIRATION: Duration = Duration::from_secs(60);
+
+/// Information about a routes expiration.
+pub enum RouteExpirationType {
+    /// Route should be retracted.
+    Retract,
+    /// Route should be flushed from the table.
+    Remove,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteKey {
@@ -133,7 +146,7 @@ impl RouteEntry {
 
 /// The `RoutingTable` contains all known subnets, and the associated [`RouteEntry`]'s.
 pub struct RoutingTable {
-    table: IpLookupTable<Ipv6Addr, Vec<RouteEntry>>,
+    table: IpLookupTable<Ipv6Addr, Vec<(RouteEntry, JoinHandle<()>)>>,
 }
 
 impl RoutingTable {
@@ -142,6 +155,21 @@ impl RoutingTable {
         Self {
             table: IpLookupTable::new(),
         }
+    }
+
+    /// Get a  reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
+    /// present in the table.
+    pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {
+        let addr = match key.subnet.address() {
+            IpAddr::V6(addr) => addr,
+            _ => return None,
+        };
+
+        self.table
+            .exact_match(addr, key.subnet.prefix_len() as u32)?
+            .iter()
+            .map(|(entry, _)| entry)
+            .find(|entry| entry.neighbor == key.neighbor)
     }
 
     /// Get a mutable reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
@@ -155,6 +183,7 @@ impl RoutingTable {
         self.table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)?
             .iter_mut()
+            .map(|(entry, _)| entry)
             .find(|entry| entry.neighbor == key.neighbor)
     }
 
@@ -162,7 +191,12 @@ impl RoutingTable {
     /// [`RouteKey`], the existing entry is removed.
     ///
     /// Currenly only IPv6 is supported, attempting to insert an IPv4 network does nothing.
-    pub fn insert(&mut self, key: RouteKey, entry: RouteEntry) {
+    pub fn insert(
+        &mut self,
+        key: RouteKey,
+        entry: RouteEntry,
+        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
+    ) {
         // We make sure that the selected route has index 0 in the entry list (if there is one).
         // This effectively makes the lookup of a selected route O(1), whereas a lookup of a non
         // selected route is O(n), n being the amount of Peers (as this is the differentiating part
@@ -172,6 +206,21 @@ impl RoutingTable {
             _ => return,
         };
         let selected = entry.selected;
+        let expiration = tokio::spawn({
+            let key = key.clone();
+            let t = if entry.metric().is_infinite() {
+                RouteExpirationType::Remove
+            } else {
+                RouteExpirationType::Retract
+            };
+            async move {
+                tokio::time::sleep(DEFAULT_ROUTE_EXPIRATION).await;
+
+                if let Err(e) = expired_route_entry_sink.send((key, t)).await {
+                    error!("Failed to notify router of expired key {e}");
+                }
+            }
+        });
         match self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
@@ -179,20 +228,22 @@ impl RoutingTable {
             Some(entries) => {
                 let new_elem_idx = if let Some(idx) = entries
                     .iter()
+                    .map(|(entry, _)| entry)
                     .position(|entry| entry.neighbor == key.neighbor)
                 {
-                    // Overwrite entry if one exists for the key
-                    entries[idx] = entry;
+                    // Overwrite entry if one exists for the key but cancel the timer.
+                    entries[idx].1.abort();
+                    entries[idx] = (entry, expiration);
                     idx
                 } else {
-                    entries.push(entry);
+                    entries.push((entry, expiration));
                     entries.len() - 1
                 };
                 // In debug mode, verify that we only have 1 selected route at most. We do this by
                 // checking if entry 0 is not overwritten (the possibly selectd route) and if
                 // that is selected. This will also panic if we add a selected route to an existing
                 // but empty route list. That is fine, since we don't want that condition either.
-                debug_assert!(new_elem_idx != 0 && selected && !entries[0].selected);
+                debug_assert!(new_elem_idx != 0 && selected && !entries[0].0.selected);
                 // If the inserted entry is selected, swap it to index 0 so it is at the start of
                 // the list.
                 if selected {
@@ -200,8 +251,11 @@ impl RoutingTable {
                 }
             }
             None => {
-                self.table
-                    .insert(addr, key.subnet.prefix_len() as u32, vec![entry]);
+                self.table.insert(
+                    addr,
+                    key.subnet.prefix_len() as u32,
+                    vec![(entry, expiration)],
+                );
             }
         };
     }
@@ -222,7 +276,7 @@ impl RoutingTable {
             Some(entries) => {
                 let elem = entries
                     .iter()
-                    .position(|entry| entry.neighbor == key.neighbor)
+                    .position(|(entry, _)| entry.neighbor == key.neighbor)
                     .map(|idx| entries.swap_remove(idx));
                 // Remove the table entry entirely if the vec is empty
                 // NOTE: we don't care if val is some, we only care that no empty set is left
@@ -230,7 +284,10 @@ impl RoutingTable {
                 if entries.is_empty() {
                     self.table.remove(addr, key.subnet.prefix_len() as u32);
                 }
-                elem
+                elem.map(|(entry, expiration)| {
+                    expiration.abort();
+                    entry
+                })
             }
             None => None,
         }
@@ -240,7 +297,7 @@ impl RoutingTable {
     // TODO: remove this?
     pub fn iter(&self) -> impl Iterator<Item = (RouteKey, &'_ RouteEntry)> {
         self.table.iter().flat_map(|(addr, prefix, entries)| {
-            entries.iter().map(move |value| {
+            entries.iter().map(move |(value, _)| {
                 (
                     RouteKey::new(
                         Subnet::new(addr.into(), prefix as u8)
@@ -256,8 +313,24 @@ impl RoutingTable {
     /// Remove all [`RouteKey`] and [`RouteEntry`] pairs where the [`RouteEntry`]'s neighbour value
     /// is the given [`Peer`].
     pub fn remove_peer(&mut self, peer: Peer) {
-        for (_, _, entries) in self.table.iter_mut() {
-            entries.retain(|entry| entry.neighbor != peer);
+        let mut to_remove = Vec::new();
+        for (ip, mask, entries) in self.table.iter_mut() {
+            entries.retain_mut(|(entry, expiration)| {
+                if entry.neighbor == peer {
+                    expiration.abort();
+                    false
+                } else {
+                    true
+                }
+            });
+            if entries.is_empty() {
+                to_remove.push((ip, mask));
+            }
+        }
+
+        // Clear empty lists
+        for (ip, mask) in to_remove {
+            self.table.remove(ip, mask);
         }
     }
 
@@ -278,8 +351,8 @@ impl RoutingTable {
             warn!("Empty route entry list for {ip}, this is a bug");
             return None;
         }
-        if entries[0].selected {
-            Some(entries[0].clone())
+        if entries[0].0.selected {
+            Some(entries[0].0.clone())
         } else {
             None
         }
@@ -299,7 +372,7 @@ impl RoutingTable {
             .map(|(_, _, entries)| entries.as_slice())
             .unwrap_or(&[])
             .iter()
-            .filter(|entry| !entry.selected)
+            .filter_map(|(entry, _)| if !entry.selected { Some(entry) } else { None })
             .cloned()
             .collect()
     }
@@ -326,14 +399,14 @@ impl RoutingTable {
         // The message on this assert assumes the invariant that the selected route is the first
         // element holds
         assert!(
-            entries[0].neighbor == key.neighbor,
+            entries[0].0.neighbor == key.neighbor,
             "Attempted to unselect route which has a different RouteKey"
         );
         assert!(
-            entries[0].selected,
+            entries[0].0.selected,
             "Attempted to unselected a route which isn't selected"
         );
-        entries[0].selected = false;
+        entries[0].0.selected = false;
     }
 
     /// Selects a route defined by the [`RouteKey`]. This means the route defined by the [`RouteKey`]
@@ -359,12 +432,12 @@ impl RoutingTable {
         // Unconditionally set the selected flag on the first element to false. If there is no
         // selected route, this is a no-op, otherwise it makes sure there is only 1 selected route
         // when we toggle the potentially new route.
-        entries[0].selected = false;
+        entries[0].0.selected = false;
         let entry_idx = entries
             .iter()
-            .position(|entry| entry.neighbor == key.neighbor)
+            .position(|(entry, _)| entry.neighbor == key.neighbor)
             .expect("Route entry must be present in route table to select it");
-        entries[entry_idx].selected = true;
+        entries[entry_idx].0.selected = true;
         // Maintain invariant that selected route comes first.
         entries.swap(0, entry_idx);
     }
@@ -380,17 +453,53 @@ impl RoutingTable {
         };
         self.table
             .exact_match(addr, subnet.prefix_len() as u32)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .map(|(entry, _)| entry)
             .cloned()
-            .unwrap_or_else(Vec::new)
+            .collect()
     }
-}
 
-impl Clone for RoutingTable {
-    fn clone(&self) -> Self {
-        let mut new = RoutingTable::new();
-        for (rk, rv) in self.iter() {
-            new.insert(rk, rv.clone());
-        }
-        new
+    /// Resets the timer associated with a route.
+    pub fn reset_route_timer(
+        &mut self,
+        key: &RouteKey,
+        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
+    ) {
+        let addr = match key.subnet.network() {
+            IpAddr::V6(addr) => addr,
+            _ => return,
+        };
+
+        if let Some(entries) = self
+            .table
+            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
+        {
+            if let Some(idx) = entries
+                .iter()
+                .map(|(entry, _)| entry)
+                .position(|entry| entry.neighbor == key.neighbor)
+            {
+                // Cancel old entry timer and keep track of the new one.
+                entries[idx].1.abort();
+                let t = if entries[idx].0.metric().is_infinite() {
+                    RouteExpirationType::Remove
+                } else {
+                    RouteExpirationType::Retract
+                };
+                let expiration = tokio::spawn({
+                    let key = key.clone();
+                    async move {
+                        tokio::time::sleep(DEFAULT_ROUTE_EXPIRATION).await;
+
+                        if let Err(e) = expired_route_entry_sink.send((key, t)).await {
+                            error!("Failed to notify router of expired key {e}");
+                        }
+                    }
+                });
+                entries[idx].1 = expiration;
+            };
+        };
     }
 }
