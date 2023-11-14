@@ -144,17 +144,17 @@ impl RoutingTable {
         }
     }
 
-    /// Get a reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is present in
-    /// the table.
-    pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {
+    /// Get a mutable reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
+    /// present in the table.
+    pub fn get_mut(&mut self, key: &RouteKey) -> Option<&mut RouteEntry> {
         let addr = match key.subnet.address() {
             IpAddr::V6(addr) => addr,
             _ => return None,
         };
 
         self.table
-            .exact_match(addr, key.subnet.prefix_len() as u32)?
-            .iter()
+            .exact_match_mut(addr, key.subnet.prefix_len() as u32)?
+            .iter_mut()
             .find(|entry| entry.neighbor == key.neighbor)
     }
 
@@ -336,6 +336,12 @@ impl RoutingTable {
         entries[0].selected = false;
     }
 
+    /// Selects a route defined by the [`RouteKey`]. This means the route defined by the [`RouteKey`]
+    /// will become the selected route for the subnet defined by the [`RouteKey`].
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the [`RouteKey`] does not exist.
     pub fn select_route(&mut self, key: &RouteKey) {
         let addr = match key.subnet.network() {
             IpAddr::V6(addr) => addr,
@@ -350,10 +356,10 @@ impl RoutingTable {
         // No need for bounds check, RouteKey must exist so there must be at least 1 element.
         // The message on this assert assumes the invariant that the selected route is the first
         // element holds
-        assert!(
-            !entries[0].selected,
-            "Attempted to select a route for a subnet while we already have a selected route"
-        );
+        // Unconditionally set the selected flag on the first element to false. If there is no
+        // selected route, this is a no-op, otherwise it makes sure there is only 1 selected route
+        // when we toggle the potentially new route.
+        entries[0].selected = false;
         let entry_idx = entries
             .iter()
             .position(|entry| entry.neighbor == key.neighbor)
@@ -361,6 +367,21 @@ impl RoutingTable {
         entries[entry_idx].selected = true;
         // Maintain invariant that selected route comes first.
         entries.swap(0, entry_idx);
+    }
+
+    /// Get all entries associated with a [`Subnet`]. If a route is selected, it will be the first
+    /// entry in the list.
+    pub fn entries(&self, subnet: Subnet) -> Vec<RouteEntry> {
+        let addr = match subnet.network() {
+            IpAddr::V6(addr) => addr,
+            // Panic is fine here as we documented that the RouteKey must exist and that is
+            // obviously not the case.
+            _ => panic!("RouteKey must exist, so it can't be IPv4"),
+        };
+        self.table
+            .exact_match(addr, subnet.prefix_len() as u32)
+            .cloned()
+            .unwrap_or_else(Vec::new)
     }
 }
 
