@@ -240,10 +240,13 @@ impl RoutingTable {
                     entries.len() - 1
                 };
                 // In debug mode, verify that we only have 1 selected route at most. We do this by
-                // checking if entry 0 is not overwritten (the possibly selectd route) and if
-                // that is selected. This will also panic if we add a selected route to an existing
-                // but empty route list. That is fine, since we don't want that condition either.
-                debug_assert!(new_elem_idx != 0 && selected && !entries[0].0.selected);
+                // checking if entry 0 is not overwritten (the possibly selected route) and if
+                // that is selected.
+                debug_assert!(if new_elem_idx != 0 && selected {
+                    !entries[0].0.selected
+                } else {
+                    true
+                });
                 // If the inserted entry is selected, swap it to index 0 so it is at the start of
                 // the list.
                 if selected {
