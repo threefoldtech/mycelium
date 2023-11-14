@@ -78,10 +78,12 @@ impl Router {
         inner_w.append(RouterOpLogEntry::SetStaticRoutes(static_routes));
         inner_w.publish();
 
+        let router_id = RouterId::new(node_keypair.1);
+
         let router = Router {
             inner_w: Arc::new(Mutex::new(inner_w)),
             inner_r,
-            router_id: RouterId::new(node_keypair.1),
+            router_id,
             node_keypair,
             router_data_tx,
             router_control_tx,
@@ -102,10 +104,7 @@ impl Router {
         tokio::spawn(Router::propagate_static_route(router.clone()));
         tokio::spawn(Router::propagate_selected_routes(router.clone()));
 
-        tokio::spawn(Router::check_for_dead_peers(
-            router.clone(),
-            RouterId::new(router.node_keypair.1),
-        ));
+        tokio::spawn(Router::check_for_dead_peers(router.clone(), router_id));
 
         tokio::spawn(Router::process_expired_source_keys(
             router.clone(),

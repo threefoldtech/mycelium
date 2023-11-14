@@ -19,7 +19,7 @@ const UPDATE_FLAG_ROUTER_ID: u8 = 0x40;
 const FLAG_MASK: u8 = 0b1100_0000;
 
 /// Base wire size of an [`Update`] without variable lenght address encoding.
-const UPDATE_BASE_WIRE_SIZE: u8 = 10 + 32;
+const UPDATE_BASE_WIRE_SIZE: u8 = 10 + RouterId::BYTE_SIZE as u8;
 
 /// Update TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-update.
 #[derive(Debug, Clone, PartialEq)]
@@ -141,9 +141,9 @@ impl Update {
 
         let subnet = Subnet::new(prefix, plen).ok()?;
 
-        let mut router_id_bytes = [0u8; 32];
-        router_id_bytes.copy_from_slice(&src[..32]);
-        src.advance(32);
+        let mut router_id_bytes = [0u8; RouterId::BYTE_SIZE];
+        router_id_bytes.copy_from_slice(&src[..RouterId::BYTE_SIZE]);
+        src.advance(RouterId::BYTE_SIZE);
 
         let router_id = RouterId::from(router_id_bytes);
 
@@ -198,18 +198,18 @@ mod tests {
             metric: 25.into(),
             subnet: Subnet::new(Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(), 64)
                 .expect("64 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([1u8; 32]),
+            router_id: RouterId::from([1u8; RouterId::BYTE_SIZE]),
         };
 
         ihu.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 58);
+        assert_eq!(buf.len(), 66);
         assert_eq!(
-            buf[..58],
+            buf[..66],
             [
                 2, 192, 64, 0, 1, 144, 0, 17, 0, 25, 2, 0, 0, 25, 0, 26, 0, 27, 0, 28, 0, 0, 0, 0,
                 0, 29, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 1, 1, 1, 1
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
             ]
         );
 
@@ -222,17 +222,18 @@ mod tests {
             metric: 256.into(),
             subnet: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
                 .expect("32 is a valid IPv4 prefix size; qed"),
-            router_id: RouterId::from([2u8; 32]),
+            router_id: RouterId::from([2u8; RouterId::BYTE_SIZE]),
         };
 
         ihu.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 46);
+        assert_eq!(buf.len(), 54);
         assert_eq!(
-            buf[..46],
+            buf[..54],
             [
                 1, 0, 32, 0, 2, 88, 0, 170, 1, 0, 10, 101, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2
             ]
         );
     }
@@ -242,7 +243,7 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 0, 64, 0, 0, 0, 100, 0, 70, 2, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
             ][..],
         );
 
@@ -253,7 +254,7 @@ mod tests {
             metric: 512.into(),
             subnet: Subnet::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0)
                 .expect("0 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([3u8; 32]),
+            router_id: RouterId::from([3u8; RouterId::BYTE_SIZE]),
         };
 
         let buf_len = buf.len();
@@ -266,7 +267,8 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 3, 0, 92, 0, 3, 232, 0, 42, 3, 1, 0, 10, 0, 20, 0, 30, 0, 40, 4, 4, 4, 4, 4, 4, 4,
-                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4,
             ][..],
         );
 
@@ -277,7 +279,7 @@ mod tests {
             metric: 769.into(),
             subnet: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
                 .expect("92 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([4u8; 32]),
+            router_id: RouterId::from([4u8; RouterId::BYTE_SIZE]),
         };
 
         let buf_len = buf.len();
@@ -296,7 +298,7 @@ mod tests {
             &[
                 4, 0, 64, 0, 0, 44, 2, 0, 0, 10, 10, 5, 0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
                 17, 18, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-                5, 5, 5, 5, 5, 5, 5,
+                5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
             ][..],
         );
 
@@ -314,7 +316,8 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 3, 255, 92, 0, 3, 232, 0, 42, 3, 1, 0, 10, 0, 20, 0, 30, 0, 40, 4, 4, 4, 4, 4, 4,
-                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4,
             ][..],
         );
 
@@ -325,7 +328,7 @@ mod tests {
             metric: 769.into(),
             subnet: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
                 .expect("92 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([4u8; 32]),
+            router_id: RouterId::from([4u8; RouterId::BYTE_SIZE]),
         };
 
         let buf_len = buf.len();
@@ -349,7 +352,7 @@ mod tests {
                 64,
             )
             .expect("64 is a valid IPv6 prefix size; qed"),
-            RouterId::from([6; 32]),
+            RouterId::from([6; RouterId::BYTE_SIZE]),
         );
         hello_src.write_bytes(&mut buf);
         let buf_len = buf.len();

@@ -15,7 +15,7 @@ use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 const DEFAULT_HOP_COUNT: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(64) };
 
 /// Base wire size of a [`SeqNoRequest`] without variable lenght address encoding.
-const SEQNO_REQUEST_BASE_WIRE_SIZE: u8 = 38;
+const SEQNO_REQUEST_BASE_WIRE_SIZE: u8 = 6 + RouterId::BYTE_SIZE as u8;
 
 /// Seqno request TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-seqno-request
 #[derive(Debug, Clone, PartialEq)]
@@ -95,9 +95,9 @@ impl SeqNoRequest {
         // Read "reserved" value, we assume this is 0
         let _ = src.get_u8();
 
-        let mut router_id_bytes = [0u8; 32];
-        router_id_bytes.copy_from_slice(&src[..32]);
-        src.advance(32);
+        let mut router_id_bytes = [0u8; RouterId::BYTE_SIZE];
+        router_id_bytes.copy_from_slice(&src[..RouterId::BYTE_SIZE]);
+        src.advance(RouterId::BYTE_SIZE);
 
         let router_id = RouterId::from(router_id_bytes);
 
@@ -131,7 +131,7 @@ impl SeqNoRequest {
             _ => {
                 // Invalid AE type, skip reamining data and ignore
                 trace!("Invalid AE type in seqno_request packet, drop packet");
-                src.advance(len as usize - 38);
+                src.advance(len as usize - 46);
                 return None;
             }
         };
@@ -195,17 +195,17 @@ mod tests {
             hop_count: NonZeroU8::new(64).unwrap(),
             prefix: Subnet::new(Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(), 64)
                 .expect("64 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([1u8; 32]),
+            router_id: RouterId::from([1u8; RouterId::BYTE_SIZE]),
         };
 
         snr.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 46);
+        assert_eq!(buf.len(), 54);
         assert_eq!(
-            buf[..46],
+            buf[..54],
             [
                 2, 64, 0, 17, 64, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 25, 0, 26, 0, 27,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 25, 0, 26, 0, 27,
             ]
         );
 
@@ -216,17 +216,17 @@ mod tests {
             hop_count: NonZeroU8::new(111).unwrap(),
             prefix: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
                 .expect("32 is a valid IPv4 prefix size; qed"),
-            router_id: RouterId::from([2u8; 32]),
+            router_id: RouterId::from([2u8; RouterId::BYTE_SIZE]),
         };
 
         snr.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 42);
+        assert_eq!(buf.len(), 50);
         assert_eq!(
-            buf[..42],
+            buf[..50],
             [
                 1, 32, 0, 170, 111, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 101, 4, 1,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 101, 4, 1,
             ]
         );
     }
@@ -236,7 +236,7 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 0, 0, 0, 0, 1, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-                3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
             ][..],
         );
 
@@ -245,7 +245,7 @@ mod tests {
             seqno: 0.into(),
             prefix: Subnet::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0)
                 .expect("0 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([3u8; 32]),
+            router_id: RouterId::from([3u8; RouterId::BYTE_SIZE]),
         };
 
         let buf_len = buf.len();
@@ -258,7 +258,8 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 3, 92, 0, 42, 232, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0, 40,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0,
+                40,
             ][..],
         );
 
@@ -267,7 +268,7 @@ mod tests {
             hop_count: NonZeroU8::new(232).unwrap(),
             prefix: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
                 .expect("92 is a valid IPv6 prefix size; qed"),
-            router_id: RouterId::from([4u8; 32]),
+            router_id: RouterId::from([4u8; RouterId::BYTE_SIZE]),
         };
 
         let buf_len = buf.len();
@@ -285,8 +286,8 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 4, 64, 0, 0, 44, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-                5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21,
+                5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 7, 8, 9, 10, 11, 12,
+                13, 14, 15, 16, 17, 18, 19, 20, 21,
             ][..],
         );
 
@@ -307,7 +308,8 @@ mod tests {
         let mut buf = bytes::BytesMut::from(
             &[
                 3, 64, 92, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0, 40,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0,
+                40,
             ][..],
         );
 
@@ -325,7 +327,7 @@ mod tests {
 
         let seqno_src = super::SeqNoRequest::new(
             64.into(),
-            RouterId::from([6; 32]),
+            RouterId::from([6; RouterId::BYTE_SIZE]),
             Subnet::new(
                 Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0, 0, 0, 0).into(),
                 64,
