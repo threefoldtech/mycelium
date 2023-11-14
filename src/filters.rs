@@ -37,7 +37,7 @@ impl RouteUpdateFilter for AllowedSubnet {
     }
 }
 
-/// Limit the announced subnets to those which contain the derived IP from the [`crate::router_id::RouterId`].
+/// Limit the announced subnets to those which contain the derived IP from the `RouterId`.
 pub struct RouterIdOwnsSubnet;
 
 impl RouteUpdateFilter for RouterIdOwnsSubnet {
