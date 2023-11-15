@@ -44,7 +44,10 @@ impl PeerManager {
                 if !self.router.peer_exists(peer.ip()) {
                     if let Ok(mut peer_stream) = TcpStream::connect(peer).await {
                         let mut buffer = [0u8; 17];
-                        peer_stream.read_exact(&mut buffer).await.unwrap();
+                        if let Err(e) = peer_stream.read_exact(&mut buffer).await {
+                            info!("Failed to read hanshake from peer: {e}");
+                            continue;
+                        }
                         let received_overlay_ip = match buffer[0] {
                             0 => IpAddr::from(
                                 <&[u8] as TryInto<[u8; 4]>>::try_into(&buffer[1..5]).unwrap(),
@@ -63,7 +66,10 @@ impl PeerManager {
                         buf[0] = 1;
                         buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
-                        peer_stream.write_all(&buf).await.unwrap();
+                        if let Err(e) = peer_stream.write_all(&buf).await {
+                            info!("Failed to read hanshake from peer: {e}");
+                            continue;
+                        };
 
                         let peer_stream_ip = peer.ip();
                         if let Ok(new_peer) = Peer::new(
