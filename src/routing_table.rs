@@ -41,7 +41,10 @@ impl PartialOrd for RouteKey {
 impl Ord for RouteKey {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.subnet.cmp(&other.subnet) {
-            Ordering::Equal => self.neighbor.overlay_ip().cmp(&other.neighbor.overlay_ip()),
+            Ordering::Equal => self
+                .neighbor
+                .underlay_ip()
+                .cmp(&other.neighbor.underlay_ip()),
             ord => ord,
         }
     }
