@@ -39,6 +39,6 @@ jobs:
           # --target flag value, default is host
           target: ${{ matrix.target }}
           # Name of the archive when uploaded
-          archive: $bin-$targete
+          archive: $bin-$target
           # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
