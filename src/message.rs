@@ -78,7 +78,11 @@ const FLAG_MESSAGE_ACK: u16 = 0b0000_0001_0000_0000;
 /// Length of a message checksum in bytes.
 const MESSAGE_CHECKSUM_LENGTH: usize = 32;
 
+/// Checksum of a message used to verify received message integrity.
 pub type Checksum = [u8; MESSAGE_CHECKSUM_LENGTH];
+
+/// Response type when pushing a message.
+pub type MessagePushResponse = (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>);
 
 #[derive(Clone)]
 pub struct MessageStack {
@@ -116,6 +120,8 @@ struct ReceivedMessageInfo {
     dst: IpAddr,
     /// Length of the finished message.
     len: u64,
+    /// Optional topic of the message.
+    topic: Vec<u8>,
     chunks: Vec<Option<Chunk>>,
 }
 
@@ -133,6 +139,8 @@ pub struct ReceivedMessage {
     pub dst_ip: IpAddr,
     /// The public key of the receiver of the message. This is always ours.
     pub dst_pk: PublicKey,
+    /// The possible topic of the message.
+    pub topic: Vec<u8>,
     /// Actual message.
     pub data: Vec<u8>,
 }
@@ -179,6 +187,12 @@ enum TransmissionState {
     Read,
     /// Transmission aborted by us. We indicated this by sending an abort flag to the receiver.
     Aborted,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PushMessageError {
+    /// The topic set in the message is too large.
+    TopicTooLarge,
 }
 
 impl MessageInbox {
@@ -374,6 +388,7 @@ impl MessageStack {
                 src,
                 dst,
                 len: mi.length(),
+                topic: mi.topic().into(),
                 chunks,
             };
 
@@ -468,6 +483,7 @@ impl MessageStack {
                     id: inbound_message.id,
                     src: inbound_message.src,
                     dst: inbound_message.dst,
+                    topic: inbound_message.topic.clone(),
                     data: message_data,
                 };
 
@@ -500,6 +516,7 @@ impl MessageStack {
                     src_pk: src_pubkey,
                     dst_ip: message.dst,
                     dst_pk: dst_pubkey,
+                    topic: message.topic,
                     data: message.data,
                 };
 
@@ -578,10 +595,11 @@ impl MessageStack {
         &self,
         dst: IpAddr,
         data: Vec<u8>,
+        topic: Vec<u8>,
         try_duration: Duration,
         subscribe_reply: bool,
-    ) -> (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>) {
-        self.push_message(None, dst, data, try_duration, subscribe_reply)
+    ) -> Result<MessagePushResponse, PushMessageError> {
+        self.push_message(None, dst, data, topic, try_duration, subscribe_reply)
     }
 
     /// Push a new message which is a reply to the message with [the provided id](MessageId).
@@ -592,7 +610,8 @@ impl MessageStack {
         data: Vec<u8>,
         try_duration: Duration,
     ) -> MessageId {
-        self.push_message(Some(reply_to), dst, data, try_duration, false)
+        self.push_message(Some(reply_to), dst, data, vec![], try_duration, false)
+            .expect("Empty topic is never too large")
             .0
     }
 
@@ -616,9 +635,14 @@ impl MessageStack {
         id: Option<MessageId>,
         dst: IpAddr,
         data: Vec<u8>,
+        topic: Vec<u8>,
         try_duration: Duration,
         subscribe: bool,
-    ) -> (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>) {
+    ) -> Result<MessagePushResponse, PushMessageError> {
+        if topic.len() > 255 {
+            return Err(PushMessageError::TopicTooLarge);
+        }
+
         let src = self
             .data_plane
             .lock()
@@ -635,7 +659,13 @@ impl MessageStack {
         };
 
         let len = data.len();
-        let msg = Message { id, src, dst, data };
+        let msg = Message {
+            id,
+            src,
+            dst,
+            topic,
+            data,
+        };
 
         let created = std::time::SystemTime::now();
         let deadline = created + try_duration;
@@ -655,12 +685,7 @@ impl MessageStack {
             None
         };
 
-        self.outbox
-            .lock()
-            .expect("Outbox lock isn't poisoned; qed")
-            .insert(obmi);
-
-        // Already send the init packet.
+        // Already prepare the init packet for sending..
         let mut mp = MessagePacket::new(PacketBuffer::new());
         mp.header_mut().set_message_id(id);
         if reply {
@@ -669,6 +694,14 @@ impl MessageStack {
 
         let mut mi = MessageInit::new(mp);
         mi.set_length(len as u64);
+        mi.set_topic(&obmi.msg.topic);
+
+        self.outbox
+            .lock()
+            .expect("Outbox lock isn't poisoned; qed")
+            .insert(obmi);
+
+        // Actually send the init packet
         match (src, dst) {
             (IpAddr::V6(src), IpAddr::V6(dst)) => {
                 self.data_plane.lock().unwrap().inject_message_packet(
@@ -711,6 +744,7 @@ impl MessageStack {
 
                                     let mut mi = MessageInit::new(mp);
                                     mi.set_length(len as u64);
+                                    mi.set_topic(&msg.msg.topic);
                                     match (msg.msg.src, msg.msg.dst) {
                                         (IpAddr::V6(src), IpAddr::V6(dst)) => {
                                             message_stack
@@ -898,7 +932,7 @@ impl MessageStack {
             }
         });
 
-        (id, subscription)
+        Ok((id, subscription))
     }
 
     /// Get information about the status of an outbound message.
@@ -948,7 +982,7 @@ impl MessageStack {
     ///
     /// If pop is false, the message is not removed and the next call of this method will return
     /// the same message.
-    pub async fn message(&self, pop: bool, filter: Option<Vec<u8>>) -> ReceivedMessage {
+    pub async fn message(&self, pop: bool, topic: Option<Vec<u8>>) -> ReceivedMessage {
         // Copy the subscriber since we need mutable access to it.
         let mut subscriber = self.subscriber.clone();
 
@@ -958,15 +992,12 @@ impl MessageStack {
             'check: {
                 let mut inbox = self.inbox.lock().unwrap();
                 // If a filter is set only check for those messages.
-                if let Some(ref filter) = filter {
-                    if let Some((idx, _)) =
-                        inbox.complete_msges.iter().enumerate().find(|(_, v)| {
-                            if v.data.len() < filter.len() + 1 {
-                                return false;
-                            }
-                            v.data[0] == filter.len() as u8
-                                && v.data[1..filter.len() + 1] == filter[..]
-                        })
+                if let Some(ref topic) = topic {
+                    if let Some((idx, _)) = inbox
+                        .complete_msges
+                        .iter()
+                        .enumerate()
+                        .find(|(_, v)| &v.topic == topic)
                     {
                         return inbox.complete_msges.remove(idx).unwrap();
                     } else {
@@ -1381,7 +1412,9 @@ pub struct Message {
     src: IpAddr,
     /// Destination IP
     dst: IpAddr,
-    /// Data
+    /// An optional topic of the message, usefull to differentiate messages before reading.
+    topic: Vec<u8>,
+    /// Data of the message
     data: Vec<u8>,
 }
 
@@ -1411,6 +1444,16 @@ impl Message {
         blake3::hash(&self.data)
     }
 }
+
+impl fmt::Display for PushMessageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TopicTooLarge => f.write_str("topic too large, topic is limitted to 255 bytes"),
+        }
+    }
+}
+
+impl std::error::Error for PushMessageError {}
 
 #[cfg(test)]
 mod tests {

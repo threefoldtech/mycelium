@@ -385,11 +385,14 @@ enum Payload {
 #[serde(rename_all = "camelCase")]
 struct CliMessage {
     id: MessageId,
-    topic: Option<String>,
     src_ip: IpAddr,
     src_pk: PublicKey,
     dst_ip: IpAddr,
     dst_pk: PublicKey,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_payload")]
+    topic: Option<Payload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_payload")]
     payload: Option<Payload>,
 }
@@ -407,16 +410,9 @@ fn serialize_payload<S: Serializer>(p: &Option<Payload>, s: S) -> Result<S::Ok, 
     <Option<String>>::serialize(&base64, s)
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ReadableCliMessage {
-    id: MessageId,
-    topic: Option<String>,
-    src_ip: IpAddr,
-    src_pk: PublicKey,
-    dst_ip: IpAddr,
-    dst_pk: PublicKey,
-    payload: String,
+/// Encode arbitrary data in standard base64.
+pub fn encode_base64(input: &[u8]) -> String {
+    B64ENGINE.encode(input)
 }
 
 /// Send a message to a receiver.
@@ -478,29 +474,8 @@ async fn send_msg(
         }
     };
 
-    // Load msg, files have prio. If a topic is present, include that first
-    // The layout of these messages (in binary) is:
-    // - 1 byte topic length
-    // - topic
-    // - actual message
-    //
-    // Meaning a message without topic has length 0.
-    let mut msg_buf = if let Some(topic) = topic {
-        if topic.len() > 255 {
-            error!("{topic} is longer than the maximum allowed topic length of 255");
-            return Err(
-                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Topic too long").into(),
-            );
-        }
-        let mut tmp = Vec::with_capacity(topic.len() + 1);
-        tmp.push(topic.len() as u8);
-        tmp.extend_from_slice(topic.as_bytes());
-        tmp
-    } else {
-        vec![0; 1]
-    };
-
-    msg_buf.extend_from_slice(&if let Some(path) = msg_path {
+    // Load msg, files have prio.
+    let msg = if let Some(path) = msg_path {
         match tokio::fs::read(&path).await {
             Err(e) => {
                 error!("Could not read file at {:?}: {e}", path);
@@ -517,7 +492,7 @@ async fn send_msg(
             "Message is a required argument if `--msg-path` is not provided",
         )
         .into());
-    });
+    };
 
     let mut url = format!("http://{server_addr}/api/v1/messages");
     if let Some(reply_to) = reply_to {
@@ -526,15 +501,15 @@ async fn send_msg(
     if wait {
         // A year should be sufficient to wait
         let reply_timeout = timeout.unwrap_or(60 * 60 * 24 * 365);
-        url.push_str("?reply_timeout=");
-        url.push_str(&format!("{reply_timeout}"));
+        url.push_str(&format!("?reply_timeout={reply_timeout}"));
     }
 
     match reqwest::Client::new()
         .post(url)
         .json(&MessageSendInfo {
             dst: destination,
-            payload: msg_buf,
+            topic: topic.map(String::into_bytes),
+            payload: msg,
         })
         .send()
         .await
@@ -543,54 +518,56 @@ async fn send_msg(
             error!("Failed to send request: {e}");
             return Err(e.into());
         }
-        Ok(res) => match res.json::<PushMessageResponse>().await {
-            Err(e) => {
-                error!("Failed to load response body {e}");
-                return Err(e.into());
+        Ok(res) => {
+            if res.status() == STATUSCODE_NO_CONTENT {
+                return Ok(());
             }
-            Ok(resp) => {
-                match resp {
-                    PushMessageResponse::Id(id) => {
-                        let _ = serde_json::to_writer(std::io::stdout(), &id);
-                    }
-                    PushMessageResponse::Reply(mri) => {
-                        let filter_len = mri.payload[0] as usize;
-                        let cm = CliMessage {
-                            id: mri.id,
-                            topic: if filter_len == 1 {
-                                None
-                            } else {
-                                Some(
-                                    String::from_utf8(mri.payload[1..filter_len].to_vec())
-                                        .map_err(|e| {
-                                            error!("Failed to parse topic, not valid UTF-8 ({e})");
-                                            e
-                                        })?,
-                                )
-                            },
-                            src_ip: mri.src_ip,
-                            src_pk: mri.src_pk,
-                            dst_ip: mri.dst_ip,
-                            dst_pk: mri.dst_pk,
-                            payload: Some({
-                                let p = mri.payload[filter_len..].to_vec();
-                                if let Ok(s) = String::from_utf8(p.clone()) {
-                                    Payload::Readable(s)
-                                } else {
-                                    Payload::NotReadable(p)
-                                }
-                            }),
-                        };
-                        let _ = serde_json::to_writer(std::io::stdout(), &cm);
-                    }
+            match res.json::<PushMessageResponse>().await {
+                Err(e) => {
+                    error!("Failed to load response body {e}");
+                    return Err(e.into());
                 }
-                println!();
+                Ok(resp) => {
+                    match resp {
+                        PushMessageResponse::Id(id) => {
+                            let _ = serde_json::to_writer(std::io::stdout(), &id);
+                        }
+                        PushMessageResponse::Reply(mri) => {
+                            let cm = CliMessage {
+                                id: mri.id,
+
+                                topic: mri.topic.map(|topic| {
+                                    if let Ok(s) = String::from_utf8(topic.clone()) {
+                                        Payload::Readable(s)
+                                    } else {
+                                        Payload::NotReadable(topic)
+                                    }
+                                }),
+                                src_ip: mri.src_ip,
+                                src_pk: mri.src_pk,
+                                dst_ip: mri.dst_ip,
+                                dst_pk: mri.dst_pk,
+                                payload: Some({
+                                    if let Ok(s) = String::from_utf8(mri.payload.clone()) {
+                                        Payload::Readable(s)
+                                    } else {
+                                        Payload::NotReadable(mri.payload)
+                                    }
+                                }),
+                            };
+                            let _ = serde_json::to_writer(std::io::stdout(), &cm);
+                        }
+                    }
+                    println!();
+                }
             }
-        },
+        }
     }
 
     Ok(())
 }
+
+const STATUSCODE_NO_CONTENT: u16 = 204;
 
 async fn recv_msg(
     timeout: Option<u64>,
@@ -601,25 +578,27 @@ async fn recv_msg(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // One year timeout should be sufficient
     let timeout = timeout.unwrap_or(60 * 60 * 24 * 365);
-    let mut url = format!("http:{server_addr}/api/v1/messages?timeout={timeout}");
-    let filter_len = if let Some(ref filter) = topic {
-        if filter.len() > 255 {
-            error!("{filter} is longer than the maximum allowed topic length of 255");
+    let mut url = format!("http://{server_addr}/api/v1/messages?timeout={timeout}");
+    if let Some(ref topic) = topic {
+        if topic.len() > 255 {
+            error!("{topic} is longer than the maximum allowed topic length of 255");
             return Err(
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "Topic too long").into(),
             );
         }
-        url.push_str(&format!("&filter={filter}"));
-        filter.len() + 1
-    } else {
-        1
-    };
+        url.push_str(&format!("&topic={}", encode_base64(topic.as_bytes())));
+    }
     let mut cm = match reqwest::get(url).await {
         Err(e) => {
             error!("Failed to wait for message: {e}");
             return Err(e.into());
         }
         Ok(resp) => {
+            if resp.status() == STATUSCODE_NO_CONTENT {
+                debug!("No message ready yet");
+                return Ok(());
+            }
+
             debug!("Received message response");
             match resp.json::<MessageReceiveInfo>().await {
                 Err(e) => {
@@ -628,28 +607,22 @@ async fn recv_msg(
                 }
                 Ok(mri) => CliMessage {
                     id: mri.id,
-                    topic: if filter_len == 1 {
-                        None
-                    } else {
-                        Some(
-                            String::from_utf8(mri.payload[1..filter_len].to_vec()).map_err(
-                                |e| {
-                                    error!("Failed to parse topic, not valid UTF-8 ({e})");
-                                    e
-                                },
-                            )?,
-                        )
-                    },
+                    topic: mri.topic.map(|topic| {
+                        if let Ok(s) = String::from_utf8(topic.clone()) {
+                            Payload::Readable(s)
+                        } else {
+                            Payload::NotReadable(topic)
+                        }
+                    }),
                     src_ip: mri.src_ip,
                     src_pk: mri.src_pk,
                     dst_ip: mri.dst_ip,
                     dst_pk: mri.dst_pk,
                     payload: Some({
-                        let p = mri.payload[filter_len..].to_vec();
-                        if let Ok(s) = String::from_utf8(p.clone()) {
+                        if let Ok(s) = String::from_utf8(mri.payload.clone()) {
                             Payload::Readable(s)
                         } else {
-                            Payload::NotReadable(p)
+                            Payload::NotReadable(mri.payload)
                         }
                     }),
                 },

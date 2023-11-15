@@ -56,12 +56,13 @@ paths:
             a message if present, or return immediately if there isn't
           example: 60
         - in: query
-          name: filter
+          name: topic 
           required: false
           schema: 
             type: string 
+            format: byte
             minLength: 0
-            maxLength: 255
+            maxLength: 340 
           description: |
             Optional filter for loading messages. If set, the system checks if the message has the given string at the start. This way
             a topic can be encoded.
@@ -217,6 +218,13 @@ components:
           minLength: 64
           maxLength: 64
           example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf
+        topic:
+          description: An optional message topic
+          type: string
+          format: byte
+          minLength: 0
+          maxLength: 340
+          example: hpV+
         payload:
           description: The message payload, encoded in standard alphabet base64
           type: string
@@ -229,6 +237,13 @@ components:
       properties:
         dst:
           $ref: '#/components/schemas/MessageDestination'
+        topic:
+          description: An optional message topic
+          type: string
+          format: byte
+          minLength: 0
+          maxLength: 340
+          example: hpV+
         payload:
           description: The message to send, base64 encoded
           type: string

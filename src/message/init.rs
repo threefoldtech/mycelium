@@ -11,7 +11,7 @@ pub struct MessageInit {
 impl MessageInit {
     /// Create a new `MessageInit` in the provided [`MessagePacket`].
     pub fn new(mut buffer: MessagePacket) -> Self {
-        buffer.set_used_buffer_size(8);
+        buffer.set_used_buffer_size(9);
         buffer.header_mut().flags_mut().set_init();
         Self { buffer }
     }
@@ -25,9 +25,30 @@ impl MessageInit {
         )
     }
 
+    /// Return the topic of the message, as written in the body.
+    pub fn topic(&self) -> &[u8] {
+        let topic_len = self.buffer.buffer()[8] as usize;
+        &self.buffer.buffer()[9..9 + topic_len]
+    }
+
     /// Set the length field of the message body.
     pub fn set_length(&mut self, length: u64) {
         self.buffer.buffer_mut()[..8].copy_from_slice(&length.to_be_bytes())
+    }
+
+    /// Set the topic in the message body.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the topic is longer than 255 bytes.
+    pub fn set_topic(&mut self, topic: &[u8]) {
+        assert!(
+            topic.len() <= u8::MAX as usize,
+            "Topic can be 255 bytes long at most"
+        );
+        self.buffer.set_used_buffer_size(9 + topic.len());
+        self.buffer.buffer_mut()[8] = topic.len() as u8;
+        self.buffer.buffer_mut()[9..9 + topic.len()].copy_from_slice(topic);
     }
 
     /// Convert the `MessageInit` into a reply. This does nothing if it is already a reply.
