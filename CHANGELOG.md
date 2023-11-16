@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A peer can now detect if it is no longer useable in most cases, allowing it to notify the router if it died. This
   allows near instant retraction of routes if a connection dies, decreasing the amount of time needed to find a
   suitable alternative route.
+- Add CHANGELOG.md entries when creating a release.
 
 ### Changed
 
