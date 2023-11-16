@@ -8,7 +8,6 @@ use crate::{
 };
 use core::fmt;
 use std::{
-    cmp::Ordering,
     net::{IpAddr, Ipv6Addr},
     time::Duration,
 };
