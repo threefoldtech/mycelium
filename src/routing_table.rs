@@ -62,6 +62,12 @@ impl RouteKey {
     pub const fn subnet(&self) -> Subnet {
         self.subnet
     }
+
+    /// Returns the [`neighbour`](Peer) associated with this `RouteKey`.
+    #[inline]
+    pub fn neighbour(&self) -> &Peer {
+        &self.neighbor
+    }
 }
 
 impl RouteEntry {
@@ -295,30 +301,6 @@ impl RoutingTable {
                 )
             })
         })
-    }
-
-    /// Remove all [`RouteKey`] and [`RouteEntry`] pairs where the [`RouteEntry`]'s neighbour value
-    /// is the given [`Peer`].
-    pub fn remove_peer(&mut self, peer: Peer) {
-        let mut to_remove = Vec::new();
-        for (ip, mask, entries) in self.table.iter_mut() {
-            entries.retain_mut(|(entry, expiration)| {
-                if entry.neighbor == peer {
-                    expiration.abort();
-                    false
-                } else {
-                    true
-                }
-            });
-            if entries.is_empty() {
-                to_remove.push((ip, mask));
-            }
-        }
-
-        // Clear empty lists
-        for (ip, mask) in to_remove {
-            self.table.remove(ip, mask);
-        }
     }
 
     /// Look up a selected route for an [`IpAddr`] in the `RoutingTable`.
