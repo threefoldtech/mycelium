@@ -150,7 +150,7 @@ impl Router {
     }
 
     pub fn add_peer_interface(&self, peer: Peer) {
-        debug!("Adding peer {} to router", peer.overlay_ip());
+        debug!("Adding peer {} to router", peer.underlay_ip());
         self.inner_w
             .lock()
             .expect("Mutex isn't poinsoned")
