@@ -688,7 +688,7 @@ impl Router {
         routes
             .iter()
             .filter(|re| inner.source_table.route_feasible(re))
-            .min_by_key(|re| re.metric())
+            .min_by_key(|re| re.metric() + Metric::from(re.neighbour().link_cost()))
     }
 
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {

@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   If the route is selected, route selection for the subnet is run again and if needed a triggered update is sent.
   This will allow downstream peers to receive a timely update informing them of a potentially retracted route,
   instead of having to wait for route expiration.
+- Account for the link with the peer of a route when performing route selection. This was not the case previously,
+  and could theoretically lead to a case where a route was selected with a non-optimal path, because the lower metric
+  was offset by a high link cost of the peer.
 
 ### Fixed
 
