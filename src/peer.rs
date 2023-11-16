@@ -1,5 +1,5 @@
 use futures::{SinkExt, StreamExt};
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use std::{
     error::Error,
     net::IpAddr,
@@ -40,6 +40,7 @@ impl Peer {
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         stream: TcpStream,
         overlay_ip: IpAddr,
+        dead_peer_sink: mpsc::Sender<Peer>,
     ) -> Result<Self, Box<dyn Error>> {
         // Data channel for peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
@@ -88,10 +89,11 @@ impl Peer {
                                 }
                                 Some(Err(e)) => {
                                     error!("Error from framed: {}", e);
+                                    break;
                                 },
                                 None => {
                                     info!("Stream is closed.");
-                                    return
+                                    break;
                                 }
                             }
                         }
@@ -116,6 +118,7 @@ impl Peer {
                                     .filter_map(|item| item.map(|item| Ok(Packet::DataPacket(item)))));
                             if let Err(e) = framed.send_all(&mut packet_stream).await {
                                 error!("Error writing to stream: {}", e);
+                                break;
                             }
                         }
 
@@ -123,9 +126,17 @@ impl Peer {
                             // Send it over the TCP stream
                             if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
                                 error!("Error writing to stream: {}", e);
+                                break;
                             }
                         }
                     }
+                }
+
+                // Notify router we are dead
+                let remote_id = peer.underlay_ip();
+                debug!("Notifying router peer {remote_id} is dead");
+                if let Err(e) = dead_peer_sink.send(peer).await {
+                    error!("Peer {remote_id} could not notify router of termination: {e}");
                 }
             });
         }
@@ -189,6 +200,12 @@ impl Peer {
     pub fn set_time_last_received_ihu(&self, time: tokio::time::Instant) {
         self.inner.state.write().unwrap().time_last_received_ihu = time
     }
+
+    /// Checks if the connection to this `Peer` is alive and useable. If it is not, this `Peer`
+    /// instance is dead and should be disposed of.
+    pub fn connection_alive(&self) -> bool {
+        self.inner.state.read().unwrap().connection_alive
+    }
 }
 
 impl PartialEq for Peer {
@@ -214,6 +231,7 @@ struct PeerState {
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
     time_last_received_ihu: tokio::time::Instant,
+    connection_alive: bool,
 }
 
 impl PeerState {
@@ -233,6 +251,7 @@ impl PeerState {
             link_cost,
             time_last_received_ihu,
             time_last_received_hello,
+            connection_alive: true,
         }
     }
 }

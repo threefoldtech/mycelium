@@ -78,6 +78,7 @@ impl PeerManager {
                             self.router.router_control_tx(),
                             peer_stream,
                             received_overlay_ip,
+                            self.router.dead_peer_sink().clone(),
                         ) {
                             info!("Connected to new peer {}", new_peer.underlay_ip());
                             self.router.add_peer_interface(new_peer);
@@ -98,6 +99,7 @@ impl PeerManager {
         };
         let router_data_tx = self.router.router_data_tx();
         let router_control_tx = self.router.router_control_tx();
+        let dead_peer_sink = self.router.dead_peer_sink();
 
         match TcpListener::bind(("::", port)).await {
             Ok(listener) => loop {
@@ -108,6 +110,7 @@ impl PeerManager {
                             node_tun_addr,
                             router_data_tx.clone(),
                             router_control_tx.clone(),
+                            dead_peer_sink.clone(),
                         )
                         .await;
                         match new_peer {
@@ -136,6 +139,7 @@ impl PeerManager {
         node_tun_addr: Ipv6Addr,
         router_data_tx: Sender<DataPacket>,
         router_control_tx: UnboundedSender<(ControlPacket, Peer)>,
+        dead_peer_sink: Sender<Peer>,
     ) -> Result<Peer, Box<dyn std::error::Error>> {
         // Steps:
         // 1. Send own TUN address over the stream
@@ -171,6 +175,7 @@ impl PeerManager {
             router_control_tx,
             stream,
             received_overlay_ip,
+            dead_peer_sink,
         )
     }
 }

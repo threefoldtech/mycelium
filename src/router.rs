@@ -56,6 +56,8 @@ pub struct Router {
     node_tun: UnboundedSender<DataPacket>,
     node_tun_subnet: Subnet,
     update_filters: Arc<Vec<Box<dyn RouteUpdateFilter + Send + Sync>>>,
+    /// Channel injected into peers, so they can notify the router if they exit.
+    dead_peer_sink: mpsc::Sender<Peer>,
 }
 
 impl Router {
@@ -72,6 +74,7 @@ impl Router {
         let (router_data_tx, router_data_rx) = mpsc::channel::<DataPacket>(1000);
         let (expired_source_key_sink, expired_source_key_stream) = mpsc::channel(1);
         let (expired_route_entry_sink, expired_route_entry_stream) = mpsc::channel(1);
+        let (dead_peer_sink, dead_peer_stream) = mpsc::channel(1);
 
         let router_inner = RouterInner::new(expired_source_key_sink, expired_route_entry_sink)?;
         let (mut inner_w, inner_r) = left_right::new_from_empty(router_inner);
@@ -89,6 +92,7 @@ impl Router {
             router_control_tx,
             node_tun,
             node_tun_subnet,
+            dead_peer_sink,
             update_filters: Arc::new(update_filters),
         };
 
@@ -115,6 +119,8 @@ impl Router {
             router.clone(),
             expired_route_entry_stream,
         ));
+
+        tokio::spawn(Router::process_dead_peers(router.clone(), dead_peer_stream));
 
         Ok(router)
     }
@@ -214,6 +220,11 @@ impl Router {
             .dest_pubkey_map
             .lookup(dest.address())
             .map(|(_, ss)| ss.clone())
+    }
+
+    /// Get a reference to this `Router`s' dead peer sink.
+    pub fn dead_peer_sink(&self) -> &mpsc::Sender<Peer> {
+        &self.dead_peer_sink
     }
 
     pub fn print_selected_routes(&self) {
@@ -466,6 +477,15 @@ impl Router {
             }
         }
         warn!("Expired route key processing halted");
+    }
+
+    /// Process notifications about peers who are dead. This allows peers who can self-diagnose
+    /// connection states to notify us, and allow for more efficient cleanup.
+    async fn process_dead_peers(self, mut dead_peer_stream: mpsc::Receiver<Peer>) {
+        while let Some(dead_peer) = dead_peer_stream.recv().await {
+            self.handle_dead_peer(dead_peer);
+        }
+        warn!("Processing of dead peers halted");
     }
 
     async fn handle_incoming_control_packet(
