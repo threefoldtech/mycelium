@@ -328,11 +328,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             router.print_fallback_routes();
             println!("----------- Current source table -----------\n");
             router.print_source_table();
+            println!("----------- Subnet origins -----------\n");
+            router.print_subnet_origins();
 
             println!("\n----------- Current peers: -----------");
             for p in router.peer_interfaces() {
                 println!(
-                    "Peer: {:?}, with link cost: {}",
+                    "Peer: {}, with link cost: {}",
                     p.overlay_ip(),
                     p.link_cost()
                 );

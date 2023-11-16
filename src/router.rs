@@ -234,16 +234,13 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
         for (route_key, route_entry) in inner.routing_table.iter().filter(|(_, re)| re.selected()) {
-            println!("Route key: {}", route_key);
             println!(
-                "Route: {} (with next-hop: {}, metric: {}, seqno: {}, selected: {})",
+                "{} next-hop {} metric: {} (seqno {})",
                 route_key.subnet(),
                 route_entry.neighbour().underlay_ip(),
                 route_entry.metric(),
                 route_entry.seqno(),
-                route_entry.selected()
             );
-            // println!("As advertised by: {:?}", route.1.source.router_id);
         }
     }
 
@@ -255,16 +252,13 @@ impl Router {
 
         for (route_key, route_entry) in inner.routing_table.iter().filter(|(_, re)| !re.selected())
         {
-            println!("Route key: {}", route_key);
             println!(
-                "Route: {} (with next-hop: {:?}, metric: {}, seqno: {}, selected: {})",
+                "{} next-hop {} metric: {} (seqno {})",
                 route_key.subnet(),
                 route_entry.neighbour().underlay_ip(),
                 route_entry.metric(),
                 route_entry.seqno(),
-                route_entry.selected()
             );
-            //println!("As advertised by: {:?}", route.1.source.router_id);
         }
     }
 
@@ -279,6 +273,22 @@ impl Router {
             println!("Source key: {}", sk);
             println!("Source entry: {:?}", se);
             println!("\n");
+        }
+    }
+
+    /// Prints the origin of every known [`Subnet`], i.e. the fully derived address.
+    pub fn print_subnet_origins(&self) {
+        let inner = self
+            .inner_r
+            .enter()
+            .expect("Write handle is saved on router so it is not dropped before the read handles");
+
+        for (route_key, route_entry) in inner.routing_table.iter().filter(|(_, re)| re.selected()) {
+            println!(
+                "{} origin {}",
+                route_key.subnet(),
+                route_entry.source().router_id().to_pubkey().address(),
+            );
         }
     }
 
