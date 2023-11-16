@@ -32,24 +32,6 @@ pub struct RouteKey {
 
 impl Eq for RouteKey {}
 
-impl PartialOrd for RouteKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for RouteKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.subnet.cmp(&other.subnet) {
-            Ordering::Equal => self
-                .neighbor
-                .underlay_ip()
-                .cmp(&other.neighbor.underlay_ip()),
-            ord => ord,
-        }
-    }
-}
-
 impl fmt::Display for RouteKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!(
