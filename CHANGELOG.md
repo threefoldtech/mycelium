@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add CHANGELOG.md entries when creating a release.
 - When sending SIGUSR1 to the process, the routing table dump will now include a list of the public key derived IP
   for every currently known subnet.
+- You can now set the name of the TUN interface on the command line with the --tun-name flag.
+- Added support for TUN devices on OSX.
 
 ### Changed
 
