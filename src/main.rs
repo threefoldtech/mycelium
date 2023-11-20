@@ -37,7 +37,11 @@ const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
 const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 
 /// Default name of tun interface
+#[cfg(not(target_os = "macos"))]
 const TUN_NAME: &str = "tun0";
+/// Default name of tun interface
+#[cfg(target_os = "macos")]
+const TUN_NAME: &str = "utun3";
 /// Global route of overlay network
 const TUN_ROUTE_DEST: Ipv6Addr = Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0);
 /// Global route prefix of overlay network
@@ -290,11 +294,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tun_rx,
         )
     } else {
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             panic!("On this platform, you can only run with --no-tun");
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let (rxhalf, txhalf) = tun::new(
                 TUN_NAME,

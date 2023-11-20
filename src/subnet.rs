@@ -71,6 +71,16 @@ impl Subnet {
     pub fn network(&self) -> IpAddr {
         self.inner.network()
     }
+
+    /// Returns the braodcast address for the subnet.
+    pub fn broadcast_addr(&self) -> IpAddr {
+        self.inner.broadcast()
+    }
+
+    /// Returns the netmask of the subnet as an [`IpAddr`].
+    pub fn mask(&self) -> IpAddr {
+        self.inner.netmask()
+    }
 }
 
 impl fmt::Display for Subnet {
