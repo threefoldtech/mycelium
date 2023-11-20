@@ -79,6 +79,14 @@ struct Cli {
     #[arg(long = "no-tun", default_value_t = false)]
     no_tun: bool,
 
+    /// Name to use for the TUN interface, if one is created.
+    ///
+    /// Setting this only matters if a TUN interface is actually created, i.e. if the `--no-tun`
+    /// flag is **not** set. The name set here must be valid for the current platform, e.g. on OSX,
+    /// the name must start with `utun` and be followed by digits.
+    #[arg(long = "tun-name", default_value = TUN_NAME)]
+    tun_name: String,
+
     /// Enable debug logging
     #[arg(short = 'd', long = "debug", default_value_t = false)]
     debug: bool,
@@ -301,7 +309,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let (rxhalf, txhalf) = tun::new(
-                TUN_NAME,
+                &cli.tun_name,
                 Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
                 Subnet::new(TUN_ROUTE_DEST.into(), TUN_ROUTE_PREFIX)
                     .expect("Static configured TUN route is valid; qed"),
