@@ -36,7 +36,7 @@ const ND6_INFINITE_LIFETIME: u32 = 0xFFFFFFFF; // netinet6/nd6.h
 // repr transparent so this can be used with libc calls.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-struct IfaceName([libc::c_char; libc::IFNAMSIZ as _]);
+pub struct IfaceName([libc::c_char; libc::IFNAMSIZ as _]);
 
 /// Wrapped interface handle.
 #[derive(Clone, Copy)]
@@ -47,7 +47,7 @@ struct Iface {
 
 /// Struct to add IPv6 route to interface
 #[repr(C)]
-struct IfaliasReq {
+pub struct IfaliasReq {
     ifname: IfaceName,
     addr: SockaddrIn6,
     dst_addr: SockaddrIn6,
@@ -57,7 +57,7 @@ struct IfaliasReq {
 }
 
 #[repr(C)]
-struct AddressLifetime {
+pub struct AddressLifetime {
     /// Not used for userspace -> kernel space
     expire: libc::time_t,
     /// Not used for userspace -> kernel space
