@@ -790,7 +790,13 @@ impl Router {
                 return;
             }
 
-            // Otherwise we just update the entry
+            // Otherwise we just update the entry.
+            if existing_entry.metric().is_infinite() && update.metric().is_infinite() {
+                // Retraction for retracted route, don't do anything. If we don't filter this
+                // retracted routes can stay stuck if peer keep sending retractions to eachother
+                // for this route.
+                return;
+            }
             existing_entry.update_seqno(seqno);
             existing_entry.update_metric(metric);
             existing_entry.update_router_id(router_id);

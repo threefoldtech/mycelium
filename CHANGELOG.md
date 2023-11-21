@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The link cost of a peer is now the smoothed average. This makes sure a single short latency spike doesn't disrupt routing.
 - On linux, set the TUN ip as /7 and avoid setting a /64 route. This brings it in line with OSX.
 
+### Fixed
+
+- Ignore retraction updates if the route table has an existing but retracted route already. This fixes
+  an issue where retracted routes would not be flushed from the routing table.
+
 ## [0.1.2] - 2023-11-15
 
 ### Changed
