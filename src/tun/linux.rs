@@ -142,29 +142,3 @@ async fn add_address(
         .execute()
         .await?)
 }
-
-/// Add a route to an interface
-async fn add_route(
-    handle: Handle,
-    link_index: u32,
-    subnet: Subnet,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let base = handle.route().add();
-    match subnet.address() {
-        IpAddr::V4(addr) => {
-            base.v4()
-                .destination_prefix(addr, subnet.prefix_len())
-                .output_interface(link_index)
-                .execute()
-                .await
-        }
-        IpAddr::V6(addr) => {
-            base.v6()
-                .destination_prefix(addr, subnet.prefix_len())
-                .output_interface(link_index)
-                .execute()
-                .await
-        }
-    }?;
-    Ok(())
-}
