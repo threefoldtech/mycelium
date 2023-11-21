@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+When printing the connected peers, print the underlay IP instead of the overlay IP.
+
 ## [0.1.2] - 2023-11-15
 
 ### Changed
