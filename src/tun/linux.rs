@@ -1,6 +1,6 @@
 //! Linux specific tun interface setup.
 
-use std::{io, net::IpAddr};
+use std::io;
 
 use futures::{Sink, Stream, TryStreamExt};
 use log::{error, info};
