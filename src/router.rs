@@ -859,7 +859,7 @@ impl Router {
                     info!(
                         "Selected route for {subnet} changed next-hop from {} to {}",
                         old_route.neighbour().underlay_ip(),
-                        new_route.neighbour().overlay_ip()
+                        new_route.neighbour().underlay_ip()
                     );
                 }
                 // Router id changed.
