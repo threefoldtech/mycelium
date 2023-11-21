@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Allow routes with infinite metric for a subnet to be selected. They will only be selected if no feasible route
+  with finite metric exists. They are also still ignored when looking up a route to a subnet.
+
+### Fixed
+
+- Don't trigger an update when a route retraction comes in for a subnet where the route is already retracted.
+  This fixes a potential storm of retraction requests in the network.
+
 ## [0.1.1] - 2023-11-21
 
 ### Added
