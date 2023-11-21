@@ -855,6 +855,13 @@ impl Router {
         // TODO: we don't memorize seqno requests for now so consider broadcasting this anyway
         let trigger_update = match (old_selected_route, new_selected_route) {
             (Some(old_route), Some(new_route)) => {
+                if new_route.neighbour() != old_route.neighbour() {
+                    info!(
+                        "Selected route for {subnet} changed next-hop from {} to {}",
+                        old_route.neighbour().underlay_ip(),
+                        new_route.neighbour().overlay_ip()
+                    );
+                }
                 // Router id changed.
                 new_route.source().router_id() != old_route.source().router_id()
                 // TODO: remove | seqno changed
