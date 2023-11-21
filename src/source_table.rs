@@ -127,6 +127,7 @@ impl SourceTable {
             Some(fd) => {
                 (route.seqno().gt(&fd.seqno))
                     || (route.seqno() == fd.seqno && route.metric() < fd.metric)
+                    || route.metric().is_infinite()
             }
             None => true,
         }
