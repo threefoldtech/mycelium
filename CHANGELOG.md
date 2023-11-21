@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-When printing the connected peers, print the underlay IP instead of the overlay IP.
+- When printing the connected peers, print the underlay IP instead of the overlay IP.
+- The link cost of a peer is now the smoothed average. This makes sure a single short latency spike doesn't disrupt routing.
 
 ## [0.1.2] - 2023-11-15
 
