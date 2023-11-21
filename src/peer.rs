@@ -27,6 +27,18 @@ const PACKET_COALESCE_WINDOW: usize = 5;
 /// these local links.
 const PACKET_PROCESSING_COST: u16 = 1;
 
+/// The default link cost assigned to new peers before their actual cost is known.
+///
+/// In theory, the best value would be U16::MAX - 1, however this value would take too long to be
+/// flushed out of the smoothed metric. A default of a 250 (250 ms) is still large enough, and
+/// also has a lower impact on the initial link cost when a peer connects for the route metrics.
+const DEFAULT_LINK_COST: u16 = 250;
+
+/// Multiplier for smoothed metric calculation of the existing smoothed metric.
+const EXISTING_METRIC_FACTOR: u32 = 3;
+/// Divisor for smoothed metric calcuation of the combined metric
+const TOTAL_METRIC_DIVISOR: u32 = 4;
+
 #[derive(Debug, Clone)]
 /// A peer represents a directly connected participant in the network.
 pub struct Peer {
@@ -181,12 +193,26 @@ impl Peer {
         Ok(self.inner.to_peer_control.send(control_packet)?)
     }
 
+    /// Get the cost to use the peer, i.e. the additional impact on the [`crate::metric::Metric`]
+    /// for using this `Peer`.
+    ///
+    /// This is a smoothed value, which is calculated over the recent history of link cost.
     pub fn link_cost(&self) -> u16 {
         self.inner.state.read().unwrap().link_cost + PACKET_PROCESSING_COST
     }
 
-    pub fn set_link_cost(&self, link_cost: u16) {
-        self.inner.state.write().unwrap().link_cost = link_cost
+    /// Sets the link cost based on the provided value.
+    ///
+    /// The link cost is not set to the given value, but rather to an average of recent values.
+    /// This makes sure short-lived, hard spikes of the link cost of a peer don't influence the
+    /// routing.
+    pub fn set_link_cost(&self, new_link_cost: u16) {
+        // Calculate new link cost by multiplying (i.e. scaling) old and new link cost and
+        // averaging them.
+        let mut inner = self.inner.state.write().unwrap();
+        inner.link_cost = (((inner.link_cost as u32) * EXISTING_METRIC_FACTOR
+            + (new_link_cost as u32) * (TOTAL_METRIC_DIVISOR - EXISTING_METRIC_FACTOR))
+            / TOTAL_METRIC_DIVISOR) as u16;
     }
 
     pub fn underlay_ip(&self) -> IpAddr {
@@ -239,8 +265,7 @@ impl PeerState {
     pub fn new() -> Self {
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = SeqNo::default();
-        // Initialize last_path_cost to infinity - 1
-        let link_cost = u16::MAX - 1;
+        let link_cost = DEFAULT_LINK_COST;
         // Initialize time_last_received_hello to now
         let time_last_received_hello = tokio::time::Instant::now();
         // Initialiwe time_last_send_ihu
