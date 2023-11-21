@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2023-11-15
+
 ### Changed
 
 - Allow routes with infinite metric for a subnet to be selected. They will only be selected if no feasible route
