@@ -37,12 +37,14 @@ pub async fn new(
 
     let tun_index = link_index_by_name(handle.clone(), name.to_string()).await?;
 
-    if let Err(e) = add_address(handle.clone(), tun_index, node_subnet).await {
+    if let Err(e) = add_address(
+        handle.clone(),
+        tun_index,
+        Subnet::new(node_subnet.address(), route_subnet.prefix_len()).unwrap(),
+    )
+    .await
+    {
         error!("Failed to add address {node_subnet} to TUN interface: {e}");
-        return Err(e);
-    }
-    if let Err(e) = add_route(handle.clone(), tun_index, route_subnet).await {
-        error!("Failed to add route for {route_subnet} to TUN interface: {e}");
         return Err(e);
     }
 
