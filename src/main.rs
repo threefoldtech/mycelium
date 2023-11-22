@@ -324,41 +324,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _api = Http::spawn(ms, &cli.api_addr);
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
-    let mut sigusr1 =
-        signal::unix::signal(SignalKind::user_defined1()).expect("Can install SIGUSR1 handler");
-    let mut sigint =
-        signal::unix::signal(SignalKind::interrupt()).expect("Can install SIGINT handler");
-    let mut sigterm =
-        signal::unix::signal(SignalKind::terminate()).expect("Can install SIGTERM handler");
+    #[cfg(target_family = "unix")]
+    {
+        let mut sigusr1 =
+            signal::unix::signal(SignalKind::user_defined1()).expect("Can install SIGUSR1 handler");
+        let mut sigint =
+            signal::unix::signal(SignalKind::interrupt()).expect("Can install SIGINT handler");
+        let mut sigterm =
+            signal::unix::signal(SignalKind::terminate()).expect("Can install SIGTERM handler");
 
-    // print info on SIGUSR1
-    tokio::spawn(async move {
-        while let Some(()) = sigusr1.recv().await {
-            println!("----------- Current selected routes -----------\n");
-            router.print_selected_routes();
-            println!("----------- Current fallback routes -----------\n");
-            router.print_fallback_routes();
-            println!("----------- Current source table -----------\n");
-            router.print_source_table();
-            println!("----------- Subnet origins -----------\n");
-            router.print_subnet_origins();
+        // print info on SIGUSR1
+        tokio::spawn(async move {
+            while let Some(()) = sigusr1.recv().await {
+                println!("----------- Current selected routes -----------\n");
+                router.print_selected_routes();
+                println!("----------- Current fallback routes -----------\n");
+                router.print_fallback_routes();
+                println!("----------- Current source table -----------\n");
+                router.print_source_table();
+                println!("----------- Subnet origins -----------\n");
+                router.print_subnet_origins();
 
-            println!("\n----------- Current peers: -----------");
-            for p in router.peer_interfaces() {
-                println!(
-                    "Peer: {}, with link cost: {}",
-                    p.underlay_ip(),
-                    p.link_cost()
-                );
+                println!("\n----------- Current peers: -----------");
+                for p in router.peer_interfaces() {
+                    println!(
+                        "Peer: {}, with link cost: {}",
+                        p.underlay_ip(),
+                        p.link_cost()
+                    );
+                }
+
+                println!("\n\n");
             }
+        });
 
-            println!("\n\n");
+        tokio::select! {
+            _ = sigint.recv() => { }
+            _ = sigterm.recv() => { }
         }
-    });
-
-    tokio::select! {
-        _ = sigint.recv() => { }
-        _ = sigterm.recv() => { }
+    }
+    #[cfg(not(target_family = "unix"))]
+    {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            error!("Failed to wait for SIGINT: {e}");
+        }
     }
 
     Ok(())
