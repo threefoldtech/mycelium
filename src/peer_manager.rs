@@ -115,7 +115,7 @@ impl PeerManager {
                         .await;
                         match new_peer {
                             Ok(peer) => {
-                                info!("Accepted new peer {}", peer.overlay_ip());
+                                info!("Accepted new peer {}", peer.underlay_ip());
                                 self.router.add_peer_interface(peer);
                             }
                             Err(e) => {
