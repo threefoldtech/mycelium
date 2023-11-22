@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed. Handshake is still performed to stay backwards compatible
   until the next breaking release.
 
-## [0.1.2] - 2023-11-15
+## [0.1.2] - 2023-11-21
 
 ### Changed
 
