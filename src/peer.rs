@@ -100,11 +100,11 @@ impl Peer {
                                     }
                                 }
                                 Some(Err(e)) => {
-                                    error!("Error from framed: {}", e);
+                                    error!("Frame error from {}: {e}", peer.underlay_ip());
                                     break;
                                 },
                                 None => {
-                                    info!("Stream is closed.");
+                                    info!("Stream to {} is closed", peer.underlay_ip());
                                     break;
                                 }
                             }
