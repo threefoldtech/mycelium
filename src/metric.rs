@@ -4,7 +4,7 @@
 #![allow(clippy::suspicious_arithmetic_impl)]
 
 use core::fmt;
-use std::ops::Add;
+use std::ops::{Add, Sub};
 
 /// Value of the infinite metric.
 const METRIC_INFINITE: u16 = 0xFFFF;
@@ -28,6 +28,11 @@ impl Metric {
     /// Checks if this metric indicates a retracted route.
     pub const fn is_infinite(&self) -> bool {
         self.0 == METRIC_INFINITE
+    }
+
+    /// Checks if this metric represents a directly connected route.
+    pub const fn is_direct(&self) -> bool {
+        self.0 == 0
     }
 
     /// Computes the absolute value of the difference between this and another `Metric`.
@@ -123,5 +128,19 @@ impl<'a> Add<Metric> for &'a Metric {
                 .map(|r| if r == u16::MAX { r - 1 } else { r })
                 .unwrap_or(u16::MAX - 1),
         )
+    }
+}
+
+impl Sub<Metric> for Metric {
+    type Output = Metric;
+
+    fn sub(self, rhs: Metric) -> Self::Output {
+        if rhs.is_infinite() {
+            panic!("Can't subtract an infinite metric");
+        }
+        if self.is_infinite() {
+            return Metric::infinite();
+        }
+        Metric(self.0.saturating_sub(rhs.0))
     }
 }

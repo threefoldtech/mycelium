@@ -34,6 +34,9 @@ const SEQNO_BUMP_TIMEOUT: Duration = Duration::from_secs(4);
 /// Metric change of more than 10 is considered a large change.
 const BIG_METRIC_CHANGE_TRESHOLD: Metric = Metric::new(10);
 
+/// The amount a metric of a route needs to improve before we will consider switching to it.
+const SIGNIFICANT_METRIC_IMPROVEMENT: Metric = Metric::new(10);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticRoute {
     subnet: Subnet,
@@ -381,7 +384,14 @@ impl Router {
 
         // If there is no selected route there is nothing to do here. We keep expired routes in the
         // table for a while so updates of those should already have propagated to peers.
-        if let Some(new_selected) = self.find_best_route(&routes) {
+        if let Some(new_selected) = self.find_best_route(
+            &routes,
+            if routes[0].selected() {
+                Some(&routes[0])
+            } else {
+                None
+            },
+        ) {
             if new_selected.neighbour() == routes[0].neighbour() && routes[0].selected() {
                 debug!(
                     "New selected route for {subnet} is the same as the route alreayd installed"
@@ -471,7 +481,7 @@ impl Router {
                     .expect("We enter through a write handle so this can never be None")
                     .routing_table
                     .entries(subnet);
-                if let Some(r) = self.find_best_route(&routes) {
+                if let Some(r) = self.find_best_route(&routes, Some(&entry)) {
                     debug!("Rerun route selection after expiration event");
                     inner
                         .append(RouterOpLogEntry::SelectRoute(RouteKey::new(
@@ -681,14 +691,35 @@ impl Router {
     /// Finds the best feasible route from a list of [`route entries`](RouteEntry). It is possible
     /// for this method to select a retracted route. In this case, retraction updates should be
     /// send out.
-    fn find_best_route<'a>(&self, routes: &'a [RouteEntry]) -> Option<&'a RouteEntry> {
+    ///
+    /// This method only selects a different best route if it is significantly better compared to
+    /// the current route.
+    fn find_best_route<'a>(
+        &self,
+        routes: &'a [RouteEntry],
+        current: Option<&'a RouteEntry>,
+    ) -> Option<&'a RouteEntry> {
         let inner = self.inner_r.enter().expect("Write handle is saved on router so it can never go out of scope before this read handle; qed.");
         // Since retracted routes have the highest possible metrics, this will only select one if
         // no non-retracted routes are feasible.
-        routes
+        let best = routes
             .iter()
             .filter(|re| inner.source_table.route_feasible(re))
-            .min_by_key(|re| re.metric() + Metric::from(re.neighbour().link_cost()))
+            .min_by_key(|re| re.metric() + Metric::from(re.neighbour().link_cost()));
+
+        if let (Some(best), Some(current)) = (best, current) {
+            // If we swap to an actually different route, only do so if the metric is
+            // significantly better OR if it is directly connected (metric 0).
+            if (best.source() != current.source() || best.neighbour() != current.neighbour())
+                && !(best.metric() < current.metric() - SIGNIFICANT_METRIC_IMPROVEMENT
+                    || best.metric().is_direct())
+            {
+                debug!("maintaining currently selected route since new route is not significantly better");
+                return Some(current);
+            }
+        }
+
+        best
     }
 
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {
@@ -835,7 +866,8 @@ impl Router {
         }
 
         // Now that we applied the update, run route selection.
-        let new_selected_route = self.find_best_route(&routing_table_entries);
+        let new_selected_route =
+            self.find_best_route(&routing_table_entries, old_selected_route.as_ref());
         if let Some(nbr) = new_selected_route {
             // Install this route in the routing table. We don't update the local copy anymore as
             // we don't use it afterwards.
@@ -859,7 +891,7 @@ impl Router {
         // - small metric change
         // - seqno increase (unless it is requested by a peer)
         // TODO: we don't memorize seqno requests for now so consider broadcasting this anyway
-        let trigger_update = match (old_selected_route, new_selected_route) {
+        let trigger_update = match (&old_selected_route, new_selected_route) {
             (Some(old_route), Some(new_route)) => {
                 if new_route.neighbour() != old_route.neighbour() {
                     info!(
