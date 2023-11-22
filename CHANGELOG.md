@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When selecting the best route for a subnet, consider the currently
   installed route and only switch if it is significantly better, or
   directly connected
+- Increase the static link cost component of a peer. This will increase
+  the value of a hop in the metric of a route, in turn increasing the
+  impact of multiple hops on route selection. The route selection will
+  thus be more inclined to find a path with fewer hops toward a
+  destination. Ultimately, if multiple paths to a destination exist with
+  roughly the same latency, they one with fewer hops should be
+  preferred, since this avoids putting unnecessary pressure on multiple
+  nodes in the network.
 
 ### Fixed
 

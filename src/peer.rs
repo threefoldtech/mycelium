@@ -25,7 +25,7 @@ const PACKET_COALESCE_WINDOW: usize = 5;
 /// likely be 0 since we round down (from the amount of ms it took to process), which does not
 /// accurately reflect the fact that there is in fact a cost associated with using a peer, even on
 /// these local links.
-const PACKET_PROCESSING_COST: u16 = 1;
+const PACKET_PROCESSING_COST: u16 = 10;
 
 /// The default link cost assigned to new peers before their actual cost is known.
 ///
