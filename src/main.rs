@@ -43,10 +43,6 @@ const TUN_NAME: &str = "tun0";
 /// Default name of tun interface
 #[cfg(target_os = "macos")]
 const TUN_NAME: &str = "utun3";
-/// Global route of overlay network
-const TUN_ROUTE_DEST: Ipv6Addr = Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0);
-/// Global route prefix of overlay network
-const TUN_ROUTE_PREFIX: u8 = 7;
 
 /// The prefix of the global subnet used.
 const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0));
@@ -312,7 +308,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let (rxhalf, txhalf) = tun::new(
                 &cli.tun_name,
                 Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
-                Subnet::new(TUN_ROUTE_DEST.into(), TUN_ROUTE_PREFIX)
+                Subnet::new(GLOBAL_SUBNET_ADDRESS.into(), GLOBAL_SUBNET_PREFIX_LEN)
                     .expect("Static configured TUN route is valid; qed"),
             )
             .await?;
