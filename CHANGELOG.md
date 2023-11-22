@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add info log when next hop of a peer changes.
+- Add windows builds to CI.
 
 ### Changed
 
@@ -18,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Linux, set the TUN ip as /7 and avoid setting a /64 route. This brings it in line with OSX.
 - When selecting the best route for a subnet, consider the currently
   installed route and only switch if it is significantly better, or
-  directly connected
+  directly connected.
 - Increase the static link cost component of a peer. This will increase
   the value of a hop in the metric of a route, in turn increasing the
   impact of multiple hops on route selection. The route selection will
@@ -27,9 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   roughly the same latency, they one with fewer hops should be
   preferred, since this avoids putting unnecessary pressure on multiple
   nodes in the network.
-- IHU packets now include the underlay IP instead of the overlay IP
+- IHU packets now include the underlay IP instead of the overlay IP.
 - When a new peer connects the underlay IP is logged instead of the
-  overlay IP
+  overlay IP.
 
 ### Fixed
 
