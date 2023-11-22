@@ -308,7 +308,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let (rxhalf, txhalf) = tun::new(
                 &cli.tun_name,
                 Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
-                Subnet::new(GLOBAL_SUBNET_ADDRESS.into(), GLOBAL_SUBNET_PREFIX_LEN)
+                Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
                     .expect("Static configured TUN route is valid; qed"),
             )
             .await?;
