@@ -537,7 +537,7 @@ impl Router {
 
     fn handle_incoming_hello(&self, _: babel::Hello, source_peer: Peer) {
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
-        let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.overlay_ip());
+        let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.underlay_ip());
         if let Err(e) = source_peer.send_control_packet(ihu) {
             error!("Error sending IHU to peer: {e}");
         }
