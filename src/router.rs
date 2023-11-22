@@ -482,7 +482,16 @@ impl Router {
                     .expect("We enter through a write handle so this can never be None")
                     .routing_table
                     .entries(subnet);
-                if let Some(r) = self.find_best_route(&routes, Some(&entry)) {
+                // Only inject selected route if we are simply retracting it, otherwise it is
+                // actually already removed.
+                if let Some(r) = self.find_best_route(
+                    &routes,
+                    if matches!(expiration_type, RouteExpirationType::Retract) {
+                        Some(&entry)
+                    } else {
+                        None
+                    },
+                ) {
                     debug!("Rerun route selection after expiration event");
                     inner
                         .append(RouterOpLogEntry::SelectRoute(RouteKey::new(
