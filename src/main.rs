@@ -25,6 +25,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     path::PathBuf,
 };
+#[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
 mod tun;
 
