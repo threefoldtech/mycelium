@@ -333,10 +333,11 @@ impl Router {
 
         // Scope for the mutex lock
         let subnets_to_select = {
+            let mut inner_w = self.inner_w.lock().unwrap();
+
             let inner = self.inner_r.enter().expect(
                 "Write handle is saved on the router so it is not dropped before the read handles",
             );
-            let mut inner_w = self.inner_w.lock().unwrap();
 
             let mut subnets_to_select = Vec::new();
 
