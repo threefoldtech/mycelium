@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   roughly the same latency, they one with fewer hops should be
   preferred, since this avoids putting unnecessary pressure on multiple
   nodes in the network.
+- Overlay packets now include the underlay IP instead of the overlay IP
 
 ### Fixed
 
