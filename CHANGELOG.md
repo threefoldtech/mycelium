@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ignore retraction updates if the route table has an existing but retracted route already. This fixes
   an issue where retracted routes would not be flushed from the routing table.
 
+### Removed
+
+- All uses of the exchanged overlay IP in the peer handshake are fully
+  removed. Handshake is still performed to stay backwards compatible
+  until the next breaking release.
+
 ## [0.1.2] - 2023-11-15
 
 ### Changed

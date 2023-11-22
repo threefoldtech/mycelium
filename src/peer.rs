@@ -51,7 +51,6 @@ impl Peer {
         router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         stream: TcpStream,
-        overlay_ip: IpAddr,
         dead_peer_sink: mpsc::Sender<Peer>,
     ) -> Result<Self, Box<dyn Error>> {
         // Data channel for peer
@@ -67,7 +66,6 @@ impl Peer {
                 to_peer_data,
                 to_peer_control,
                 stream_ip,
-                overlay_ip,
             }),
         };
 
@@ -174,11 +172,6 @@ impl Peer {
         self.inner.state.write().unwrap().time_last_received_hello = time
     }
 
-    /// Get overlay IP for this peer
-    pub fn overlay_ip(&self) -> IpAddr {
-        self.inner.overlay_ip
-    }
-
     /// For sending data packets towards a peer instance on this node.
     /// It's send over the to_peer_data channel and read from the corresponding receiver.
     /// The receiver sends the packet over the TCP stream towards the destined peer instance on another node
@@ -247,8 +240,6 @@ struct PeerInner {
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     /// Used to identify peer based on its connection params
     stream_ip: IpAddr,
-    // TODO: not needed
-    overlay_ip: IpAddr,
 }
 
 #[derive(Debug)]

@@ -48,7 +48,7 @@ impl PeerManager {
                             info!("Failed to read hanshake from peer: {e}");
                             continue;
                         }
-                        let received_overlay_ip = match buffer[0] {
+                        let _ = match buffer[0] {
                             0 => IpAddr::from(
                                 <&[u8] as TryInto<[u8; 4]>>::try_into(&buffer[1..5]).unwrap(),
                             ),
@@ -77,7 +77,6 @@ impl PeerManager {
                             self.router.router_data_tx(),
                             self.router.router_control_tx(),
                             peer_stream,
-                            received_overlay_ip,
                             self.router.dead_peer_sink().clone(),
                         ) {
                             info!("Connected to new peer {}", new_peer.underlay_ip());
@@ -154,7 +153,7 @@ impl PeerManager {
         stream.write_all(&buf).await?;
         // Step 2
         stream.read_exact(&mut buf).await?;
-        let received_overlay_ip = match buf[0] {
+        let _ = match buf[0] {
             0 => IpAddr::from(<&[u8] as TryInto<[u8; 4]>>::try_into(&buf[1..5]).unwrap()),
             1 => IpAddr::from(<&[u8] as TryInto<[u8; 16]>>::try_into(&buf[1..]).unwrap()),
             _ => {
@@ -174,7 +173,6 @@ impl PeerManager {
             router_data_tx,
             router_control_tx,
             stream,
-            received_overlay_ip,
             dead_peer_sink,
         )
     }
