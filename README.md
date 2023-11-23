@@ -6,7 +6,7 @@ an overlay network IP in the 200::/7 range.
 
 ## Running
 
-> Currently, only Linux is supported.
+> Currently, only Linux and macOS are supported.
 
 First, get an useable binary, either by downloading [an artifact from a release](https://github.com/threefoldtech/mycelium/releases),
 or by [checking out and building the code yourself](#developing).
