@@ -18,5 +18,5 @@ The packet header has a fixed size of 4 bytes, with the following layout:
 
 The first byte is used to indicate the version of the protocol. Currently, only version 1 is supported
 (0x01). The next byte is used to indicate the type of the body. `0x00` indicates a data packet, while
-`0x01` indicates a control packet. The remaining 24 bits are currently reserved, and should be set to
+`0x01` indicates a control packet. The remaining 16 bits are currently reserved, and should be set to
 all 0.
