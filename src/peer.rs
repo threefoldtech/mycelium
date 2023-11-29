@@ -3,7 +3,10 @@ use log::{debug, error, info, trace};
 use std::{
     error::Error,
     net::IpAddr,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock, Weak,
+    },
 };
 use tokio::{net::TcpStream, select, sync::mpsc};
 use tokio_util::codec::Framed;
@@ -45,6 +48,12 @@ pub struct Peer {
     inner: Arc<PeerInner>,
 }
 
+/// A weak reference to a peer, which does not prevent it from being cleaned up. This can be used
+/// to check liveliness of the [`Peer`] instance it originated from.
+pub struct PeerRef {
+    inner: Weak<PeerInner>,
+}
+
 impl Peer {
     pub fn new(
         stream_ip: IpAddr,
@@ -66,6 +75,7 @@ impl Peer {
                 to_peer_data,
                 to_peer_control,
                 stream_ip,
+                alive: AtomicBool::new(true),
             }),
         };
 
@@ -142,7 +152,9 @@ impl Peer {
                     }
                 }
 
-                // Notify router we are dead
+                // Notify router we are dead, also modify our internal state to declare that.
+                // Relaxed ordering is fine, we just care that the variable is set.
+                peer.inner.alive.store(false, Ordering::Relaxed);
                 let remote_id = peer.underlay_ip();
                 debug!("Notifying router peer {remote_id} is dead");
                 if let Err(e) = dead_peer_sink.send(peer).await {
@@ -220,10 +232,22 @@ impl Peer {
         self.inner.state.write().unwrap().time_last_received_ihu = time
     }
 
-    /// Checks if the connection to this `Peer` is alive and useable. If it is not, this `Peer`
-    /// instance is dead and should be disposed of.
-    pub fn connection_alive(&self) -> bool {
-        self.inner.state.read().unwrap().connection_alive
+    /// Create a new [`PeerRef`] that refers to this `Peer` instance.
+    pub fn refer(&self) -> PeerRef {
+        PeerRef {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+}
+
+impl PeerRef {
+    /// Check if the connection of the [`Peer`] this `PeerRef` points to is still alive.
+    pub fn alive(&self) -> bool {
+        if let Some(peer) = self.inner.upgrade() {
+            peer.alive.load(Ordering::Relaxed)
+        } else {
+            false
+        }
     }
 }
 
@@ -240,6 +264,8 @@ struct PeerInner {
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     /// Used to identify peer based on its connection params
     stream_ip: IpAddr,
+    /// Keep track if the connection is alive
+    alive: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -248,7 +274,6 @@ struct PeerState {
     time_last_received_hello: tokio::time::Instant,
     link_cost: u16,
     time_last_received_ihu: tokio::time::Instant,
-    connection_alive: bool,
 }
 
 impl PeerState {
@@ -267,7 +292,6 @@ impl PeerState {
             link_cost,
             time_last_received_ihu,
             time_last_received_hello,
-            connection_alive: true,
         }
     }
 }
