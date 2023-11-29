@@ -241,6 +241,12 @@ impl Peer {
 }
 
 impl PeerRef {
+    /// Contructs a new `PeerRef` which is not associated with any actually [`Peer`].
+    /// [`PeerRef::alive`] will always return false when called on this `PeerRef`.
+    pub fn new() -> Self {
+        PeerRef { inner: Weak::new() }
+    }
+
     /// Check if the connection of the [`Peer`] this `PeerRef` points to is still alive.
     pub fn alive(&self) -> bool {
         if let Some(peer) = self.inner.upgrade() {
@@ -248,6 +254,12 @@ impl PeerRef {
         } else {
             false
         }
+    }
+}
+
+impl Default for PeerRef {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
