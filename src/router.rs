@@ -662,37 +662,39 @@ impl Router {
         if seqno_request.router_id() != self.router_id && seqno_request.hop_count() > 1 {
             seqno_request.decrement_hop_count();
 
-            let possible_routes = self.find_all_routes(seqno_request.prefix());
+            let possible_routes = inner.routing_table.entries(seqno_request.prefix());
 
             // First only consider feasible routes.
-            for re in &possible_routes {
-                if !re.metric().is_infinite() && re.neighbour() != &source_peer {
-                    debug!(
-                        "Forwarding seqno request {} for {} to {}",
-                        seqno_request.seqno(),
-                        seqno_request.prefix(),
-                        re.neighbour().underlay_ip()
-                    );
-                    if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
-                        error!("Failed to foward seqno request: {e}");
-                    }
-                    return;
+            if let Some(re) = possible_routes.iter().find(|re| {
+                inner.source_table.route_feasible(re)
+                    && re.neighbour() != &source_peer
+                    && !re.metric().is_infinite()
+            }) {
+                debug!(
+                    "Forwarding seqno request {} for {} to {}",
+                    seqno_request.seqno(),
+                    seqno_request.prefix(),
+                    re.neighbour().underlay_ip()
+                );
+                if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
+                    error!("Failed to foward seqno request: {e}");
                 }
+                return;
             }
 
             // Finally consider infeasible routes as well.
-            for re in possible_routes {
-                if re.neighbour() != &source_peer {
-                    debug!(
-                        "Forwarding seqno request {} for {} to {}",
-                        seqno_request.seqno(),
-                        seqno_request.prefix(),
-                        re.neighbour().underlay_ip()
-                    );
-                    if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
-                        error!("Failed to foward seqno request: {e}");
-                    }
-                    return;
+            if let Some(re) = possible_routes
+                .iter()
+                .find(|re| re.neighbour() != &source_peer && !re.metric().is_infinite())
+            {
+                debug!(
+                    "Forwarding seqno request {} for {} to {}",
+                    seqno_request.seqno(),
+                    seqno_request.prefix(),
+                    re.neighbour().underlay_ip()
+                );
+                if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
+                    error!("Failed to foward seqno request: {e}");
                 }
             }
         }
@@ -1016,25 +1018,6 @@ impl Router {
                     Some(entry)
                 }
             })
-    }
-
-    /// Find all routes in both the selected and fallback routing table for a destination.
-    fn find_all_routes(&self, subnet: Subnet) -> Vec<RouteEntry> {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
-        let mut routes = vec![];
-        if let Some(re) = inner.routing_table.lookup_selected(subnet.address()) {
-            routes.push(re);
-        }
-
-        for entry in inner.routing_table.lookup_fallbacks(subnet.address()) {
-            routes.push(entry);
-        }
-
-        routes
     }
 
     pub async fn propagate_static_route(self) {

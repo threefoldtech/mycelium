@@ -327,25 +327,6 @@ impl RoutingTable {
         }
     }
 
-    /// Get a copy of all fallback route entries for an [`IpAddr`] in the `RoutingTable`.
-    ///
-    /// Currently only IPv6 is supported, looking up an IPv4 address always returns an empty
-    /// [`Vec`].
-    pub fn lookup_fallbacks(&self, ip: IpAddr) -> Vec<RouteEntry> {
-        let addr = match ip {
-            IpAddr::V6(addr) => addr,
-            _ => return Vec::new(),
-        };
-        self.table
-            .longest_match(addr)
-            .map(|(_, _, entries)| entries.as_slice())
-            .unwrap_or(&[])
-            .iter()
-            .filter_map(|(entry, _)| if !entry.selected { Some(entry) } else { None })
-            .cloned()
-            .collect()
-    }
-
     /// Unselects a route defined by the [`RouteKey`]. This means there will no longer be a
     /// selected route for the subnet defined by the [`RouteKey`].
     ///
