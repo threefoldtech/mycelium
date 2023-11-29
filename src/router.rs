@@ -567,8 +567,8 @@ impl Router {
             .expect("Write handle is saved on router so it is not dropped before the read handles");
 
         // If we have a selected route for the prefix, and its router id is different from the
-        // requested router id, or the router id is the same and the requested sequence number is
-        // not smaller than the sequence number of the selected route, send an update for the route
+        // requested router id, or the router id is the same and the entries sequence number is
+        // not smaller than the requested sequence number, send an update for the route
         // to the peer (triggered update).
         if let Some(route_entry) = inner
             .routing_table
