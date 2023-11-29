@@ -61,14 +61,12 @@ impl Peer {
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         stream: TcpStream,
         dead_peer_sink: mpsc::Sender<Peer>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Self {
         // Data channel for peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Control channel for peer
         let (to_peer_control, mut from_routing_control) =
             mpsc::unbounded_channel::<ControlPacket>();
-        // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
-        stream.set_nodelay(true)?;
         let peer = Peer {
             inner: Arc::new(PeerInner {
                 state: RwLock::new(PeerState::new()),
@@ -163,7 +161,7 @@ impl Peer {
             });
         }
 
-        Ok(peer)
+        peer
     }
 
     /// Get current sequence number for this peer.

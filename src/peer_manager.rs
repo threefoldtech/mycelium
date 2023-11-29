@@ -1,104 +1,207 @@
 use crate::packet::{ControlPacket, DataPacket};
-use crate::peer::Peer;
+use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
 use log::{error, info};
+use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::{self, Sender, UnboundedSender};
+use tokio::time::MissedTickBehavior;
 
+/// The PeerManager creates new peers by connecting to configured addresses, and setting up the
+/// connection. Once a connection is established, the created [`Peer`] is handed over to the
+/// [`Router`].
 #[derive(Clone)]
 pub struct PeerManager {
-    pub router: Router,
-    pub initial_peers: Vec<SocketAddr>,
+    inner: Arc<Inner>,
+}
+
+/// State of the peers we are tracking.
+#[derive(PartialEq, Eq)]
+enum PeerState {
+    /// Peer was alive last time we checked.
+    Alive,
+    /// Peer is currently in the process of being connected to.
+    Connecting,
+}
+
+struct Inner {
+    /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
+    router: Mutex<Router>,
+    peers: Mutex<HashMap<SocketAddr, (PeerState, PeerRef)>>,
 }
 
 impl PeerManager {
     pub fn new(router: Router, static_peers_sockets: Vec<SocketAddr>, port: u16) -> Self {
         let peer_manager = PeerManager {
-            router,
-            initial_peers: static_peers_sockets.clone(),
+            inner: Arc::new(Inner {
+                router: Mutex::new(router),
+                peers: Mutex::new(
+                    static_peers_sockets
+                        .into_iter()
+                        // These peers are not alive, but we say they are because the reconnect
+                        // loop will perform the actual check and figure out they are dead, then
+                        // (re)connect.
+                        .map(|s| (s, (PeerState::Alive, PeerRef::new())))
+                        .collect(),
+                ),
+            }),
         };
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
-        tokio::spawn(PeerManager::start_listener(peer_manager.clone(), port));
+        tokio::spawn(Inner::start_listener(peer_manager.inner.clone(), port));
 
-        tokio::spawn(PeerManager::reconnect_to_initial_peers(
-            peer_manager.clone(),
+        tokio::spawn(Inner::reconnect_to_initial_peers(
+            peer_manager.inner.clone(),
         ));
 
         peer_manager
     }
+}
 
+impl Inner {
     // this is used to reconnect to the provided static peers in case the connection is lost
-    async fn reconnect_to_initial_peers(self) {
-        let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
-            ip
-        } else {
-            panic!("Non IPv6 node tun not support currently")
-        };
+    async fn reconnect_to_initial_peers(self: Arc<Self>) {
+        let node_tun_addr =
+            if let IpAddr::V6(ip) = self.router.lock().unwrap().node_tun_subnet().address() {
+                ip
+            } else {
+                panic!("Non IPv6 node tun not support currently")
+            };
+
+        let (np_tx, mut np_rx) = mpsc::channel::<(SocketAddr, Option<Peer>)>(1);
+
+        let router_data_tx = self.router.lock().unwrap().router_data_tx();
+        let router_control_tx = self.router.lock().unwrap().router_control_tx();
+        let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
+
+        let mut peer_check_interval = tokio::time::interval(Duration::from_secs(5));
+        // Avoid trying to spam connections. Since we track if we are connecting to a peer this
+        // won't be that bad, but this avoid unnecessary lock contention.
+        peer_check_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         loop {
-            // check if there is an entry for the peer in the router's peer list
-            for peer in self.initial_peers.iter() {
-                if !self.router.peer_exists(peer.ip()) {
-                    if let Ok(mut peer_stream) = TcpStream::connect(peer).await {
-                        let mut buffer = [0u8; 17];
-                        if let Err(e) = peer_stream.read_exact(&mut buffer).await {
-                            info!("Failed to read hanshake from peer: {e}");
-                            continue;
+            tokio::select! {
+                mnp = np_rx.recv() => {
+                    match mnp {
+                None => {
+                    error!("Can't reconnect to new peers anymore!");
+                    return
+
+                },
+               Some((socket, maybe_new_peer)) => {
+                    // Only insert the possible new peer if we actually still care about it
+                    if let Some((state, old_peer)) = self.peers.lock().unwrap().get_mut(&socket) {
+                        // Set this to alive regardless. Either it is, and it's correct, or it
+                        // failed, in which case setting this to alive will trigger a reconnect next time
+                        // the interval fires.
+                        *state = PeerState::Alive;
+                        if let Some(peer) = maybe_new_peer {
+                            // We did find a new Peer, insert into router and keep track of it
+                            *old_peer = peer.refer();
+                            self.router.lock().unwrap().add_peer_interface(peer);
                         }
-                        let _ = match buffer[0] {
-                            0 => IpAddr::from(
-                                <&[u8] as TryInto<[u8; 4]>>::try_into(&buffer[1..5]).unwrap(),
-                            ),
-                            1 => IpAddr::from(
-                                <&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap(),
-                            ),
-                            _ => {
-                                error!("Invalid address encoding byte");
-                                continue;
-                            }
-                        };
+                    }
+                },
+                }
+                }
+                _ = peer_check_interval.tick() => {
+                    // check if there is an entry for the peer in the router's peer list
+                    for (socket, (state, peer)) in self.peers.lock().unwrap().iter_mut() {
+                        if state == &PeerState::Alive && !peer.alive() {
+                            // Mark that we are connecting to the peer.
+                            *state = PeerState::Connecting;
+                            tokio::spawn({
+                                let np_tx = np_tx.clone();
+                                let router_data_tx = router_data_tx.clone();
+                                let router_control_tx = router_control_tx.clone();
+                                let dead_peer_sink = dead_peer_sink.clone();
+                                let socket = *socket;
 
-                        let mut buf = [0u8; 17];
-                        // only using IPv6
-                        buf[0] = 1;
-                        buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
+                                async move {
+                                    if let Ok(mut peer_stream) = TcpStream::connect(socket).await {
+                                        let mut buffer = [0u8; 17];
+                                        if let Err(e) = peer_stream.read_exact(&mut buffer).await {
+                                            info!("Failed to read hanshake from peer: {e}");
+                                            if let Err(e) = np_tx.send((socket, None)).await {
+                                                error!("Could not notify peer manager of connection failure: {e}");
+                                            }
+                                            return;
+                                        }
+                                        let _ = match buffer[0] {
+                                            0 => IpAddr::from(
+                                                <&[u8] as TryInto<[u8; 4]>>::try_into(&buffer[1..5]).unwrap(),
+                                            ),
+                                            1 => IpAddr::from(
+                                                <&[u8] as TryInto<[u8; 16]>>::try_into(&buffer[1..]).unwrap(),
+                                            ),
+                                            _ => {
+                                                error!("Invalid address encoding byte");
+                                                if let Err(e) = np_tx.send((socket, None)).await {
+                                                    error!("Could not notify peer manager of connection failure: {e}");
+                                                }
+                                                return;
+                                            }
+                                        };
 
-                        if let Err(e) = peer_stream.write_all(&buf).await {
-                            info!("Failed to read hanshake from peer: {e}");
-                            continue;
-                        };
+                                        let mut buf = [0u8; 17];
+                                        // only using IPv6
+                                        buf[0] = 1;
+                                        buf[1..].copy_from_slice(&node_tun_addr.octets()[..]);
 
-                        let peer_stream_ip = peer.ip();
-                        if let Ok(new_peer) = Peer::new(
-                            peer_stream_ip,
-                            self.router.router_data_tx(),
-                            self.router.router_control_tx(),
-                            peer_stream,
-                            self.router.dead_peer_sink().clone(),
-                        ) {
-                            info!("Connected to new peer {}", new_peer.underlay_ip());
-                            self.router.add_peer_interface(new_peer);
+                                        if let Err(e) = peer_stream.write_all(&buf).await {
+                                            info!("Failed to read hanshake from peer: {e}");
+                                            if let Err(e) = np_tx.send((socket, None)).await {
+                                                error!("Could not notify peer manager of connection failure: {e}");
+                                            }
+                                            return;
+                                        };
+
+                                        // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
+                                        if let Err(e) = peer_stream.set_nodelay(true) {
+                                            error!("Couldn't disable Naglle's algorithm on stream {e}");
+                                            if let Err(e) = np_tx.send((socket, None)).await {
+                                                error!("Could not notify peer manager of connection failure: {e}");
+                                            }
+                                            return
+                                        }
+
+                                        let peer_stream_ip = socket.ip();
+                                        let new_peer = Peer::new(
+                                            peer_stream_ip,
+                                            router_data_tx.clone(),
+                                            router_control_tx.clone(),
+                                            peer_stream,
+                                            dead_peer_sink.clone(),
+                                        );
+
+                                        info!("Connected to new peer {}", new_peer.underlay_ip());
+                                        if let Err(e) = np_tx.send((socket, Some(new_peer))).await {
+                                            error!("Could not notify peer manager of new connection: {e}");
+                                        }
+                                    }
+                            }});
                         }
                     }
                 }
             }
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     }
 
-    async fn start_listener(self, port: u16) {
-        let node_tun_addr = if let IpAddr::V6(ip) = self.router.node_tun_subnet().address() {
-            ip
-        } else {
-            panic!("Non IPv6 node tun not support currently")
-        };
-        let router_data_tx = self.router.router_data_tx();
-        let router_control_tx = self.router.router_control_tx();
-        let dead_peer_sink = self.router.dead_peer_sink();
+    async fn start_listener(self: Arc<Self>, port: u16) {
+        let node_tun_addr =
+            if let IpAddr::V6(ip) = self.router.lock().unwrap().node_tun_subnet().address() {
+                ip
+            } else {
+                panic!("Non IPv6 node tun not support currently")
+            };
+        let router_data_tx = self.router.lock().unwrap().router_data_tx();
+        let router_control_tx = self.router.lock().unwrap().router_control_tx();
+        let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
 
         match TcpListener::bind(("::", port)).await {
             Ok(listener) => loop {
@@ -115,7 +218,7 @@ impl PeerManager {
                         match new_peer {
                             Ok(peer) => {
                                 info!("Accepted new peer {}", peer.underlay_ip());
-                                self.router.add_peer_interface(peer);
+                                self.router.lock().unwrap().add_peer_interface(peer);
                             }
                             Err(e) => {
                                 error!("Failed to accept new peer {e}");
@@ -168,12 +271,16 @@ impl PeerManager {
 
         // Create new Peer instance
         let peer_stream_ip = stream.peer_addr().unwrap().ip();
-        Peer::new(
+
+        // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
+        stream.set_nodelay(true)?;
+
+        Ok(Peer::new(
             peer_stream_ip,
             router_data_tx,
             router_control_tx,
             stream,
             dead_peer_sink,
-        )
+        ))
     }
 }
