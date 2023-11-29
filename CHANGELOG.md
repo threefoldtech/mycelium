@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Link local peer discovery over IPv6. The system will automatically detect peers on the same LAN and try to connect to them.
+  This makes sure peers on the same network don't needlessly use bandwidth on external "hop" peers.
+
 ### Changed
 
 - The peer manager now tracks sufficient info of each connected peer to

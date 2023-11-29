@@ -176,6 +176,11 @@ impl Router {
         self.node_keypair.1
     }
 
+    /// Get the [`RouterId`] of the `Router`.
+    pub fn router_id(&self) -> RouterId {
+        self.router_id
+    }
+
     /// Add a new destination [`PublicKey`] to the destination map. This will also compute and store
     /// the [`SharedSecret`] from the `Router`'s [`SecretKey`].
     pub fn add_dest_pubkey_map_entry(&self, dest: Subnet, pubkey: PublicKey) {
