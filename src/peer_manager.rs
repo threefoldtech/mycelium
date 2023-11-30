@@ -62,7 +62,13 @@ struct Inner {
 }
 
 impl PeerManager {
-    pub fn new(router: Router, static_peers_sockets: Vec<SocketAddr>, listen_port: u16) -> Self {
+    pub fn new(
+        router: Router,
+        static_peers_sockets: Vec<SocketAddr>,
+        listen_port: u16,
+        peer_discovery_port: u16,
+        disable_peer_discovery: bool,
+    ) -> Self {
         let peer_manager = PeerManager {
             inner: Arc::new(Inner {
                 router: Mutex::new(router),
@@ -92,7 +98,12 @@ impl PeerManager {
 
         tokio::spawn(Inner::connect_to_peers(peer_manager.inner.clone()));
 
-        tokio::spawn(Inner::local_discovery(peer_manager.inner.clone(), 9651));
+        if !disable_peer_discovery {
+            tokio::spawn(Inner::local_discovery(
+                peer_manager.inner.clone(),
+                peer_discovery_port,
+            ));
+        }
 
         peer_manager
     }

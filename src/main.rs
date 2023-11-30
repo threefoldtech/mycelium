@@ -31,6 +31,8 @@ mod tun;
 
 /// The default port on the inderlay to listen on.
 const DEFAULT_LISTEN_PORT: u16 = 9651;
+/// The default port to use for IPv6 link local peer discovery (UDP).
+const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9651;
 /// The default listening address for the HTTP API.
 const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
@@ -59,6 +61,17 @@ struct Cli {
     #[arg(short = 'p', long = "port", default_value_t = DEFAULT_LISTEN_PORT)]
     port: u16,
 
+    /// Port to use for link local peer discovery. This uses the UDP protocol.
+    #[arg(long = "peer-discovery-port", default_value_t = DEFAULT_PEER_DISCOVERY_PORT)]
+    peer_discovery_port: u16,
+
+    /// Disable peer discovery.
+    ///
+    /// If this flag is passed, the automatic link local peer discovery will not be enabled, and
+    /// peers must be configured manually. If this is disabled on all local peers, communication
+    /// between them will go over configured external peers.
+    #[arg(long = "disable-peer-discovery", default_value_t = false)]
+    disable_peer_discovery: bool,
     /// Path to the private key file. This will be created if it does not exist. Default
     /// [priv_key.bin].
     #[arg(short = 'k', long = "key-file")]
@@ -280,8 +293,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Creating a new PeerManager instance
-    let _peer_manager: peer_manager::PeerManager =
-        peer_manager::PeerManager::new(router.clone(), static_peers, cli.port);
+    let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(
+        router.clone(),
+        static_peers,
+        cli.port,
+        cli.peer_discovery_port,
+        cli.disable_peer_discovery,
+    );
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let msg_receiver = tokio_stream::wrappers::ReceiverStream::new(rx);
