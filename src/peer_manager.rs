@@ -94,15 +94,16 @@ impl PeerManager {
             }),
         };
         // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
-        tokio::spawn(Inner::start_listener(peer_manager.inner.clone()));
-
-        tokio::spawn(Inner::connect_to_peers(peer_manager.inner.clone()));
+        tokio::spawn(peer_manager.inner.clone().start_listener());
+        tokio::spawn(peer_manager.inner.clone().connect_to_peers());
 
         if !disable_peer_discovery {
-            tokio::spawn(Inner::local_discovery(
-                peer_manager.inner.clone(),
-                peer_discovery_port,
-            ));
+            tokio::spawn(
+                peer_manager
+                    .inner
+                    .clone()
+                    .local_discovery(peer_discovery_port),
+            );
         }
 
         peer_manager
