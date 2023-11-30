@@ -180,9 +180,8 @@ impl Inner {
                     let router_control_tx = router.router_control_tx();
                     let dead_peer_sink = router.dead_peer_sink().clone();
 
-                    let peer_stream_ip = socket.ip();
                     Peer::new(
-                        peer_stream_ip,
+                        socket,
                         router_data_tx,
                         router_control_tx,
                         peer_stream,
@@ -211,7 +210,7 @@ impl Inner {
                 match listener.accept().await {
                     Ok((stream, remote)) => {
                         let new_peer = Peer::new(
-                            remote.ip(),
+                            remote,
                             router_data_tx.clone(),
                             router_control_tx.clone(),
                             stream,

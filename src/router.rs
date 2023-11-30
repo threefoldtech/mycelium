@@ -153,19 +153,12 @@ impl Router {
     }
 
     pub fn add_peer_interface(&self, peer: Peer) {
-        debug!("Adding peer {} to router", peer.underlay_ip());
+        debug!("Adding peer {} to router", peer.connection_identifier());
         self.inner_w
             .lock()
             .expect("Mutex isn't poinsoned")
             .append(RouterOpLogEntry::AddPeer(peer))
             .publish();
-    }
-
-    pub fn peer_exists(&self, peer_underlay_ip: IpAddr) -> bool {
-        self.inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .peer_exists(peer_underlay_ip)
     }
 
     pub fn node_secret_key(&self) -> SecretKey {
@@ -245,7 +238,7 @@ impl Router {
             println!(
                 "{} next-hop {} metric: {} (seqno {})",
                 route_key.subnet(),
-                route_entry.neighbour().underlay_ip(),
+                route_entry.neighbour().connection_identifier(),
                 route_entry.metric(),
                 route_entry.seqno(),
             );
@@ -263,7 +256,7 @@ impl Router {
             println!(
                 "{} next-hop {} metric: {} (seqno {})",
                 route_key.subnet(),
-                route_entry.neighbour().underlay_ip(),
+                route_entry.neighbour().connection_identifier(),
                 route_entry.metric(),
                 route_entry.seqno(),
             );
@@ -316,7 +309,7 @@ impl Router {
                     // check if the peer's last_received_ihu is greater than the threshold
                     if peer.time_last_received_ihu().elapsed() > ihu_threshold {
                         // peer is dead
-                        info!("Peer {} is dead", peer.underlay_ip());
+                        info!("Peer {} is dead", peer.connection_identifier());
                         dead_peers.push(peer.clone());
                     }
                 }
@@ -333,7 +326,7 @@ impl Router {
     fn handle_dead_peer(&self, dead_peer: Peer) {
         debug!(
             "Cleaning up peer {} which is reportedly dead",
-            dead_peer.underlay_ip()
+            dead_peer.connection_identifier()
         );
 
         // Scope for the mutex lock
@@ -528,7 +521,10 @@ impl Router {
         mut router_control_rx: UnboundedReceiver<(ControlPacket, Peer)>,
     ) {
         while let Some((control_packet, source_peer)) = router_control_rx.recv().await {
-            trace!("Received control packet from {}", source_peer.underlay_ip());
+            trace!(
+                "Received control packet from {}",
+                source_peer.connection_identifier()
+            );
             match control_packet {
                 babel::Tlv::Hello(hello) => self.handle_incoming_hello(hello, source_peer),
                 babel::Tlv::Ihu(ihu) => self.handle_incoming_ihu(ihu, source_peer),
@@ -542,7 +538,7 @@ impl Router {
 
     fn handle_incoming_hello(&self, _: babel::Hello, source_peer: Peer) {
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
-        let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.underlay_ip());
+        let ihu = ControlPacket::new_ihu(IHU_INTERVAL, source_peer.connection_identifier().ip());
         if let Err(e) = source_peer.send_control_packet(ihu) {
             error!("Error sending IHU to peer: {e}");
         }
@@ -679,7 +675,7 @@ impl Router {
                     "Forwarding seqno request {} for {} to {}",
                     seqno_request.seqno(),
                     seqno_request.prefix(),
-                    re.neighbour().underlay_ip()
+                    re.neighbour().connection_identifier()
                 );
                 if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
                     error!("Failed to foward seqno request: {e}");
@@ -696,7 +692,7 @@ impl Router {
                     "Forwarding seqno request {} for {} to {}",
                     seqno_request.seqno(),
                     seqno_request.prefix(),
-                    re.neighbour().underlay_ip()
+                    re.neighbour().connection_identifier()
                 );
                 if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
                     error!("Failed to foward seqno request: {e}");
@@ -793,7 +789,7 @@ impl Router {
 
         debug!(
              "Got update packet from {} for subnet {subnet} with metric {metric} and seqno {seqno} and router-id {router_id}. Route entry exists: {} and update is feasible: {update_feasible}",
-             source_peer.underlay_ip(),
+             source_peer.connection_identifier(),
              maybe_existing_entry_idx.is_some(),
          );
 
@@ -818,7 +814,7 @@ impl Router {
 
                 debug!(
                     "Sending seqno_request to {} for seqno {} of {}",
-                    source_peer.underlay_ip(),
+                    source_peer.connection_identifier(),
                     fd.seqno() + 1,
                     update.subnet(),
                 );
@@ -832,7 +828,7 @@ impl Router {
                 ) {
                     error!(
                         "Failed to send seqno request to {}: {e}",
-                        source_peer.underlay_ip()
+                        source_peer.connection_identifier()
                     );
                 }
                 return;
@@ -913,8 +909,8 @@ impl Router {
                 if new_route.neighbour() != old_route.neighbour() {
                     info!(
                         "Selected route for {subnet} changed next-hop from {} to {}",
-                        old_route.neighbour().underlay_ip(),
-                        new_route.neighbour().underlay_ip()
+                        old_route.neighbour().connection_identifier(),
+                        new_route.neighbour().connection_identifier()
                     );
                 }
                 // Router id changed.
@@ -926,14 +922,14 @@ impl Router {
             (None, Some(new_route)) => {
                 info!(
                     "Aquired route to {subnet} via {}",
-                    new_route.neighbour().underlay_ip()
+                    new_route.neighbour().connection_identifier()
                 );
                 true
             }
             (Some(old_route), None) => {
                 info!(
                     "Lost route to {subnet} via {}",
-                    old_route.neighbour().underlay_ip()
+                    old_route.neighbour().connection_identifier()
                 );
                 true
             }
@@ -1214,7 +1210,7 @@ impl RouterInner {
             debug!(
                 "Propagating route update for {} to {}",
                 subnet,
-                peer.underlay_ip()
+                peer.connection_identifier()
             );
             updates.push((peer.clone(), update));
         }
@@ -1247,7 +1243,7 @@ impl RouterInner {
                 debug!(
                     "Propagating route update for {} to {} | D({}, {})",
                     srk.subnet(),
-                    peer.underlay_ip(),
+                    peer.connection_identifier(),
                     sre.seqno(),
                     sre.metric() + neigh_link_cost,
                 );
@@ -1259,12 +1255,6 @@ impl RouterInner {
             .into_iter()
             .filter_map(|(peer, update)| self.send_update(&peer, update))
             .collect()
-    }
-
-    fn peer_exists(&self, peer_underlay_ip: IpAddr) -> bool {
-        self.peer_interfaces
-            .iter()
-            .any(|peer| peer.underlay_ip() == peer_underlay_ip)
     }
 }
 

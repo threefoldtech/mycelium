@@ -36,7 +36,7 @@ impl fmt::Display for RouteKey {
         f.write_fmt(format_args!(
             "{} via {}",
             self.subnet,
-            self.neighbor.underlay_ip()
+            self.neighbor.connection_identifier()
         ))
     }
 }

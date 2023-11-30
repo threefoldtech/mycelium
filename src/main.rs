@@ -364,7 +364,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 for p in router.peer_interfaces() {
                     println!(
                         "Peer: {}, with link cost: {}",
-                        p.underlay_ip(),
+                        p.connection_identifier(),
                         p.link_cost()
                     );
                 }

@@ -2,7 +2,7 @@ use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace};
 use std::{
     error::Error,
-    net::IpAddr,
+    net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock, Weak,
@@ -56,7 +56,7 @@ pub struct PeerRef {
 
 impl Peer {
     pub fn new(
-        stream_ip: IpAddr,
+        sock_addr: SocketAddr,
         router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         stream: TcpStream,
@@ -72,7 +72,7 @@ impl Peer {
                 state: RwLock::new(PeerState::new()),
                 to_peer_data,
                 to_peer_control,
-                stream_ip,
+                sock_addr,
                 alive: AtomicBool::new(true),
             }),
         };
@@ -106,11 +106,11 @@ impl Peer {
                                     }
                                 }
                                 Some(Err(e)) => {
-                                    error!("Frame error from {}: {e}", peer.underlay_ip());
+                                    error!("Frame error from {}: {e}", peer.connection_identifier());
                                     break;
                                 },
                                 None => {
-                                    info!("Stream to {} is closed", peer.underlay_ip());
+                                    info!("Stream to {} is closed", peer.connection_identifier());
                                     break;
                                 }
                             }
@@ -153,7 +153,7 @@ impl Peer {
                 // Notify router we are dead, also modify our internal state to declare that.
                 // Relaxed ordering is fine, we just care that the variable is set.
                 peer.inner.alive.store(false, Ordering::Relaxed);
-                let remote_id = peer.underlay_ip();
+                let remote_id = peer.connection_identifier();
                 debug!("Notifying router peer {remote_id} is dead");
                 if let Err(e) = dead_peer_sink.send(peer).await {
                     error!("Peer {remote_id} could not notify router of termination: {e}");
@@ -218,8 +218,9 @@ impl Peer {
             / TOTAL_METRIC_DIVISOR) as u16;
     }
 
-    pub fn underlay_ip(&self) -> IpAddr {
-        self.inner.stream_ip
+    /// Identifier for the connection to the `Peer`.
+    pub fn connection_identifier(&self) -> SocketAddr {
+        self.inner.sock_addr
     }
 
     pub fn time_last_received_ihu(&self) -> tokio::time::Instant {
@@ -273,7 +274,7 @@ struct PeerInner {
     to_peer_data: mpsc::UnboundedSender<DataPacket>,
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     /// Used to identify peer based on its connection params
-    stream_ip: IpAddr,
+    sock_addr: SocketAddr,
     /// Keep track if the connection is alive
     alive: AtomicBool,
 }
