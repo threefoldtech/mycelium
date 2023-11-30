@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The peer manager now tracks sufficient info of each connected peer to
   avoid going through the router every time to see if it needs to
   reconnect to said peers.
+- We don't send the receiver nodes IP address in IHU packets anymore, as the packet is sent over a unicast link.
+  This is valid per the babel rfc.
 
 ### Removed 
 

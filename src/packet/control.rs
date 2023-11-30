@@ -21,9 +21,9 @@ impl ControlPacket {
         tlv
     }
 
-    pub fn new_ihu(interval: u16, dest_address: IpAddr) -> Self {
+    pub fn new_ihu(interval: u16, dest_address: Option<IpAddr>) -> Self {
         // TODO: Set rx metric
-        babel::Ihu::new(Metric::from(0), interval, Some(dest_address)).into()
+        babel::Ihu::new(Metric::from(0), interval, dest_address).into()
     }
 
     pub fn new_update(
