@@ -9,20 +9,29 @@ const DATA_PACKET_HEADER_SIZE: usize = 4;
 #[derive(Debug, Clone)]
 pub struct DataPacket {
     pub raw_data: Vec<u8>, // eccrypte data isself then append the nonce
+    /// Max amount of hops for the packet.
+    pub hop_limit: u8,
     pub src_ip: Ipv6Addr,
     pub dst_ip: Ipv6Addr,
 }
 
 pub struct Codec {
-    len: Option<u16>,
+    header_vals: Option<HeaderValues>,
     src_ip: Option<Ipv6Addr>,
     dest_ip: Option<Ipv6Addr>,
+}
+
+/// Data from the DataPacket header.
+#[derive(Clone, Copy)]
+struct HeaderValues {
+    len: u16,
+    hop_limit: u8,
 }
 
 impl Codec {
     pub fn new() -> Self {
         Codec {
-            len: None,
+            header_vals: None,
             src_ip: None,
             dest_ip: None,
         }
@@ -35,8 +44,8 @@ impl Decoder for Codec {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         // Determine the length of the data
-        let data_len = if let Some(data_len) = self.len {
-            data_len
+        let HeaderValues { len, hop_limit } = if let Some(header_vals) = self.header_vals {
+            header_vals
         } else {
             // Check we have enough data to decode
             if src.len() < DATA_PACKET_HEADER_SIZE {
@@ -45,11 +54,20 @@ impl Decoder for Codec {
 
             let data_len = src.get_u16();
             // Reserved part of header
-            let _ = src.get_u16();
-            self.len = Some(data_len);
+            let _ = src.get_u8();
+            // Hop limit
+            let hop_limit = src.get_u8();
+            let header_vals = HeaderValues {
+                len: data_len,
+                hop_limit,
+            };
 
-            data_len
-        } as usize;
+            self.header_vals = Some(header_vals);
+
+            header_vals
+        };
+
+        let data_len = len as usize;
 
         // Determine the source IP
         let src_ip = if let Some(src_ip) = self.src_ip {
@@ -98,12 +116,13 @@ impl Decoder for Codec {
         src.advance(data_len);
 
         // Reset state
-        self.len = None;
+        self.header_vals = None;
         self.dest_ip = None;
         self.src_ip = None;
 
         Ok(Some(DataPacket {
             raw_data: data,
+            hop_limit,
             dst_ip: dest_ip,
             src_ip,
         }))
@@ -118,7 +137,9 @@ impl Encoder<DataPacket> for Codec {
         // Write the length of the data
         dst.put_u16(item.raw_data.len() as u16);
         // Write reserved part of header
-        dst.put_u16(0);
+        dst.put_u8(0);
+        // Write hop limit.
+        dst.put_u8(item.hop_limit);
         // Write the source IP
         dst.put_slice(&item.src_ip.octets());
         // Write the destination IP

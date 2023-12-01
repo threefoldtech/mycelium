@@ -998,7 +998,14 @@ impl Router {
     }
 
     async fn handle_incoming_data_packet(self, mut router_data_rx: Receiver<DataPacket>) {
-        while let Some(data_packet) = router_data_rx.recv().await {
+        while let Some(mut data_packet) = router_data_rx.recv().await {
+            if data_packet.hop_limit < 2 {
+                // Drop packet for TTL expired.
+                // TODO: notify sender
+                debug!("Dropping packet with expired TTL");
+                continue;
+            }
+            data_packet.hop_limit -= 1;
             self.route_packet(data_packet);
         }
         warn!("Router data receiver stream ended");

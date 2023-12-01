@@ -14,7 +14,7 @@ The packet header has a fixed size of 36 bytes, with the following layout:
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|             Length            |            Reserved           |
+|             Length            |    Reserved   |   Hop Limit   |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
 +                                                               +
@@ -38,7 +38,10 @@ The first 2 bytes are used to specify the length of the body. In practice, packe
 to at most the MTU size of the NIC used. This means that the leading bits should be unused. In the
 future, the protocol might be extended to take advantage of these unused bits.
 
-The next 2 bytes are reserved for future use and should be set to all 0.
+The next byte is reserved for future use and should be set to 0.
+
+The next byte is the hop-limit. Every node decrements this value by 1 before sending the packet.
+If a node decrements this value to 0, the packet is discareded.
 
 The next 16 bytes contain the sender IP address.
 

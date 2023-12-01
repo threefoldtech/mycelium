@@ -25,6 +25,12 @@ const IP_VERSION_MASK: u8 = 0b1111_0000;
 /// must be masked first.
 const IPV6_VERSION_BYTE: u8 = 0b0110_0000;
 
+/// Default hop limit for message packets. For now this is set to 64 hops.
+///
+/// For regular l3 packets, we copy the hop limit from the packet itself. We can't do that here, so
+/// 64 is used as sane default.
+const MESSAGE_HOP_LIMIT: u8 = 64;
+
 /// The DataPlane manages forwarding/receiving of local data packets to the [`Router`], and the
 /// encryption/decryption of them.
 ///
@@ -90,6 +96,7 @@ impl DataPlane {
             // Parse an IPv6 header. We don't care about the full header in reality. What we want
             // to know is:
             // - This is an IPv6 header
+            // - Hop limit
             // - Source address
             // - Destination address
             // This translates to the following requirements:
@@ -107,6 +114,8 @@ impl DataPlane {
                 trace!("Packet is not IPv6");
                 continue;
             }
+
+            let hop_limit = u8::from_be_bytes([packet[7]]);
 
             let src_ip = Ipv6Addr::from(
                 <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[8..24])
@@ -131,7 +140,7 @@ impl DataPlane {
             header[0] = USER_DATA_VERSION;
             header[1] = USER_DATA_L3_TYPE;
 
-            self.encrypt_and_route_packet(src_ip, dst_ip, packet)
+            self.encrypt_and_route_packet(src_ip, dst_ip, hop_limit, packet)
         }
 
         warn!("Data inject loop from host to router ended");
@@ -148,10 +157,16 @@ impl DataPlane {
         header[0] = USER_DATA_VERSION;
         header[1] = USER_DATA_MESSAGE_TYPE;
 
-        self.encrypt_and_route_packet(src_ip, dst_ip, packet)
+        self.encrypt_and_route_packet(src_ip, dst_ip, MESSAGE_HOP_LIMIT, packet)
     }
 
-    fn encrypt_and_route_packet(&self, src_ip: Ipv6Addr, dst_ip: Ipv6Addr, packet: PacketBuffer) {
+    fn encrypt_and_route_packet(
+        &self,
+        src_ip: Ipv6Addr,
+        dst_ip: Ipv6Addr,
+        hop_limit: u8,
+        packet: PacketBuffer,
+    ) {
         // Get shared secret from node and dest address
         let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip) {
             Some(ss) => ss,
@@ -167,6 +182,7 @@ impl DataPlane {
         self.router.route_packet(DataPacket {
             dst_ip,
             src_ip,
+            hop_limit,
             raw_data: shared_secret.encrypt(packet),
         });
     }
@@ -191,7 +207,7 @@ impl DataPlane {
                     trace!("Received packet from unknown sender");
                     continue;
                 };
-            let decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
+            let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
                     log::debug!("Dropping data packet with invalid encrypted content");
@@ -209,6 +225,15 @@ impl DataPlane {
             // Route based on packet type.
             match header[1] {
                 USER_DATA_L3_TYPE => {
+                    let real_packet = decrypted_packet.buffer_mut();
+                    if real_packet.len() < IPV6_MIN_HEADER_SIZE {
+                        debug!(
+                            "Decrypted packet is too short, can't possibly be a valid IPv6 packet"
+                        );
+                        continue;
+                    }
+                    // Adjust the hop limit in the decrypted packet to the new value.
+                    real_packet[7] = data_packet.hop_limit;
                     if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
                         error!("Failed to send packet on local TUN interface: {e}",);
                         continue;

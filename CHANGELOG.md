@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Link local peer discovery over IPv6. The system will automatically detect peers on the same LAN and try to connect to them.
   This makes sure peers on the same network don't needlessly use bandwidth on external "hop" peers.
+- Data packets now carry a Hop Limit field as part of the header. Every node decrements this value, and if it is decremented
+  to zero, the packet is discarded
 
 ### Changed
 
