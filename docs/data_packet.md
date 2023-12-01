@@ -41,7 +41,7 @@ future, the protocol might be extended to take advantage of these unused bits.
 The next byte is reserved for future use and should be set to 0.
 
 The next byte is the hop-limit. Every node decrements this value by 1 before sending the packet.
-If a node decrements this value to 0, the packet is discareded.
+If a node decrements this value to 0, the packet is discarded.
 
 The next 16 bytes contain the sender IP address.
 
