@@ -921,7 +921,7 @@ impl Router {
             }
             (None, Some(new_route)) => {
                 info!(
-                    "Aquired route to {subnet} via {}",
+                    "Acquired route to {subnet} via {}",
                     new_route.neighbour().connection_identifier()
                 );
                 true
