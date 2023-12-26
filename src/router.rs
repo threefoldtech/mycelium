@@ -1,6 +1,6 @@
 use crate::{
     babel::{self, SeqNoRequest},
-    crypto::{PublicKey, SecretKey, SharedSecret},
+    crypto::{PacketBuffer, PublicKey, SecretKey, SharedSecret},
     filters::RouteUpdateFilter,
     ip_pubkey::IpPubkeyMap,
     metric::Metric,
@@ -12,6 +12,7 @@ use crate::{
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     subnet::Subnet,
 };
+use etherparse::{icmpv6::TimeExceededCode, Icmpv6Type};
 use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
 use std::{
@@ -1000,15 +1001,70 @@ impl Router {
     async fn handle_incoming_data_packet(self, mut router_data_rx: Receiver<DataPacket>) {
         while let Some(mut data_packet) = router_data_rx.recv().await {
             if data_packet.hop_limit < 2 {
-                // Drop packet for TTL expired.
-                // TODO: notify sender
-                debug!("Dropping packet with expired TTL");
+                self.time_exceeded(data_packet);
                 continue;
             }
             data_packet.hop_limit -= 1;
             self.route_packet(data_packet);
         }
         warn!("Router data receiver stream ended");
+    }
+
+    /// Handle a packet who's TTL is too low.
+    fn time_exceeded(&self, mut data_packet: DataPacket) {
+        let src_ip = if let IpAddr::V6(ip) = self.node_tun_subnet.address() {
+            ip
+        } else {
+            panic!("IPv4 not supported yet")
+        };
+
+        let packet =
+            etherparse::PacketBuilder::ipv6(src_ip.octets(), data_packet.src_ip.octets(), 64)
+                .icmpv6(Icmpv6Type::TimeExceeded(TimeExceededCode::HopLimitExceeded));
+
+        let mut pb = PacketBuffer::new();
+        // Don't exceed MIN_MTU for the constructed packet
+        // TODO: use proper consts
+        if data_packet.raw_data.len() > (1280 - 48) {
+            // Just drop raw_data, we don't need it anymore in this case and by doing this we have
+            // a unified code path later. Also we release the no longer used memory just a tad bit
+            // slower, though it's unlikely that this matters.
+            data_packet.raw_data = vec![];
+        }
+        let serialized_icmp_size = packet.size(data_packet.raw_data.len());
+        pb.set_size(serialized_icmp_size + 16);
+        pb.buffer_mut()[..16].copy_from_slice(&data_packet.dst_ip.octets());
+        let mut ps = &mut pb.buffer_mut()[16..16 + serialized_icmp_size];
+        if let Err(e) = packet.write(&mut ps, &data_packet.raw_data) {
+            error!("Failed to write ICMP packet {e}");
+            return;
+        }
+
+        // TODO: import consts
+        let mut header = pb.header_mut();
+        header[0] = 1;
+        header[1] = 2;
+
+        // Get shared secret from node and dest address
+        let shared_secret = match self.get_shared_secret_from_dest(data_packet.src_ip) {
+            Some(ss) => ss,
+            None => {
+                debug!(
+                    "No entry found for destination address {}, dropping packet",
+                    data_packet.src_ip
+                );
+                return;
+            }
+        };
+
+        let enc = shared_secret.encrypt(pb);
+
+        self.route_packet(DataPacket {
+            dst_ip: data_packet.src_ip,
+            src_ip,
+            hop_limit: 64,
+            raw_data: enc,
+        });
     }
 
     pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
