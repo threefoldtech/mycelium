@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr};
 
+use etherparse::{icmpv6::TimeExceededCode, Icmpv6Type};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -15,8 +16,20 @@ const USER_DATA_L3_TYPE: u8 = 0;
 /// Type value indicating a user message in the data header.
 const USER_DATA_MESSAGE_TYPE: u8 = 1;
 
+/// Type value indicating an ICMP packet not returned as regular IPv6 traffic. This is needed when
+/// intermediate nodes send back icmp data, as the original data is encrypted.
+const USER_DATA_OOB_ICMP: u8 = 2;
+
 /// Minimum size in bytes of an IPv6 header.
 const IPV6_MIN_HEADER_SIZE: usize = 40;
+
+/// Size of an ICMPv6 header.
+const ICMP6_HEADER_SIZE: usize = 8;
+
+/// Minimum MTU for IPV6 according to https://www.rfc-editor.org/rfc/rfc8200#section-5.
+/// For ICMP, the packet must not be greater than this value. This is specified in
+/// https://datatracker.ietf.org/doc/html/rfc4443#section-2.4, section (c).
+const MIN_IPV6_MTU: usize = 1280;
 
 /// Mask applied to the first byte of an IP header to extract the version.
 const IP_VERSION_MASK: u8 = 0b1111_0000;
@@ -249,6 +262,65 @@ impl DataPlane {
                         .await
                     {
                         error!("Failed to send packet to message handler: {e}",);
+                        continue;
+                    }
+                }
+                USER_DATA_OOB_ICMP => {
+                    let real_packet = &*decrypted_packet;
+                    if real_packet.len() < IPV6_MIN_HEADER_SIZE + ICMP6_HEADER_SIZE + 16 {
+                        debug!(
+                            "Decrypted packet is too short, can't possibly be a valid IPv6 ICMP packet"
+                        );
+                        continue;
+                    }
+                    if real_packet.len() > MIN_IPV6_MTU + 16 {
+                        debug!("Discarding ICMP packet which is too large");
+                        continue;
+                    }
+
+                    let dec_ip = Ipv6Addr::from(
+                        <&[u8] as TryInto<[u8; 16]>>::try_into(&real_packet[..16]).unwrap(),
+                    );
+                    trace!("ICMP for original target {dec_ip}");
+
+                    let key = if let Some(key) = self.router.get_shared_secret_from_dest(dec_ip) {
+                        key
+                    } else {
+                        debug!("Can't decrypt OOB ICMP packet from unknown host");
+                        continue;
+                    };
+
+                    let (_, _, body) =
+                        etherparse::IpHeader::from_slice(&real_packet[16..]).unwrap();
+                    let (_, body) = etherparse::Icmpv6Header::from_slice(body).unwrap();
+
+                    // Where are the leftover bytes coming from
+                    let orig_pb = match key.decrypt(body[..body.len()].to_vec()) {
+                        Ok(pb) => pb,
+                        Err(e) => {
+                            warn!("Failed to decrypt ICMP data body {e}");
+                            continue;
+                        }
+                    };
+
+                    let packet = etherparse::PacketBuilder::ipv6(
+                        data_packet.src_ip.octets(),
+                        data_packet.dst_ip.octets(),
+                        data_packet.hop_limit,
+                    )
+                    .icmpv6(Icmpv6Type::TimeExceeded(TimeExceededCode::HopLimitExceeded));
+
+                    let serialized_icmp = packet.size(orig_pb.len());
+                    let mut rp = PacketBuffer::new();
+                    rp.set_size(serialized_icmp);
+                    if let Err(e) =
+                        packet.write(&mut (&mut rp.buffer_mut()[..serialized_icmp]), &orig_pb)
+                    {
+                        error!("Could not reconstruct icmp packet {e}");
+                        continue;
+                    }
+                    if let Err(e) = l3_packet_sink.send(rp).await {
+                        error!("Failed to send packet on local TUN interface: {e}",);
                         continue;
                     }
                 }
