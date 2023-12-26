@@ -242,13 +242,13 @@ impl PacketBuffer {
 
     /// Get a reference to the entire useable inner buffer.
     pub fn buffer(&self) -> &[u8] {
-        let buf_end = self.buf.len() - AES_NONCE_SIZE - DATA_HEADER_SIZE;
+        let buf_end = self.buf.len() - AES_NONCE_SIZE - AES_TAG_SIZE;
         &self.buf[DATA_HEADER_SIZE..buf_end]
     }
 
     /// Get a mutable reference to the entire useable internal buffer.
     pub fn buffer_mut(&mut self) -> &mut [u8] {
-        let buf_end = self.buf.len() - AES_NONCE_SIZE - DATA_HEADER_SIZE;
+        let buf_end = self.buf.len() - AES_NONCE_SIZE - AES_TAG_SIZE;
         &mut self.buf[DATA_HEADER_SIZE..buf_end]
     }
 
@@ -450,5 +450,15 @@ mod tests {
         header[3] = 4;
 
         assert_eq!(pb.buf[..DATA_HEADER_SIZE], [1, 2, 3, 4]);
+    }
+
+    #[test]
+    /// Verify [`PacketBuffer::buffer`] and [`PacketBuffer::buffer_mut`] actually have the
+    /// appropriate size.
+    fn buffer_mapping() {
+        let mut pb = PacketBuffer::new();
+
+        assert_eq!(pb.buffer().len(), super::PACKET_SIZE);
+        assert_eq!(pb.buffer_mut().len(), super::PACKET_SIZE);
     }
 }
