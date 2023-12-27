@@ -21,14 +21,20 @@ use crate::{
 /// received.
 const PACKET_COALESCE_WINDOW: usize = 5;
 
-/// Cost to add to the peer_link_cost for "local processing".
+/// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.
 ///
 /// The current peer link cost is calculated from a HELLO rtt. This is great to measure link
 /// latency, since packets are processed in order. However, on local idle links, this value will
 /// likely be 0 since we round down (from the amount of ms it took to process), which does not
 /// accurately reflect the fact that there is in fact a cost associated with using a peer, even on
 /// these local links.
-const PACKET_PROCESSING_COST: u16 = 10;
+const PACKET_PROCESSING_COST_IP6: u16 = 10;
+
+/// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.
+///
+/// This is similar to [`PACKET_PROCESSING_COST_IP6`], but slightly higher so we skew towards IPv6
+/// connections if peers are connected over both IPv4 and IPv6.
+const PACKET_PROCESSING_COST_IP4: u16 = 15;
 
 /// The default link cost assigned to new peers before their actual cost is known.
 ///
@@ -201,7 +207,13 @@ impl Peer {
     ///
     /// This is a smoothed value, which is calculated over the recent history of link cost.
     pub fn link_cost(&self) -> u16 {
-        self.inner.state.read().unwrap().link_cost + PACKET_PROCESSING_COST
+        let p_cost = match self.inner.sock_addr {
+            SocketAddr::V4(_) => PACKET_PROCESSING_COST_IP4,
+            SocketAddr::V6(ip) if ip.ip().to_ipv4_mapped().is_some() => PACKET_PROCESSING_COST_IP4,
+            SocketAddr::V6(_) => PACKET_PROCESSING_COST_IP6,
+        };
+
+        self.inner.state.read().unwrap().link_cost + p_cost
     }
 
     /// Sets the link cost based on the provided value.
