@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This makes sure peers on the same network don't needlessly use bandwidth on external "hop" peers.
 - Data packets now carry a Hop Limit field as part of the header. Every node decrements this value, and if it is decremented
   to zero, the packet is discarded
+- Intermediate nodes can now send ICMP packets back to the source in
+  reply to a dropped packet. This is useful if a hop does not have route
+  to forward a packet, or the hop count for a packet reaches 0.
 
 ### Changed
 
