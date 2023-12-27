@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local node now returns an ICMP Destination unreachable - no route if a
   packet is sent on the TUN interface and there is no key for the remote
   address (so the user data can't be encrypted).
+- Peers connected over IPv4 now incur a higher processing cost, causing
+  IPv6 connections to be preferred for forwarding data.
 
 ### Changed
 
