@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Intermediate nodes can now send ICMP packets back to the source in
   reply to a dropped packet. This is useful if a hop does not have route
   to forward a packet, or the hop count for a packet reaches 0.
+- Local node now returns an ICMP Destination unreachable - no route if a
+  packet is sent on the TUN interface and there is no key for the remote
+  address (so the user data can't be encrypted).
 
 ### Changed
 
