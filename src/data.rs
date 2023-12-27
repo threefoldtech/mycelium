@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr};
 
+use etherparse::{icmpv6::DestUnreachableCode, Icmpv6Type, PacketBuilder};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -66,14 +67,17 @@ impl DataPlane {
     ) -> Self
     where
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
-        T: Sink<PacketBuffer> + Send + Unpin + 'static,
+        T: Sink<PacketBuffer> + Clone + Send + Unpin + 'static,
         T::Error: std::fmt::Display,
         U: Sink<(PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
         U::Error: std::fmt::Display,
     {
         let dp = Self { router };
 
-        tokio::spawn(dp.clone().inject_l3_packet_loop(l3_packet_stream));
+        tokio::spawn(
+            dp.clone()
+                .inject_l3_packet_loop(l3_packet_stream, l3_packet_sink.clone()),
+        );
         tokio::spawn(dp.clone().extract_packet_loop(
             l3_packet_sink,
             message_packet_sink,
@@ -88,11 +92,13 @@ impl DataPlane {
         &self.router
     }
 
-    async fn inject_l3_packet_loop<S>(self, mut l3_packet_stream: S)
+    async fn inject_l3_packet_loop<S, T>(self, mut l3_packet_stream: S, mut l3_packet_sink: T)
     where
         // TODO: no result
         // TODO: should IP extraction be handled higher up?
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
+        T: Sink<PacketBuffer> + Clone + Send + Unpin + 'static,
+        T::Error: std::fmt::Display,
     {
         while let Some(packet) = l3_packet_stream.next().await {
             let mut packet = match packet {
@@ -152,7 +158,11 @@ impl DataPlane {
             header[0] = USER_DATA_VERSION;
             header[1] = USER_DATA_L3_TYPE;
 
-            self.encrypt_and_route_packet(src_ip, dst_ip, hop_limit, packet)
+            if let Some(icmp) = self.encrypt_and_route_packet(src_ip, dst_ip, hop_limit, packet) {
+                if let Err(e) = l3_packet_sink.send(icmp).await {
+                    error!("Could not forward icmp packet back to TUN interface {e}");
+                }
+            }
         }
 
         warn!("Data inject loop from host to router ended");
@@ -169,16 +179,22 @@ impl DataPlane {
         header[0] = USER_DATA_VERSION;
         header[1] = USER_DATA_MESSAGE_TYPE;
 
-        self.encrypt_and_route_packet(src_ip, dst_ip, MESSAGE_HOP_LIMIT, packet)
+        self.encrypt_and_route_packet(src_ip, dst_ip, MESSAGE_HOP_LIMIT, packet);
     }
 
+    /// Encrypt the content of a packet based on the destination key, and then inject the packet
+    /// into the [`Router`] for processing.
+    ///
+    /// If no key exists for the destination, the content can'be encrypted, the packet is not injected
+    /// into the router, and a packet is returned containing an ICMP packet. Note that a return
+    /// value of [`Option::None`] does not mean the packet was successfully forwarded;
     fn encrypt_and_route_packet(
         &self,
         src_ip: Ipv6Addr,
         dst_ip: Ipv6Addr,
         hop_limit: u8,
         packet: PacketBuffer,
-    ) {
+    ) -> Option<PacketBuffer> {
         // Get shared secret from node and dest address
         let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip) {
             Some(ss) => ss,
@@ -187,7 +203,25 @@ impl DataPlane {
                     "No entry found for destination address {}, dropping packet",
                     dst_ip
                 );
-                return;
+
+                let mut pb = PacketBuffer::new();
+                // From self to self
+                let icmp = PacketBuilder::ipv6(src_ip.octets(), src_ip.octets(), hop_limit).icmpv6(
+                    Icmpv6Type::DestinationUnreachable(DestUnreachableCode::NoRoute),
+                );
+                // Scale to max size if needed
+                let orig_buf_end = packet
+                    .buffer()
+                    .len()
+                    .min(MIN_IPV6_MTU - IPV6_MIN_HEADER_SIZE - ICMP6_HEADER_SIZE);
+                pb.set_size(icmp.size(orig_buf_end));
+                let mut b = pb.buffer_mut();
+                if let Err(e) = icmp.write(&mut b, &packet.buffer()[..orig_buf_end]) {
+                    error!("Failed to construct no route to host ICMP packet {e}");
+                    return None;
+                }
+
+                return Some(pb);
             }
         };
 
@@ -197,6 +231,8 @@ impl DataPlane {
             hop_limit,
             raw_data: shared_secret.encrypt(packet),
         });
+
+        None
     }
 
     async fn extract_packet_loop<T, U>(

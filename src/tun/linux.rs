@@ -26,7 +26,7 @@ pub async fn new(
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
-        impl Sink<PacketBuffer, Error = impl std::error::Error>,
+        impl Sink<PacketBuffer, Error = impl std::error::Error> + Clone,
     ),
     Box<dyn std::error::Error>,
 > {
