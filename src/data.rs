@@ -1,6 +1,5 @@
 use std::net::{IpAddr, Ipv6Addr};
 
-use etherparse::{icmpv6::TimeExceededCode, Icmpv6Type};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
 use tokio::sync::mpsc::UnboundedReceiver;
