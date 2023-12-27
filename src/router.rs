@@ -978,9 +978,9 @@ impl Router {
         let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
-            "Incoming data packet, with dest_ip: {} (side node, this node's tun addr is: {})",
+            "Incoming data packet {} -> {})",
+            data_packet.src_ip,
             data_packet.dst_ip,
-            node_tun_subnet
         );
 
         if node_tun_subnet.contains_ip(data_packet.dst_ip.into()) {
