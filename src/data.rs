@@ -292,7 +292,7 @@ impl DataPlane {
 
                     let (_, _, body) =
                         etherparse::IpHeader::from_slice(&real_packet[16..]).unwrap();
-                    let (_, body) = etherparse::Icmpv6Header::from_slice(body).unwrap();
+                    let (header, body) = etherparse::Icmpv6Header::from_slice(body).unwrap();
 
                     // Where are the leftover bytes coming from
                     let orig_pb = match key.decrypt(body[..body.len()].to_vec()) {
@@ -308,7 +308,7 @@ impl DataPlane {
                         data_packet.dst_ip.octets(),
                         data_packet.hop_limit,
                     )
-                    .icmpv6(Icmpv6Type::TimeExceeded(TimeExceededCode::HopLimitExceeded));
+                    .icmpv6(header.icmp_type);
 
                     let serialized_icmp = packet.size(orig_pb.len());
                     let mut rp = PacketBuffer::new();
