@@ -12,7 +12,10 @@ use crate::{
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     subnet::Subnet,
 };
-use etherparse::{icmpv6::TimeExceededCode, Icmpv6Type};
+use etherparse::{
+    icmpv6::{DestUnreachableCode, TimeExceededCode},
+    Icmpv6Type,
+};
 use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
 use std::{
@@ -992,7 +995,7 @@ impl Router {
                     }
                 }
                 None => {
-                    trace!("Error sending data packet, no route found");
+                    self.no_route_to_host(data_packet);
                 }
             }
         }
@@ -1011,16 +1014,37 @@ impl Router {
     }
 
     /// Handle a packet who's TTL is too low.
-    fn time_exceeded(&self, mut data_packet: DataPacket) {
+    fn time_exceeded(&self, data_packet: DataPacket) {
+        trace!("Refusing to forward expired packet");
+        self.oob_icmp(
+            Icmpv6Type::TimeExceeded(TimeExceededCode::HopLimitExceeded),
+            data_packet,
+        )
+    }
+
+    /// Handle a packet if we have no route for the destination address.
+    fn no_route_to_host(&self, data_packet: DataPacket) {
+        trace!(
+            "Could not forward data packet, no route found for {}",
+            data_packet.dst_ip
+        );
+
+        self.oob_icmp(
+            Icmpv6Type::DestinationUnreachable(DestUnreachableCode::NoRoute),
+            data_packet,
+        )
+    }
+
+    fn oob_icmp(&self, icmp_type: Icmpv6Type, mut data_packet: DataPacket) {
         let src_ip = if let IpAddr::V6(ip) = self.node_tun_subnet.address() {
             ip
         } else {
             panic!("IPv4 not supported yet")
         };
 
-        let packet =
+        let icmp_header =
             etherparse::PacketBuilder::ipv6(src_ip.octets(), data_packet.src_ip.octets(), 64)
-                .icmpv6(Icmpv6Type::TimeExceeded(TimeExceededCode::HopLimitExceeded));
+                .icmpv6(icmp_type);
 
         let mut pb = PacketBuffer::new();
         // Don't exceed MIN_MTU for the constructed packet
@@ -1031,11 +1055,11 @@ impl Router {
             // slower, though it's unlikely that this matters.
             data_packet.raw_data = vec![];
         }
-        let serialized_icmp_size = packet.size(data_packet.raw_data.len());
+        let serialized_icmp_size = icmp_header.size(data_packet.raw_data.len());
         pb.set_size(serialized_icmp_size + 16);
         pb.buffer_mut()[..16].copy_from_slice(&data_packet.dst_ip.octets());
         let mut ps = &mut pb.buffer_mut()[16..16 + serialized_icmp_size];
-        if let Err(e) = packet.write(&mut ps, &data_packet.raw_data) {
+        if let Err(e) = icmp_header.write(&mut ps, &data_packet.raw_data) {
             error!("Failed to write ICMP packet {e}");
             return;
         }
