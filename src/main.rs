@@ -31,7 +31,7 @@ use tokio::signal::{self, unix::SignalKind};
 mod tun;
 
 /// The default port on the inderlay to listen on.
-const DEFAULT_LISTEN_PORT: u16 = 9651;
+const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
 /// The default port to use for IPv6 link local peer discovery (UDP).
 const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9651;
 /// The default listening address for the HTTP API.
@@ -58,9 +58,9 @@ struct Cli {
     #[arg(long = "peers", num_args = 1..)]
     static_peers: Vec<Endpoint>,
 
-    /// Port to listen on.
-    #[arg(short = 'p', long = "port", default_value_t = DEFAULT_LISTEN_PORT)]
-    port: u16,
+    /// Port to listen on for tcp connections.
+    #[arg(short = 't', long = "tcp-listen-port", default_value_t = DEFAULT_TCP_LISTEN_PORT)]
+    tcp_listen_port: u16,
 
     /// Port to use for link local peer discovery. This uses the UDP protocol.
     #[arg(long = "peer-discovery-port", default_value_t = DEFAULT_PEER_DISCOVERY_PORT)]
@@ -297,7 +297,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(
         router.clone(),
         static_peers,
-        cli.port,
+        cli.tcp_listen_port,
         cli.peer_discovery_port,
         cli.disable_peer_discovery,
     );

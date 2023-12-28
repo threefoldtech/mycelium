@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This is valid per the babel rfc.
 - Setting the peers on the CLI now requires specifying the protocol to use.
   For now only TCP is supported.
+- Change `--port` flag to `--tcp-listen-port` to more accurately reflect
+  what it controls, as well as the fact that it is only for TCP.
 
 ### Removed 
 
