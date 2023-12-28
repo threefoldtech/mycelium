@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   address (so the user data can't be encrypted).
 - Peers connected over IPv4 now incur a higher processing cost, causing
   IPv6 connections to be preferred for forwarding data.
+- Peer addresses now include a protocol specifier, so multiple underlay
+  connections can be specified in the future.
 
 ### Changed
 
@@ -29,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reconnect to said peers.
 - We don't send the receiver nodes IP address in IHU packets anymore, as the packet is sent over a unicast link.
   This is valid per the babel rfc.
+- Setting the peers on the CLI now requires specifying the protocol to use.
+  For now only TCP is supported.
 
 ### Removed 
 

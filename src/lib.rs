@@ -2,6 +2,7 @@ pub mod api;
 mod babel;
 pub mod crypto;
 pub mod data;
+pub mod endpoint;
 pub mod filters;
 mod interval;
 mod ip_pubkey;

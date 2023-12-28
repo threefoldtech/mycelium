@@ -10,6 +10,7 @@ use mycelium::api::{
 };
 use mycelium::crypto;
 use mycelium::data::DataPlane;
+use mycelium::endpoint::Endpoint;
 use mycelium::filters;
 use mycelium::message::{MessageId, MessageStack};
 use mycelium::peer_manager;
@@ -55,7 +56,7 @@ const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 struct Cli {
     /// Peers to connect to.
     #[arg(long = "peers", num_args = 1..)]
-    static_peers: Vec<SocketAddr>,
+    static_peers: Vec<Endpoint>,
 
     /// Port to listen on.
     #[arg(short = 'p', long = "port", default_value_t = DEFAULT_LISTEN_PORT)]

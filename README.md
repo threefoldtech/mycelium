@@ -12,10 +12,10 @@ First, get an useable binary, either by downloading [an artifact from a release]
 or by [checking out and building the code yourself](#developing).
 
 Once you have an useable binary, simply start it. If you want to connect to other nodes, you can specify their listening address as
-part of the command
+part of the command (combined with the protocol they are listening on, usually TCP);
 
 ```sh
-mycelium --peers 203.0.113.5:9651
+mycelium --peers tcp://203.0.113.5:9651
 ```
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.

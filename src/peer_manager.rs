@@ -1,3 +1,4 @@
+use crate::endpoint::Endpoint;
 use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
 use crate::router_id::RouterId;
@@ -64,7 +65,7 @@ struct Inner {
 impl PeerManager {
     pub fn new(
         router: Router,
-        static_peers_sockets: Vec<SocketAddr>,
+        static_peers_sockets: Vec<Endpoint>,
         listen_port: u16,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
@@ -80,7 +81,8 @@ impl PeerManager {
                         // (re)connect.
                         .map(|s| {
                             (
-                                s,
+                                // For now we only support TCP, so just extract the address.
+                                s.address(),
                                 PeerInfo {
                                     pt: PeerType::Static,
                                     connecting: false,
