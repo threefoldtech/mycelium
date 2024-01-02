@@ -1,5 +1,6 @@
 pub mod api;
 mod babel;
+mod connection;
 pub mod crypto;
 pub mod data;
 pub mod endpoint;
