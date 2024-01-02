@@ -20,6 +20,8 @@ pub enum EndpointParseError {
 pub enum Protocol {
     /// Standard plain text Tcp.
     Tcp,
+    /// Quic protocol (over UDP).
+    Quic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -55,6 +57,7 @@ impl FromStr for Endpoint {
             Some((proto, socket)) => {
                 let proto = match proto.to_lowercase().as_str() {
                     "tcp" => Protocol::Tcp,
+                    "quic" => Protocol::Quic,
                     _ => return Err(EndpointParseError::UnknownProtocol),
                 };
                 let socket_addr = SocketAddr::from_str(socket)?;
@@ -74,6 +77,7 @@ impl fmt::Display for Protocol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Tcp => "Tcp",
+            Self::Quic => "Quic",
         })
     }
 }

@@ -1,3 +1,4 @@
+use crate::connection::Quic;
 use crate::endpoint::{Endpoint, Protocol};
 use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
@@ -5,6 +6,7 @@ use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
+use quinn::{EndpointConfig, ServerConfig};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -59,14 +61,16 @@ struct Inner {
     router: Mutex<Router>,
     peers: Mutex<HashMap<Endpoint, PeerInfo>>,
     /// Listen port for new peer connections
-    listen_port: u16,
+    tcp_listen_port: u16,
+    quic_listen_port: u16,
 }
 
 impl PeerManager {
     pub fn new(
         router: Router,
         static_peers_sockets: Vec<Endpoint>,
-        listen_port: u16,
+        tcp_listen_port: u16,
+        quic_listen_port: u16,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
     ) -> Self {
@@ -92,13 +96,20 @@ impl PeerManager {
                         })
                         .collect(),
                 ),
-                listen_port,
+                tcp_listen_port,
+                quic_listen_port,
             }),
         };
-        // Start a TCP listener. When a new connection is accepted, the reverse peer exchange is performed.
-        tokio::spawn(peer_manager.inner.clone().start_listener());
+
+        // Start listeners for inbound connections.
+        tokio::spawn(peer_manager.inner.clone().tcp_listener());
+        tokio::spawn(peer_manager.inner.clone().quic_listener());
+
+        // Start (re)connecting to outbound/local peers
         tokio::spawn(peer_manager.inner.clone().connect_to_peers());
 
+        // Discover local peers, this does not actually connect to them. That is handle by the
+        // connect_to_peers task.
         if !disable_peer_discovery {
             tokio::spawn(
                 peer_manager
@@ -168,6 +179,7 @@ impl Inner {
         debug!("Connecting to {endpoint}");
         match endpoint.proto() {
             Protocol::Tcp => self.connect_tcp_peer(endpoint).await,
+            Protocol::Quic => self.connect_quic_peer(endpoint).await,
         }
     }
 
@@ -212,13 +224,17 @@ impl Inner {
         }
     }
 
-    async fn start_listener(self: Arc<Self>) {
+    async fn connect_quic_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
+        todo!();
+    }
+
+    async fn tcp_listener(self: Arc<Self>) {
         // Take a copy of every channel here first so we avoid lock contention in the loop later.
         let router_data_tx = self.router.lock().unwrap().router_data_tx();
         let router_control_tx = self.router.lock().unwrap().router_control_tx();
         let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
 
-        match TcpListener::bind(("::", self.listen_port)).await {
+        match TcpListener::bind(("::", self.tcp_listen_port)).await {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, remote)) => {
@@ -249,6 +265,96 @@ impl Inner {
             Err(e) => {
                 error!("Error starting listener: {}", e);
             }
+        }
+    }
+
+    async fn quic_listener(self: Arc<Self>) {
+        // Take a copy of every channel here first so we avoid lock contention in the loop later.
+        let router_data_tx = self.router.lock().unwrap().router_data_tx();
+        let router_control_tx = self.router.lock().unwrap().router_control_tx();
+        let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
+
+        // Generate self signed certificate certificate.
+        // TODO: sign with router keys
+        let cert = rcgen::generate_simple_self_signed(vec![format!(
+            "{}",
+            self.router.lock().unwrap().router_id()
+        )])
+        .expect("Can generate a self signed certificate; qed");
+        let certificate_der = cert
+            .serialize_der()
+            .expect("Can serialize self signed certificate to DER format; qed");
+        let private_key_der = cert.serialize_private_key_der();
+        let private_key = rustls::PrivateKey(private_key_der);
+        let certificate_chain = vec![rustls::Certificate(certificate_der)];
+
+        let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key)
+            .expect("Can generate server config with self signed certificate; qed");
+        // We can unwrap this since it's the only current instance.
+        let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
+        // Larger than needed for now
+        transport_config.max_concurrent_uni_streams(3_u8.into());
+        transport_config.max_concurrent_bidi_streams(5_u8.into());
+        // TODO: further tweak this.
+
+        let client_crypto = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_custom_certificate_verifier(SkipServerVerification::new())
+            .with_no_client_auth();
+
+        let socket = std::net::UdpSocket::bind(("[::]", self.quic_listen_port)).expect("TODO");
+
+        //TODO
+        let endpoint = quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            Some(server_config),
+            socket,
+            quinn::default_runtime()
+                .expect("We are inside the tokio-runtime so this always returns Some(); qed"),
+        )
+        .expect("Can construct quinn endpoint; qed");
+
+        loop {
+            let con = if let Some(con) = endpoint.accept().await {
+                match con.await {
+                    Ok(con) => con,
+                    Err(e) => {
+                        debug!("Failed to accept quic connection: {e}");
+                        continue;
+                    }
+                }
+            } else {
+                // Con is closed
+                info!("Shutting down closed quic listener");
+                return error!("Failed to accept quic connection");
+            };
+
+            let q = match con.accept_bi().await {
+                Ok((tx, rx)) => Quic::new(tx, rx, con.remote_address()),
+                Err(e) => {
+                    error!("Failed to accept bidirectional quic stream: {e}");
+                    continue;
+                }
+            };
+
+            let new_peer = match Peer::new(
+                router_data_tx.clone(),
+                router_control_tx.clone(),
+                q,
+                dead_peer_sink.clone(),
+            ) {
+                Ok(peer) => peer,
+                Err(e) => {
+                    error!("Failed to spawn peer: {e}");
+                    continue;
+                }
+            };
+            info!("Accepted new inbound peer {}", con.remote_address());
+            self.add_peer(
+                Endpoint::new(Protocol::Quic, con.remote_address()),
+                PeerType::Inbound,
+                Some(new_peer),
+            );
         }
     }
 
@@ -309,7 +415,7 @@ impl Inner {
 
         let mut beacon = [0; PEER_DISCOVERY_BEACON_SIZE];
         beacon[..8].copy_from_slice(MYCELIUM_MULTICAST_DISCOVERY_MAGIC);
-        beacon[8..10].copy_from_slice(&self.listen_port.to_be_bytes());
+        beacon[8..10].copy_from_slice(&self.tcp_listen_port.to_be_bytes());
         beacon[10..50].copy_from_slice(&rid.as_bytes());
 
         let mut send_timer = tokio::time::interval(LL_PEER_DISCOVERY_BEACON_INTERVAL);
@@ -387,5 +493,28 @@ impl Inner {
             PeerType::LinkLocalDiscovery,
             None,
         );
+    }
+}
+
+/// Dummy certificate verifier that treats any certificate as valid.
+struct SkipServerVerification;
+
+impl SkipServerVerification {
+    fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+impl rustls::client::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
     }
 }

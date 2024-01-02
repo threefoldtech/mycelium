@@ -30,8 +30,10 @@ use std::{
 use tokio::signal::{self, unix::SignalKind};
 mod tun;
 
-/// The default port on the inderlay to listen on.
+/// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
+/// The default port on the underlay to listen on for incoming Quic connections.
+const DEFAULT_QUIC_LISTEN_PORT: u16 = 9651;
 /// The default port to use for IPv6 link local peer discovery (UDP).
 const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9651;
 /// The default listening address for the HTTP API.
@@ -61,6 +63,10 @@ struct Cli {
     /// Port to listen on for tcp connections.
     #[arg(short = 't', long = "tcp-listen-port", default_value_t = DEFAULT_TCP_LISTEN_PORT)]
     tcp_listen_port: u16,
+
+    /// Port to listen on for quic connections.
+    #[arg(short = 'q', long = "quic-listen-port", default_value_t = DEFAULT_QUIC_LISTEN_PORT)]
+    quic_listen_port: u16,
 
     /// Port to use for link local peer discovery. This uses the UDP protocol.
     #[arg(long = "peer-discovery-port", default_value_t = DEFAULT_PEER_DISCOVERY_PORT)]
@@ -298,6 +304,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         router.clone(),
         static_peers,
         cli.tcp_listen_port,
+        cli.quic_listen_port,
         cli.peer_discovery_port,
         cli.disable_peer_discovery,
     );

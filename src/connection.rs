@@ -1,4 +1,4 @@
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, pin::Pin};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -20,12 +20,31 @@ const PACKET_PROCESSING_COST_IP6_TCP: u16 = 10;
 /// connections if peers are connected over both IPv4 and IPv6.
 const PACKET_PROCESSING_COST_IP4_TCP: u16 = 15;
 
+// TODO
+const PACKET_PROCESSING_COST_IP6_QUIC: u16 = 7;
+// TODO
+const PACKET_PROCESSING_COST_IP4_QUIC: u16 = 12;
+
 pub trait Connection: AsyncRead + AsyncWrite {
     /// Get an identifier for this connection, which shows details about the remote
     fn identifier(&self) -> Result<String, io::Error>;
 
     /// The static cost of using this connection
     fn static_link_cost(&self) -> Result<u16, io::Error>;
+}
+
+/// A wrapper around a quic send and quic receive stream, implementing the [`Connection`] trait.
+pub struct Quic {
+    tx: quinn::SendStream,
+    rx: quinn::RecvStream,
+    remote: SocketAddr,
+}
+
+impl Quic {
+    /// Create a new wrapper around Quic streams.
+    pub fn new(tx: quinn::SendStream, rx: quinn::RecvStream, remote: SocketAddr) -> Self {
+        Quic { tx, rx, remote }
+    }
 }
 
 impl Connection for TcpStream {
@@ -44,6 +63,68 @@ impl Connection for TcpStream {
                 PACKET_PROCESSING_COST_IP4_TCP
             }
             SocketAddr::V6(_) => PACKET_PROCESSING_COST_IP6_TCP,
+        })
+    }
+}
+
+impl AsyncRead for Quic {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        Pin::new(&mut self.rx).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for Quic {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, io::Error>> {
+        Pin::new(&mut self.tx).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), io::Error>> {
+        Pin::new(&mut self.tx).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), io::Error>> {
+        Pin::new(&mut self.tx).poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> std::task::Poll<Result<usize, io::Error>> {
+        Pin::new(&mut self.tx).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.tx.is_write_vectored()
+    }
+}
+
+impl Connection for Quic {
+    fn identifier(&self) -> Result<String, io::Error> {
+        Ok(format!("QUIC -> {}", self.remote))
+    }
+
+    fn static_link_cost(&self) -> Result<u16, io::Error> {
+        Ok(match self.remote {
+            SocketAddr::V4(_) => PACKET_PROCESSING_COST_IP4_QUIC,
+            SocketAddr::V6(ip) if ip.ip().to_ipv4_mapped().is_some() => {
+                PACKET_PROCESSING_COST_IP4_QUIC
+            }
+            SocketAddr::V6(_) => PACKET_PROCESSING_COST_IP6_QUIC,
         })
     }
 }
