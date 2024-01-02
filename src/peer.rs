@@ -50,7 +50,6 @@ pub struct PeerRef {
 
 impl Peer {
     pub fn new<C: Connection + Unpin + Send + 'static>(
-        //sock_addr: SocketAddr,
         router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         connection: C,
