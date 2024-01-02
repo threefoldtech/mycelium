@@ -15,14 +15,14 @@ pub enum EndpointParseError {
     Address(AddrParseError),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Protocol used by an endpoint.
 pub enum Protocol {
     /// Standard plain text Tcp.
     Tcp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// An endpoint defines a address and a protocol to use when communicating with it.
 pub struct Endpoint {
     proto: Protocol,
@@ -30,6 +30,11 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
+    /// Create a new `Endpoint` with given [`Protocol`] and address.
+    pub fn new(proto: Protocol, socket_addr: SocketAddr) -> Self {
+        Self { proto, socket_addr }
+    }
+
     /// Get the [`Protocol`] used by this `Endpoint`.
     pub fn proto(&self) -> Protocol {
         self.proto
@@ -56,6 +61,20 @@ impl FromStr for Endpoint {
                 Ok(Endpoint { proto, socket_addr })
             }
         }
+    }
+}
+
+impl fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{} {}", self.proto, self.socket_addr))
+    }
+}
+
+impl fmt::Display for Protocol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Tcp => "Tcp",
+        })
     }
 }
 

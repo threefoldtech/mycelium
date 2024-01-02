@@ -1,4 +1,4 @@
-use crate::endpoint::Endpoint;
+use crate::endpoint::{Endpoint, Protocol};
 use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
 use crate::router_id::RouterId;
@@ -57,7 +57,7 @@ struct PeerInfo {
 struct Inner {
     /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
     router: Mutex<Router>,
-    peers: Mutex<HashMap<SocketAddr, PeerInfo>>,
+    peers: Mutex<HashMap<Endpoint, PeerInfo>>,
     /// Listen port for new peer connections
     listen_port: u16,
 }
@@ -82,7 +82,7 @@ impl PeerManager {
                         .map(|s| {
                             (
                                 // For now we only support TCP, so just extract the address.
-                                s.address(),
+                                s,
                                 PeerInfo {
                                     pt: PeerType::Static,
                                     connecting: false,
@@ -128,9 +128,9 @@ impl Inner {
             tokio::select! {
                 // We don't care about the none case, that can happen when we aren't connecting to
                 // any peers.
-                Some((socket, maybe_new_peer)) = connection_futures.next() => {
+                Some((endpoint, maybe_new_peer)) = connection_futures.next() => {
                     // Only insert the possible new peer if we actually still care about it
-                    if let Some(pi) = self.peers.lock().unwrap().get_mut(&socket) {
+                    if let Some(pi) = self.peers.lock().unwrap().get_mut(&endpoint) {
                         // Regardless of what happened, we are no longer connecting.
                         pi.connecting = false;
                         if let Some(peer) = maybe_new_peer {
@@ -146,16 +146,16 @@ impl Inner {
                     self.peers.lock().unwrap().retain(|_, v| v.pt != PeerType::Inbound || v.pr.alive());
                     debug!("Looking for dead peers");
                     // check if there is an entry for the peer in the router's peer list
-                    for (socket, pi) in self.peers.lock().unwrap().iter_mut() {
+                    for (endpoint, pi) in self.peers.lock().unwrap().iter_mut() {
                         if !pi.connecting && !pi.pr.alive() {
-                            debug!("Found dead peer {socket}");
+                            debug!("Found dead peer {endpoint}");
                             if pi.pt == PeerType::Inbound {
                                 debug!("Refusing to reconnect to inbound peer");
                                 continue
                             }
                             // Mark that we are connecting to the peer.
                             pi.connecting = true;
-                            connection_futures.push(self.clone().connect_peer(*socket));
+                            connection_futures.push(self.clone().connect_peer(*endpoint));
                         }
                     }
                 }
@@ -164,15 +164,21 @@ impl Inner {
     }
 
     /// Create a new connection to a remote peer
-    async fn connect_peer(self: Arc<Self>, socket: SocketAddr) -> (SocketAddr, Option<Peer>) {
-        debug!("Connecting to {socket}");
-        match TcpStream::connect(socket).await {
+    async fn connect_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
+        debug!("Connecting to {endpoint}");
+        match endpoint.proto() {
+            Protocol::Tcp => self.connect_tcp_peer(endpoint).await,
+        }
+    }
+
+    async fn connect_tcp_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
+        match TcpStream::connect(endpoint.address()).await {
             Ok(peer_stream) => {
-                debug!("Opened connection to {socket}");
+                debug!("Opened connection to {endpoint}");
                 // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
                 if let Err(e) = peer_stream.set_nodelay(true) {
                     error!("Couldn't disable Nagle's algorithm on stream {e}");
-                    return (socket, None);
+                    return (endpoint, None);
                 }
 
                 // Scope the MutexGuard, if we don't do this the future won't be Send
@@ -190,18 +196,18 @@ impl Inner {
                     )
                 } {
                     Ok(new_peer) => {
-                        info!("Connected to new peer {}", socket);
-                        (socket, Some(new_peer))
+                        info!("Connected to new peer {}", endpoint);
+                        (endpoint, Some(new_peer))
                     }
                     Err(e) => {
                         error!("Failed to spawn peer: {e}");
-                        (socket, None)
+                        (endpoint, None)
                     }
                 }
             }
             Err(e) => {
                 error!("Couldn't connect to to remote {e}");
-                (socket, None)
+                (endpoint, None)
             }
         }
     }
@@ -229,7 +235,11 @@ impl Inner {
                             }
                         };
                         info!("Accepted new inbound peer {}", remote);
-                        self.add_peer(remote, PeerType::Inbound, Some(new_peer));
+                        self.add_peer(
+                            Endpoint::new(Protocol::Tcp, remote),
+                            PeerType::Inbound,
+                            Some(new_peer),
+                        );
                     }
                     Err(e) => {
                         error!("Error accepting connection: {}", e);
@@ -243,10 +253,10 @@ impl Inner {
     }
 
     /// Add a new peer identifier we discovered.
-    fn add_peer(&self, addr: SocketAddr, discovery_type: PeerType, peer: Option<Peer>) {
+    fn add_peer(&self, endpoint: Endpoint, discovery_type: PeerType, peer: Option<Peer>) {
         let mut peers = self.peers.lock().unwrap();
         // Only if we don't know it yet.
-        if let Entry::Vacant(e) = peers.entry(addr) {
+        if let Entry::Vacant(e) = peers.entry(endpoint) {
             e.insert(PeerInfo {
                 pt: discovery_type,
                 connecting: false,
@@ -259,9 +269,9 @@ impl Inner {
             if let Some(p) = peer {
                 self.router.lock().unwrap().add_peer_interface(p);
             }
-            info!("Added new peer {addr}");
+            info!("Added new peer {endpoint}");
         } else {
-            debug!("Ignoring request to add {addr} as it already exists");
+            debug!("Ignoring request to add {endpoint} as it already exists");
         }
     }
 
@@ -372,6 +382,10 @@ impl Inner {
         // Override the port. Care must be taken since link local IPv6 expects the
         // scope_id to be set.
         remote.set_port(port);
-        self.add_peer(remote, PeerType::LinkLocalDiscovery, None);
+        self.add_peer(
+            Endpoint::new(Protocol::Tcp, remote),
+            PeerType::LinkLocalDiscovery,
+            None,
+        );
     }
 }
