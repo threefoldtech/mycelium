@@ -2,16 +2,19 @@ use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace};
 use std::{
     error::Error,
-    net::SocketAddr,
+    io,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock, Weak,
     },
 };
-use tokio::{net::TcpStream, select, sync::mpsc};
+use tokio::{select, sync::mpsc};
 use tokio_util::codec::Framed;
 
-use crate::packet::{self, Packet};
+use crate::{
+    connection::Connection,
+    packet::{self, Packet},
+};
 use crate::{
     packet::{ControlPacket, DataPacket},
     sequence_number::SeqNo,
@@ -20,21 +23,6 @@ use crate::{
 /// The maximum amount of packets to immediately send if they are ready when the first one is
 /// received.
 const PACKET_COALESCE_WINDOW: usize = 5;
-
-/// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.
-///
-/// The current peer link cost is calculated from a HELLO rtt. This is great to measure link
-/// latency, since packets are processed in order. However, on local idle links, this value will
-/// likely be 0 since we round down (from the amount of ms it took to process), which does not
-/// accurately reflect the fact that there is in fact a cost associated with using a peer, even on
-/// these local links.
-const PACKET_PROCESSING_COST_IP6: u16 = 10;
-
-/// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.
-///
-/// This is similar to [`PACKET_PROCESSING_COST_IP6`], but slightly higher so we skew towards IPv6
-/// connections if peers are connected over both IPv4 and IPv6.
-const PACKET_PROCESSING_COST_IP4: u16 = 15;
 
 /// The default link cost assigned to new peers before their actual cost is known.
 ///
@@ -61,13 +49,13 @@ pub struct PeerRef {
 }
 
 impl Peer {
-    pub fn new(
-        sock_addr: SocketAddr,
+    pub fn new<C: Connection + Unpin + Send + 'static>(
+        //sock_addr: SocketAddr,
         router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
-        stream: TcpStream,
+        connection: C,
         dead_peer_sink: mpsc::Sender<Peer>,
-    ) -> Self {
+    ) -> Result<Self, io::Error> {
         // Data channel for peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Control channel for peer
@@ -78,14 +66,15 @@ impl Peer {
                 state: RwLock::new(PeerState::new()),
                 to_peer_data,
                 to_peer_control,
-                sock_addr,
+                connection_identifier: connection.identifier()?,
+                static_link_cost: connection.static_link_cost()?,
                 alive: AtomicBool::new(true),
             }),
         };
 
         // Framed for peer
         // Used to send and receive packets from a TCP stream
-        let mut framed = Framed::new(stream, packet::Codec::new());
+        let mut framed = Framed::new(connection, packet::Codec::new());
 
         {
             let peer = peer.clone();
@@ -159,7 +148,7 @@ impl Peer {
                 // Notify router we are dead, also modify our internal state to declare that.
                 // Relaxed ordering is fine, we just care that the variable is set.
                 peer.inner.alive.store(false, Ordering::Relaxed);
-                let remote_id = peer.connection_identifier();
+                let remote_id = peer.connection_identifier().clone();
                 debug!("Notifying router peer {remote_id} is dead");
                 if let Err(e) = dead_peer_sink.send(peer).await {
                     error!("Peer {remote_id} could not notify router of termination: {e}");
@@ -167,7 +156,7 @@ impl Peer {
             });
         }
 
-        peer
+        Ok(peer)
     }
 
     /// Get current sequence number for this peer.
@@ -207,13 +196,7 @@ impl Peer {
     ///
     /// This is a smoothed value, which is calculated over the recent history of link cost.
     pub fn link_cost(&self) -> u16 {
-        let p_cost = match self.inner.sock_addr {
-            SocketAddr::V4(_) => PACKET_PROCESSING_COST_IP4,
-            SocketAddr::V6(ip) if ip.ip().to_ipv4_mapped().is_some() => PACKET_PROCESSING_COST_IP4,
-            SocketAddr::V6(_) => PACKET_PROCESSING_COST_IP6,
-        };
-
-        self.inner.state.read().unwrap().link_cost + p_cost
+        self.inner.state.read().unwrap().link_cost + self.inner.static_link_cost
     }
 
     /// Sets the link cost based on the provided value.
@@ -231,8 +214,8 @@ impl Peer {
     }
 
     /// Identifier for the connection to the `Peer`.
-    pub fn connection_identifier(&self) -> SocketAddr {
-        self.inner.sock_addr
+    pub fn connection_identifier(&self) -> &String {
+        &self.inner.connection_identifier
     }
 
     pub fn time_last_received_ihu(&self) -> tokio::time::Instant {
@@ -286,7 +269,10 @@ struct PeerInner {
     to_peer_data: mpsc::UnboundedSender<DataPacket>,
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
     /// Used to identify peer based on its connection params
-    sock_addr: SocketAddr,
+    connection_identifier: String,
+    /// Static cost of using this link, to be added to the announced metric for routes through this
+    /// Peer.
+    static_link_cost: u16,
     /// Keep track if the connection is alive
     alive: AtomicBool,
 }

@@ -176,23 +176,28 @@ impl Inner {
                 }
 
                 // Scope the MutexGuard, if we don't do this the future won't be Send
-                let new_peer = {
+                match {
                     let router = self.router.lock().unwrap();
                     let router_data_tx = router.router_data_tx();
                     let router_control_tx = router.router_control_tx();
                     let dead_peer_sink = router.dead_peer_sink().clone();
 
                     Peer::new(
-                        socket,
                         router_data_tx,
                         router_control_tx,
                         peer_stream,
                         dead_peer_sink,
                     )
-                };
-
-                info!("Connected to new peer {}", socket);
-                (socket, Some(new_peer))
+                } {
+                    Ok(new_peer) => {
+                        info!("Connected to new peer {}", socket);
+                        (socket, Some(new_peer))
+                    }
+                    Err(e) => {
+                        error!("Failed to spawn peer: {e}");
+                        (socket, None)
+                    }
+                }
             }
             Err(e) => {
                 error!("Couldn't connect to to remote {e}");
@@ -211,13 +216,18 @@ impl Inner {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, remote)) => {
-                        let new_peer = Peer::new(
-                            remote,
+                        let new_peer = match Peer::new(
                             router_data_tx.clone(),
                             router_control_tx.clone(),
                             stream,
                             dead_peer_sink.clone(),
-                        );
+                        ) {
+                            Ok(peer) => peer,
+                            Err(e) => {
+                                error!("Failed to spawn peer: {e}");
+                                continue;
+                            }
+                        };
                         info!("Accepted new inbound peer {}", remote);
                         self.add_peer(remote, PeerType::Inbound, Some(new_peer));
                     }
