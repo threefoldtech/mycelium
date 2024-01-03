@@ -6,7 +6,7 @@ use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
-use quinn::ServerConfig;
+use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -227,13 +227,26 @@ impl Inner {
     }
 
     async fn connect_quic_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
-        let config = quinn::ClientConfig::new(Arc::new(
+        let mut config = quinn::ClientConfig::new(Arc::new(
             rustls::ClientConfig::builder()
                 .with_safe_defaults()
                 .with_custom_certificate_verifier(SkipServerVerification::new())
                 .with_no_client_auth(),
         ));
         // Todo: tweak transport config
+        let mut transport_config = TransportConfig::default();
+        transport_config.max_concurrent_uni_streams(0_u8.into());
+        // Larger than needed for now, just in case
+        transport_config.max_concurrent_bidi_streams(5_u8.into());
+        // Connection timeout, set to higher than Hello interval to ensure connection does not randomly
+        // time out.
+        transport_config.max_idle_timeout(Some(Duration::from_secs(180).try_into().unwrap()));
+        transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
+        transport_config.keep_alive_interval(Some(Duration::from_secs(120)));
+        // we don't use datagrams.
+        transport_config.datagram_receive_buffer_size(None);
+        transport_config.datagram_send_buffer_size(0);
+        config.transport_config(Arc::new(transport_config));
 
         match self
             .quic_socket
@@ -242,14 +255,14 @@ impl Inner {
             Ok(connecting) => match connecting.await {
                 Ok(con) => match con.open_bi().await {
                     Ok((tx, rx)) => {
-                        let con = Quic::new(tx, rx, endpoint.address());
+                        let q_con = Quic::new(tx, rx, endpoint.address());
                         match {
                             let router = self.router.lock().unwrap();
                             let router_data_tx = router.router_data_tx();
                             let router_control_tx = router.router_control_tx();
                             let dead_peer_sink = router.dead_peer_sink().clone();
 
-                            Peer::new(router_data_tx, router_control_tx, con, dead_peer_sink)
+                            Peer::new(router_data_tx, router_control_tx, q_con, dead_peer_sink)
                         } {
                             Ok(new_peer) => {
                                 info!("Connected to new peer {}", endpoint);
@@ -523,9 +536,18 @@ fn make_quic_endpoint(
     let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key)?;
     // We can unwrap this since it's the only current instance.
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
-    // Larger than needed for now
-    transport_config.max_concurrent_uni_streams(3_u8.into());
+    // We don't use unidirectional streams.
+    transport_config.max_concurrent_uni_streams(0_u8.into());
+    // Larger than needed for now, just in case
     transport_config.max_concurrent_bidi_streams(5_u8.into());
+    // Connection timeout, set to higher than Hello interval to ensure connection does not randomly
+    // time out.
+    transport_config.max_idle_timeout(Some(Duration::from_secs(180).try_into()?));
+    transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
+    transport_config.keep_alive_interval(Some(Duration::from_secs(120)));
+    // we don't use datagrams.
+    transport_config.datagram_receive_buffer_size(None);
+    transport_config.datagram_send_buffer_size(0);
     // TODO: further tweak this.
 
     let socket = std::net::UdpSocket::bind(("::", quic_listen_port))?;
