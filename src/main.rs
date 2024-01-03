@@ -300,14 +300,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Creating a new PeerManager instance
-    let _peer_manager: peer_manager::PeerManager = peer_manager::PeerManager::new(
+    let _peer_manager = peer_manager::PeerManager::new(
         router.clone(),
         static_peers,
         cli.tcp_listen_port,
         cli.quic_listen_port,
         cli.peer_discovery_port,
         cli.disable_peer_discovery,
-    );
+    )?;
+    info!("Started peer manager");
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let msg_receiver = tokio_stream::wrappers::ReceiverStream::new(rx);

@@ -6,7 +6,7 @@ use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
-use quinn::{EndpointConfig, ServerConfig};
+use quinn::ServerConfig;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -62,7 +62,7 @@ struct Inner {
     peers: Mutex<HashMap<Endpoint, PeerInfo>>,
     /// Listen port for new peer connections
     tcp_listen_port: u16,
-    quic_listen_port: u16,
+    quic_socket: quinn::Endpoint,
 }
 
 impl PeerManager {
@@ -73,7 +73,9 @@ impl PeerManager {
         quic_listen_port: u16,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
-    ) -> Self {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let quic_socket = make_quic_endpoint(router.router_id(), quic_listen_port)?;
+
         let peer_manager = PeerManager {
             inner: Arc::new(Inner {
                 router: Mutex::new(router),
@@ -97,7 +99,7 @@ impl PeerManager {
                         .collect(),
                 ),
                 tcp_listen_port,
-                quic_listen_port,
+                quic_socket,
             }),
         };
 
@@ -119,7 +121,7 @@ impl PeerManager {
             );
         }
 
-        peer_manager
+        Ok(peer_manager)
     }
 }
 
@@ -218,14 +220,62 @@ impl Inner {
                 }
             }
             Err(e) => {
-                error!("Couldn't connect to to remote {e}");
+                error!("Couldn't connect to remote: {e}");
                 (endpoint, None)
             }
         }
     }
 
     async fn connect_quic_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
-        todo!();
+        let config = quinn::ClientConfig::new(Arc::new(
+            rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_custom_certificate_verifier(SkipServerVerification::new())
+                .with_no_client_auth(),
+        ));
+        // Todo: tweak transport config
+
+        match self
+            .quic_socket
+            .connect_with(config, endpoint.address(), "dummy.mycelium")
+        {
+            Ok(connecting) => match connecting.await {
+                Ok(con) => match con.open_bi().await {
+                    Ok((tx, rx)) => {
+                        let con = Quic::new(tx, rx, endpoint.address());
+                        match {
+                            let router = self.router.lock().unwrap();
+                            let router_data_tx = router.router_data_tx();
+                            let router_control_tx = router.router_control_tx();
+                            let dead_peer_sink = router.dead_peer_sink().clone();
+
+                            Peer::new(router_data_tx, router_control_tx, con, dead_peer_sink)
+                        } {
+                            Ok(new_peer) => {
+                                info!("Connected to new peer {}", endpoint);
+                                (endpoint, Some(new_peer))
+                            }
+                            Err(e) => {
+                                error!("Failed to spawn peer: {e}");
+                                (endpoint, None)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Couldn't open bidirectional quic stream to remote {e}");
+                        (endpoint, None)
+                    }
+                },
+                Err(e) => {
+                    error!("Couldn't complete connection to remote {e}");
+                    (endpoint, None)
+                }
+            },
+            Err(e) => {
+                error!("Couldn't initiate connection to remote: {e}");
+                (endpoint, None)
+            }
+        }
     }
 
     async fn tcp_listener(self: Arc<Self>) {
@@ -274,48 +324,8 @@ impl Inner {
         let router_control_tx = self.router.lock().unwrap().router_control_tx();
         let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
 
-        // Generate self signed certificate certificate.
-        // TODO: sign with router keys
-        let cert = rcgen::generate_simple_self_signed(vec![format!(
-            "{}",
-            self.router.lock().unwrap().router_id()
-        )])
-        .expect("Can generate a self signed certificate; qed");
-        let certificate_der = cert
-            .serialize_der()
-            .expect("Can serialize self signed certificate to DER format; qed");
-        let private_key_der = cert.serialize_private_key_der();
-        let private_key = rustls::PrivateKey(private_key_der);
-        let certificate_chain = vec![rustls::Certificate(certificate_der)];
-
-        let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key)
-            .expect("Can generate server config with self signed certificate; qed");
-        // We can unwrap this since it's the only current instance.
-        let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
-        // Larger than needed for now
-        transport_config.max_concurrent_uni_streams(3_u8.into());
-        transport_config.max_concurrent_bidi_streams(5_u8.into());
-        // TODO: further tweak this.
-
-        let client_crypto = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_custom_certificate_verifier(SkipServerVerification::new())
-            .with_no_client_auth();
-
-        let socket = std::net::UdpSocket::bind(("[::]", self.quic_listen_port)).expect("TODO");
-
-        //TODO
-        let endpoint = quinn::Endpoint::new(
-            quinn::EndpointConfig::default(),
-            Some(server_config),
-            socket,
-            quinn::default_runtime()
-                .expect("We are inside the tokio-runtime so this always returns Some(); qed"),
-        )
-        .expect("Can construct quinn endpoint; qed");
-
         loop {
-            let con = if let Some(con) = endpoint.accept().await {
+            let con = if let Some(con) = self.quic_socket.accept().await {
                 match con.await {
                     Ok(con) => con,
                     Err(e) => {
@@ -326,7 +336,7 @@ impl Inner {
             } else {
                 // Con is closed
                 info!("Shutting down closed quic listener");
-                return error!("Failed to accept quic connection");
+                return;
             };
 
             let q = match con.accept_bi().await {
@@ -349,7 +359,7 @@ impl Inner {
                     continue;
                 }
             };
-            info!("Accepted new inbound peer {}", con.remote_address());
+            info!("Accepted new inbound quic peer {}", con.remote_address());
             self.add_peer(
                 Endpoint::new(Protocol::Quic, con.remote_address()),
                 PeerType::Inbound,
@@ -494,6 +504,43 @@ impl Inner {
             None,
         );
     }
+}
+
+/// Spawn a quic socket which can be used to both receive quic connections and initiate new quic
+/// connections to remotes.
+fn make_quic_endpoint(
+    router_id: RouterId,
+    quic_listen_port: u16,
+) -> Result<quinn::Endpoint, Box<dyn std::error::Error>> {
+    // Generate self signed certificate certificate.
+    // TODO: sign with router keys
+    let cert = rcgen::generate_simple_self_signed(vec![format!("{router_id}")])?;
+    let certificate_der = cert.serialize_der()?;
+    let private_key_der = cert.serialize_private_key_der();
+    let private_key = rustls::PrivateKey(private_key_der);
+    let certificate_chain = vec![rustls::Certificate(certificate_der)];
+
+    let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key)?;
+    // We can unwrap this since it's the only current instance.
+    let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
+    // Larger than needed for now
+    transport_config.max_concurrent_uni_streams(3_u8.into());
+    transport_config.max_concurrent_bidi_streams(5_u8.into());
+    // TODO: further tweak this.
+
+    let socket = std::net::UdpSocket::bind(("::", quic_listen_port))?;
+    debug!("Bound UDP socket for Quic");
+
+    //TODO tweak or confirm
+    let endpoint = quinn::Endpoint::new(
+        quinn::EndpointConfig::default(),
+        Some(server_config),
+        socket,
+        quinn::default_runtime()
+            .expect("We are inside the tokio-runtime so this always returns Some(); qed"),
+    )?;
+
+    Ok(endpoint)
 }
 
 /// Dummy certificate verifier that treats any certificate as valid.
