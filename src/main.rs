@@ -35,7 +35,7 @@ const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
 /// The default port on the underlay to listen on for incoming Quic connections.
 const DEFAULT_QUIC_LISTEN_PORT: u16 = 9651;
 /// The default port to use for IPv6 link local peer discovery (UDP).
-const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9651;
+const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9650;
 /// The default listening address for the HTTP API.
 const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
