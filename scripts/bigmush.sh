@@ -40,7 +40,7 @@ function createns() {
 	IPA ${out_ip} dev out_${iname}
 	IPNR ${name} ${out_ip}
 	# start mycelium, relying on local discovery
-	nohup sudo ip netns exec ${name} ./mycelium --key-file ${name}.bin --api-addr ${in_ip/\/24/}:8989 --peers ${out_ip/\/24/}:9651 > ${iname}.out &
+	nohup sudo ip netns exec ${name} ./mycelium --key-file ${name}.bin --api-addr ${in_ip/\/24/}:8989 --peers tcp://${out_ip/\/24/}:9651 > ${iname}.out &
 }
 function dropns() {
 	local iname=$1
