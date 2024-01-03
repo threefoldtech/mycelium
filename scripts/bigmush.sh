@@ -1,12 +1,12 @@
 #!/usr/bin/bash
 #
 NATNET=172.16.0.0/16
-NUMOFNS=250
+NUMOFNS=32
 alias IPN='sudo ip net'
 alias IPL='sudo ip link'
 alias IPA='sudo ip addr add'
 
-peers='tcp://146.185.93.83:9651 83.231.240.31:9651 tcp://185.206.122.71:9651 tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651 tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651 quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651'
+peers='tcp://146.185.93.83:9651 quic://83.231.240.31:9651 quic://185.206.122.71:9651 tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651 tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651 quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651'
 
 function IPNA() {
 	local name=$1
