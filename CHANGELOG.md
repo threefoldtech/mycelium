@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Experimental Quic transport. The same socket is used for sending and
+  receiving. This transport is experimental and breaking changes are
+  possible which won't be covered by semver guarantees for now. 
+
 ## [0.2.0] - 2023-12-29
 
 ### Added
