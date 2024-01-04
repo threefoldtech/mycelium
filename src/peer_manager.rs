@@ -240,9 +240,9 @@ impl Inner {
         transport_config.max_concurrent_bidi_streams(5_u8.into());
         // Connection timeout, set to higher than Hello interval to ensure connection does not randomly
         // time out.
-        transport_config.max_idle_timeout(Some(Duration::from_secs(180).try_into().unwrap()));
+        transport_config.max_idle_timeout(Some(Duration::from_secs(60).try_into().unwrap()));
         transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
-        transport_config.keep_alive_interval(Some(Duration::from_secs(120)));
+        transport_config.keep_alive_interval(Some(Duration::from_secs(20)));
         // we don't use datagrams.
         transport_config.datagram_receive_buffer_size(None);
         transport_config.datagram_send_buffer_size(0);
@@ -542,9 +542,9 @@ fn make_quic_endpoint(
     transport_config.max_concurrent_bidi_streams(5_u8.into());
     // Connection timeout, set to higher than Hello interval to ensure connection does not randomly
     // time out.
-    transport_config.max_idle_timeout(Some(Duration::from_secs(180).try_into()?));
+    transport_config.max_idle_timeout(Some(Duration::from_secs(60).try_into()?));
     transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
-    transport_config.keep_alive_interval(Some(Duration::from_secs(120)));
+    transport_config.keep_alive_interval(Some(Duration::from_secs(20)));
     // we don't use datagrams.
     transport_config.datagram_receive_buffer_size(None);
     transport_config.datagram_send_buffer_size(0);
