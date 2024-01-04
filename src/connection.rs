@@ -68,6 +68,7 @@ impl Connection for TcpStream {
 }
 
 impl AsyncRead for Quic {
+    #[inline]
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -78,6 +79,7 @@ impl AsyncRead for Quic {
 }
 
 impl AsyncWrite for Quic {
+    #[inline]
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -86,6 +88,7 @@ impl AsyncWrite for Quic {
         Pin::new(&mut self.tx).poll_write(cx, buf)
     }
 
+    #[inline]
     fn poll_flush(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -93,6 +96,7 @@ impl AsyncWrite for Quic {
         Pin::new(&mut self.tx).poll_flush(cx)
     }
 
+    #[inline]
     fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -100,6 +104,7 @@ impl AsyncWrite for Quic {
         Pin::new(&mut self.tx).poll_shutdown(cx)
     }
 
+    #[inline]
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -108,6 +113,7 @@ impl AsyncWrite for Quic {
         Pin::new(&mut self.tx).poll_write_vectored(cx, bufs)
     }
 
+    #[inline]
     fn is_write_vectored(&self) -> bool {
         self.tx.is_write_vectored()
     }
