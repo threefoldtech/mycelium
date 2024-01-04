@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2024-01-04
+
 ### Added
 
 - Added automatic release builds for aarch64-linux.
 
 ### Changed
 
-- Reduce the quic keep-alive timeout.
+- Reduce the Quic keep-alive timeout.
 
 ## [0.2.2] - 2024-01-03
 
@@ -151,7 +153,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message subsystem, including API to use it.
 - CLI options to send and receive messages with the API.
 
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.2.2...HEAD
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/threefoldtech/mycelium/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/threefoldtech/mycelium/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/threefoldtech/mycelium/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/threefoldtech/mycelium/compare/v0.1.3...v0.2.0
