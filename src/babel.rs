@@ -252,4 +252,33 @@ mod tests {
             .expect("Can decode the previously encoded value");
         assert_eq!(super::Tlv::from(update), recv_update);
     }
+
+    #[tokio::test]
+    async fn codec_seqno_request() {
+        let (tx, rx) = tokio::io::duplex(1024);
+        let mut sender = Framed::new(tx, super::Codec::new());
+        let mut receiver = Framed::new(rx, super::Codec::new());
+
+        let snr = super::SeqNoRequest::new(
+            16.into(),
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+            ]
+            .into(),
+            Subnet::new(Ipv6Addr::new(0x200, 1, 2, 3, 0, 0, 0, 0).into(), 64)
+                .expect("64 is a valid IPv6 prefix size; qed"),
+        );
+
+        sender
+            .send(snr.clone().into())
+            .await
+            .expect("Send on a non-networked buffer can never fail; qed");
+        let recv_update = receiver
+            .next()
+            .await
+            .expect("Buffer isn't closed so this is always `Some`; qed")
+            .expect("Can decode the previously encoded value");
+        assert_eq!(super::Tlv::from(snr), recv_update);
+    }
 }
