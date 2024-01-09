@@ -10,12 +10,16 @@ use bytes::{Buf, BufMut};
 use log::trace;
 use tokio_util::codec::{Decoder, Encoder};
 
-pub use self::{hello::Hello, ihu::Ihu, seqno_request::SeqNoRequest, update::Update};
+pub use self::{
+    hello::Hello, ihu::Ihu, route_request::RouteRequest, seqno_request::SeqNoRequest,
+    update::Update,
+};
 
 pub use self::tlv::Tlv;
 
 mod hello;
 mod ihu;
+mod route_request;
 mod seqno_request;
 mod tlv;
 mod update;
@@ -34,6 +38,8 @@ const TLV_TYPE_HELLO: u8 = 4;
 const TLV_TYPE_IHU: u8 = 5;
 /// TLV type for the [`Update`] tlv
 const TLV_TYPE_UPDATE: u8 = 8;
+/// TLV type for the [`RouteRequest`] tlv
+const TLV_TYPE_ROUTE_REQUEST: u8 = 9;
 /// TLV type for the [`SeqNoRequest`] tlv
 const TLV_TYPE_SEQNO_REQUEST: u8 = 10;
 
@@ -134,6 +140,7 @@ impl Decoder for Codec {
             TLV_TYPE_HELLO => Some(Hello::from_bytes(src).into()),
             TLV_TYPE_IHU => Ihu::from_bytes(src, body_len).map(From::from),
             TLV_TYPE_UPDATE => Update::from_bytes(src, body_len).map(From::from),
+            TLV_TYPE_ROUTE_REQUEST => RouteRequest::from_bytes(src, body_len).map(From::from),
             TLV_TYPE_SEQNO_REQUEST => SeqNoRequest::from_bytes(src, body_len).map(From::from),
             _ => {
                 // unrecoginized body type, silently drop
@@ -164,6 +171,7 @@ impl Encoder<Tlv> for Codec {
             Tlv::Hello(_) => dst.put_u8(TLV_TYPE_HELLO),
             Tlv::Ihu(_) => dst.put_u8(TLV_TYPE_IHU),
             Tlv::Update(_) => dst.put_u8(TLV_TYPE_UPDATE),
+            Tlv::RouteRequest(_) => dst.put_u8(TLV_TYPE_ROUTE_REQUEST),
             Tlv::SeqNoRequest(_) => dst.put_u8(TLV_TYPE_SEQNO_REQUEST),
         }
         dst.put_u8(item.wire_size());
@@ -280,5 +288,28 @@ mod tests {
             .expect("Buffer isn't closed so this is always `Some`; qed")
             .expect("Can decode the previously encoded value");
         assert_eq!(super::Tlv::from(snr), recv_update);
+    }
+
+    #[tokio::test]
+    async fn codec_route_request() {
+        let (tx, rx) = tokio::io::duplex(1024);
+        let mut sender = Framed::new(tx, super::Codec::new());
+        let mut receiver = Framed::new(rx, super::Codec::new());
+
+        let rr = super::RouteRequest::new(Some(
+            Subnet::new(Ipv6Addr::new(0x200, 1, 2, 3, 0, 0, 0, 0).into(), 64)
+                .expect("64 is a valid IPv6 prefix size; qed"),
+        ));
+
+        sender
+            .send(rr.clone().into())
+            .await
+            .expect("Send on a non-networked buffer can never fail; qed");
+        let recv_update = receiver
+            .next()
+            .await
+            .expect("Buffer isn't closed so this is always `Some`; qed")
+            .expect("Can decode the previously encoded value");
+        assert_eq!(super::Tlv::from(rr), recv_update);
     }
 }

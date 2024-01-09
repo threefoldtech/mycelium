@@ -1,5 +1,5 @@
-use super::SeqNoRequest;
 pub use super::{hello::Hello, ihu::Ihu, update::Update};
+use super::{route_request::RouteRequest, SeqNoRequest};
 
 /// A single `Tlv` in a babel packet body.
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +10,8 @@ pub enum Tlv {
     Ihu(Ihu),
     /// Update Tlv type.
     Update(Update),
+    /// RouteRequest Tlv type.
+    RouteRequest(RouteRequest),
     /// SeqNoRequest Tlv type
     SeqNoRequest(SeqNoRequest),
 }
@@ -22,6 +24,7 @@ impl Tlv {
             Self::Hello(hello) => hello.wire_size(),
             Self::Ihu(ihu) => ihu.wire_size(),
             Self::Update(update) => update.wire_size(),
+            Self::RouteRequest(route_request) => route_request.wire_size(),
             Self::SeqNoRequest(seqno_request) => seqno_request.wire_size(),
         }
     }
@@ -32,6 +35,7 @@ impl Tlv {
             Self::Hello(hello) => hello.write_bytes(dst),
             Self::Ihu(ihu) => ihu.write_bytes(dst),
             Self::Update(update) => update.write_bytes(dst),
+            Self::RouteRequest(route_request) => route_request.write_bytes(dst),
             Self::SeqNoRequest(seqno_request) => seqno_request.write_bytes(dst),
         }
     }
@@ -40,6 +44,12 @@ impl Tlv {
 impl From<SeqNoRequest> for Tlv {
     fn from(v: SeqNoRequest) -> Self {
         Self::SeqNoRequest(v)
+    }
+}
+
+impl From<RouteRequest> for Tlv {
+    fn from(v: RouteRequest) -> Self {
+        Self::RouteRequest(v)
     }
 }
 

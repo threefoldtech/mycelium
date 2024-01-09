@@ -533,6 +533,9 @@ impl Router {
                 babel::Tlv::Hello(hello) => self.handle_incoming_hello(hello, source_peer),
                 babel::Tlv::Ihu(ihu) => self.handle_incoming_ihu(ihu, source_peer),
                 babel::Tlv::Update(update) => self.handle_incoming_update(update, source_peer),
+                babel::Tlv::RouteRequest(route_request) => {
+                    self.handle_incoming_route_request(route_request, source_peer)
+                }
                 babel::Tlv::SeqNoRequest(seqno_request) => {
                     self.handle_incoming_seqno_request(seqno_request, source_peer)
                 }
@@ -559,6 +562,48 @@ impl Router {
 
         // set the last_received_ihu for this peer
         source_peer.set_time_last_received_ihu(tokio::time::Instant::now());
+    }
+
+    /// Process a route request. We reply with an Update if we have a selected route for the
+    /// requested subnet. If no subnet is requested (in other words the wildcard address), we dump
+    /// the full routing table.
+    fn handle_incoming_route_request(&self, route_request: babel::RouteRequest, source_peer: Peer) {
+        let mut inner_w = self.inner_w.lock().unwrap();
+
+        let ops = {
+            let inner = inner_w
+                .enter()
+                .expect("We deref through a write handle so this is always Some; qed");
+
+            let mut ops = vec![];
+            // Handle the case of a single subnet.
+            if let Some(subnet) = route_request.prefix() {
+                if let Some(sre) = inner.routing_table.lookup_selected(subnet.address()) {
+                    // Optimization: Don't send an update if the selected route next-hop is the peer
+                    // who requested the route, as per the babel protocol the update will never be
+                    // accepted.
+                    if sre.neighbour() == &source_peer {
+                        return;
+                    }
+                    let update = babel::Update::new(
+                        UPDATE_INTERVAL,
+                        sre.seqno(),
+                        sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                        subnet,
+                        sre.source().router_id(),
+                    );
+                    ops.extend(inner.send_update(&source_peer, update));
+                }
+            } else {
+                // Requested a full route table dump
+                ops.extend(inner.propagate_selected_routes_to_peer(&source_peer));
+                ops.extend(inner.propagate_static_route_to_peer(&source_peer, self.router_id()));
+            }
+            ops
+        };
+
+        inner_w.extend(ops);
+        inner_w.publish();
     }
 
     fn handle_incoming_seqno_request(&self, mut seqno_request: SeqNoRequest, source_peer: Peer) {
@@ -1245,17 +1290,29 @@ impl RouterInner {
 
     fn propagate_static_route(&self, router_id: RouterId) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
+        for peer in self.peer_interfaces.iter() {
+            updates.extend(self.propagate_static_route_to_peer(peer, router_id))
+        }
+
+        updates
+    }
+
+    fn propagate_static_route_to_peer(
+        &self,
+        peer: &Peer,
+        router_id: RouterId,
+    ) -> Vec<RouterOpLogEntry> {
+        let mut updates = vec![];
+
         for sr in self.static_routes.iter() {
-            for peer in self.peer_interfaces.iter() {
-                let update = babel::Update::new(
-                    UPDATE_INTERVAL,
-                    self.router_seqno, // updates receive the seqno of the router
-                    Metric::from(0),   // Static route has no further hop costs
-                    sr.subnet,
-                    router_id,
-                );
-                updates.push((peer.clone(), update));
-            }
+            let update = babel::Update::new(
+                UPDATE_INTERVAL,
+                self.router_seqno, // updates receive the seqno of the router
+                Metric::from(0),   // Static route has no further hop costs
+                sr.subnet,
+                router_id,
+            );
+            updates.push((peer.clone(), update));
         }
 
         updates
@@ -1308,40 +1365,46 @@ impl RouterInner {
             .collect()
     }
 
-    fn propagate_selected_routes(&self) -> Vec<RouterOpLogEntry> {
+    fn propagate_selected_routes_to_peer(&self, peer: &Peer) -> Vec<RouterOpLogEntry> {
         let mut updates = vec![];
         for (srk, sre) in self.routing_table.iter().filter(|(_, sre)| sre.selected()) {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
-            for peer in self.peer_interfaces.iter() {
-                // Don't send updates for a route to the next hop of the route, as that peer will never
-                // select the route through us (that would caus a routing loop). The protocol can
-                // handle this just fine, leaving this out is essentially an easy optimization.
-                if peer == sre.neighbour() {
-                    continue;
-                }
-                let update = babel::Update::new(
-                    UPDATE_INTERVAL,
-                    sre.seqno(),
-                    // the cost of the route is the cost of the route + the cost of the link to the next-hop
-                    sre.metric() + neigh_link_cost,
-                    srk.subnet(),
-                    sre.source().router_id(),
-                );
-                debug!(
-                    "Propagating route update for {} to {} | D({}, {})",
-                    srk.subnet(),
-                    peer.connection_identifier(),
-                    sre.seqno(),
-                    sre.metric() + neigh_link_cost,
-                );
-                updates.push((peer.clone(), update));
+            // Don't send updates for a route to the next hop of the route, as that peer will never
+            // select the route through us (that would caus a routing loop). The protocol can
+            // handle this just fine, leaving this out is essentially an easy optimization.
+            if peer == sre.neighbour() {
+                continue;
             }
+            let update = babel::Update::new(
+                UPDATE_INTERVAL,
+                sre.seqno(),
+                // the cost of the route is the cost of the route + the cost of the link to the next-hop
+                sre.metric() + neigh_link_cost,
+                srk.subnet(),
+                sre.source().router_id(),
+            );
+            debug!(
+                "Propagating route update for {} to {} | D({}, {})",
+                srk.subnet(),
+                peer.connection_identifier(),
+                sre.seqno(),
+                sre.metric() + neigh_link_cost,
+            );
+            updates.push((peer.clone(), update));
         }
 
         updates
             .into_iter()
             .filter_map(|(peer, update)| self.send_update(&peer, update))
             .collect()
+    }
+
+    fn propagate_selected_routes(&self) -> Vec<RouterOpLogEntry> {
+        let mut updates = vec![];
+        for peer in self.peer_interfaces.iter() {
+            updates.extend(self.propagate_selected_routes_to_peer(peer));
+        }
+        updates
     }
 }
 
