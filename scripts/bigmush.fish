@@ -13,7 +13,7 @@ function IPA
     sudo ip addr add $argv
 end
 
-set peers "tcp://146.185.93.83:9651 quic://83.231.240.31:9651 quic://185.206.122.71:9651 tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651 tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651 quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651"
+set peers tcp://146.185.93.83:9651 quic://83.231.240.31:9651 quic://185.206.122.71:9651 tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651 tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651 quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651
 
 function IPNA
     set name $argv[1]
@@ -60,7 +60,7 @@ function dropns
 end
 
 function doit
-    nohup sudo ./mycelium --key-file host.bin --api-addr 127.0.0.1:8989 --peers $peers>host.out &
+    nohup sudo ./mycelium --key-file host.bin --api-addr 127.0.0.1:8989 --peers $peers > host.out &
     for i in (seq 1 $NUMOFNS)
         createns $i 172.16.$i.2/24 172.16.$i.1/24
     end
