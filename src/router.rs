@@ -1,5 +1,5 @@
 use crate::{
-    babel::{self, SeqNoRequest},
+    babel::{self, RouteRequest, SeqNoRequest},
     crypto::{PacketBuffer, PublicKey, SecretKey, SharedSecret},
     filters::RouteUpdateFilter,
     ip_pubkey::IpPubkeyMap,
@@ -161,8 +161,20 @@ impl Router {
         self.inner_w
             .lock()
             .expect("Mutex isn't poinsoned")
-            .append(RouterOpLogEntry::AddPeer(peer))
+            .append(RouterOpLogEntry::AddPeer(peer.clone()))
             .publish();
+
+        // Request route table dump of peer
+        debug!(
+            "Requesting route table dump from {}",
+            peer.connection_identifier()
+        );
+        if let Err(e) = peer.send_control_packet(RouteRequest::new(None).into()) {
+            error!(
+                "Failed to request route table dump from {}: {e}",
+                peer.connection_identifier()
+            );
+        }
     }
 
     pub fn node_secret_key(&self) -> SecretKey {
