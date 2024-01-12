@@ -12,6 +12,7 @@ Mycelium is an IPv6 overlay network writing in Rust. Each node that joins the ov
 - A simple reliable messagebus is implemented on top of Mycelium
 - Mycelium has multiple ways how to communicate quick, tcp, ... and we are working on holepunching for Quick which means P2P traffic without middlemen for NATted networks e.g. most homes
 - Scalability is very important for us, we tried many overlay networks before and got stuck on all of them, we are trying to design a network which scales to a planetary level
+- You can run mycelium without TUN and only use it as reliable message bus.
 
 > We are looking for lots of testers to push the system
 
