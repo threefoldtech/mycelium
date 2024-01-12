@@ -49,6 +49,18 @@ quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
 
+to check your own info
+
+```bash
+mycelium inspect --json
+{
+  "publicKey": "abd16194646defe7ad2318a0f0a69eb2e3fe939c3b0b51cf0bb88bb8028ecd1d",
+  "address": "3c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca"
+}
+# test that network works, ping to anyone in the network
+ping6 3c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca
+```
+
 The node uses a `x25519` key pair from which its identity is derived. The private key of this key pair
 is saved in a local file (32 bytes in binary format). You can specify the path to this file with the
 `-k` flag. By default, the file is saved in the current working directory as `priv_key.bin`.
