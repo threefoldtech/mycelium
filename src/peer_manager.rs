@@ -26,6 +26,9 @@ const LL_PEER_DISCOVERY_GROUP: &str = "ff02::cafe";
 const LL_PEER_DISCOVERY_BEACON_INTERVAL: Duration = Duration::from_secs(60);
 /// The time between checking known peer liveness and trying to reconnect.
 const PEER_CONNECT_INTERVAL: Duration = Duration::from_secs(5);
+/// The maximum amount of successive failures allowed when connecting to a local discovered peer,
+/// before it is forgotten.
+const MAX_FAILED_LOCAL_PEER_CONNECTION_ATTEMPTS: usize = 3;
 
 /// The PeerManager creates new peers by connecting to configured addresses, and setting up the
 /// connection. Once a connection is established, the created [`Peer`] is handed over to the
@@ -54,6 +57,9 @@ struct PeerInfo {
     connecting: bool,
     /// The [`PeerRef`] used to check liveliness.
     pr: PeerRef,
+    /// Amount of failed times we tried to connect to this peer. This is reset after a successful
+    /// connection.
+    connection_attempts: usize,
 }
 
 struct Inner {
@@ -93,6 +99,7 @@ impl PeerManager {
                                     pt: PeerType::Static,
                                     connecting: false,
                                     pr: PeerRef::new(),
+                                    connection_attempts: 0,
                                 },
                             )
                         })
@@ -143,7 +150,8 @@ impl Inner {
                 // any peers.
                 Some((endpoint, maybe_new_peer)) = connection_futures.next() => {
                     // Only insert the possible new peer if we actually still care about it
-                    if let Some(pi) = self.peers.lock().unwrap().get_mut(&endpoint) {
+                    let mut peers = self.peers.lock().unwrap();
+                    if let Some(pi) = peers.get_mut(&endpoint) {
                         // Regardless of what happened, we are no longer connecting.
                         pi.connecting = false;
                         if let Some(peer) = maybe_new_peer {
@@ -151,6 +159,15 @@ impl Inner {
                             // Use fully qualified call to aid compiler in type inference.
                             pi.pr = Peer::refer(&peer);
                             self.router.lock().unwrap().add_peer_interface(peer);
+                        } else {
+                            // Connection failed, add a failed attempt and forget about the peer if
+                            // needed.
+                            pi.connection_attempts += 1;
+                            if pi.pt == PeerType::LinkLocalDiscovery
+                                && pi.connection_attempts >= MAX_FAILED_LOCAL_PEER_CONNECTION_ATTEMPTS {
+                                info!("Forgetting about locally discovered peer {endpoint} after failing to connect to it");
+                                peers.remove(&endpoint);
+                            }
                         }
                     }
                 }
@@ -394,6 +411,7 @@ impl Inner {
                 } else {
                     PeerRef::new()
                 },
+                connection_attempts: 0,
             });
             if let Some(p) = peer {
                 self.router.lock().unwrap().add_peer_interface(p);

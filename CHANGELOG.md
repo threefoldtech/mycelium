@@ -7,10 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## Added
+### Added
 
 - Nodes can now explicitly request selected route(s) from connected peers by
   sending a Route Request Tlv.
+
+### Changed
+
+- Locally discovered peers are now forgotten if we fail to connect to them 3
+  times.
 
 ## [0.2.3] - 2024-01-04
 
