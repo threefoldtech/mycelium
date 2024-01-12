@@ -1,8 +1,21 @@
 # Mycelium
 
-This POC aims to create an IPv6 overlay network completely writing in Rust. The overlay network uses some of the core principles
-of the Babel routing protocol (<https://www.irif.fr/~jch/software/babel/>). Each node that joins the overlay network will receive
-an overlay network IP in the 200::/7 range.
+Mycelium is an IPv6 overlay network writing in Rust. Each node that joins the overlay network will receive an overlay network IP in the 200::/7 range.
+
+## Features
+
+- Mycelium, is locality aware, it will look for the shortest path between nodes
+- All traffic between the nodes is end2end encrypted
+- Traffic can be routed over nodes of friends, location aware
+- If a physical link goes down Mycelium will automatically reroute your traffic
+- The IP addr is IPV6 and linked to private key
+- A simple reliable messagebus is implemented on top of Mycelium
+- Mycelium has multiple ways how to communicate quick, tcp, ... and we are working on holepunching for Quick which means P2P traffic without middlemen for NATted networks e.g. most homes
+- Scalability is very important for us, we tried many overlay networks before and got stuck on all of them, we are trying to design a network which scales to a planetary level
+
+> We are looking for lots of testers to push the system
+
+> [see here for docs](https://github.com/threefoldtech/mycelium/tree/master/docs)
 
 ## Running
 
@@ -15,7 +28,22 @@ Once you have an useable binary, simply start it. If you want to connect to othe
 part of the command (combined with the protocol they are listening on, usually TCP);
 
 ```sh
-mycelium --peers tcp://203.0.113.5:9651
+mycelium --peers tcp://83.231.240.31:9651 quic://185.206.122.71:9651
+
+#other example with other tun interface if utun3 (the default) would already be used
+#also here we use sudo e.g. on OSX
+sudo mycelium --peers tcp://83.231.240.31:9651 quic://185.206.122.71:9651 --tun-name utun9
+
+```
+
+some possible peers
+```
+tcp://146.185.93.83:9651
+quic://83.231.240.31:9651
+quic://185.206.122.71:9651
+tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651
+tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651
+quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651
 ```
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
@@ -101,3 +129,7 @@ cargo build
 ```
 
 In case a release build is required, the `--release` flag can be added to the cargo command (`cargo build --release`).
+
+## Remarks
+
+-  The overlay network uses some of the core principles of the Babel routing protocol (<https://www.irif.fr/~jch/software/babel/>). 
