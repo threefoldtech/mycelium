@@ -105,7 +105,7 @@ impl Update {
         let interval = src.get_u16();
         let seqno = src.get_u16().into();
         let metric = src.get_u16().into();
-        // based on the remaining bytes (ip + router_id) we can check if it's IPv4 or v6
+        let prefix_size = ((plen + 7) / 8) as usize;
         let prefix = match ae {
             AE_WILDCARD => {
                 // TODO: this is a temporary placeholder until we figure out how to handle this
@@ -113,14 +113,14 @@ impl Update {
             }
             AE_IPV4 => {
                 let mut raw_ip = [0; 4];
-                raw_ip.copy_from_slice(&src[..4]);
-                src.advance(4);
+                raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
+                src.advance(prefix_size);
                 Ipv4Addr::from(raw_ip).into()
             }
             AE_IPV6 => {
                 let mut raw_ip = [0; 16];
-                raw_ip.copy_from_slice(&src[..16]);
-                src.advance(16);
+                raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
+                src.advance(prefix_size);
                 Ipv6Addr::from(raw_ip).into()
             }
             AE_IPV6_LL => {
@@ -172,9 +172,10 @@ impl Update {
         dst.put_u16(self.interval);
         dst.put_u16(self.seqno.into());
         dst.put_u16(self.metric.into());
+        let prefix_len = ((self.subnet.prefix_len() + 7) / 8) as usize;
         match self.subnet.address() {
-            IpAddr::V4(ip) => dst.put_slice(&ip.octets()),
-            IpAddr::V6(ip) => dst.put_slice(&ip.octets()),
+            IpAddr::V4(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
+            IpAddr::V6(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
         }
         dst.put_slice(&self.router_id.as_bytes()[..])
     }
