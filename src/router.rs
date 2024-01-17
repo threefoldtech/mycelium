@@ -454,7 +454,6 @@ impl Router {
         mut expired_route_key_stream: mpsc::Receiver<(RouteKey, RouteExpirationType)>,
     ) {
         while let Some((rk, expiration_type)) = expired_route_key_stream.recv().await {
-            tokio::time::sleep(Duration::from_secs(1)).await;
             debug!("Got expiration event for route {rk}");
             let subnet = rk.subnet();
             let mut inner = self.inner_w.lock().unwrap();
