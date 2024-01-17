@@ -1035,7 +1035,7 @@ impl Router {
         let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
-            "Incoming data packet {} -> {})",
+            "Incoming data packet {} -> {}",
             data_packet.src_ip,
             data_packet.dst_ip,
         );
