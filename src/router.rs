@@ -27,11 +27,25 @@ use std::{
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 
-const HELLO_INTERVAL: u16 = 4;
+/// Time between HELLO messags, in seconds
+const HELLO_INTERVAL: u16 = 20;
+/// Time filled in in IHU packet
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
-const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 4;
-const ROUTE_PROPAGATION_INTERVAL: u64 = 3;
-const DEAD_PEER_TRESHOLD: u64 = 8;
+/// Base time used in UPDATE packets. For local (static) routes this is the timeout they are
+/// advertised with.
+const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 3;
+/// Time between route table dumps to peers.
+const ROUTE_PROPAGATION_INTERVAL: Duration = Duration::from_secs(UPDATE_INTERVAL as u64);
+/// Amount of seconds that can elapse before we consider a [`Peer`] as dead from the routers POV.
+/// Since IHU's are sent in response to HELLO packets, this MUST be greater than the
+/// [`HELLO_INTERVAL`].
+///
+/// We allow missing 1 hello, + some latency, so 2 HELLO's + 3 seconds for latency.
+const DEAD_PEER_THRESHOLD: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 2 + 3);
+/// The duration between checks for dead peers in the router. This check only looks for peers where
+/// time since the last IHU exceeds DEAD_PEER_THRESHOLD.
+const DEAD_PEER_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+
 /// Amount of time to wait between consecutive seqno bumps of the local router seqno.
 const SEQNO_BUMP_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -310,11 +324,9 @@ impl Router {
     }
 
     async fn check_for_dead_peers(self) {
-        let ihu_threshold = tokio::time::Duration::from_secs(DEAD_PEER_TRESHOLD);
-
         loop {
             // check for dead peers every second
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(DEAD_PEER_CHECK_INTERVAL).await;
 
             trace!("Checking for dead peers");
 
@@ -323,7 +335,7 @@ impl Router {
                 let mut dead_peers = Vec::new();
                 for peer in self.inner_r.enter().expect("Write handle is saved on router so it can never go out of scope before read handle").peer_interfaces.iter() {
                     // check if the peer's last_received_ihu is greater than the threshold
-                    if peer.time_last_received_ihu().elapsed() > ihu_threshold {
+                    if peer.time_last_received_ihu().elapsed() > DEAD_PEER_THRESHOLD {
                         // peer is dead
                         info!("Peer {} is dead", peer.connection_identifier());
                         // Notify peer it's dead in case it's not aware of that yet.
@@ -1168,7 +1180,7 @@ impl Router {
 
     pub async fn propagate_static_route(self) {
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(ROUTE_PROPAGATION_INTERVAL)).await;
+            tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
 
             trace!("Propagating static routes");
 
@@ -1186,7 +1198,7 @@ impl Router {
 
     pub async fn propagate_selected_routes(self) {
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(ROUTE_PROPAGATION_INTERVAL)).await;
+            tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
 
             trace!("Propagating selected routes");
 
