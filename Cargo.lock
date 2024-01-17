@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "axum",
