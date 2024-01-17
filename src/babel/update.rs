@@ -82,12 +82,8 @@ impl Update {
 
     /// Calculates the size on the wire of this `Update`.
     pub fn wire_size(&self) -> u8 {
-        UPDATE_BASE_WIRE_SIZE
-            + match self.subnet.address() {
-                // TODO: link local and wildcard should be encoded differently
-                IpAddr::V4(_) => 4,
-                IpAddr::V6(_) => 16,
-            }
+        let address_bytes = (self.subnet.prefix_len() + 7) / 8;
+        UPDATE_BASE_WIRE_SIZE + address_bytes
     }
 
     /// Construct an `Update` from wire bytes.
