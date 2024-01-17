@@ -200,13 +200,13 @@ mod tests {
 
         ihu.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 66);
+        assert_eq!(buf.len(), 58);
         assert_eq!(
-            buf[..66],
+            buf[..58],
             [
-                2, 192, 64, 0, 1, 144, 0, 17, 0, 25, 2, 0, 0, 25, 0, 26, 0, 27, 0, 28, 0, 0, 0, 0,
-                0, 29, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+                2, 192, 64, 0, 1, 144, 0, 17, 0, 25, 2, 0, 0, 25, 0, 26, 0, 27, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1
             ]
         );
 
@@ -217,20 +217,19 @@ mod tests {
             interval: 600,
             seqno: 170.into(),
             metric: 256.into(),
-            subnet: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
-                .expect("32 is a valid IPv4 prefix size; qed"),
+            subnet: Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 23)
+                .expect("23 is a valid IPv4 prefix size; qed"),
             router_id: RouterId::from([2u8; RouterId::BYTE_SIZE]),
         };
 
         ihu.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 54);
+        assert_eq!(buf.len(), 53);
         assert_eq!(
-            buf[..54],
+            buf[..53],
             [
-                1, 0, 32, 0, 2, 88, 0, 170, 1, 0, 10, 101, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-                2
+                1, 0, 23, 0, 2, 88, 0, 170, 1, 0, 10, 101, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
             ]
         );
     }
@@ -345,7 +344,7 @@ mod tests {
             10.into(),
             25.into(),
             Subnet::new(
-                Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0xbeef, 0xbabe, 0xdeaf, 1).into(),
+                Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0, 0, 0, 0).into(),
                 64,
             )
             .expect("64 is a valid IPv6 prefix size; qed"),
