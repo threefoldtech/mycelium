@@ -11,11 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nodes can now explicitly request selected route(s) from connected peers by
   sending a Route Request Tlv.
+- The router can now inform a Peer that the connection is seemingly
+  dead. This should improve the reconnect speed on connection types
+  which can't tell themselves if they died.
 
 ### Changed
 
 - Locally discovered peers are now forgotten if we fail to connect to them 3
   times.
+- Duration between periodic events has been increased, this should
+  reduce bandwidth when idle to maintain the system.
+- Address encoding in update packets is now in-line with address
+  encoding as described by the babel RFC.
+
+### Fixed
+
+- TLV bodies of unknown type are now properly skipped. Previously, the
+  calculation of the body size was off by one, causing the connection to
+  the peer to always die. Now, these packets should be properly ignored.
+- We are a bit more active now and no longer sleep for a second when we
+  need to remove an expired route entry.
 
 ## [0.2.3] - 2024-01-04
 
