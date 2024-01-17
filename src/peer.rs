@@ -225,6 +225,15 @@ impl Peer {
         self.inner.state.write().unwrap().time_last_received_ihu = time
     }
 
+    /// Notify this `Peer` that it died.
+    ///
+    /// While some [`Connection`] types can immediately detect that the connection itself is
+    /// broken, not all of them can. In this scenario, we need to rely on an outside signal to tell
+    /// us that we have, in fact, died.
+    pub fn died(&self) {
+        self.inner.alive.store(false, Ordering::Relaxed)
+    }
+
     /// Create a new [`PeerRef`] that refers to this `Peer` instance.
     pub fn refer(&self) -> PeerRef {
         PeerRef {

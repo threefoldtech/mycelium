@@ -326,6 +326,8 @@ impl Router {
                     if peer.time_last_received_ihu().elapsed() > ihu_threshold {
                         // peer is dead
                         info!("Peer {} is dead", peer.connection_identifier());
+                        // Notify peer it's dead in case it's not aware of that yet.
+                        peer.died();
                         dead_peers.push(peer.clone());
                     }
                 }
