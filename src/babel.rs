@@ -145,7 +145,8 @@ impl Decoder for Codec {
             _ => {
                 // unrecoginized body type, silently drop
                 trace!("Dropping unrecognized tlv");
-                src.advance(header.body_length as usize - 1);
+                // We already read 2 bytes
+                src.advance(header.body_length as usize - 2);
                 self.reset();
                 return Ok(None);
             }
