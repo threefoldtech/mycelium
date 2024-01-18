@@ -105,22 +105,34 @@ impl SeqNoRequest {
 
         let prefix = match ae {
             AE_WILDCARD => {
+                if plen != 0 {
+                    return None;
+                }
                 // TODO: this is a temporary placeholder until we figure out how to handle this
                 Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into()
             }
             AE_IPV4 => {
+                if plen > 32 {
+                    return None;
+                }
                 let mut raw_ip = [0; 4];
                 raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
                 src.advance(prefix_size);
                 Ipv4Addr::from(raw_ip).into()
             }
             AE_IPV6 => {
+                if plen > 128 {
+                    return None;
+                }
                 let mut raw_ip = [0; 16];
                 raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
                 src.advance(prefix_size);
                 Ipv6Addr::from(raw_ip).into()
             }
             AE_IPV6_LL => {
+                if plen != 64 {
+                    return None;
+                }
                 let mut raw_ip = [0; 16];
                 raw_ip[0] = 0xfe;
                 raw_ip[1] = 0x80;
@@ -257,7 +269,7 @@ mod tests {
 
         let mut buf = bytes::BytesMut::from(
             &[
-                3, 92, 0, 42, 232, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                3, 64, 0, 42, 232, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
                 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 10, 0, 20, 0, 30, 0,
                 40,
             ][..],
@@ -266,7 +278,7 @@ mod tests {
         let snr = super::SeqNoRequest {
             seqno: 42.into(),
             hop_count: NonZeroU8::new(232).unwrap(),
-            prefix: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 92)
+            prefix: Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 64)
                 .expect("92 is a valid IPv6 prefix size; qed"),
             router_id: RouterId::from([4u8; RouterId::BYTE_SIZE]),
         };

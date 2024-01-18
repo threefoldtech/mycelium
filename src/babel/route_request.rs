@@ -56,18 +56,27 @@ impl RouteRequest {
         let prefix_ip = match ae {
             AE_WILDCARD => None,
             AE_IPV4 => {
+                if plen > 32 {
+                    return None;
+                }
                 let mut raw_ip = [0; 4];
                 raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
                 src.advance(prefix_size);
                 Some(Ipv4Addr::from(raw_ip).into())
             }
             AE_IPV6 => {
+                if plen > 128 {
+                    return None;
+                }
                 let mut raw_ip = [0; 16];
                 raw_ip[..prefix_size].copy_from_slice(&src[..prefix_size]);
                 src.advance(prefix_size);
                 Some(Ipv6Addr::from(raw_ip).into())
             }
             AE_IPV6_LL => {
+                if plen != 64 {
+                    return None;
+                }
                 let mut raw_ip = [0; 16];
                 raw_ip[0] = 0xfe;
                 raw_ip[1] = 0x80;
