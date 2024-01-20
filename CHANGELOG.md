@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- You can now check the version of the current binary with the --version flag.
+
 ### Changed
 
 - Prefix decoding is now more resilient to bad prefix lenghts.

@@ -55,6 +55,7 @@ const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x200, 0, 0, 0, 0
 const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
 #[derive(Parser)]
+#[command(version)]
 struct Cli {
     /// Peers to connect to.
     #[arg(long = "peers", num_args = 1..)]
