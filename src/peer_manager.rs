@@ -237,7 +237,7 @@ impl Inner {
                 }
             }
             Err(e) => {
-                error!("Couldn't connect to remote: {e}");
+                error!("Couldn't connect to {endpoint}: {e}");
                 (endpoint, None)
             }
         }
