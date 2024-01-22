@@ -10,10 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - You can now check the version of the current binary with the --version flag.
+- Bandwidth usage is now tracked per peer.
 
 ### Changed
 
-- Prefix decoding is now more resilient to bad prefix lenghts.
+- Prefix decoding is now more resilient to bad prefix lengths.
 
 ## [0.3.0] - 2024-01-17
 
