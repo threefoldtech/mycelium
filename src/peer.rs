@@ -4,7 +4,7 @@ use std::{
     error::Error,
     io,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, RwLock, Weak,
     },
 };
@@ -12,7 +12,7 @@ use tokio::{select, sync::mpsc};
 use tokio_util::codec::Framed;
 
 use crate::{
-    connection::Connection,
+    connection::{self, Connection},
     packet::{self, Packet},
 };
 use crate::{
@@ -55,6 +55,12 @@ impl Peer {
         connection: C,
         dead_peer_sink: mpsc::Sender<Peer>,
     ) -> Result<Self, io::Error> {
+        // Wrap connection so we can get access to the counters.
+        let bytes_read = Arc::new(AtomicU64::new(0));
+        let bytes_written = Arc::new(AtomicU64::new(0));
+        let connection =
+            connection::Tracked::new(bytes_read.clone(), bytes_written.clone(), connection);
+
         // Data channel for peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Control channel for peer
@@ -67,6 +73,8 @@ impl Peer {
                 to_peer_control,
                 connection_identifier: connection.identifier()?,
                 static_link_cost: connection.static_link_cost()?,
+                read: bytes_read,
+                written: bytes_written,
                 alive: AtomicBool::new(true),
             }),
         };
@@ -240,6 +248,16 @@ impl Peer {
             inner: Arc::downgrade(&self.inner),
         }
     }
+
+    /// Get the amount of bytes received from this `Peer`.
+    pub fn read(&self) -> u64 {
+        self.inner.read.load(Ordering::Relaxed)
+    }
+
+    /// Get the amount of bytes written to this `Peer`.
+    pub fn written(&self) -> u64 {
+        self.inner.written.load(Ordering::Relaxed)
+    }
 }
 
 impl PeerRef {
@@ -276,12 +294,16 @@ struct PeerInner {
     state: RwLock<PeerState>,
     to_peer_data: mpsc::UnboundedSender<DataPacket>,
     to_peer_control: mpsc::UnboundedSender<ControlPacket>,
-    /// Used to identify peer based on its connection params
+    /// Used to identify peer based on its connection params.
     connection_identifier: String,
     /// Static cost of using this link, to be added to the announced metric for routes through this
     /// Peer.
     static_link_cost: u16,
-    /// Keep track if the connection is alive
+    /// Amount of bytes received from the remote.
+    read: Arc<AtomicU64>,
+    /// Amount of bytes sent to the remote.
+    written: Arc<AtomicU64>,
+    /// Keep track if the connection is alive.
     alive: AtomicBool,
 }
 

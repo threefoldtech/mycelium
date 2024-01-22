@@ -373,9 +373,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("\n----------- Current peers: -----------");
                 for p in router.peer_interfaces() {
                     println!(
-                        "Peer: {}, with link cost: {}",
+                        "Peer: {}, with link cost: {} (Read: {} / Written: {})",
                         p.connection_identifier(),
-                        p.link_cost()
+                        p.link_cost(),
+                        format_bytes(p.read()),
+                        format_bytes(p.written()),
                     );
                 }
 
@@ -708,4 +710,23 @@ async fn recv_msg(
     }
 
     Ok(())
+}
+
+/// 1 Tebibyte
+const TI_B: u64 = 1 << 40;
+/// 1 Gibibyte
+const GI_B: u64 = 1 << 30;
+/// 1 Mebibyte
+const MI_B: u64 = 1 << 20;
+/// 1 Kibibyte
+const KI_B: u64 = 1 << 10;
+
+fn format_bytes(bytes: u64) -> String {
+    match bytes {
+        x if x > TI_B => format!("{}.{} TiB", x / TI_B, (x % TI_B) / (TI_B / 100)),
+        x if x > GI_B => format!("{}.{} GiB", x / GI_B, (x % GI_B) / (GI_B / 100)),
+        x if x > MI_B => format!("{}.{} MiB", x / MI_B, (x % MI_B) / (MI_B / 100)),
+        x if x > KI_B => format!("{}.{} KiB", x / KI_B, (x % KI_B) / (KI_B / 100)),
+        x => format!("{x} B"),
+    }
 }
