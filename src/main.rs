@@ -82,7 +82,7 @@ struct Cli {
     disable_peer_discovery: bool,
     /// Path to the private key file. This will be created if it does not exist. Default
     /// [priv_key.bin].
-    #[arg(short = 'k', long = "key-file")]
+    #[arg(short = 'k', long = "key-file", global = true)]
     key_file: Option<PathBuf>,
 
     /// Address of the HTTP API server.

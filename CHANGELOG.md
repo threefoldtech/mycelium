@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Prefix decoding is now more resilient to bad prefix lengths.
+- The `-k/--key-file` flag is now global, allowing you to specify it for (inspect)
+  sub commands.
 
 ## [0.3.0] - 2024-01-17
 
