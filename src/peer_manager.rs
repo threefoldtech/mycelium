@@ -93,7 +93,6 @@ impl PeerManager {
                         // (re)connect.
                         .map(|s| {
                             (
-                                // For now we only support TCP, so just extract the address.
                                 s,
                                 PeerInfo {
                                     pt: PeerType::Static,
