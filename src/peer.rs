@@ -250,10 +250,7 @@ impl Peer {
     /// us that we have, in fact, died.
     pub fn died(&self) {
         self.inner.alive.store(false, Ordering::Relaxed);
-        // No point in checking return value, this can only fail if it is either already used, or
-        // the receiver has been deallocated. In both cases this indicates the connection is
-        // alreayd in the process of beign cleaned up.
-        let _ = self.inner.death_notifier.notify_one();
+        self.inner.death_notifier.notify_one();
     }
 
     /// Create a new [`PeerRef`] that refers to this `Peer` instance.
