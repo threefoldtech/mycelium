@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - If the router notices a Peer is dead, the connection is now forcibly terminated.
 
+### Fixed 
+
+- Inbound peers now replace existing peers in the peer manager. This should fix
+  an issue where Quic could leave zombie connections.
+
 ## [0.3.1] - 2024-01-23
 
 ### Added

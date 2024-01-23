@@ -393,7 +393,7 @@ impl Inner {
                 Endpoint::new(Protocol::Quic, con.remote_address()),
                 PeerType::Inbound,
                 Some(new_peer),
-            );
+            )
         }
     }
 
@@ -416,6 +416,37 @@ impl Inner {
                 self.router.lock().unwrap().add_peer_interface(p);
             }
             info!("Added new peer {endpoint}");
+        } else if discovery_type == PeerType::Inbound {
+            // We got an inbound peer with a duplicate entry. This is possible if the sending port
+            // is the same as the previous one, which generally happens with our Quic setup. In
+            // this case, the old connection needs to be replaced.
+            let old_peer_info = peers.insert(
+                endpoint,
+                PeerInfo {
+                    pt: discovery_type,
+                    connecting: false,
+                    pr: if let Some(p) = &peer {
+                        p.refer()
+                    } else {
+                        PeerRef::new()
+                    },
+                    connection_attempts: 0,
+                },
+            );
+            // If we have a new peer notify insert the new one in the router, then notify it that
+            // the old one is dead.
+            if let Some(p) = peer {
+                let router = self.router.lock().unwrap();
+                router.add_peer_interface(p);
+                if let Some(old_peer) = old_peer_info
+                    .expect("We already checked the entry was occupied so this is always Some; qed")
+                    .pr
+                    .upgrade()
+                {
+                    router.handle_dead_peer(old_peer);
+                }
+            }
+            info!("Replaced existing inbound peer {endpoint}");
         } else {
             debug!("Ignoring request to add {endpoint} as it already exists");
         }

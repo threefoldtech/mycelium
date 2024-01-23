@@ -286,6 +286,11 @@ impl PeerRef {
             false
         }
     }
+
+    /// Attempts to convert this `PeerRef` into a full [`Peer`].
+    pub fn upgrade(&self) -> Option<Peer> {
+        self.inner.upgrade().map(|inner| Peer { inner })
+    }
 }
 
 impl Default for PeerRef {

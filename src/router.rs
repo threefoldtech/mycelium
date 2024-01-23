@@ -353,7 +353,7 @@ impl Router {
     }
 
     /// Remove a dead peer from the router.
-    fn handle_dead_peer(&self, dead_peer: Peer) {
+    pub fn handle_dead_peer(&self, dead_peer: Peer) {
         debug!(
             "Cleaning up peer {} which is reportedly dead",
             dead_peer.connection_identifier()
