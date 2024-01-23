@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2024-01-23
+
 ### Added
 
 - You can now check the version of the current binary with the --version flag.
@@ -192,7 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message subsystem, including API to use it.
 - CLI options to send and receive messages with the API.
 
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.3.0...HEAD
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/threefoldtech/mycelium/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/threefoldtech/mycelium/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/threefoldtech/mycelium/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/threefoldtech/mycelium/compare/v0.2.1...v0.2.2
