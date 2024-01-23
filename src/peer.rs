@@ -8,7 +8,10 @@ use std::{
         Arc, RwLock, Weak,
     },
 };
-use tokio::{select, sync::mpsc};
+use tokio::{
+    select,
+    sync::{mpsc, Notify},
+};
 use tokio_util::codec::Framed;
 
 use crate::{
@@ -66,6 +69,8 @@ impl Peer {
         // Control channel for peer
         let (to_peer_control, mut from_routing_control) =
             mpsc::unbounded_channel::<ControlPacket>();
+        let death_notifier = Arc::new(Notify::new());
+        let death_watcher = death_notifier.clone();
         let peer = Peer {
             inner: Arc::new(PeerInner {
                 state: RwLock::new(PeerState::new()),
@@ -75,6 +80,7 @@ impl Peer {
                 static_link_cost: connection.static_link_cost()?,
                 read: bytes_read,
                 written: bytes_written,
+                death_notifier,
                 alive: AtomicBool::new(true),
             }),
         };
@@ -148,6 +154,10 @@ impl Peer {
                                 error!("Error writing to stream: {}", e);
                                 break;
                             }
+                        }
+
+                        _ = death_watcher.notified() => {
+                            break;
                         }
                     }
                 }
@@ -239,7 +249,11 @@ impl Peer {
     /// broken, not all of them can. In this scenario, we need to rely on an outside signal to tell
     /// us that we have, in fact, died.
     pub fn died(&self) {
-        self.inner.alive.store(false, Ordering::Relaxed)
+        self.inner.alive.store(false, Ordering::Relaxed);
+        // No point in checking return value, this can only fail if it is either already used, or
+        // the receiver has been deallocated. In both cases this indicates the connection is
+        // alreayd in the process of beign cleaned up.
+        let _ = self.inner.death_notifier.notify_one();
     }
 
     /// Create a new [`PeerRef`] that refers to this `Peer` instance.
@@ -303,6 +317,8 @@ struct PeerInner {
     read: Arc<AtomicU64>,
     /// Amount of bytes sent to the remote.
     written: Arc<AtomicU64>,
+    /// Channel to notify the connection of its decease.
+    death_notifier: Arc<Notify>,
     /// Keep track if the connection is alive.
     alive: AtomicBool,
 }
