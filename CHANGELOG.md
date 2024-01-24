@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - If the router notices a Peer is dead, the connection is now forcibly terminated.
 
+### Changed
+
+- The multicast discovery group is now joined from all available
+  interfaces. This should increase the resilience of local peer
+  discovery.
+
 ### Fixed 
 
 - Inbound peers now replace existing peers in the peer manager. This should fix

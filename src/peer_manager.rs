@@ -6,6 +6,7 @@ use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
+use network_interface::NetworkInterfaceConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -478,10 +479,36 @@ impl Inner {
             "Bound multicast discovery interface to {}",
             sock.local_addr().expect("can look up our own address")
         );
-        if let Err(e) = sock.join_multicast_v6(&multicast_destination, 0) {
-            error!("Failed to join multicast group {e}");
+        let ipv6_nics = match list_ipv6_interface_ids() {
+            Ok(nic_ids) if !nic_ids.is_empty() => nic_ids,
+            Ok(_) => {
+                warn!("No IPv6 link local address found in local nics");
+                warn!("Link local peer discovery disabled");
+                return;
+            }
+            Err(e) => {
+                error!("Could not list local interface ids {e}");
+                warn!("Link local peer discovery disabled");
+                return;
+            }
+        };
+        let mut groups_joined = 0;
+        for n in ipv6_nics {
+            if let Err(e) = sock.join_multicast_v6(&multicast_destination, n) {
+                error!("Failed to join multicast group {e}");
+            } else {
+                groups_joined += 1;
+                debug!("Joined multicast group on interface {n}");
+            }
+        }
+        if groups_joined == 0 {
+            warn!("Failed to join any multicast group");
             warn!("Link local peer discovery disabled");
             return;
+        }
+        // We don't care about our own multicast beacons
+        if let Err(e) = sock.set_multicast_loop_v6(false) {
+            warn!("Could not disable multicast loop: {e}");
         }
 
         let mut beacon = [0; PEER_DISCOVERY_BEACON_SIZE];
@@ -634,4 +661,21 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
+}
+
+/// Get a list of the interface identifiers of every network interface with a local IPv6 IP.
+fn list_ipv6_interface_ids() -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+    let mut nics = vec![];
+    for nic in network_interface::NetworkInterface::show()? {
+        for addr in nic.addr {
+            if let network_interface::Addr::V6(addr) = addr {
+                // Check if the address is part of fe80::/64
+                if addr.ip.segments()[..4] == [0xfe80, 0, 0, 0] {
+                    nics.push(nic.index);
+                }
+            }
+        }
+    }
+
+    Ok(nics)
 }
