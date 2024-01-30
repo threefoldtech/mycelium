@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The multicast discovery group is now joined from all available
   interfaces. This should increase the resilience of local peer
   discovery.
+- Setup of the node is now done completely in the library.
 
 ### Fixed 
 

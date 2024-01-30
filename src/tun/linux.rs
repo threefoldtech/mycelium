@@ -4,12 +4,12 @@ use std::io;
 
 use futures::{Sink, Stream, TryStreamExt};
 use log::{error, info};
-use mycelium::subnet::Subnet;
 use rtnetlink::Handle;
 use tokio::{select, sync::mpsc};
 use tokio_tun::{Tun, TunBuilder};
 
 use crate::crypto::PacketBuffer;
+use crate::subnet::Subnet;
 
 // TODO
 const LINK_MTU: i32 = 1400;

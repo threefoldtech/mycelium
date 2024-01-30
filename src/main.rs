@@ -1,34 +1,24 @@
 use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
 use base64::{alphabet, Engine};
-use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use crypto::PublicKey;
-use log::{debug, error, info};
-use log::{warn, LevelFilter};
-use mycelium::api::{
-    Http, MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse,
-};
-use mycelium::crypto;
-use mycelium::data::DataPlane;
+use log::{debug, error, LevelFilter};
+use mycelium::api::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 use mycelium::endpoint::Endpoint;
-use mycelium::filters;
-use mycelium::message::{MessageId, MessageStack};
-use mycelium::peer_manager;
-use mycelium::router;
-use mycelium::router::StaticRoute;
+use mycelium::message::MessageId;
 use mycelium::subnet::Subnet;
+use mycelium::{crypto, Stack};
 use serde::{Serialize, Serializer};
 use std::io::Write;
 use std::mem;
 use std::net::Ipv4Addr;
 use std::{
     error::Error,
-    net::{IpAddr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
 };
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
-mod tun;
 
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
@@ -48,11 +38,6 @@ const TUN_NAME: &str = "tun0";
 /// Default name of tun interface
 #[cfg(target_os = "macos")]
 const TUN_NAME: &str = "utun3";
-
-/// The prefix of the global subnet used.
-const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0));
-/// THe prefix lenght of the global subnet used.
-const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
 #[derive(Parser)]
 #[command(version)]
@@ -206,7 +191,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         secret_key
     };
     let node_pub_key = crypto::PublicKey::from(&node_secret_key);
-    let node_keypair = (node_secret_key, node_pub_key);
 
     if let Some(cmd) = cli.command {
         match cmd {
@@ -252,105 +236,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Generate the node's IPv6 address from its public key
-    let node_addr = node_pub_key.address();
-    info!("Node address: {}", node_addr);
-
-    debug!("Node public key: {:?}", node_keypair.1);
-
-    let static_peers = cli.static_peers;
-
-    let (tun_tx, tun_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let node_subnet = Subnet::new(
-        // Truncate last 64 bits of address.
-        // TODO: find a better way to do this.
-        Subnet::new(node_addr.into(), 64)
-            .expect("64 is a valid IPv6 prefix size; qed")
-            .network(),
-        64,
-    )
-    .expect("64 is a valid IPv6 prefix size; qed");
-
-    // Creating a new Router instance
-    let router = match router::Router::new(
-        tun_tx,
-        node_subnet,
-        vec![StaticRoute::new(node_subnet)],
-        node_keypair.clone(),
-        vec![
-            Box::new(filters::AllowedSubnet::new(
-                Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
-                    .expect("Global subnet is properly defined; qed"),
-            )),
-            Box::new(filters::MaxSubnetSize::<64>),
-            Box::new(filters::RouterIdOwnsSubnet),
-        ],
-    ) {
-        Ok(router) => {
-            info!(
-                "Router created. Pubkey: {:x}",
-                BytesMut::from(&router.node_public_key().as_bytes()[..])
-            );
-            router
-        }
-        Err(e) => {
-            error!("Error creating router: {e}");
-            panic!("Error creating router: {e}");
-        }
+    let config = mycelium::Config {
+        node_key: node_secret_key,
+        peers: cli.static_peers,
+        no_tun: cli.no_tun,
+        tcp_listen_port: cli.tcp_listen_port,
+        quic_listen_port: cli.quic_listen_port,
+        peer_discovery_port: if cli.disable_peer_discovery {
+            None
+        } else {
+            Some(cli.peer_discovery_port)
+        },
+        tun_name: cli.tun_name,
+        api_addr: cli.api_addr,
     };
 
-    // Creating a new PeerManager instance
-    let _peer_manager = peer_manager::PeerManager::new(
-        router.clone(),
-        static_peers,
-        cli.tcp_listen_port,
-        cli.quic_listen_port,
-        cli.peer_discovery_port,
-        cli.disable_peer_discovery,
-    )?;
-    info!("Started peer manager");
-
-    let (tx, rx) = tokio::sync::mpsc::channel(100);
-    let msg_receiver = tokio_stream::wrappers::ReceiverStream::new(rx);
-    let msg_sender = tokio_util::sync::PollSender::new(tx);
-
-    let data_plane = if cli.no_tun {
-        warn!("Starting data plane witout TUN interface, L3 functionality disabled");
-        DataPlane::new(
-            router.clone(),
-            // No tun so create a dummy stream for l3 packets which never yields
-            tokio_stream::pending(),
-            // Similarly, create a sink which just discards every packet we would receive
-            futures::sink::drain(),
-            msg_sender,
-            tun_rx,
-        )
-    } else {
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        {
-            panic!("On this platform, you can only run with --no-tun");
-        }
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        {
-            let (rxhalf, txhalf) = tun::new(
-                &cli.tun_name,
-                Subnet::new(node_addr.into(), 64).expect("64 is a valid subnet size for IPv6; qed"),
-                Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
-                    .expect("Static configured TUN route is valid; qed"),
-            )
-            .await?;
-            DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
-        }
-    };
-
-    let ms = MessageStack::new(data_plane, msg_receiver);
-
-    let _api = Http::spawn(ms, &cli.api_addr);
+    // We set up the stack twice to avoid an unused variable warning
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     #[cfg(target_family = "unix")]
     {
+        let stack = Stack::new(config).await?;
         let mut sigusr1 =
             signal::unix::signal(SignalKind::user_defined1()).expect("Can install SIGUSR1 handler");
         let mut sigint =
@@ -361,27 +267,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // print info on SIGUSR1
         tokio::spawn(async move {
             while let Some(()) = sigusr1.recv().await {
-                println!("----------- Current selected routes -----------\n");
-                router.print_selected_routes();
-                println!("----------- Current fallback routes -----------\n");
-                router.print_fallback_routes();
-                println!("----------- Current source table -----------\n");
-                router.print_source_table();
-                println!("----------- Subnet origins -----------\n");
-                router.print_subnet_origins();
-
-                println!("\n----------- Current peers: -----------");
-                for p in router.peer_interfaces() {
-                    println!(
-                        "Peer: {}, with link cost: {} (Read: {} / Written: {})",
-                        p.connection_identifier(),
-                        p.link_cost(),
-                        format_bytes(p.read()),
-                        format_bytes(p.written()),
-                    );
-                }
-
-                println!("\n\n");
+                stack.dump();
             }
         });
 
@@ -389,28 +275,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             _ = sigint.recv() => { }
             _ = sigterm.recv() => { }
         }
-
-        /// 1 Tebibyte
-        const TI_B: u64 = 1 << 40;
-        /// 1 Gibibyte
-        const GI_B: u64 = 1 << 30;
-        /// 1 Mebibyte
-        const MI_B: u64 = 1 << 20;
-        /// 1 Kibibyte
-        const KI_B: u64 = 1 << 10;
-
-        fn format_bytes(bytes: u64) -> String {
-            match bytes {
-                x if x > TI_B => format!("{}.{} TiB", x / TI_B, (x % TI_B) / (TI_B / 100)),
-                x if x > GI_B => format!("{}.{} GiB", x / GI_B, (x % GI_B) / (GI_B / 100)),
-                x if x > MI_B => format!("{}.{} MiB", x / MI_B, (x % MI_B) / (MI_B / 100)),
-                x if x > KI_B => format!("{}.{} KiB", x / KI_B, (x % KI_B) / (KI_B / 100)),
-                x => format!("{x} B"),
-            }
-        }
     }
     #[cfg(not(target_family = "unix"))]
     {
+        let _ = Stack::new(config).await?;
         if let Err(e) = tokio::signal::ctrl_c().await {
             error!("Failed to wait for SIGINT: {e}");
         }
@@ -528,8 +396,11 @@ async fn send_msg(
                 .into());
             }
             Ok(ip) => {
-                let global_subnet =
-                    Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN).unwrap();
+                let global_subnet = Subnet::new(
+                    mycelium::GLOBAL_SUBNET_ADDRESS,
+                    mycelium::GLOBAL_SUBNET_PREFIX_LEN,
+                )
+                .unwrap();
                 if !global_subnet.contains_ip(ip) {
                     error!("{destination} is not a part of {global_subnet}");
                     return Err(std::io::Error::new(
