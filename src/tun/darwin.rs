@@ -10,7 +10,6 @@ use std::{
 
 use futures::{Sink, Stream};
 use log::{debug, error, info};
-use mycelium::subnet::Subnet;
 use nix::sys::socket::SockaddrIn6;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -19,6 +18,7 @@ use tokio::{
 };
 
 use crate::crypto::PacketBuffer;
+use crate::subnet::Subnet;
 
 // TODO
 const LINK_MTU: i32 = 1400;
