@@ -58,7 +58,7 @@ pub struct Config {
 
 /// The Stack is the main structure in mycelium. It governs the entire data flow.
 pub struct Stack {
-    router: router::Router,
+    _router: router::Router,
     _pm: peer_manager::PeerManager,
     _ms: message::MessageStack,
     _api: api::Http,
@@ -163,7 +163,7 @@ impl Stack {
         let api = Http::spawn(ms.clone(), &config.api_addr);
 
         Ok(Stack {
-            router,
+            _router: router,
             _pm: pm,
             _ms: ms,
             _api: api,
@@ -174,16 +174,16 @@ impl Stack {
     /// Dump internal state, temporary method.
     pub fn dump(&self) {
         println!("----------- Current selected routes -----------\n");
-        self.router.print_selected_routes();
+        self._router.print_selected_routes();
         println!("----------- Current fallback routes -----------\n");
-        self.router.print_fallback_routes();
+        self._router.print_fallback_routes();
         println!("----------- Current source table -----------\n");
-        self.router.print_source_table();
+        self._router.print_source_table();
         println!("----------- Subnet origins -----------\n");
-        self.router.print_subnet_origins();
+        self._router.print_subnet_origins();
 
         println!("\n----------- Current peers: -----------");
-        for p in self.router.peer_interfaces() {
+        for p in self._router.peer_interfaces() {
             println!(
                 "Peer: {}, with link cost: {} (Read: {} / Written: {})",
                 p.connection_identifier(),
