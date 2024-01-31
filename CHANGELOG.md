@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Route selection now accounts for the link cost of peers when
   considering if it should switch to the new route.
 
-### Fixed 
+### Fixed
 
 - Inbound peers now replace existing peers in the peer manager. This should fix
   an issue where Quic could leave zombie connections.
@@ -88,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Experimental Quic transport. The same socket is used for sending and
   receiving. This transport is experimental and breaking changes are
-  possible which won't be covered by semver guarantees for now. 
+  possible which won't be covered by semver guarantees for now.
 
 ## [0.2.0] - 2023-12-29
 
@@ -121,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Change `--port` flag to `--tcp-listen-port` to more accurately reflect
   what it controls, as well as the fact that it is only for TCP.
 
-### Removed 
+### Removed
 
 - Handshake when connecting to a new peer has been removed.
 
