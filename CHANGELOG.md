@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interfaces. This should increase the resilience of local peer
   discovery.
 - Setup of the node is now done completely in the library.
+- Route selection now accounts for the link cost of peers when
+  considering if it should switch to the new route.
 
 ### Fixed 
 
