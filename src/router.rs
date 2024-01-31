@@ -798,7 +798,9 @@ impl Router {
             // If we swap to an actually different route, only do so if the metric is
             // significantly better OR if it is directly connected (metric 0).
             if (best.source() != current.source() || best.neighbour() != current.neighbour())
-                && !(best.metric() < current.metric() - SIGNIFICANT_METRIC_IMPROVEMENT
+                && !(best.metric() + Metric::from(best.neighbour().link_cost())
+                    < current.metric() + Metric::from(current.neighbour().link_cost())
+                        - SIGNIFICANT_METRIC_IMPROVEMENT
                     || best.metric().is_direct())
             {
                 debug!("maintaining currently selected route since new route is not significantly better");
