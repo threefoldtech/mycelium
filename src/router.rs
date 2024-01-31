@@ -1046,7 +1046,7 @@ impl Router {
         false
     }
 
-    pub fn route_packet(&self, data_packet: DataPacket) {
+    pub fn route_packet(&self, mut data_packet: DataPacket) {
         let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
@@ -1054,6 +1054,12 @@ impl Router {
             data_packet.src_ip,
             data_packet.dst_ip,
         );
+
+        if data_packet.hop_limit < 2 {
+            self.time_exceeded(data_packet);
+            return;
+        }
+        data_packet.hop_limit -= 1;
 
         if node_tun_subnet.contains_ip(data_packet.dst_ip.into()) {
             if let Err(e) = self.node_tun().send(data_packet) {
@@ -1074,12 +1080,7 @@ impl Router {
     }
 
     async fn handle_incoming_data_packet(self, mut router_data_rx: Receiver<DataPacket>) {
-        while let Some(mut data_packet) = router_data_rx.recv().await {
-            if data_packet.hop_limit < 2 {
-                self.time_exceeded(data_packet);
-                continue;
-            }
-            data_packet.hop_limit -= 1;
+        while let Some(data_packet) = router_data_rx.recv().await {
             self.route_packet(data_packet);
         }
         warn!("Router data receiver stream ended");

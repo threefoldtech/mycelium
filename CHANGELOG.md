@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup of the node is now done completely in the library.
 - Route selection now accounts for the link cost of peers when
   considering if it should switch to the new route.
+- Hop count of data packets is now decremented on the first
+  hop as well. As a result the sending node will show up in
+  traceroute results.
 
 ### Fixed
 
