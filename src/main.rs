@@ -274,7 +274,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let _ = Stack::new(config).await?;
         if let Err(e) = tokio::signal::ctrl_c().await {
-            error!("Failed to wait for SIGINT: {e}");
+            log::error!("Failed to wait for SIGINT: {e}");
         }
     }
 
