@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use crypto::PublicKey;
 use log::LevelFilter;
 use mycelium::endpoint::Endpoint;
@@ -36,57 +36,17 @@ const TUN_NAME: &str = "utun3";
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
-    /// Peers to connect to.
-    #[arg(long = "peers", num_args = 1..)]
-    static_peers: Vec<Endpoint>,
-
-    /// Port to listen on for tcp connections.
-    #[arg(short = 't', long = "tcp-listen-port", default_value_t = DEFAULT_TCP_LISTEN_PORT)]
-    tcp_listen_port: u16,
-
-    /// Port to listen on for quic connections.
-    #[arg(short = 'q', long = "quic-listen-port", default_value_t = DEFAULT_QUIC_LISTEN_PORT)]
-    quic_listen_port: u16,
-
-    /// Port to use for link local peer discovery. This uses the UDP protocol.
-    #[arg(long = "peer-discovery-port", default_value_t = DEFAULT_PEER_DISCOVERY_PORT)]
-    peer_discovery_port: u16,
-
-    /// Disable peer discovery.
-    ///
-    /// If this flag is passed, the automatic link local peer discovery will not be enabled, and
-    /// peers must be configured manually. If this is disabled on all local peers, communication
-    /// between them will go over configured external peers.
-    #[arg(long = "disable-peer-discovery", default_value_t = false)]
-    disable_peer_discovery: bool,
     /// Path to the private key file. This will be created if it does not exist. Default
     /// [priv_key.bin].
     #[arg(short = 'k', long = "key-file", global = true)]
     key_file: Option<PathBuf>,
 
-    /// Address of the HTTP API server.
-    #[arg(long = "api-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
-    api_addr: SocketAddr,
-
-    /// Run without creating a TUN interface.
-    ///
-    /// The system will participate in the network as usual, but won't be able to send out L3
-    /// packets. Inbound L3 traffic will be silently discarded. The message subsystem will still
-    /// work however.
-    #[arg(long = "no-tun", default_value_t = false)]
-    no_tun: bool,
-
-    /// Name to use for the TUN interface, if one is created.
-    ///
-    /// Setting this only matters if a TUN interface is actually created, i.e. if the `--no-tun`
-    /// flag is **not** set. The name set here must be valid for the current platform, e.g. on OSX,
-    /// the name must start with `utun` and be followed by digits.
-    #[arg(long = "tun-name", default_value = TUN_NAME)]
-    tun_name: String,
-
     /// Enable debug logging
     #[arg(short = 'd', long = "debug", default_value_t = false)]
     debug: bool,
+
+    #[clap(flatten)]
+    node_args: NodeArguments,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -155,6 +115,53 @@ pub enum MessageCommand {
     },
 }
 
+#[derive(Debug, Args)]
+pub struct NodeArguments {
+    /// Peers to connect to.
+    #[arg(long = "peers", num_args = 1..)]
+    static_peers: Vec<Endpoint>,
+
+    /// Port to listen on for tcp connections.
+    #[arg(short = 't', long = "tcp-listen-port", default_value_t = DEFAULT_TCP_LISTEN_PORT)]
+    tcp_listen_port: u16,
+
+    /// Port to listen on for quic connections.
+    #[arg(short = 'q', long = "quic-listen-port", default_value_t = DEFAULT_QUIC_LISTEN_PORT)]
+    quic_listen_port: u16,
+
+    /// Port to use for link local peer discovery. This uses the UDP protocol.
+    #[arg(long = "peer-discovery-port", default_value_t = DEFAULT_PEER_DISCOVERY_PORT)]
+    peer_discovery_port: u16,
+
+    /// Disable peer discovery.
+    ///
+    /// If this flag is passed, the automatic link local peer discovery will not be enabled, and
+    /// peers must be configured manually. If this is disabled on all local peers, communication
+    /// between them will go over configured external peers.
+    #[arg(long = "disable-peer-discovery", default_value_t = false)]
+    disable_peer_discovery: bool,
+
+    /// Address of the HTTP API server.
+    #[arg(long = "api-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
+    api_addr: SocketAddr,
+
+    /// Run without creating a TUN interface.
+    ///
+    /// The system will participate in the network as usual, but won't be able to send out L3
+    /// packets. Inbound L3 traffic will be silently discarded. The message subsystem will still
+    /// work however.
+    #[arg(long = "no-tun", default_value_t = false)]
+    no_tun: bool,
+
+    /// Name to use for the TUN interface, if one is created.
+    ///
+    /// Setting this only matters if a TUN interface is actually created, i.e. if the `--no-tun`
+    /// flag is **not** set. The name set here must be valid for the current platform, e.g. on OSX,
+    /// the name must start with `utun` and be followed by digits.
+    #[arg(long = "tun-name", default_value = TUN_NAME)]
+    tun_name: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
@@ -216,7 +223,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         reply_to,
                         topic,
                         msg_path,
-                        cli.api_addr,
+                        cli.node_args.api_addr,
                     )
                     .await
                 }
@@ -225,24 +232,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     topic,
                     msg_path,
                     raw,
-                } => return cli::recv_msg(timeout, topic, msg_path, raw, cli.api_addr).await,
+                } => {
+                    return cli::recv_msg(timeout, topic, msg_path, raw, cli.node_args.api_addr)
+                        .await
+                }
             },
         }
     }
 
     let config = mycelium::Config {
         node_key: node_secret_key,
-        peers: cli.static_peers,
-        no_tun: cli.no_tun,
-        tcp_listen_port: cli.tcp_listen_port,
-        quic_listen_port: cli.quic_listen_port,
-        peer_discovery_port: if cli.disable_peer_discovery {
+        peers: cli.node_args.static_peers,
+        no_tun: cli.node_args.no_tun,
+        tcp_listen_port: cli.node_args.tcp_listen_port,
+        quic_listen_port: cli.node_args.quic_listen_port,
+        peer_discovery_port: if cli.node_args.disable_peer_discovery {
             None
         } else {
-            Some(cli.peer_discovery_port)
+            Some(cli.node_args.peer_discovery_port)
         },
-        tun_name: cli.tun_name,
-        api_addr: cli.api_addr,
+        tun_name: cli.node_args.tun_name,
+        api_addr: cli.node_args.api_addr,
     };
 
     // We set up the stack twice to avoid an unused variable warning
