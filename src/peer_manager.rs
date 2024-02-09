@@ -213,7 +213,7 @@ impl Inner {
                 }
 
                 // Scope the MutexGuard, if we don't do this the future won't be Send
-                match {
+                let res = {
                     let router = self.router.lock().unwrap();
                     let router_data_tx = router.router_data_tx();
                     let router_control_tx = router.router_control_tx();
@@ -225,7 +225,8 @@ impl Inner {
                         peer_stream,
                         dead_peer_sink,
                     )
-                } {
+                };
+                match res {
                     Ok(new_peer) => {
                         info!("Connected to new peer {}", endpoint);
                         (endpoint, Some(new_peer))
@@ -273,14 +274,15 @@ impl Inner {
                 Ok(con) => match con.open_bi().await {
                     Ok((tx, rx)) => {
                         let q_con = Quic::new(tx, rx, endpoint.address());
-                        match {
+                        let res = {
                             let router = self.router.lock().unwrap();
                             let router_data_tx = router.router_data_tx();
                             let router_control_tx = router.router_control_tx();
                             let dead_peer_sink = router.dead_peer_sink().clone();
 
                             Peer::new(router_data_tx, router_control_tx, q_con, dead_peer_sink)
-                        } {
+                        };
+                        match res {
                             Ok(new_peer) => {
                                 info!("Connected to new peer {}", endpoint);
                                 (endpoint, Some(new_peer))
