@@ -140,11 +140,11 @@ impl Stack {
                 tun_rx,
             )
         } else {
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 panic!("On this platform, you can only run with --no-tun");
             }
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             {
                 let (rxhalf, txhalf) = tun::new(
                     &config.tun_name,

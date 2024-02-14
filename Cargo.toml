@@ -68,6 +68,9 @@ tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
 libc = "0.2.150"
 nix = { version = "0.27.1", features = ["net", "socket", "ioctl"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+wintun = "0.4.0"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
