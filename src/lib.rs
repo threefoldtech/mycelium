@@ -154,6 +154,7 @@ impl Stack {
                         .expect("Static configured TUN route is valid; qed"),
                 )
                 .await?;
+                info!("Node overlay IP: {node_addr}");
                 DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
             }
         };
