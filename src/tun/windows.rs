@@ -10,8 +10,7 @@ use crate::{crypto::PacketBuffer, subnet::Subnet};
 const LINK_MTU: usize = 1400;
 
 /// Type of the tunnel used, specified when creating the tunnel.
-// TODO: verify if this is correct.
-const WINDOWS_TUNNEL_TYPE: &str = "Wintun";
+const WINDOWS_TUNNEL_TYPE: &str = "Mycelium";
 
 pub async fn new(
     name: &str,
