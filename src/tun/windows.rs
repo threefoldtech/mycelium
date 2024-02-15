@@ -1,7 +1,7 @@
 use std::{io, ops::Deref, sync::Arc};
 
 use futures::{Sink, Stream};
-use log::{error, info};
+use log::{error, info, warn};
 use tokio::sync::mpsc;
 
 use crate::{crypto::PacketBuffer, subnet::Subnet};
@@ -26,7 +26,16 @@ pub async fn new(
     // SAFETY: for now we assume a valid wintun.dll file exists in tehe root directory when we are
     // running this.
     let wintun = unsafe { wintun::load() }?;
+    let wintun_version = match wintun::get_running_driver_version(&wintun) {
+        Ok(v) => format!("{v}"),
+        Err(e) => {
+            warn!("Failed to read wintun.dll version: {e}");
+            "Unknown".to_string()
+        }
+    };
+    info!("Loaded wintun.dll - running version {wintun_version}");
     let tun = wintun::Adapter::create(&wintun, name, WINDOWS_TUNNEL_TYPE, None)?;
+    info!("Created wintun tunnel interface");
     // Configure created network adapter.
     tun.set_mtu(LINK_MTU)?;
     // Set address, this will use a `netsh` command under the hood unfortunately.
