@@ -115,7 +115,7 @@ fn wintun_to_io_error(err: wintun::Error) -> io::Error {
 /// We assume this is an IPv6 address.
 fn add_address(adapter_name: &str, subnet: Subnet, route_subnet: Subnet) -> Result<(), io::Error> {
     let exit_code = std::process::Command::new("netsh")
-        .args(&[
+        .args([
             "interface",
             "ipv6",
             "set",
