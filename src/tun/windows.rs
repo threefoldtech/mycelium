@@ -39,7 +39,9 @@ pub async fn new(
     // Configure created network adapter.
     tun.set_mtu(LINK_MTU)?;
     // Set address, this will use a `netsh` command under the hood unfortunately.
-    tun.set_network_addresses_tuple(node_subnet.address(), route_subnet.mask(), None)?;
+    // TODO: fix in library
+    // tun.set_network_addresses_tuple(node_subnet.address(), route_subnet.mask(), None)?;
+    add_address(name, node_subnet, route_subnet)?;
     // Build 2 separate sessions - one for receiving, one for sending.
     let rx_session = Arc::new(tun.start_session(wintun::MAX_RING_CAPACITY)?);
     let tx_session = rx_session.clone();
@@ -105,5 +107,31 @@ fn wintun_to_io_error(err: wintun::Error) -> io::Error {
     match err {
         wintun::Error::Io(e) => e,
         _ => io::Error::new(io::ErrorKind::Other, "unknown wintun error"),
+    }
+}
+
+/// Set an address on an interface by shelling out to `netsh`
+///
+/// We assume this is an IPv6 address.
+fn add_address(adapter_name: &str, subnet: Subnet, route_subnet: Subnet) -> Result<(), io::Error> {
+    let exit_code = std::process::Command::new("netsh")
+        .args(&[
+            "interface",
+            "ipv6",
+            "set",
+            "address",
+            adapter_name,
+            &format!("{}/{}", subnet.address(), route_subnet.prefix_len()),
+        ])
+        .spawn()?
+        .wait()?;
+
+    match exit_code.code() {
+        Some(0) => Ok(()),
+        Some(x) => Err(io::Error::from_raw_os_error(x)),
+        None => {
+            warn!("Failed to determine `netsh` exit status");
+            Ok(())
+        }
     }
 }
