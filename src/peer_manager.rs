@@ -232,7 +232,7 @@ impl Inner {
                         (endpoint, Some(new_peer))
                     }
                     Err(e) => {
-                        error!("Failed to spawn peer: {e}");
+                        error!("Failed to spawn peer {endpoint}: {e}");
                         (endpoint, None)
                     }
                 }
@@ -288,23 +288,23 @@ impl Inner {
                                 (endpoint, Some(new_peer))
                             }
                             Err(e) => {
-                                error!("Failed to spawn peer: {e}");
+                                error!("Failed to spawn peer {endpoint}: {e}");
                                 (endpoint, None)
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Couldn't open bidirectional quic stream to remote {e}");
+                        error!("Couldn't open bidirectional quic stream to {endpoint}: {e}");
                         (endpoint, None)
                     }
                 },
                 Err(e) => {
-                    error!("Couldn't complete connection to remote {e}");
+                    error!("Couldn't complete quic connection to {endpoint}: {e}");
                     (endpoint, None)
                 }
             },
             Err(e) => {
-                error!("Couldn't initiate connection to remote: {e}");
+                error!("Couldn't initiate connection to {endpoint}: {e}");
                 (endpoint, None)
             }
         }
