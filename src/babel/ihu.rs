@@ -182,14 +182,14 @@ mod tests {
 
         let mut buf = bytes::BytesMut::from(
             &[
-                2, 0, 0, 2, 0, 44, 2, 0, 0, 0, 0, 5, 0, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+                2, 0, 0, 2, 0, 44, 4, 0, 0, 0, 0, 5, 0, 6, 7, 8, 9, 10, 11, 12, 13, 14,
             ][..],
         );
 
         let ihu = super::Ihu {
             rx_cost: 2.into(),
             interval: 44,
-            address: Some(Ipv6Addr::new(0x200, 0, 5, 6, 0x708, 0x90a, 0xb0c, 0xd0e).into()),
+            address: Some(Ipv6Addr::new(0x400, 0, 5, 6, 0x708, 0x90a, 0xb0c, 0xd0e).into()),
         };
 
         let buf_len = buf.len();

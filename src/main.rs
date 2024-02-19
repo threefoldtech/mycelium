@@ -93,7 +93,7 @@ pub enum MessageCommand {
         #[arg(long = "reply-to")]
         reply_to: Option<String>,
         /// Destination of the message, either a hex encoded public key, or an IPv6 address in the
-        /// 200::/7 range.
+        /// 400::/7 range.
         destination: String,
         /// The message to send. This is required if `--msg_path` is not set
         message: Option<String>,

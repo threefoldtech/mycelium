@@ -241,7 +241,7 @@ mod tests {
             400,
             16.into(),
             25.into(),
-            Subnet::new(Ipv6Addr::new(0x200, 1, 2, 3, 0, 0, 0, 0).into(), 64)
+            Subnet::new(Ipv6Addr::new(0x400, 1, 2, 3, 0, 0, 0, 0).into(), 64)
                 .expect("64 is a valid IPv6 prefix size; qed"),
             [
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
@@ -277,7 +277,7 @@ mod tests {
                 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
             ]
             .into(),
-            Subnet::new(Ipv6Addr::new(0x200, 1, 2, 3, 0, 0, 0, 0).into(), 64)
+            Subnet::new(Ipv6Addr::new(0x400, 1, 2, 3, 0, 0, 0, 0).into(), 64)
                 .expect("64 is a valid IPv6 prefix size; qed"),
         );
 
@@ -300,7 +300,7 @@ mod tests {
         let mut receiver = Framed::new(rx, super::Codec::new());
 
         let rr = super::RouteRequest::new(Some(
-            Subnet::new(Ipv6Addr::new(0x200, 1, 2, 3, 0, 0, 0, 0).into(), 64)
+            Subnet::new(Ipv6Addr::new(0x400, 1, 2, 3, 0, 0, 0, 0).into(), 64)
                 .expect("64 is a valid IPv6 prefix size; qed"),
         ));
 

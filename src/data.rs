@@ -146,11 +146,11 @@ impl DataPlane {
 
             trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
 
-            // Check if destination address is in 200::/7 range
+            // Check if destination address is in 400::/7 range
             // TODO: make variable?
             let first_byte = dst_ip.segments()[0] >> 8; // get the first byte
-            if !(0x02..=0x3F).contains(&first_byte) {
-                debug!("Dropping packet which is not destined for 200::/7");
+            if !(0x04..=0x5F).contains(&first_byte) {
+                debug!("Dropping packet which is not destined for 400::/7");
                 continue;
             }
 

@@ -135,12 +135,12 @@ impl Default for SecretKey {
 impl PublicKey {
     /// Generates an [`Ipv6Addr`] from a `PublicKey`.
     ///
-    /// The generated address is guaranteed to be part of the `200::/7` range.
+    /// The generated address is guaranteed to be part of the `400::/7` range.
     pub fn address(&self) -> Ipv6Addr {
         let mut hasher = Blake2b128::default();
         hasher.update(self.as_bytes());
         let mut buf = hasher.finalize();
-        buf[0] = 0x02 | buf[0] & 0x01;
+        buf[0] = 0x04 | buf[0] & 0x01;
         Ipv6Addr::from(<[u8; 16]>::from(buf))
     }
 

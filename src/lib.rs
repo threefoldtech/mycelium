@@ -32,7 +32,7 @@ pub mod subnet;
 mod tun;
 
 /// The prefix of the global subnet used.
-pub const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x200, 0, 0, 0, 0, 0, 0, 0));
+pub const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0));
 /// The prefix lenght of the global subnet used.
 pub const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
