@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Overlay network is now hosted in 400::/7 instead of 200::/7. 
+
 ### Fixed
 
-- Log the endpoint when a quic connection can't be established.
+- Log the endpoint when a Quic connection can't be established.
 
 ## [0.3.2] - 2024-01-31
 
