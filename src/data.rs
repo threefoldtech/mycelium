@@ -145,11 +145,32 @@ impl DataPlane {
             );
 
             trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
+            // Check if the source address is part of 400::/7
+            let first_src_byte = src_ip.segments()[0] >> 8;
+            if !(0x04..0x06).contains(&first_src_byte) {
+                let mut icmp_packet = PacketBuffer::new();
+                let host = self.router.node_public_key().address().octets();
+                let icmp = PacketBuilder::ipv6(host, src_ip.octets(), 64).icmpv6(
+                    Icmpv6Type::DestinationUnreachable(
+                        DestUnreachableCode::SourceAddressFailedPolicy,
+                    ),
+                );
+                icmp_packet.set_size(icmp.size(packet.len().min(1280 - 48)));
+                let mut writer = &mut icmp_packet.buffer_mut()[..];
+                if let Err(e) = icmp.write(&mut writer, &packet[..packet.len().min(1280 - 48)]) {
+                    error!("Failed to construct ICMP packet: {e}");
+                    continue;
+                }
+                if let Err(e) = l3_packet_sink.send(icmp_packet).await {
+                    error!("Failed to send ICMP packet to host: {e}");
+                }
+                continue;
+            }
 
             // Check if destination address is in 400::/7 range
             // TODO: make variable?
-            let first_byte = dst_ip.segments()[0] >> 8; // get the first byte
-            if !(0x04..=0x5F).contains(&first_byte) {
+            let first_dst_byte = dst_ip.segments()[0] >> 8; // get the first byte
+            if !(0x04..=0x5F).contains(&first_dst_byte) {
                 debug!("Dropping packet which is not destined for 400::/7");
                 continue;
             }
