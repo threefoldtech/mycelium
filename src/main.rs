@@ -1,6 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use crypto::PublicKey;
-use log::LevelFilter;
+use log::{debug, error, warn, LevelFilter};
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, Stack};
 use std::io;
@@ -188,22 +188,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Load the keypair for this node, or generate a new one if the file does not exist.
-    let node_secret_key = if key_path.exists() {
-        load_key_file(&key_path).await?
+    let node_keys = if key_path.exists() {
+        let sk = load_key_file(&key_path).await?;
+        let pk = crypto::PublicKey::from(&sk);
+        debug!("Loaded key file at {key_path:?}");
+        Some((sk, pk))
     } else {
-        let secret_key = crypto::SecretKey::new();
-        save_key_file(&secret_key, &key_path).await?;
-        secret_key
+        None
     };
-    let node_pub_key = crypto::PublicKey::from(&node_secret_key);
 
     if let Some(cmd) = cli.command {
         match cmd {
             Command::Inspect { json, key } => {
                 let key = if let Some(key) = key {
                     PublicKey::try_from(key.as_str())?
-                } else {
+                } else if let Some((_, node_pub_key)) = node_keys {
                     node_pub_key
+                } else {
+                    error!("No key to inspect provided and no key found at {key_path:?}");
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "no key to inspect and key file not found",
+                    )
+                    .into());
                 };
                 cli::inspect(key, json)?;
 
@@ -243,6 +250,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             },
         }
     }
+
+    let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
+        node_secret_key
+    } else {
+        warn!("Node key file {key_path:?} not found, generating new keys");
+        let secret_key = crypto::SecretKey::new();
+        save_key_file(&secret_key, &key_path).await?;
+        secret_key
+    };
 
     let config = mycelium::Config {
         node_key: node_secret_key,
