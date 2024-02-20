@@ -1,6 +1,6 @@
 # Mycelium
 
-Mycelium is an IPv6 overlay network writing in Rust. Each node that joins the overlay network will receive an overlay network IP in the 400::/7 range.
+Mycelium is an IPv6 overlay network written in Rust. Each node that joins the overlay network will receive an overlay network IP in the 400::/7 range.
 
 ## Features
 

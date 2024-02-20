@@ -156,7 +156,7 @@ impl SharedSecret {
         data.buf
     }
 
-    /// Decrypt a message previously encrytped with an equivalent `SharedSecret`. In other words, a
+    /// Decrypt a message previously encrypted with an equivalent `SharedSecret`. In other words, a
     /// message that was previously created by the [`SharedSecret::encrypt`] method.
     ///
     /// Internally, this messages assumes that a 12 byte nonce is present at the end of the data.
