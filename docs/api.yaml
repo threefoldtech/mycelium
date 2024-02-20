@@ -104,7 +104,7 @@ paths:
               $ref: '#/components/schemas/PushMessageBody'
       responses:
         '200':
-          description: We received a reply withing the specified timeout
+          description: We received a reply within the specified timeout
           content:
             application/json:
               schema:

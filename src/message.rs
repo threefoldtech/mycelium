@@ -503,7 +503,7 @@ impl MessageStack {
                 let src_pubkey = if let Some(pk) = dp.router().get_pubkey(message.src) {
                     pk
                 } else {
-                    warn!("No publick key entry for IP we just received a message chunk from");
+                    warn!("No public key entry for IP we just received a message chunk from");
                     return;
                 };
                 // This always is our own key as we are receiving.

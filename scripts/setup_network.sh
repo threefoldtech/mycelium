@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# A simple shell script to setup a local network using network namespaces. This relies on the presence of the `ip` tool, part of `iproute2` packge on linux.
+# A simple shell script to setup a local network using network namespaces. This relies on the presence of the `ip` tool, part of `iproute2` package on linux.
 #
 # Note: this script requires root privilege
 
