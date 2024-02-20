@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Overlay network is now hosted in 400::/7 instead of 200::/7. 
 - Key file is no longer created if it does not exist when the
   inspect command is run.
+- Packets with destination outside the global subnet now return
+  a proper ICMP instead of being silently dropped.
 
 ### Fixed
 

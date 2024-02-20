@@ -167,13 +167,9 @@ impl DataPlane {
                 continue;
             }
 
-            // Check if destination address is in 400::/7 range
-            // TODO: make variable?
-            let first_dst_byte = dst_ip.segments()[0] >> 8; // get the first byte
-            if !(0x04..=0x5F).contains(&first_dst_byte) {
-                debug!("Dropping packet which is not destined for 400::/7");
-                continue;
-            }
+            // No need to verify destination address, if it is not part of the global subnet there
+            // should not be a route for it, and therefore the route step will generate the
+            // appropriate ICMP.
 
             let mut header = packet.header_mut();
             header[0] = USER_DATA_VERSION;
