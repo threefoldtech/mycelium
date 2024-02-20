@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support for windows tunnels. While this works, there are no windows
-  packages yet, so this is still a very "developer experience".
+  packages yet, so this is still a "developer experience".
+- Validation on source IP when sending packets over TUN interface.
 
 ### Changed
 
