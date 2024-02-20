@@ -4,20 +4,14 @@ use core::fmt;
 use std::{
     error::Error,
     fmt::Display,
-    io,
     net::Ipv6Addr,
     ops::{Deref, DerefMut},
-    path::Path,
 };
 
 use aes_gcm::{aead::OsRng, AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit};
 use blake2::{Blake2b, Digest};
 use digest::consts::U16;
 use serde::{de::Visitor, Deserialize, Serialize};
-use tokio::{
-    fs::File,
-    io::{AsyncReadExt, AsyncWriteExt},
-};
 
 /// Default MTU for a packet. Ideally this would not be needed and the [`PacketBuffer`] takes a
 /// const generic argument which is then expanded with the needed extra space for the buffer,
@@ -98,26 +92,10 @@ impl SecretKey {
         SecretKey(x25519_dalek::StaticSecret::random_from_rng(OsRng))
     }
 
-    /// Load a `SecretKey` from a file.
-    pub async fn load_file(path: &Path) -> Result<Self, io::Error> {
-        let mut file = File::open(path).await?;
-        let mut secret_bytes = [0u8; 32];
-        file.read_exact(&mut secret_bytes).await?;
-
-        let secret_key = x25519_dalek::StaticSecret::from(secret_bytes);
-
-        Ok(SecretKey(secret_key))
-    }
-
-    /// Saves the `SecretKey` to a file.
-    ///
-    /// The file is assumed to not exist and will be created. If a file is already present, it will
-    /// be overwritten with the new content.
-    pub async fn save_file(&self, path: &Path) -> Result<(), io::Error> {
-        let mut file = File::create(path).await?;
-        file.write_all(&self.0.to_bytes()[..]).await?;
-
-        Ok(())
+    /// View this `SecretKey` as a byte array.
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.0.as_bytes()
     }
 
     /// Computes the [`SharedSecret`] from this `SecretKey` and a [`PublicKey`].
@@ -261,6 +239,13 @@ impl PacketBuffer {
 impl Default for PacketBuffer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<[u8; 32]> for SecretKey {
+    /// Load a secret key from a byte array.
+    fn from(bytes: [u8; 32]) -> SecretKey {
+        SecretKey(x25519_dalek::StaticSecret::from(bytes))
     }
 }
 

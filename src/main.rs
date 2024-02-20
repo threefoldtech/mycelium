@@ -3,12 +3,16 @@ use crypto::PublicKey;
 use log::LevelFilter;
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, Stack};
+use std::io;
 use std::net::Ipv4Addr;
+use std::path::Path;
 use std::{
     error::Error,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
 };
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
 
@@ -185,10 +189,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Load the keypair for this node, or generate a new one if the file does not exist.
     let node_secret_key = if key_path.exists() {
-        crypto::SecretKey::load_file(&key_path).await?
+        load_key_file(&key_path).await?
     } else {
         let secret_key = crypto::SecretKey::new();
-        secret_key.save_file(&key_path).await?;
+        save_key_file(&secret_key, &key_path).await?;
         secret_key
     };
     let node_pub_key = crypto::PublicKey::from(&node_secret_key);
@@ -287,6 +291,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             log::error!("Failed to wait for SIGINT: {e}");
         }
     }
+
+    Ok(())
+}
+
+async fn load_key_file(path: &Path) -> Result<crypto::SecretKey, io::Error> {
+    let mut file = File::open(path).await?;
+    let mut secret_bytes = [0u8; 32];
+    file.read_exact(&mut secret_bytes).await?;
+
+    Ok(crypto::SecretKey::from(secret_bytes))
+}
+
+async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
+    let mut file = File::create(path).await?;
+    file.write_all(key.as_bytes()).await?;
 
     Ok(())
 }
