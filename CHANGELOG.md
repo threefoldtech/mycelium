@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support for windows tunnels. While this works, there are no windows
+  packages yet, so this is still a very "developer experience".
+
 ### Changed
 
 - Overlay network is now hosted in 400::/7 instead of 200::/7. 
@@ -23,8 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - If the router notices a Peer is dead, the connection is now forcibly terminated.
 - Example Systemd file.
-- Support for windows tunnels. While this works, there are no windows
-  packages yet, so this is still a very "developer experience".
 
 ### Changed
 
