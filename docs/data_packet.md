@@ -5,7 +5,6 @@ both understand what it is, without further help. Intermediate hops, which route
 information with the header to know where to forward the packet. In practice, the data will be encrypted
 to avoid eavesdropping by intermediate hops.
 
-
 ## Packet header
 
 The packet header has a fixed size of 36 bytes, with the following layout:
@@ -14,7 +13,7 @@ The packet header has a fixed size of 36 bytes, with the following layout:
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|             Length            |    Reserved   |   Hop Limit   |
+|Reserved |                Length               |   Hop Limit   |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
 +                                                               +
@@ -34,14 +33,14 @@ The packet header has a fixed size of 36 bytes, with the following layout:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-The first 2 bytes are used to specify the length of the body. In practice, packets should be limited
-to at most the MTU size of the NIC used. This means that the leading bits should be unused. In the
-future, the protocol might be extended to take advantage of these unused bits.
+The first 5 bits are reserved and must be set to 0.
 
-The next byte is reserved for future use and should be set to 0.
+The next 19 bits are used to specify the length of the body. It is expected that
+the actual length of a packet does not exceed 256K right now, so the 19th bit is
+only needed because we have to account for some overhead related to the encryption.
 
-The next byte is the hop-limit. Every node decrements this value by 1 before sending the packet.
-If a node decrements this value to 0, the packet is discarded.
+The next byte is the hop-limit. Every node decrements this value by 1 before sending
+the packet. If a node decrements this value to 0, the packet is discarded.
 
 The next 16 bytes contain the sender IP address.
 
