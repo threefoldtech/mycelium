@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2024-02-22
+
 ### Added
 
 - Support for windows tunnels. While this works, there are no windows
@@ -236,7 +238,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message subsystem, including API to use it.
 - CLI options to send and receive messages with the API.
 
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.3.2...HEAD
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/threefoldtech/mycelium/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/threefoldtech/mycelium/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/threefoldtech/mycelium/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/threefoldtech/mycelium/compare/v0.2.3...v0.3.0
