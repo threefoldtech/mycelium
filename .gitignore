@@ -10,3 +10,5 @@ profile.json
 
 # vscode settings, keep these locally
 .vscode
+# visual studio project stuff
+.vs
