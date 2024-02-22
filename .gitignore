@@ -12,3 +12,6 @@ profile.json
 .vscode
 # visual studio project stuff
 .vs
+
+# wintun.dll, windows tun driver in repo root for windows development
+wintun.dll
