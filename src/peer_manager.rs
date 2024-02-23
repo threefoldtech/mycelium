@@ -8,6 +8,7 @@ use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
 use network_interface::NetworkInterfaceConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -40,8 +41,9 @@ pub struct PeerManager {
 }
 
 /// Details how the PeerManager learned about a remote.
-#[derive(PartialEq, Eq)]
-enum PeerType {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PeerType {
     /// Statically configured peer.
     Static,
     /// Peer found through link local discovery.

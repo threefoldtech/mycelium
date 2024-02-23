@@ -4,6 +4,8 @@ use std::{
     str::FromStr,
 };
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Error generated while processing improperly formatted endpoints.
 pub enum EndpointParseError {
@@ -15,8 +17,9 @@ pub enum EndpointParseError {
     Address(AddrParseError),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Protocol used by an endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Protocol {
     /// Standard plain text Tcp.
     Tcp,
@@ -24,8 +27,9 @@ pub enum Protocol {
     Quic,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// An endpoint defines a address and a protocol to use when communicating with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Endpoint {
     proto: Protocol,
     socket_addr: SocketAddr,
