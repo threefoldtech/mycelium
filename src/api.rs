@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     crypto::PublicKey,
     message::{MessageId, MessageInfo, MessageStack},
+    peer_manager::{PeerManager, PeerStats},
 };
 
 /// Default amount of time to try and send a message if it is not explicitly specified.
@@ -31,6 +32,8 @@ pub struct Http {
 
 #[derive(Clone)]
 struct HttpServerState {
+    /// Access to the connection state of (`Peer`)[crate::peer::Peer]s.
+    peer_manager: PeerManager,
     /// Access to messages.
     message_stack: MessageStack,
 }
@@ -82,8 +85,15 @@ impl MessageDestination {
 
 impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
-    pub fn spawn(message_stack: MessageStack, listen_addr: &SocketAddr) -> Self {
-        let server_state = HttpServerState { message_stack };
+    pub fn spawn(
+        peer_manager: PeerManager,
+        message_stack: MessageStack,
+        listen_addr: &SocketAddr,
+    ) -> Self {
+        let server_state = HttpServerState {
+            peer_manager,
+            message_stack,
+        };
         let msg_routes = Router::new()
             .route("/messages", get(get_message).post(push_message))
             .route("/messages/status/:id", get(message_status))
