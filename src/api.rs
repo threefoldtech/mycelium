@@ -94,12 +94,17 @@ impl Http {
             peer_manager,
             message_stack,
         };
+        let admin_routes = Router::new()
+            .route("/admin/peers", get(get_peers))
+            .with_state(server_state.clone());
         let msg_routes = Router::new()
             .route("/messages", get(get_message).post(push_message))
             .route("/messages/status/:id", get(message_status))
             .route("/messages/reply/:id", post(reply_message))
             .with_state(server_state);
-        let app = Router::new().nest("/api/v1", msg_routes);
+        let app = Router::new()
+            .nest("/api/v1", msg_routes)
+            .nest("/api/v1", admin_routes);
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         let server = axum::Server::bind(listen_addr)
             .serve(app.into_make_service())
@@ -305,6 +310,12 @@ async fn message_status(
         .message_info(id)
         .ok_or(StatusCode::NOT_FOUND)
         .map(Json)
+}
+
+/// Get the stats of the current known peers
+async fn get_peers(State(state): State<HttpServerState>) -> Json<Vec<PeerStats>> {
+    debug!("Fetching peer stats");
+    Json(state.peer_manager.peers())
 }
 
 /// Module to implement base64 decoding and encoding
