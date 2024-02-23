@@ -65,6 +65,35 @@ struct PeerInfo {
     connection_attempts: usize,
 }
 
+/// General state about a connection to a [`Peer`].
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConnectionState {
+    /// There is a working connection to the [`Peer`].
+    Alive,
+    /// The system is currently in the process of establishing a new connection to the [`Peer`].
+    Connecting,
+    /// There is no connection, or the existing connection is no longer functional.
+    Dead,
+}
+
+/// Identification and information/statistics for a specific [`Peer`]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerStats {
+    /// The endpoint of the [`Peer`].
+    pub endpoint: Endpoint,
+    /// The (Type)[`PeerType`] of the [`Peer`].
+    #[serde(rename = "type")]
+    pub pt: PeerType,
+    /// State of the connection to this [`Peer`]
+    pub connection_state: ConnectionState,
+    /// Amount of bytes transmitted on the current connection.
+    pub connection_tx_bytes: u64,
+    /// Amount of bytes received on the cureent conntection.
+    pub connection_rx_bytes: u64,
+}
+
 struct Inner {
     /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
     router: Mutex<Router>,
@@ -131,6 +160,28 @@ impl PeerManager {
         }
 
         Ok(peer_manager)
+    }
+
+    /// Get a view of all known peers and their stats.
+    pub fn peers(&self) -> Vec<PeerStats> {
+        let peer_map = self.inner.peers.lock().unwrap();
+        let mut pi = Vec::with_capacity(peer_map.len());
+        for (endpoint, peer_info) in peer_map.iter() {
+            let (connection_state, connection_tx_bytes, connection_rx_bytes) =
+                match peer_info.pr.upgrade() {
+                    None if !peer_info.connecting => (ConnectionState::Dead, 0, 0),
+                    None => (ConnectionState::Connecting, 0, 0),
+                    Some(peer) => (ConnectionState::Alive, peer.written(), peer.read()),
+                };
+            pi.push(PeerStats {
+                endpoint: *endpoint,
+                pt: peer_info.pt.clone(),
+                connection_state,
+                connection_tx_bytes,
+                connection_rx_bytes,
+            });
+        }
+        pi
     }
 }
 
