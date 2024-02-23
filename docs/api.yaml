@@ -18,6 +18,10 @@ externalDocs:
   url: 'https://github.com/threefoldtech/mycelium'
 
 tags:
+  - name: Admin
+    description: Administrative operations
+  - name: Peer
+    description: Operations related to peer management
   - name: Message
     description: Operations on the embedded message subsystem
 
@@ -25,6 +29,27 @@ servers:
   - url: 'http://localhost:8989'
 
 paths:
+  '/api/v1/peers':
+    get:
+      tags:
+        - Admin
+        - Peer
+      summary: List known peers
+      description: |
+        List all peers known in the system, and info about their connection.
+        This includes the endpoint, how we know about the peer, the connection state, and if the connection is alive the amount
+        of bytes we've sent to and received from the peer.
+      operationId: getPeers
+      responses:
+        '200':
+          description: Succes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PeerStats'
+
   '/api/v1/messages':
     get:
       tags:
@@ -183,6 +208,57 @@ paths:
 
 components:
   schemas:
+    Endpoint:
+      description: Identification to connect to a peer
+      type: object
+      properties:
+        proto:
+          description: Protocol used
+          type: string
+          enum:
+            - 'tcp'
+            - 'quic'
+          example: tcp
+        socketAddr:
+          description: The socket address used
+          type: string
+          example: 192.0.2.6:9651
+
+    PeerStats:
+      description: Info about a peer
+      type: object
+      properties:
+        endpoint:
+          $ref: '#/components/schemas/Endpoint'
+        type:
+          description: How we know about this peer
+          type: string
+          enum:
+            - 'static'
+            - 'inbound'
+            - 'linkLocalDiscovery'
+          example: static
+        connectionState:
+          description: The current state of the connection to the peer
+          type: string
+          enum:
+            - 'alive'
+            - 'connecting'
+            - 'dead'
+          example: alive
+        connectionTxBytes:
+          description: The amount of bytes transmitted on the current connection
+          type: integer
+          format: int64
+          minimum: 0
+          example: 464531564
+        connectionRxBytes:
+          description: The amount of bytes received on the current connection
+          type: integer
+          format: int64
+          minimum: 0
+          example: 64645089
+
     InboundMessage:
       description: A message received by the system
       type: object
