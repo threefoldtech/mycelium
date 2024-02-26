@@ -161,7 +161,7 @@ impl Stack {
 
         let ms = MessageStack::new(data_plane, msg_receiver);
 
-        let api = Http::spawn(pm.clone(), ms.clone(), &config.api_addr);
+        let api = Http::spawn(router.clone(), pm.clone(), ms.clone(), &config.api_addr);
 
         Ok(Stack {
             _router: router,

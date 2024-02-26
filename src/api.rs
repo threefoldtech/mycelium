@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, SocketAddr},
     ops::Deref,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -31,7 +32,10 @@ pub struct Http {
 }
 
 #[derive(Clone)]
+/// Shared state accessible in HTTP endpoint handlers.
 struct HttpServerState {
+    /// Access to the (`Router`)(crate::router::Router) state. This is only meant as read only view.
+    router: Arc<Mutex<crate::router::Router>>,
     /// Access to the connection state of (`Peer`)[crate::peer::Peer]s.
     peer_manager: PeerManager,
     /// Access to messages.
@@ -86,11 +90,13 @@ impl MessageDestination {
 impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
     pub fn spawn(
+        router: crate::router::Router,
         peer_manager: PeerManager,
         message_stack: MessageStack,
         listen_addr: &SocketAddr,
     ) -> Self {
         let server_state = HttpServerState {
+            router: Arc::new(Mutex::new(router)),
             peer_manager,
             message_stack,
         };
