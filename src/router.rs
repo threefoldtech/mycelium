@@ -275,7 +275,7 @@ impl Router {
         }
     }
 
-    /// Get list of all selected route entries.
+    /// Get a list of all selected route entries.
     pub fn load_selected_routes(&self) -> Vec<RouteEntry> {
         let inner = self
             .inner_r
@@ -306,6 +306,21 @@ impl Router {
                 route_entry.seqno(),
             );
         }
+    }
+
+    /// Get a list of all fallback route entries.
+    pub fn load_fallback_routes(&self) -> Vec<RouteEntry> {
+        let inner = self
+            .inner_r
+            .enter()
+            .expect("Write handle is saved on router so it is not dropped before the read handles");
+
+        inner
+            .routing_table
+            .iter()
+            .filter(|(_, re)| !re.selected())
+            .map(|(_, re)| re.clone())
+            .collect()
     }
 
     pub fn print_source_table(&self) {
