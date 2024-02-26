@@ -22,6 +22,8 @@ tags:
     description: Administrative operations
   - name: Peer
     description: Operations related to peer management
+  - name: Route
+    description: Operations related to network routes
   - name: Message
     description: Operations on the embedded message subsystem
 
