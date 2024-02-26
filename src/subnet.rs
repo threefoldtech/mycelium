@@ -1,7 +1,7 @@
 //! A dedicated subnet module.
 //!
 //! The standard library only exposes [`IpAddr`], and types related to
-//! specific IPv4 and IPv6 addresses. It does not however, expose dedicated types to represents
+//! specific IPv4 and IPv6 addresses. It does not however, expose dedicated types to represent
 //! appropriate subnets.
 //!
 //! This code is not meant to fully support subnets, but rather only the subset as needed by the
@@ -21,7 +21,7 @@ pub struct Subnet {
 
 /// An error returned when creating a new [`Subnet`] with an invalid prefix length.
 ///
-/// For IPv4, the max prefix lenght is 32, and for IPv6 it is 128;
+/// For IPv4, the max prefix length is 32, and for IPv6 it is 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrefixLenError;
 

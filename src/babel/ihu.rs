@@ -9,7 +9,7 @@ use crate::metric::Metric;
 
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
-/// Base wire size of an [`Ihu`] without variable lenght address encoding.
+/// Base wire size of an [`Ihu`] without variable length address encoding.
 const IHU_BASE_WIRE_SIZE: u8 = 6;
 
 /// IHU TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-ihu.

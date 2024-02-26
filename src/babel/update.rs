@@ -18,7 +18,7 @@ const UPDATE_FLAG_ROUTER_ID: u8 = 0x40;
 /// Mask to apply to [`Update`] flags, leaving only valid flags.
 const FLAG_MASK: u8 = 0b1100_0000;
 
-/// Base wire size of an [`Update`] without variable lenght address encoding.
+/// Base wire size of an [`Update`] without variable length address encoding.
 const UPDATE_BASE_WIRE_SIZE: u8 = 10 + RouterId::BYTE_SIZE as u8;
 
 /// Update TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-update.
