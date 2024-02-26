@@ -72,6 +72,26 @@ paths:
                 items:
                   $ref: '#/components/schemas/Route'
 
+  '/api/v1/admin/routes/fallback':
+    get:
+      tags:
+        - Admin
+        - Route
+      summary: List all active fallback routes
+      description: |
+        List all fallback routes in the system, and their next hop identifier, metric and sequence number.
+        These routes are available to be selected in case the selected route for a destination suddenly fails, or gets retracted.
+      operationId: getSelectedRoutes
+      responses:
+        '200':
+          description: Succes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Route'
+
   '/api/v1/messages':
     get:
       tags:
