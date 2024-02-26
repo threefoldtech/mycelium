@@ -102,6 +102,7 @@ impl Http {
         };
         let admin_routes = Router::new()
             .route("/admin/peers", get(get_peers))
+            .route("/admin/routes/selected", get(get_selected_routes))
             .with_state(server_state.clone());
         let msg_routes = Router::new()
             .route("/messages", get(get_message).post(push_message))
@@ -322,6 +323,42 @@ async fn message_status(
 async fn get_peers(State(state): State<HttpServerState>) -> Json<Vec<PeerStats>> {
     debug!("Fetching peer stats");
     Json(state.peer_manager.peers())
+}
+
+/// Info about a route. This uses base types only to avoid having to introduce too many Serialize
+/// bounds in the core types.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Route {
+    /// We convert the [`subnet`](Subnet) to a string to avoid introducing a bound on the actual
+    /// type.
+    pub subnet: String,
+    /// Next hop of the route, in the underlay.
+    pub next_hop: String,
+    /// Computed metric of the route.
+    pub metric: u16,
+    /// Sequence number of the route.
+    pub seqno: u16,
+}
+
+/// List all currently selected routes.
+async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<Route>> {
+    debug!("Loading selected routes");
+    let routes = state
+        .router
+        .lock()
+        .unwrap()
+        .load_selected_routes()
+        .into_iter()
+        .map(|sr| Route {
+            subnet: sr.source().subnet().to_string(),
+            next_hop: sr.neighbour().connection_identifier().clone(),
+            metric: sr.metric().into(),
+            seqno: sr.seqno().into(),
+        })
+        .collect();
+
+    Json(routes)
 }
 
 /// Module to implement base64 decoding and encoding
