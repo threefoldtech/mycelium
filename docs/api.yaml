@@ -52,6 +52,26 @@ paths:
                 items:
                   $ref: '#/components/schemas/PeerStats'
 
+  '/api/v1/admin/routes/selected':
+    get:
+      tags:
+        - Admin
+        - Route
+      summary: List all selected routes
+      description: |
+        List all selected routes in the system, and their next hop identifier, metric and sequence number.
+        It is possible for a route to be selected and have an infinite metric. This route will however not forward packets.
+      operationId: getSelectedRoutes
+      responses:
+        '200':
+          description: Succes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Route'
+
   '/api/v1/messages':
     get:
       tags:
@@ -260,6 +280,38 @@ components:
           format: int64
           minimum: 0
           example: 64645089
+
+    Route:
+      description: Information about a route
+      type: object
+      properties:
+        subnet:
+          description: The overlay subnet for which this is the route
+          type: string
+          example: 469:1348:ab0c:a1d8::/64
+        nextHop:
+          description: A way to identify the next hop of the route, where forwarded packets will be sent
+          type: string
+          example: TCP 203.0.113.2:60128 <-> 198.51.100.27:9651
+        metric:
+          description: The metric of the route, an estimation of how long the packet will take to arrive at its final destination
+          oneOf:
+            - description: A finite metric value
+              type: integer
+              format: int32
+              minimum: 0
+              maximum: 65534
+              example: 13
+            - description: An infinite (unreachable) metric. This is always `infinite`
+              type: string
+              example: infinite
+        seqno:
+          description: the sequence number advertised with this route by the source
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 65535
+          example: 1
 
     InboundMessage:
       description: A message received by the system
