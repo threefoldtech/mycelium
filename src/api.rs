@@ -103,6 +103,7 @@ impl Http {
         let admin_routes = Router::new()
             .route("/admin/peers", get(get_peers))
             .route("/admin/routes/selected", get(get_selected_routes))
+            .route("/admin/routes/fallback", get(get_fallback_routes))
             .with_state(server_state.clone());
         let msg_routes = Router::new()
             .route("/messages", get(get_message).post(push_message))
@@ -357,6 +358,30 @@ async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<R
         .lock()
         .unwrap()
         .load_selected_routes()
+        .into_iter()
+        .map(|sr| Route {
+            subnet: sr.source().subnet().to_string(),
+            next_hop: sr.neighbour().connection_identifier().clone(),
+            metric: if sr.metric().is_infinite() {
+                Metric::Infinite
+            } else {
+                Metric::Value(sr.metric().into())
+            },
+            seqno: sr.seqno().into(),
+        })
+        .collect();
+
+    Json(routes)
+}
+
+/// List all active fallback routes.
+async fn get_fallback_routes(State(state): State<HttpServerState>) -> Json<Vec<Route>> {
+    debug!("Loading fallback routes");
+    let routes = state
+        .router
+        .lock()
+        .unwrap()
+        .load_fallback_routes()
         .into_iter()
         .map(|sr| Route {
             subnet: sr.source().subnet().to_string(),
