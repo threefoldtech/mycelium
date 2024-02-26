@@ -57,10 +57,10 @@ to check your own info
 mycelium inspect --json
 {
   "publicKey": "abd16194646defe7ad2318a0f0a69eb2e3fe939c3b0b51cf0bb88bb8028ecd1d",
-  "address": "3c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca"
+  "address": "5c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca"
 }
 # test that network works, ping to anyone in the network
-ping6 3c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca
+ping6 5c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca
 ```
 
 The node uses a `x25519` key pair from which its identity is derived. The private key of this key pair
@@ -113,14 +113,14 @@ format.
 ```sh
 mycelium inspect a47c1d6f2a15b2c670d3a88fbe0aeb301ced12f7bcb4c8e3aa877b20f8559c02
 Public key: a47c1d6f2a15b2c670d3a88fbe0aeb301ced12f7bcb4c8e3aa877b20f8559c02
-Address: 27f:b2c5:a944:4dad:9cb1:da4:8bf7:7e65
+Address: 47f:b2c5:a944:4dad:9cb1:da4:8bf7:7e65
 ```
 
 ```sh
 mycelium inspect --json
 {
   "publicKey": "955bf6bea5e1150fd8e270c12e5b2fc08f08f7c5f3799d10550096cc137d671b",
-  "address": "34f:b680:ba6e:7ced:355f:346f:d97b:eecb"
+  "address": "54f:b680:ba6e:7ced:355f:346f:d97b:eecb"
 }
 ```
 
