@@ -325,6 +325,14 @@ async fn get_peers(State(state): State<HttpServerState>) -> Json<Vec<PeerStats>>
     Json(state.peer_manager.peers())
 }
 
+/// Alias to a [`Metric`](crate::metric::Metric) for serialization in the API.
+pub enum Metric {
+    /// Finite metric
+    Value(u16),
+    /// Infinite metric
+    Infinite,
+}
+
 /// Info about a route. This uses base types only to avoid having to introduce too many Serialize
 /// bounds in the core types.
 #[derive(Serialize)]
@@ -336,7 +344,7 @@ pub struct Route {
     /// Next hop of the route, in the underlay.
     pub next_hop: String,
     /// Computed metric of the route.
-    pub metric: u16,
+    pub metric: Metric,
     /// Sequence number of the route.
     pub seqno: u16,
 }
@@ -353,12 +361,28 @@ async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<R
         .map(|sr| Route {
             subnet: sr.source().subnet().to_string(),
             next_hop: sr.neighbour().connection_identifier().clone(),
-            metric: sr.metric().into(),
+            metric: if sr.metric().is_infinite() {
+                Metric::Infinite
+            } else {
+                Metric::Value(sr.metric().into())
+            },
             seqno: sr.seqno().into(),
         })
         .collect();
 
     Json(routes)
+}
+
+impl Serialize for Metric {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Infinite => serializer.serialize_str("infinite"),
+            Self::Value(v) => serializer.serialize_u16(*v),
+        }
+    }
 }
 
 /// Module to implement base64 decoding and encoding
@@ -417,5 +441,24 @@ mod base64 {
                 Ok(None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn finite_metric_serialization() {
+        let metric = super::Metric::Value(10);
+        let s = serde_json::to_string(&metric).expect("can encode finite metric");
+
+        assert_eq!("10", s);
+    }
+
+    #[test]
+    fn infinite_metric_serialization() {
+        let metric = super::Metric::Infinite;
+        let s = serde_json::to_string(&metric).expect("can encode infinite metric");
+
+        assert_eq!("\"infinite\"", s);
     }
 }
