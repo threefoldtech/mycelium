@@ -95,9 +95,13 @@ pub struct PeerStats {
     pub connection_rx_bytes: u64,
 }
 
-/// Marker to indicate a [`peer`](Endpoint) is already known.
+/// Marker error to indicate a [`peer`](Endpoint) is already known.
 #[derive(Debug)]
 pub struct PeerExists;
+
+/// Marker error to indicate a [`peer`](Endpoint) is not known.
+#[derive(Debug)]
+pub struct PeerNotFound;
 
 struct Inner {
     /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
@@ -173,7 +177,7 @@ impl PeerManager {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the endpoint is already known.
+    /// This function returns an error if the [`Endpoint`] is already known.
     pub fn add_peer(&self, peer: Endpoint) -> Result<(), PeerExists> {
         let mut peer_map = self.inner.peers.lock().unwrap();
         if peer_map.contains_key(&peer) {
@@ -190,6 +194,23 @@ impl PeerManager {
         );
 
         Ok(())
+    }
+
+    /// Delete a peer from the system.
+    ///
+    /// The peer will be disconnected if it is currently connected.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there is no peer identified by the given [`Endpoint`].
+    pub fn delete_peer(&self, endpoint: &Endpoint) -> Result<(), PeerNotFound> {
+        let mut peer_map = self.inner.peers.lock().unwrap();
+        peer_map.remove(endpoint).ok_or(PeerNotFound).map(|pi| {
+            // Make sure we kill the peer connection if one exists
+            if let Some(peer) = pi.pr.upgrade() {
+                peer.died();
+            }
+        })
     }
 
     /// Get a view of all known peers and their stats.
@@ -772,3 +793,11 @@ impl fmt::Display for PeerExists {
 }
 
 impl std::error::Error for PeerExists {}
+
+impl fmt::Display for PeerNotFound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Peer identified by endpoint not known")
+    }
+}
+
+impl std::error::Error for PeerNotFound {}
