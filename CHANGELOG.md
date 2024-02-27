@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The tokio_unstable config flag is no longer used when building.
 
+### Removed
+
+- .cargo/config.toml aarch64-linux target specific entries. Cross compilation for
+  these platforms can use `cross` or entries in the global .cargo/config.toml of
+  the developer instead.
+
 ## [0.4.0] - 2024-02-22
 
 ### Added
