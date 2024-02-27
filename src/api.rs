@@ -101,6 +101,7 @@ impl Http {
             message_stack,
         };
         let admin_routes = Router::new()
+            .route("/admin", get(get_info))
             .route("/admin/peers", get(get_peers))
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
@@ -396,6 +397,21 @@ async fn get_fallback_routes(State(state): State<HttpServerState>) -> Json<Vec<R
         .collect();
 
     Json(routes)
+}
+
+/// General info about a node.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Info {
+    /// The overlay subnet in use by the node.
+    pub node_subnet: String,
+}
+
+/// Get general info about the node.
+async fn get_info(State(state): State<HttpServerState>) -> Json<Info> {
+    Json(Info {
+        node_subnet: state.router.lock().unwrap().node_tun_subnet().to_string(),
+    })
 }
 
 impl Serialize for Metric {
