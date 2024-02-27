@@ -31,7 +31,7 @@ servers:
   - url: 'http://localhost:8989'
 
 paths:
-  '/api/v1/peers':
+  '/api/v1/admin/peers':
     get:
       tags:
         - Admin
