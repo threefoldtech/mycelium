@@ -1,7 +1,7 @@
 [Unit]
-Description=mycelium
-Wants=network-online.target
-After=network-online.target
+Description=End-2-end encrypted IPv6 overlay network
+Wants=network.target
+After=network.target
 Documentation=https://github.com/threefoldtech/mycelium
 
 [Service]
@@ -9,8 +9,10 @@ ProtectHome=true
 ProtectSystem=true
 SyslogIdentifier=mycelium
 CapabilityBoundingSet=CAP_NET_ADMIN
+StateDirectory=mycelium
+StateDirectoryMode=0700
 ExecStartPre=+-/sbin/modprobe tun
-ExecStart=/usr/bin/mycelium --tun-name mycelium -k /etc/mycelium_key.bin --peers tcp://146.185.93.83:9651 quic://83.231.240.31:9651 quic://185.206.122.71:9651 tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651 tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651 quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651
+ExecStart=/usr/bin/mycelium --tun-name mycelium -k %S/mycelium/key.bin --peers tcp://146.185.93.83:9651 quic://83.231.240.31:9651 quic://185.206.122.71:9651 tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651 tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651 quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651
 Restart=always
 RestartSec=5
 TimeoutStopSec=5
