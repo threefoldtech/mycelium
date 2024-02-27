@@ -31,6 +31,22 @@ servers:
   - url: 'http://localhost:8989'
 
 paths:
+  '/api/v1/admin':
+    get:
+      tags:
+        - Admin
+      summary: Get general info about the node
+      description: |
+        Get general info about the node, which is not related to other more specific functionality
+      operationId: getInfo
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Info'
+
   '/api/v1/admin/peers':
     get:
       tags:
@@ -250,6 +266,15 @@ paths:
 
 components:
   schemas:
+    Info:
+      description: General information about a node
+      type: object
+      properties:
+        nodeSubnet:
+          description: The subnet owned by the node and advertised to peers
+          type: string
+          example: 54f:b680:ba6e:7ced::/64
+
     Endpoint:
       description: Identification to connect to a peer
       type: object
