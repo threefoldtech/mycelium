@@ -11,6 +11,7 @@ use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -94,6 +95,10 @@ pub struct PeerStats {
     pub connection_rx_bytes: u64,
 }
 
+/// Marker to indicate a [`peer`](Endpoint) is already known.
+#[derive(Debug)]
+pub struct PeerExists;
+
 struct Inner {
     /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
     router: Mutex<Router>,
@@ -160,6 +165,31 @@ impl PeerManager {
         }
 
         Ok(peer_manager)
+    }
+
+    /// Add a new peer to the system.
+    ///
+    /// The peer starts of as a dead peer, and connecting is handled in the reconnect loop.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the endpoint is already known.
+    pub fn add_peer(&self, peer: Endpoint) -> Result<(), PeerExists> {
+        let mut peer_map = self.inner.peers.lock().unwrap();
+        if peer_map.contains_key(&peer) {
+            return Err(PeerExists);
+        }
+        peer_map.insert(
+            peer,
+            PeerInfo {
+                pt: PeerType::Static,
+                connecting: false,
+                pr: PeerRef::new(),
+                connection_attempts: 0,
+            },
+        );
+
+        Ok(())
     }
 
     /// Get a view of all known peers and their stats.
@@ -734,3 +764,11 @@ fn list_ipv6_interface_ids() -> Result<Vec<u32>, Box<dyn std::error::Error>> {
 
     Ok(nics)
 }
+
+impl fmt::Display for PeerExists {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Peer identified by endpoint already exists")
+    }
+}
+
+impl std::error::Error for PeerExists {}
