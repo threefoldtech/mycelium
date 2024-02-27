@@ -14,7 +14,7 @@ use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 // SAFETY: value is not zero.
 const DEFAULT_HOP_COUNT: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(64) };
 
-/// Base wire size of a [`SeqNoRequest`] without variable lenght address encoding.
+/// Base wire size of a [`SeqNoRequest`] without variable length address encoding.
 const SEQNO_REQUEST_BASE_WIRE_SIZE: u8 = 6 + RouterId::BYTE_SIZE as u8;
 
 /// Seqno request TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-seqno-request

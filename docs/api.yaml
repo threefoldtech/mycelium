@@ -44,7 +44,7 @@ paths:
       operationId: getPeers
       responses:
         '200':
-          description: Succes
+          description: Success
           content:
             application/json:
               schema:
@@ -64,7 +64,7 @@ paths:
       operationId: getSelectedRoutes
       responses:
         '200':
-          description: Succes
+          description: Success
           content:
             application/json:
               schema:
@@ -84,7 +84,7 @@ paths:
       operationId: getSelectedRoutes
       responses:
         '200':
-          description: Succes
+          description: Success
           content:
             application/json:
               schema:
@@ -348,7 +348,7 @@ components:
           description: Sender overlay IP address
           type: string
           format: ipv6
-          example: 249:abcd:0123:defa::1
+          example: 449:abcd:0123:defa::1
         srcPk:
           description: Sender public key, hex encoded
           type: string
@@ -408,7 +408,7 @@ components:
             ip:
               description: The target IP of the message
               format: ipv6
-              example: 249:abcd:0123:defa::1
+              example: 449:abcd:0123:defa::1
         - description: The hex encoded public key of the receiver node
           type: object
           properties:
@@ -432,14 +432,14 @@ components:
           example: 0123456789abcdef
 
     MessageStatusResponse:
-      description: Information about an outobund message
+      description: Information about an outbound message
       type: object
       properties:
         dst:
-          description: Ip address of the receiving node
+          description: IP address of the receiving node
           type: string
           format: ipv6
-          example: 249:abcd:0123:defa::1
+          example: 449:abcd:0123:defa::1
         state: 
           $ref: '#/components/schemas/TransmissionState'
         created:

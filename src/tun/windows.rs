@@ -23,7 +23,7 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    // SAFETY: for now we assume a valid wintun.dll file exists in tehe root directory when we are
+    // SAFETY: for now we assume a valid wintun.dll file exists in the root directory when we are
     // running this.
     let wintun = unsafe { wintun::load() }?;
     let wintun_version = match wintun::get_running_driver_version(&wintun) {

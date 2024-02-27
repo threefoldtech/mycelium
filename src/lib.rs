@@ -33,7 +33,7 @@ mod tun;
 
 /// The prefix of the global subnet used.
 pub const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0));
-/// The prefix lenght of the global subnet used.
+/// The prefix length of the global subnet used.
 pub const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
 /// Config for a mycelium [`Stack`].
@@ -129,10 +129,10 @@ impl Stack {
         let msg_sender = tokio_util::sync::PollSender::new(tx);
 
         let data_plane = if config.no_tun {
-            warn!("Starting data plane witout TUN interface, L3 functionality disabled");
+            warn!("Starting data plane without TUN interface, L3 functionality disabled");
             DataPlane::new(
                 router.clone(),
-                // No tun so create a dummy stream for l3 packets which never yields
+                // No tun so create a dummy stream for L3 packets which never yields
                 tokio_stream::pending(),
                 // Similarly, create a sink which just discards every packet we would receive
                 futures::sink::drain(),

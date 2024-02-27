@@ -7,7 +7,7 @@ use crate::subnet::Subnet;
 
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
-/// Base wire size of a [`RouteRequest`] without variable lenght address encoding.
+/// Base wire size of a [`RouteRequest`] without variable length address encoding.
 const ROUTE_REQUEST_BASE_WIRE_SIZE: u8 = 2;
 
 /// Seqno request TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-route-request
