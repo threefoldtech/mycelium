@@ -145,6 +145,13 @@ cargo build
 
 In case a release build is required, the `--release` flag can be added to the cargo command (`cargo build --release`).
 
+## Cross compilation
+
+For cross compilation, it is advised to use the [`cross`](https://github.com/cross-rs/cross) project.
+Alternatively, the standard way of cross compiling in rust can be used (by specifying
+the `--target` flag in the `cargo build` command). This might require setting some
+environment variables or local cargo config.
+
 ## Remarks
 
 -  The overlay network uses some of the core principles of the Babel routing protocol (<https://www.irif.fr/~jch/software/babel/>). 
