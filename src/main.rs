@@ -309,8 +309,23 @@ async fn load_key_file(path: &Path) -> Result<crypto::SecretKey, io::Error> {
 }
 
 async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
-    let mut file = File::create(path).await?;
-    file.write_all(key.as_bytes()).await?;
+    #[cfg(target_family = "unix")]
+    {
+        use tokio::fs::OpenOptions;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .mode(0o600) // rw by the owner, not readable by group or others
+            .open(path)
+            .await?;
+        file.write_all(key.as_bytes()).await?;
+    }
+    #[cfg(not(target_family = "unix"))]
+    {
+        let mut file = File::create(path).await?;
+        file.write_all(key.as_bytes()).await?;
+    }
 
     Ok(())
 }
