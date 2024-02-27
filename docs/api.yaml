@@ -67,7 +67,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/PeerStats'
-
     post:
       tags:
         - Admin
@@ -79,7 +78,7 @@ paths:
         to by the standard connection loop of the peer manager. This means that a peer
         which can't be connected to will stay in the system, as it might be reachable
         later on.
-      opertionId: addPeer
+      operationId: addPeer
       responses:
         '204':
           description: Peer added
