@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The tokio_unstable config flag is no longer used when building.
+- The key file is now created without read permissions for the group/world.
 
 ### Removed
 
