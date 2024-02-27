@@ -288,36 +288,6 @@ impl Router {
             .collect()
     }
 
-    pub fn print_source_table(&self) {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
-        let source_table = &inner.source_table;
-        for (sk, se) in source_table.iter() {
-            println!("Source key: {}", sk);
-            println!("Source entry: {:?}", se);
-            println!("\n");
-        }
-    }
-
-    /// Prints the origin of every known [`Subnet`], i.e. the fully derived address.
-    pub fn print_subnet_origins(&self) {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
-        for (route_key, route_entry) in inner.routing_table.iter().filter(|(_, re)| re.selected()) {
-            println!(
-                "{} origin {}",
-                route_key.subnet(),
-                route_entry.source().router_id().to_pubkey().address(),
-            );
-        }
-    }
-
     async fn check_for_dead_peers(self) {
         loop {
             // check for dead peers every second

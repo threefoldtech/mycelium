@@ -170,13 +170,4 @@ impl Stack {
             _api: api,
         })
     }
-
-    #[cfg(target_family = "unix")]
-    /// Dump internal state, temporary method.
-    pub fn dump(&self) {
-        println!("----------- Current source table -----------\n");
-        self._router.print_source_table();
-        println!("----------- Subnet origins -----------\n");
-        self._router.print_subnet_origins();
-    }
 }

@@ -275,25 +275,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         api_addr: cli.node_args.api_addr,
     };
 
-    // We set up the stack twice to avoid an unused variable warning
+    let _ = Stack::new(config).await?;
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     #[cfg(target_family = "unix")]
     {
-        let stack = Stack::new(config).await?;
-        let mut sigusr1 =
-            signal::unix::signal(SignalKind::user_defined1()).expect("Can install SIGUSR1 handler");
         let mut sigint =
             signal::unix::signal(SignalKind::interrupt()).expect("Can install SIGINT handler");
         let mut sigterm =
             signal::unix::signal(SignalKind::terminate()).expect("Can install SIGTERM handler");
-
-        // print info on SIGUSR1
-        tokio::spawn(async move {
-            while let Some(()) = sigusr1.recv().await {
-                stack.dump();
-            }
-        });
 
         tokio::select! {
             _ = sigint.recv() => { }
@@ -302,7 +292,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     #[cfg(not(target_family = "unix"))]
     {
-        let _ = Stack::new(config).await?;
         if let Err(e) = tokio::signal::ctrl_c().await {
             log::error!("Failed to wait for SIGINT: {e}");
         }

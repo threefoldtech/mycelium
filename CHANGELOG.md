@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - .cargo/config.toml aarch64-linux target specific entries. Cross compilation for
   these platforms can use `cross` or entries in the global .cargo/config.toml of
   the developer instead.
+- Sending SIGUSR1 to the process on unix based systems no longer dumps internal
+  state, this can be accessed with the admin API instead.
 
 ## [0.4.0] - 2024-02-22
 
