@@ -97,6 +97,35 @@ paths:
                 type: string
                 description: message saying we already know this peer
 
+  '/api/v1/admin/peers/{endpoint}':
+    delete:
+      tags:
+        - Admin
+        - Peer
+      summary: Remove an existing peer
+      description: |
+        Remove an existing peer identified by the provided endpoint.
+        The peer is removed from the list of known peers. If a connection to it
+        is currently active, it will be closed.
+      operationId: deletePeer
+      responses:
+        '204':
+          description: Peer removed
+        '400':
+          description: Malformed endpoint
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Details about why the endpoint is not valid
+        '404':
+          description: Peer doesn't exist
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: message saying we don't know this peer
+
   '/api/v1/admin/routes/selected':
     get:
       tags:
