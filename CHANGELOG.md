@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ability to see current peers and related info
   - List current selected routes
   - List current fallback routes
+  - General node info (for now just the node subnet)
 
 ### Changed
 
