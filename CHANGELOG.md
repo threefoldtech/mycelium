@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - List current selected routes
   - List current fallback routes
 
+### Changed
+
+- The tokio_unstable config flag is no longer used when building.
+
 ## [0.4.0] - 2024-02-22
 
 ### Added
