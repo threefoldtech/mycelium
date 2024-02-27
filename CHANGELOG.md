@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Admin API
   - Ability to see current peers and related info
+  - Ability to add a new peer
   - List current selected routes
   - List current fallback routes
   - General node info (for now just the node subnet)

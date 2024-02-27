@@ -68,6 +68,36 @@ paths:
                 items:
                   $ref: '#/components/schemas/PeerStats'
 
+    post:
+      tags:
+        - Admin
+        - Peer
+      summary: Add a new peer
+      description: |
+        Add a new peer identified by the provided endpoint.
+        The peer is added to the list of known peers. It will eventually be connected
+        to by the standard connection loop of the peer manager. This means that a peer
+        which can't be connected to will stay in the system, as it might be reachable
+        later on.
+      opertionId: addPeer
+      responses:
+        '204':
+          description: Peer added
+        '400':
+          description: Malformed endpoint
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Details about why the endpoint is not valid
+        '409':
+          description: Peer already exists
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: message saying we already know this peer
+
   '/api/v1/admin/routes/selected':
     get:
       tags:

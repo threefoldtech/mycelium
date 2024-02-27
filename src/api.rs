@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, SocketAddr},
     ops::Deref,
+    str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -16,8 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     crypto::PublicKey,
+    endpoint::Endpoint,
     message::{MessageId, MessageInfo, MessageStack},
-    peer_manager::{PeerManager, PeerStats},
+    peer_manager::{PeerExists, PeerManager, PeerStats},
 };
 
 /// Default amount of time to try and send a message if it is not explicitly specified.
@@ -102,7 +104,7 @@ impl Http {
         };
         let admin_routes = Router::new()
             .route("/admin", get(get_info))
-            .route("/admin/peers", get(get_peers))
+            .route("/admin/peers", get(get_peers).post(add_peer))
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
             .with_state(server_state.clone());
@@ -325,6 +327,33 @@ async fn message_status(
 async fn get_peers(State(state): State<HttpServerState>) -> Json<Vec<PeerStats>> {
     debug!("Fetching peer stats");
     Json(state.peer_manager.peers())
+}
+
+/// Payload of an add_peer request
+#[derive(Deserialize)]
+pub struct AddPeer {
+    /// The endpoint used to connect to the peer
+    pub endpoint: String,
+}
+
+/// Add a new peer to the system
+async fn add_peer(
+    State(state): State<HttpServerState>,
+    Json(payload): Json<AddPeer>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    debug!("Attempting to add peer {} to  the system", payload.endpoint);
+    let endpoint = match Endpoint::from_str(&payload.endpoint) {
+        Ok(endpoint) => endpoint,
+        Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string())),
+    };
+
+    match state.peer_manager.add_peer(endpoint) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(PeerExists) => Err((
+            StatusCode::CONFLICT,
+            "A peer identified by that endpoint already exists".to_string(),
+        )),
+    }
 }
 
 /// Alias to a [`Metric`](crate::metric::Metric) for serialization in the API.
