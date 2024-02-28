@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update GitHub CI action to use latest version of the checkout action.
+- Update GitHub CI action to stop using deprecated actions-rs actions.
 
 ## [0.4.2] - 2024-02-28
 
