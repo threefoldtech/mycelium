@@ -24,11 +24,8 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
-    - uses: mbrobbel/rustfmt-check@master
-      with:
-        args: --all -- --check
-        mode: review
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: clechasseur/rs-fmt-check@v2
+      args: --all -- --check
     - uses: giraffate/clippy-action@v1
       with:
         clippy-flags: -- -D warnings 
