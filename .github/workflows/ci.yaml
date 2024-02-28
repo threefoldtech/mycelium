@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
       with:
-        components: clippy
+        components: clippy, rustfmt
     - name: Build
       run: cargo build --verbose
     - name: Run tests
@@ -29,5 +29,5 @@ jobs:
         args: --all -- --check
     - uses: giraffate/clippy-action@v1
       with:
-        clippy-flags: -- -D warnings 
+        clippy-flags: -- -D warnings
         github_token: ${{ secrets.GITHUB_TOKEN }}
