@@ -25,7 +25,8 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     - uses: clechasseur/rs-fmt-check@v2
-      args: --all -- --check
+      with:
+        args: --all -- --check
     - uses: giraffate/clippy-action@v1
       with:
         clippy-flags: -- -D warnings 
