@@ -275,7 +275,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         api_addr: cli.node_args.api_addr,
     };
 
-    let _ = Stack::new(config).await?;
+    let _stack = Stack::new(config).await?;
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     #[cfg(target_family = "unix")]

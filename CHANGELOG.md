@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make sure the HTTP API doesn't shut down immediately after startup.
+
 ## [0.4.1] - 2024-02-27
 
 ### Added
@@ -42,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Overlay network is now hosted in 400::/7 instead of 200::/7. 
+- Overlay network is now hosted in 400::/7 instead of 200::/7.
 - Key file is no longer created if it does not exist when the
   inspect command is run.
 - Packets with destination outside the global subnet now return
@@ -254,7 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove trailing 'e' character from release archive names
 
-## [0.1.0] - 2023-11-15
+## \[0.1.0\] - 2023-11-15
 
 ### Added
 
@@ -263,16 +267,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message subsystem, including API to use it.
 - CLI options to send and receive messages with the API.
 
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.4.1...HEAD
-[0.4.1]: https://github.com/threefoldtech/mycelium/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/threefoldtech/mycelium/compare/v0.3.2...v0.4.0
-[0.3.2]: https://github.com/threefoldtech/mycelium/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/threefoldtech/mycelium/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/threefoldtech/mycelium/compare/v0.2.3...v0.3.0
-[0.2.3]: https://github.com/threefoldtech/mycelium/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/threefoldtech/mycelium/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/threefoldtech/mycelium/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/threefoldtech/mycelium/compare/v0.1.3...v0.2.0
-[0.1.3]: https://github.com/threefoldtech/mycelium/compare/v0.1.2...v0.1.3
-[0.1.2]: https://github.com/threefoldtech/mycelium/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/threefoldtech/mycelium/compare/v0.1.0...v0.1.1
+[0.1.2]: https://github.com/threefoldtech/mycelium/compare/v0.1.1...v0.1.2
+[0.1.3]: https://github.com/threefoldtech/mycelium/compare/v0.1.2...v0.1.3
+[0.2.0]: https://github.com/threefoldtech/mycelium/compare/v0.1.3...v0.2.0
+[0.2.1]: https://github.com/threefoldtech/mycelium/compare/v0.2.0...v0.2.1
+[0.2.2]: https://github.com/threefoldtech/mycelium/compare/v0.2.1...v0.2.2
+[0.2.3]: https://github.com/threefoldtech/mycelium/compare/v0.2.2...v0.2.3
+[0.3.0]: https://github.com/threefoldtech/mycelium/compare/v0.2.3...v0.3.0
+[0.3.1]: https://github.com/threefoldtech/mycelium/compare/v0.3.0...v0.3.1
+[0.3.2]: https://github.com/threefoldtech/mycelium/compare/v0.3.1...v0.3.2
+[0.4.0]: https://github.com/threefoldtech/mycelium/compare/v0.3.2...v0.4.0
+[0.4.1]: https://github.com/threefoldtech/mycelium/compare/v0.4.0...v0.4.1
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.4.1...HEAD
