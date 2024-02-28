@@ -5,6 +5,7 @@ use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
 use log::{error, info, warn};
+#[cfg(feature = "message")]
 use message::MessageStack;
 use router::StaticRoute;
 use subnet::Subnet;
@@ -18,6 +19,7 @@ pub mod endpoint;
 pub mod filters;
 mod interval;
 mod ip_pubkey;
+#[cfg(feature = "message")]
 pub mod message;
 mod metric;
 pub mod packet;
@@ -60,6 +62,7 @@ pub struct Config {
 pub struct Stack {
     _router: router::Router,
     _pm: peer_manager::PeerManager,
+    #[cfg(feature = "message")]
     _ms: message::MessageStack,
     _api: api::Http,
 }
@@ -124,11 +127,16 @@ impl Stack {
         )?;
         info!("Started peer manager");
 
+        #[cfg(feature = "message")]
         let (tx, rx) = tokio::sync::mpsc::channel(100);
+        #[cfg(feature = "message")]
         let msg_receiver = tokio_stream::wrappers::ReceiverStream::new(rx);
+        #[cfg(feature = "message")]
         let msg_sender = tokio_util::sync::PollSender::new(tx);
+        #[cfg(not(feature = "message"))]
+        let msg_sender = futures::sink::drain();
 
-        let data_plane = if config.no_tun {
+        let _data_plane = if config.no_tun {
             warn!("Starting data plane without TUN interface, L3 functionality disabled");
             DataPlane::new(
                 router.clone(),
@@ -159,13 +167,21 @@ impl Stack {
             }
         };
 
-        let ms = MessageStack::new(data_plane, msg_receiver);
+        #[cfg(feature = "message")]
+        let ms = MessageStack::new(_data_plane, msg_receiver);
 
-        let api = Http::spawn(router.clone(), pm.clone(), ms.clone(), &config.api_addr);
+        let api = Http::spawn(
+            router.clone(),
+            pm.clone(),
+            #[cfg(feature = "message")]
+            ms.clone(),
+            &config.api_addr,
+        );
 
         Ok(Stack {
             _router: router,
             _pm: pm,
+            #[cfg(feature = "message")]
             _ms: ms,
             _api: api,
         })

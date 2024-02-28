@@ -13,13 +13,16 @@ use axum::{
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "message")]
+use crate::message::MessageStack;
 use crate::{
     endpoint::Endpoint,
-    message::MessageStack,
     peer_manager::{PeerExists, PeerManager, PeerNotFound, PeerStats},
 };
 
+#[cfg(feature = "message")]
 mod message;
+#[cfg(feature = "message")]
 pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
@@ -37,6 +40,7 @@ struct HttpServerState {
     router: Arc<Mutex<crate::router::Router>>,
     /// Access to the connection state of (`Peer`)[crate::peer::Peer]s.
     peer_manager: PeerManager,
+    #[cfg(feature = "message")]
     /// Access to messages.
     message_stack: MessageStack,
 }
@@ -46,12 +50,13 @@ impl Http {
     pub fn spawn(
         router: crate::router::Router,
         peer_manager: PeerManager,
-        message_stack: MessageStack,
+        #[cfg(feature = "message")] message_stack: MessageStack,
         listen_addr: &SocketAddr,
     ) -> Self {
         let server_state = HttpServerState {
             router: Arc::new(Mutex::new(router)),
             peer_manager,
+            #[cfg(feature = "message")]
             message_stack,
         };
         let admin_routes = Router::new()
@@ -61,10 +66,13 @@ impl Http {
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
             .with_state(server_state.clone());
-        let msg_routes = message::message_router_v1(server_state);
-        let app = Router::new()
-            .nest("/api/v1", msg_routes)
-            .nest("/api/v1", admin_routes);
+        let mut app = Router::new();
+        app = app.nest("/api/v1", admin_routes);
+        #[cfg(feature = "message")]
+        {
+            app = app.nest("/api/v1", message::message_router_v1(server_state));
+        }
+
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         let server = axum::Server::bind(listen_addr)
             .serve(app.into_make_service())

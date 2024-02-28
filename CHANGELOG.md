@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Feature flag for message subsystem. It is enabled by default, but a user can
+  make a custom build with `--default-features-false` which completely leaves out
+  the message related code, should he desire this and have no need for it.
+
 ### Changed
 
 - Update GitHub CI action to use latest version of the checkout action.
