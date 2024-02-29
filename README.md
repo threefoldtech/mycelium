@@ -28,30 +28,21 @@ or by [checking out and building the code yourself](#developing).
 > On Windows, you must have `wintun.dll` in the same directory you are executing the binary from.
 
 Once you have an useable binary, simply start it. If you want to connect to other nodes, you can specify their listening address as
-part of the command (combined with the protocol they are listening on, usually TCP);
+part of the command (combined with the protocol they are listening on, usually TCP). Check the next
+section if you want to connect to hosted public nodes.
 
 ```sh
-mycelium --peers tcp://83.231.240.31:9651 quic://185.206.122.71:9651
+mycelium --peers tcp://188.40.132.242:9651 quic://185.69.166.8:9651
 
 #other example with other tun interface if utun3 (the default) would already be used
 #also here we use sudo e.g. on OSX
-sudo mycelium --peers tcp://83.231.240.31:9651 quic://185.206.122.71:9651 --tun-name utun9
+sudo mycelium --peers tcp://188.40.132.242:9651 quic://185.69.166.8:9651 --tun-name utun9
 
-```
-
-some possible peers
-```
-tcp://146.185.93.83:9651
-quic://83.231.240.31:9651
-quic://185.206.122.71:9651
-tcp://[2a04:f340:c0:71:28cc:b2ff:fe63:dd1c]:9651
-tcp://[2001:728:1000:402:78d3:cdff:fe63:e07e]:9651
-quic://[2a10:b600:1:0:ec4:7aff:fe30:8235]:9651
 ```
 
 By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
 
-to check your own info
+To check your own info
 
 ```bash
 mycelium inspect --json
@@ -77,6 +68,33 @@ route traffic** as normal. It takes part in routing, exchanges route info, and f
 intended for itself.
 
 The node also still allows access to the [message subsystem](#message-system).
+
+## Hosted public nodes
+
+A couple of public nodes are provided, which can be freely connected to. This allows
+anyone to join the global network. These are hosted in 3 geographic regions, on both
+IPv4 and IPv6, and supporting both the Tcp and Quic protocols. The nodes are the
+following:
+
+| Node ID | Region | IPv4 | IPv6 | Tcp port | Quic port |
+| --- | --- | --- | --- | --- | --- |
+| 01 | DE | 188.40.132.242 | 2a01:4f8:221:1e0b::2 | 9651 | 9651 |
+| 02 | DE | 136.243.47.186 | 2a01:4f8:212:fa6::2 | 9651 | 9651 |
+| 03 | BE | 185.69.166.7 | 2a02:1802:5e:0:8478:51ff:fee2:3331 | 9651 | 9651 |
+| 04 | BE | 185.69.166.8 | 2a02:1802:5e:0:8c9e:7dff:fec9:f0d2 | 9651 | 9651 |
+| 05 | FI | 65.21.231.58 | 2a01:4f9:6a:1dc5::2 | 9651 | 9651 |
+| 06 | FI | 65.109.18.113 | 2a01:4f9:5a:1042::2 | 9651 | 9651 |
+
+These nodes are all interconnected, so 2 peers who each connect to a different node
+(or set of disjoint nodes) will still be able to reach each other. For optimal performance,
+it is recommended to connect to all of the above at once however. An example connection
+string could be:
+
+`--peers tcp://188.40.132.242:9651 "tcp://[2a01:4f8:212:fa6::2]:9651" quic://185.69.166.7:9651 "tcp://[2a02:1802:5e:0:8c9e:7dff:fec9:f0d2]:9651" tcp://65.21.231.58:9651 "quic://[2a01:4f9:5a:1042::2]:9651"`
+
+It is up to the user to decide which peers he wants to use, over which protocol.
+Note that quotation may or may not be required, depending on which shell is being
+used.
 
 ## API
 
