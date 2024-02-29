@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update GitHub CI action to use latest version of the checkout action.
 - Update GitHub CI action to stop using deprecated actions-rs actions.
+- Failing to join the link local discovery multicast group now logs as warning
+  instead of error.
 
 ## [0.4.2] - 2024-02-28
 

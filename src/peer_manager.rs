@@ -601,7 +601,7 @@ impl Inner {
         let mut groups_joined = 0;
         for n in ipv6_nics {
             if let Err(e) = sock.join_multicast_v6(&multicast_destination, n) {
-                error!("Failed to join multicast group {e}");
+                warn!("Failed to join multicast group on interface {n}: {e}");
             } else {
                 groups_joined += 1;
                 debug!("Joined multicast group on interface {n}");
