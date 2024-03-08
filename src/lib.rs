@@ -178,7 +178,7 @@ impl Stack {
             pm.clone(),
             #[cfg(feature = "message")]
             ms.clone(),
-            &config.api_addr,
+            config.api_addr,
         );
 
         Ok(Stack {

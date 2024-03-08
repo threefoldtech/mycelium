@@ -51,7 +51,7 @@ impl Http {
         router: crate::router::Router,
         peer_manager: PeerManager,
         #[cfg(feature = "message")] message_stack: MessageStack,
-        listen_addr: &SocketAddr,
+        listen_addr: SocketAddr,
     ) -> Self {
         let server_state = HttpServerState {
             router: Arc::new(Mutex::new(router)),
@@ -74,13 +74,22 @@ impl Http {
         }
 
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-        let server = axum::Server::bind(listen_addr)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(async {
-                cancel_rx.await.ok();
-            });
 
-        tokio::spawn(async {
+        tokio::spawn(async move {
+            let listener = match tokio::net::TcpListener::bind(listen_addr).await {
+                Ok(listener) => listener,
+                Err(e) => {
+                    error!("Failed to bind listener for Http Api server: {e}");
+                    error!("API disabled");
+                    return;
+                }
+            };
+
+            let server =
+                axum::serve(listener, app.into_make_service()).with_graceful_shutdown(async {
+                    cancel_rx.await.ok();
+                });
+
             if let Err(e) = server.await {
                 error!("Http API server error: {e}");
             }
