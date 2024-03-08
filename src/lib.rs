@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
+#[cfg(feature = "http-api")]
 use api::Http;
 use bytes::BytesMut;
 use data::DataPlane;
@@ -64,6 +65,7 @@ pub struct Stack {
     _pm: peer_manager::PeerManager,
     #[cfg(feature = "message")]
     _ms: message::MessageStack,
+    #[cfg(feature = "http-api")]
     _api: api::Http,
 }
 
@@ -170,6 +172,7 @@ impl Stack {
         #[cfg(feature = "message")]
         let ms = MessageStack::new(_data_plane, msg_receiver);
 
+        #[cfg(feature = "http-api")]
         let api = Http::spawn(
             router.clone(),
             pm.clone(),
@@ -183,6 +186,7 @@ impl Stack {
             _pm: pm,
             #[cfg(feature = "message")]
             _ms: ms,
+            #[cfg(feature = "http-api")]
             _api: api,
         })
     }

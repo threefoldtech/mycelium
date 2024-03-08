@@ -7,8 +7,9 @@ license-file = "LICENSE"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["message"]
+default = ["message", "http-api"]
 message = []
+http-api = []
 
 [dependencies]
 tokio = { version = "1.36.0", features = [
