@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Failing to join the link local discovery multicast group now logs as warning
   instead of error.
 
+### Fixed
+
+- Add proper validation when receiving an OOB ICMP packet.
+
 ## [0.4.2] - 2024-02-28
 
 ### Fixed

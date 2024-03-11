@@ -342,9 +342,30 @@ impl DataPlane {
                         continue;
                     };
 
-                    let (_, body) = etherparse::IpHeaders::from_slice(&real_packet[16..]).unwrap();
-                    let (header, body) =
-                        etherparse::Icmpv6Header::from_slice(body.payload).unwrap();
+                    let (_, body) = match etherparse::IpHeaders::from_slice(&real_packet[16..]) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            // This is a node which does not adhere to the protocol of sending back
+                            // ICMP like this, or it is intentionally sending mallicious packets.
+                            debug!(
+                                "Dropping malformed OOB ICMP packet from {} for {e}",
+                                data_packet.src_ip
+                            );
+                            continue;
+                        }
+                    };
+                    let (header, body) = match etherparse::Icmpv6Header::from_slice(body.payload) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            // This is a node which does not adhere to the protocol of sending back
+                            // ICMP like this, or it is intentionally sending mallicious packets.
+                            debug!(
+                                "Dropping OOB ICMP packet from {} with malformed ICMP header ({e})",
+                                data_packet.src_ip
+                            );
+                            continue;
+                        }
+                    };
 
                     // Where are the leftover bytes coming from
                     let orig_pb = match key.decrypt(body[..body.len()].to_vec()) {
