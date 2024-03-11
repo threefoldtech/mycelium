@@ -342,9 +342,9 @@ impl DataPlane {
                         continue;
                     };
 
-                    let (_, _, body) =
-                        etherparse::IpHeader::from_slice(&real_packet[16..]).unwrap();
-                    let (header, body) = etherparse::Icmpv6Header::from_slice(body).unwrap();
+                    let (_, body) = etherparse::IpHeaders::from_slice(&real_packet[16..]).unwrap();
+                    let (header, body) =
+                        etherparse::Icmpv6Header::from_slice(body.payload).unwrap();
 
                     // Where are the leftover bytes coming from
                     let orig_pb = match key.decrypt(body[..body.len()].to_vec()) {
