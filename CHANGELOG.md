@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature flag for message subsystem. It is enabled by default, but a user can
   make a custom build with `--default-features-false` which completely leaves out
   the message related code, should he desire this and have no need for it.
+- Link local discovery now periodically checks for new IPv6 enabled interfaces
+  and also joins the discovery multicast group on them.
 
 ### Changed
 
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update GitHub CI action to stop using deprecated actions-rs actions.
 - Failing to join the link local discovery multicast group now logs as warning
   instead of error.
+- Failing to join any IPv6 multicast group for link local peer discovery will no
+  longer disable local peer discovery entirely.
 
 ### Fixed
 

@@ -10,7 +10,7 @@ use network_interface::NetworkInterfaceConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -585,33 +585,43 @@ impl Inner {
             "Bound multicast discovery interface to {}",
             sock.local_addr().expect("can look up our own address")
         );
-        let ipv6_nics = match list_ipv6_interface_ids() {
-            Ok(nic_ids) if !nic_ids.is_empty() => nic_ids,
-            Ok(_) => {
-                warn!("No IPv6 link local address found in local nics");
-                warn!("Link local peer discovery disabled");
-                return;
+
+        // Keep track of which interfaces we are already a part of.
+        let mut joined_interfaces = HashSet::new();
+        // Join the multicast discovery group on newly detected interfaces.
+        let mut join_new_interfaces = || {
+            let ipv6_nics = list_ipv6_interface_ids()?;
+            // Keep the existing interfaces, removing interface ids we previously joined but are no
+            // longer found when listing ids. We simply discard unknown ids, and assume if the
+            // interface is gone (or it's IPv6), that we also implicitly left the group (i.e. no
+            // cleanup is needed on our end).
+            let kept_interfaces = joined_interfaces.intersection(&ipv6_nics);
+            joined_interfaces = kept_interfaces.copied().collect();
+            // Since [`HashSet::difference`] keeps a reference to both sets we need to exhaust the
+            // iterator first so we can later mutate the firs set.
+            let new_interfaces = ipv6_nics
+                .difference(&joined_interfaces)
+                .copied()
+                .collect::<Vec<_>>();
+            for new_iface in new_interfaces {
+                if let Err(e) = sock.join_multicast_v6(&multicast_destination, new_iface) {
+                    warn!("Failed to join multicast group on interface {new_iface}: {e}");
+                } else {
+                    debug!("Joined multicast group on interface {new_iface}");
+                    joined_interfaces.insert(new_iface);
+                }
             }
-            Err(e) => {
-                error!("Could not list local interface ids {e}");
-                warn!("Link local peer discovery disabled");
-                return;
+
+            // A user likely wants to know this. If there is intentionally no IPv6 enabled
+            // interface, then the peer discovery can be disabled entirely to save some CPU cycles
+            // and silence this.
+            if joined_interfaces.is_empty() {
+                warn!("Link local peer discovery enabled but discovery group is not joined on any interface");
             }
+
+            Ok::<_, Box<dyn std::error::Error>>(())
         };
-        let mut groups_joined = 0;
-        for n in ipv6_nics {
-            if let Err(e) = sock.join_multicast_v6(&multicast_destination, n) {
-                warn!("Failed to join multicast group on interface {n}: {e}");
-            } else {
-                groups_joined += 1;
-                debug!("Joined multicast group on interface {n}");
-            }
-        }
-        if groups_joined == 0 {
-            warn!("Failed to join any multicast group");
-            warn!("Link local peer discovery disabled");
-            return;
-        }
+
         // We don't care about our own multicast beacons
         if let Err(e) = sock.set_multicast_loop_v6(false) {
             warn!("Could not disable multicast loop: {e}");
@@ -629,6 +639,9 @@ impl Inner {
             let mut buf = [0; PEER_DISCOVERY_BEACON_SIZE];
             tokio::select! {
                 _ = send_timer.tick() => {
+                    if let Err(e) = join_new_interfaces() {
+                        error!("Issue while joining new IPv6 multicast interfaces: {e}");
+                    };
                     if let Err(e) = sock.send_to(
                         &beacon,
                         SocketAddr::new(multicast_destination.into(), peer_discovery_port),
@@ -770,14 +783,14 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 }
 
 /// Get a list of the interface identifiers of every network interface with a local IPv6 IP.
-fn list_ipv6_interface_ids() -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-    let mut nics = vec![];
+fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>> {
+    let mut nics = HashSet::new();
     for nic in network_interface::NetworkInterface::show()? {
         for addr in nic.addr {
             if let network_interface::Addr::V6(addr) = addr {
                 // Check if the address is part of fe80::/64
                 if addr.ip.segments()[..4] == [0xfe80, 0, 0, 0] {
-                    nics.push(nic.index);
+                    nics.insert(nic.index);
                 }
             }
         }
