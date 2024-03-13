@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and also joins the discovery multicast group on them.
 - Trace logs are removed from release binaries at compile time, slightly reducing
   binary size.
+- New `--silent` flag which disables all logging except error logs.
 
 ### Changed
 

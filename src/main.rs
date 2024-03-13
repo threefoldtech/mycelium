@@ -45,9 +45,13 @@ struct Cli {
     #[arg(short = 'k', long = "key-file", global = true)]
     key_file: Option<PathBuf>,
 
-    /// Enable debug logging
+    /// Enable debug logging. Does nothing if `--silent` is set.
     #[arg(short = 'd', long = "debug", default_value_t = false)]
     debug: bool,
+
+    /// Disable all logs except error logs.
+    #[arg(long = "silent", default_value_t = false)]
+    silent: bool,
 
     #[clap(flatten)]
     node_args: NodeArguments,
@@ -174,7 +178,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::formatted_timed_builder()
         .filter_module(
             "mycelium",
-            if cli.debug {
+            if cli.silent {
+                LevelFilter::Error
+            } else if cli.debug {
                 LevelFilter::Debug
             } else {
                 LevelFilter::Info
