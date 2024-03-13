@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the message related code, should he desire this and have no need for it.
 - Link local discovery now periodically checks for new IPv6 enabled interfaces
   and also joins the discovery multicast group on them.
+- Trace logs are removed from release binaries at compile time, slightly reducing
+  binary size.
 
 ### Changed
 
