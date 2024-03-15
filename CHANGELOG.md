@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2024-03-15
+
 ### Added
 
 - Feature flag for message subsystem. It is enabled by default, but a user can
@@ -306,4 +308,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.4.0]: https://github.com/threefoldtech/mycelium/compare/v0.3.2...v0.4.0
 [0.4.1]: https://github.com/threefoldtech/mycelium/compare/v0.4.0...v0.4.1
 [0.4.2]: https://github.com/threefoldtech/mycelium/compare/v0.4.1...v0.4.2
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.4.2...HEAD
+[0.4.3]: https://github.com/threefoldtech/mycelium/compare/v0.4.2...v0.4.3
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.4.3...HEAD
