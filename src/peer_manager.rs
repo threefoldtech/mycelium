@@ -13,6 +13,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -64,6 +65,17 @@ struct PeerInfo {
     /// Amount of failed times we tried to connect to this peer. This is reset after a successful
     /// connection.
     connection_attempts: usize,
+    /// Keep track of the amount of bytes we've sent to and received from this peer.
+    con_traffic: ConnectionTraffic,
+}
+
+/// Counters for the amount of traffic written to and received from a [`Peer`].
+#[derive(Debug, Clone)]
+struct ConnectionTraffic {
+    /// Amount of bytes transmitted to this peer.
+    tx_bytes: Arc<AtomicU64>,
+    /// Amount of bytes received from this peer.
+    rx_bytes: Arc<AtomicU64>,
 }
 
 /// General state about a connection to a [`Peer`].
@@ -140,6 +152,10 @@ impl PeerManager {
                                     connecting: false,
                                     pr: PeerRef::new(),
                                     connection_attempts: 0,
+                                    con_traffic: ConnectionTraffic {
+                                        tx_bytes: Arc::new(AtomicU64::new(0)),
+                                        rx_bytes: Arc::new(AtomicU64::new(0)),
+                                    },
                                 },
                             )
                         })
@@ -190,6 +206,10 @@ impl PeerManager {
                 connecting: false,
                 pr: PeerRef::new(),
                 connection_attempts: 0,
+                con_traffic: ConnectionTraffic {
+                    tx_bytes: Arc::new(AtomicU64::new(0)),
+                    rx_bytes: Arc::new(AtomicU64::new(0)),
+                },
             },
         );
 
@@ -289,7 +309,7 @@ impl Inner {
                             }
                             // Mark that we are connecting to the peer.
                             pi.connecting = true;
-                            connection_futures.push(self.clone().connect_peer(*endpoint));
+                            connection_futures.push(self.clone().connect_peer(*endpoint, pi.con_traffic.clone()));
                         }
                     }
                 }
@@ -298,15 +318,23 @@ impl Inner {
     }
 
     /// Create a new connection to a remote peer
-    async fn connect_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
+    async fn connect_peer(
+        self: Arc<Self>,
+        endpoint: Endpoint,
+        ct: ConnectionTraffic,
+    ) -> (Endpoint, Option<Peer>) {
         debug!("Connecting to {endpoint}");
         match endpoint.proto() {
-            Protocol::Tcp => self.connect_tcp_peer(endpoint).await,
-            Protocol::Quic => self.connect_quic_peer(endpoint).await,
+            Protocol::Tcp => self.connect_tcp_peer(endpoint, ct).await,
+            Protocol::Quic => self.connect_quic_peer(endpoint, ct).await,
         }
     }
 
-    async fn connect_tcp_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
+    async fn connect_tcp_peer(
+        self: Arc<Self>,
+        endpoint: Endpoint,
+        ct: ConnectionTraffic,
+    ) -> (Endpoint, Option<Peer>) {
         match TcpStream::connect(endpoint.address()).await {
             Ok(peer_stream) => {
                 debug!("Opened connection to {endpoint}");
@@ -328,6 +356,8 @@ impl Inner {
                         router_control_tx,
                         peer_stream,
                         dead_peer_sink,
+                        ct.tx_bytes,
+                        ct.rx_bytes,
                     )
                 };
                 match res {
@@ -348,7 +378,11 @@ impl Inner {
         }
     }
 
-    async fn connect_quic_peer(self: Arc<Self>, endpoint: Endpoint) -> (Endpoint, Option<Peer>) {
+    async fn connect_quic_peer(
+        self: Arc<Self>,
+        endpoint: Endpoint,
+        ct: ConnectionTraffic,
+    ) -> (Endpoint, Option<Peer>) {
         let mut config = quinn::ClientConfig::new(Arc::new(
             rustls::ClientConfig::builder()
                 .with_safe_defaults()
@@ -384,7 +418,14 @@ impl Inner {
                             let router_control_tx = router.router_control_tx();
                             let dead_peer_sink = router.dead_peer_sink().clone();
 
-                            Peer::new(router_data_tx, router_control_tx, q_con, dead_peer_sink)
+                            Peer::new(
+                                router_data_tx,
+                                router_control_tx,
+                                q_con,
+                                dead_peer_sink,
+                                ct.tx_bytes,
+                                ct.rx_bytes,
+                            )
                         };
                         match res {
                             Ok(new_peer) => {
@@ -424,11 +465,15 @@ impl Inner {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, remote)) => {
+                        let tx_bytes = Arc::new(AtomicU64::new(0));
+                        let rx_bytes = Arc::new(AtomicU64::new(0));
                         let new_peer = match Peer::new(
                             router_data_tx.clone(),
                             router_control_tx.clone(),
                             stream,
                             dead_peer_sink.clone(),
+                            tx_bytes.clone(),
+                            rx_bytes.clone(),
                         ) {
                             Ok(peer) => peer,
                             Err(e) => {
@@ -440,6 +485,7 @@ impl Inner {
                         self.add_peer(
                             Endpoint::new(Protocol::Tcp, remote),
                             PeerType::Inbound,
+                            ConnectionTraffic { tx_bytes, rx_bytes },
                             Some(new_peer),
                         );
                     }
@@ -483,11 +529,15 @@ impl Inner {
                 }
             };
 
+            let tx_bytes = Arc::new(AtomicU64::new(0));
+            let rx_bytes = Arc::new(AtomicU64::new(0));
             let new_peer = match Peer::new(
                 router_data_tx.clone(),
                 router_control_tx.clone(),
                 q,
                 dead_peer_sink.clone(),
+                tx_bytes.clone(),
+                rx_bytes.clone(),
             ) {
                 Ok(peer) => peer,
                 Err(e) => {
@@ -499,13 +549,20 @@ impl Inner {
             self.add_peer(
                 Endpoint::new(Protocol::Quic, con.remote_address()),
                 PeerType::Inbound,
+                ConnectionTraffic { tx_bytes, rx_bytes },
                 Some(new_peer),
             )
         }
     }
 
     /// Add a new peer identifier we discovered.
-    fn add_peer(&self, endpoint: Endpoint, discovery_type: PeerType, peer: Option<Peer>) {
+    fn add_peer(
+        &self,
+        endpoint: Endpoint,
+        discovery_type: PeerType,
+        con_traffic: ConnectionTraffic,
+        peer: Option<Peer>,
+    ) {
         let mut peers = self.peers.lock().unwrap();
         // Only if we don't know it yet.
         if let Entry::Vacant(e) = peers.entry(endpoint) {
@@ -518,6 +575,7 @@ impl Inner {
                     PeerRef::new()
                 },
                 connection_attempts: 0,
+                con_traffic,
             });
             if let Some(p) = peer {
                 self.router.lock().unwrap().add_peer_interface(p);
@@ -538,6 +596,7 @@ impl Inner {
                         PeerRef::new()
                     },
                     connection_attempts: 0,
+                    con_traffic,
                 },
             );
             // If we have a new peer notify insert the new one in the router, then notify it that
@@ -708,6 +767,10 @@ impl Inner {
         self.add_peer(
             Endpoint::new(Protocol::Tcp, remote),
             PeerType::LinkLocalDiscovery,
+            ConnectionTraffic {
+                tx_bytes: Arc::new(AtomicU64::new(0)),
+                rx_bytes: Arc::new(AtomicU64::new(0)),
+            },
             None,
         );
     }

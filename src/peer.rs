@@ -57,10 +57,10 @@ impl Peer {
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
         connection: C,
         dead_peer_sink: mpsc::Sender<Peer>,
+        bytes_written: Arc<AtomicU64>,
+        bytes_read: Arc<AtomicU64>,
     ) -> Result<Self, io::Error> {
         // Wrap connection so we can get access to the counters.
-        let bytes_read = Arc::new(AtomicU64::new(0));
-        let bytes_written = Arc::new(AtomicU64::new(0));
         let connection =
             connection::Tracked::new(bytes_read.clone(), bytes_written.clone(), connection);
 

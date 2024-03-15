@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The amount of bytes read and written to a peer are now no longer reset after
+  a reconnect (for outgoing connection).
+
 ## [0.4.3] - 2024-03-15
 
 ### Added
