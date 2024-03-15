@@ -13,7 +13,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -101,10 +101,24 @@ pub struct PeerStats {
     pub pt: PeerType,
     /// State of the connection to this [`Peer`]
     pub connection_state: ConnectionState,
-    /// Amount of bytes transmitted on the current connection.
-    pub connection_tx_bytes: u64,
-    /// Amount of bytes received on the cureent conntection.
-    pub connection_rx_bytes: u64,
+    /// Amount of bytes transmitted to this [`Peer`].
+    pub tx_bytes: u64,
+    /// Amount of bytes received from this [`Peer`].
+    pub rx_bytes: u64,
+}
+
+impl PeerInfo {
+    /// Return the amount of bytes read from this peer.
+    #[inline]
+    fn read(&self) -> u64 {
+        self.con_traffic.rx_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Return the amount of bytes written to this peer.
+    #[inline]
+    fn written(&self) -> u64 {
+        self.con_traffic.rx_bytes.load(Ordering::Relaxed)
+    }
 }
 
 /// Marker error to indicate a [`peer`](Endpoint) is already known.
@@ -238,18 +252,19 @@ impl PeerManager {
         let peer_map = self.inner.peers.lock().unwrap();
         let mut pi = Vec::with_capacity(peer_map.len());
         for (endpoint, peer_info) in peer_map.iter() {
-            let (connection_state, connection_tx_bytes, connection_rx_bytes) =
-                match peer_info.pr.upgrade() {
-                    None if !peer_info.connecting => (ConnectionState::Dead, 0, 0),
-                    None => (ConnectionState::Connecting, 0, 0),
-                    Some(peer) => (ConnectionState::Alive, peer.written(), peer.read()),
-                };
+            let connection_state = if peer_info.connecting {
+                ConnectionState::Connecting
+            } else if peer_info.pr.alive() {
+                ConnectionState::Alive
+            } else {
+                ConnectionState::Dead
+            };
             pi.push(PeerStats {
                 endpoint: *endpoint,
                 pt: peer_info.pt.clone(),
                 connection_state,
-                connection_tx_bytes,
-                connection_rx_bytes,
+                tx_bytes: peer_info.written(),
+                rx_bytes: peer_info.read(),
             });
         }
         pi

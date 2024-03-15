@@ -61,8 +61,7 @@ impl Peer {
         bytes_read: Arc<AtomicU64>,
     ) -> Result<Self, io::Error> {
         // Wrap connection so we can get access to the counters.
-        let connection =
-            connection::Tracked::new(bytes_read.clone(), bytes_written.clone(), connection);
+        let connection = connection::Tracked::new(bytes_read, bytes_written, connection);
 
         // Data channel for peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
@@ -78,8 +77,6 @@ impl Peer {
                 to_peer_control,
                 connection_identifier: connection.identifier()?,
                 static_link_cost: connection.static_link_cost()?,
-                read: bytes_read,
-                written: bytes_written,
                 death_notifier,
                 alive: AtomicBool::new(true),
             }),
@@ -259,16 +256,6 @@ impl Peer {
             inner: Arc::downgrade(&self.inner),
         }
     }
-
-    /// Get the amount of bytes received from this `Peer`.
-    pub fn read(&self) -> u64 {
-        self.inner.read.load(Ordering::Relaxed)
-    }
-
-    /// Get the amount of bytes written to this `Peer`.
-    pub fn written(&self) -> u64 {
-        self.inner.written.load(Ordering::Relaxed)
-    }
 }
 
 impl PeerRef {
@@ -315,10 +302,6 @@ struct PeerInner {
     /// Static cost of using this link, to be added to the announced metric for routes through this
     /// Peer.
     static_link_cost: u16,
-    /// Amount of bytes received from the remote.
-    read: Arc<AtomicU64>,
-    /// Amount of bytes sent to the remote.
-    written: Arc<AtomicU64>,
     /// Channel to notify the connection of its decease.
     death_notifier: Arc<Notify>,
     /// Keep track if the connection is alive.

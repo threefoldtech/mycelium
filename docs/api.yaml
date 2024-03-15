@@ -371,14 +371,14 @@ components:
             - 'connecting'
             - 'dead'
           example: alive
-        connectionTxBytes:
-          description: The amount of bytes transmitted on the current connection
+        txBytes:
+          description: The amount of bytes transmitted to this peer
           type: integer
           format: int64
           minimum: 0
           example: 464531564
-        connectionRxBytes:
-          description: The amount of bytes received on the current connection
+        rxBytes:
+          description: The amount of bytes received from this peer
           type: integer
           format: int64
           minimum: 0
