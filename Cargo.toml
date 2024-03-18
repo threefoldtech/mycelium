@@ -36,7 +36,7 @@ aes-gcm = "0.10.3"
 log = { version = "0.4.21", features = ["release_max_level_debug"] }
 pretty_env_logger = "0.5.0"
 faster-hex = "0.8.0"
-tokio-stream = { version = "0.1.14", features = ["sync"] }
+tokio-stream = { version = "0.1.15", features = ["sync"] }
 left-right = "0.11.5"
 ipnet = "2.8.0"
 ip_network_table-deps-treebitmap = "0.5.0"
