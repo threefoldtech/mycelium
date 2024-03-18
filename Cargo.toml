@@ -65,7 +65,7 @@ rcgen = "0.12.1"
 network-interface = "1.1.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-rtnetlink = "0.13.1"
+rtnetlink = "0.14.1"
 tokio-tun = "0.11.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
