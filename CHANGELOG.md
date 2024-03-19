@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `txBytes` and `rxBytes` to better express that they are no longer tied to
   a single connection to the peer.
 
+### Fixed
+
+- When joining a link local multicast group on an interface returns a `Address
+  already in use` error, the error is now ignored and the interface is considered
+  to be joined.
+
 ## [0.4.3] - 2024-03-15
 
 ### Added

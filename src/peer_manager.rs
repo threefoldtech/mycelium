@@ -678,11 +678,20 @@ impl Inner {
                 .copied()
                 .collect::<Vec<_>>();
             for new_iface in new_interfaces {
-                if let Err(e) = sock.join_multicast_v6(&multicast_destination, new_iface) {
-                    warn!("Failed to join multicast group on interface {new_iface}: {e}");
-                } else {
-                    debug!("Joined multicast group on interface {new_iface}");
-                    joined_interfaces.insert(new_iface);
+                match sock.join_multicast_v6(&multicast_destination, new_iface) {
+                    Err(e) if e.kind() == tokio::io::ErrorKind::AddrInUse => {
+                        // This could happen if the multicast listener is already bound but we
+                        // somehow forgot about it.
+                        debug!("Multicast group on interface {new_iface} already in use, consider it to be joined");
+                        joined_interfaces.insert(new_iface);
+                    }
+                    Err(e) => {
+                        warn!("Failed to join multicast group on interface {new_iface}: {e}");
+                    }
+                    Ok(()) => {
+                        debug!("Joined multicast group on interface {new_iface}");
+                        joined_interfaces.insert(new_iface);
+                    }
                 }
             }
 
