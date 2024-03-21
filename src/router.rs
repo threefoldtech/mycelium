@@ -22,7 +22,7 @@ use std::{
     error::Error,
     fmt::Debug,
     net::{IpAddr, Ipv6Addr},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
@@ -70,6 +70,7 @@ impl StaticRoute {
 pub struct Router {
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
     inner_r: ReadHandle<RouterInner>,
+    source_table: Arc<RwLock<SourceTable>>,
     router_id: RouterId,
     node_keypair: (SecretKey, PublicKey),
     router_data_tx: Sender<DataPacket>,
@@ -107,6 +108,7 @@ impl Router {
         let router = Router {
             inner_w: Arc::new(Mutex::new(inner_w)),
             inner_r,
+            source_table: Arc::new(RwLock::new(SourceTable::new())),
             router_id,
             node_keypair,
             router_data_tx,
@@ -407,7 +409,14 @@ impl Router {
             )));
             inner_w.publish();
 
-            Router::trigger_update(&mut inner_w, subnet, self.router_id);
+            Router::trigger_update(
+                &inner_w
+                    .enter()
+                    .expect("Reading through write handle always works"),
+                subnet,
+                self.router_id,
+                &mut self.source_table.write().unwrap(),
+            );
         }
     }
 
@@ -417,10 +426,8 @@ impl Router {
         mut expired_source_key_stream: mpsc::Receiver<SourceKey>,
     ) {
         while let Some(sk) = expired_source_key_stream.recv().await {
-            let mut inner = self.inner_w.lock().unwrap();
             debug!("Removing expired source entry {sk}");
-            inner.append(RouterOpLogEntry::RemoveSourceEntry(sk));
-            inner.publish();
+            self.source_table.write().unwrap().remove(&sk);
         }
         warn!("Expired source key processing halted");
     }
@@ -493,7 +500,12 @@ impl Router {
                         .publish();
                     // If the entry wasn't retracted yet, notify our peers.
                     if !entry.metric().is_infinite() {
-                        Router::trigger_update(&mut inner, subnet, self.router_id);
+                        Router::trigger_update(
+                            &inner.enter().expect("Read through write handle"),
+                            subnet,
+                            self.router_id,
+                            &mut self.source_table.write().unwrap(),
+                        );
                     }
                 }
             }
@@ -558,42 +570,39 @@ impl Router {
     /// requested subnet. If no subnet is requested (in other words the wildcard address), we dump
     /// the full routing table.
     fn handle_incoming_route_request(&self, route_request: babel::RouteRequest, source_peer: Peer) {
-        let mut inner_w = self.inner_w.lock().unwrap();
+        let inner = self
+            .inner_r
+            .enter()
+            .expect("We deref through a write handle so this is always Some; qed");
 
-        let ops = {
-            let inner = inner_w
-                .enter()
-                .expect("We deref through a write handle so this is always Some; qed");
-
-            let mut ops = vec![];
-            // Handle the case of a single subnet.
-            if let Some(subnet) = route_request.prefix() {
-                if let Some(sre) = inner.routing_table.lookup_selected(subnet.address()) {
-                    // Optimization: Don't send an update if the selected route next-hop is the peer
-                    // who requested the route, as per the babel protocol the update will never be
-                    // accepted.
-                    if sre.neighbour() == &source_peer {
-                        return;
-                    }
-                    let update = babel::Update::new(
-                        UPDATE_INTERVAL,
-                        sre.seqno(),
-                        sre.metric() + Metric::from(sre.neighbour().link_cost()),
-                        subnet,
-                        sre.source().router_id(),
-                    );
-                    ops.extend(inner.send_update(&source_peer, update));
+        // Handle the case of a single subnet.
+        if let Some(subnet) = route_request.prefix() {
+            if let Some(sre) = inner.routing_table.lookup_selected(subnet.address()) {
+                // Optimization: Don't send an update if the selected route next-hop is the peer
+                // who requested the route, as per the babel protocol the update will never be
+                // accepted.
+                if sre.neighbour() == &source_peer {
+                    return;
                 }
-            } else {
-                // Requested a full route table dump
-                ops.extend(inner.propagate_selected_routes_to_peer(&source_peer));
-                ops.extend(inner.propagate_static_route_to_peer(&source_peer, self.router_id()));
+                let update = babel::Update::new(
+                    UPDATE_INTERVAL,
+                    sre.seqno(),
+                    sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                    subnet,
+                    sre.source().router_id(),
+                );
+                inner.send_update(
+                    &source_peer,
+                    &mut self.source_table.write().unwrap(),
+                    update,
+                );
             }
-            ops
-        };
-
-        inner_w.extend(ops);
-        inner_w.publish();
+        } else {
+            // Requested a full route table dump
+            let mut source_table = self.source_table.write().unwrap();
+            inner.propagate_selected_routes_to_peer(&source_peer, &mut source_table);
+            inner.propagate_static_route_to_peer(&source_peer, self.router_id(), &mut source_table);
+        }
     }
 
     fn handle_incoming_seqno_request(&self, mut seqno_request: SeqNoRequest, source_peer: Peer) {
@@ -635,17 +644,15 @@ impl Router {
                     // if the router_id is not in the map, then the route came from the node itself
                     route_entry.source().router_id(),
                 );
-                let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
 
-                let op = inner_w
+                self.inner_r
                     .enter()
                     .expect("We enter through a write handle so this can never be None")
-                    .send_update(&source_peer, update);
-
-                if let Some(op) = op {
-                    inner_w.append(op);
-                    inner_w.publish();
-                }
+                    .send_update(
+                        &source_peer,
+                        &mut self.source_table.write().unwrap(),
+                        update,
+                    );
 
                 return;
             }
@@ -683,13 +690,11 @@ impl Router {
             // calling the method to propagate the static routes.
             inner_w.publish();
 
-            let ops = inner_w
+            self.inner_r
                 .enter()
                 .expect("We enter through a write handle so this can never be None")
-                .propagate_static_route(self.router_id);
+                .propagate_static_route(self.router_id, &mut self.source_table.write().unwrap());
 
-            inner_w.extend(ops);
-            inner_w.publish();
             return;
         }
 
@@ -705,8 +710,9 @@ impl Router {
             let possible_routes = inner.routing_table.entries(seqno_request.prefix());
 
             // First only consider feasible routes.
+            let source_table = self.source_table.read().unwrap();
             if let Some(re) = possible_routes.iter().find(|re| {
-                inner.source_table.route_feasible(re)
+                source_table.route_feasible(re)
                     && re.neighbour() != &source_peer
                     && !re.metric().is_infinite()
             }) {
@@ -751,12 +757,12 @@ impl Router {
         routes: &'a [RouteEntry],
         current: Option<&'a RouteEntry>,
     ) -> Option<&'a RouteEntry> {
-        let inner = self.inner_r.enter().expect("Write handle is saved on router so it can never go out of scope before this read handle; qed.");
         // Since retracted routes have the highest possible metrics, this will only select one if
         // no non-retracted routes are feasible.
+        let source_table = self.source_table.read().unwrap();
         let best = routes
             .iter()
-            .filter(|re| inner.source_table.route_feasible(re))
+            .filter(|re| source_table.route_feasible(re))
             .min_by_key(|re| re.metric() + Metric::from(re.neighbour().link_cost()));
 
         if let (Some(best), Some(current)) = (best, current) {
@@ -801,6 +807,7 @@ impl Router {
         }
 
         let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
+        let source_table = self.source_table.read().unwrap();
 
         // We load all routes here from the routing table in memory. Because we hold the mutex for the
         // writer, this view is accurate and we can't diverge until the mutex is released. We will
@@ -813,7 +820,7 @@ impl Router {
                 .expect("We deref through a write handle so this enter never fails");
             (
                 inner.routing_table.entries(subnet),
-                inner.source_table.is_update_feasible(&update),
+                source_table.is_update_feasible(&update),
             )
         };
 
@@ -842,10 +849,7 @@ impl Router {
                 && !update_feasible
                 && existing_entry.source().router_id() == router_id
             {
-                let fd = *inner_w
-                    .enter()
-                    .expect("We deref through a write handle so this enter never fails")
-                    .source_table
+                let fd = source_table
                     .get(&existing_entry.source())
                     .unwrap_or_else(|| {
                         panic!(
@@ -919,6 +923,8 @@ impl Router {
             ));
         }
 
+        drop(source_table);
+
         // Now that we applied the update, run route selection.
         let new_selected_route =
             self.find_best_route(&routing_table_entries, old_selected_route.as_ref());
@@ -979,22 +985,25 @@ impl Router {
 
         if trigger_update {
             debug!("Send triggered update for {subnet} in response to update");
-            Router::trigger_update(&mut inner_w, subnet, router_id);
+            Router::trigger_update(
+                &inner_w
+                    .enter()
+                    .expect("Reading through the write handle always works"),
+                subnet,
+                router_id,
+                &mut self.source_table.write().unwrap(),
+            );
         }
     }
 
     /// Trigger an update for the given [`Subnet`].
     fn trigger_update(
-        inner_w: &mut left_right::WriteHandle<RouterInner, RouterOpLogEntry>,
+        inner_r: &left_right::ReadGuard<RouterInner>,
         subnet: Subnet,
         router_id: RouterId,
+        source_table: &mut SourceTable,
     ) {
-        let ops = inner_w
-            .enter()
-            .expect("Deref through write handle never fails")
-            .propagate_selected_route(subnet, router_id);
-        inner_w.extend(ops);
-        inner_w.publish();
+        inner_r.propagate_selected_route(subnet, router_id, source_table);
     }
 
     fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
@@ -1152,15 +1161,12 @@ impl Router {
 
             trace!("Propagating static routes");
 
-            let mut inner_w = self.inner_w.lock().expect("Mutex isn't poinsoned");
-            let ops = inner_w
+            self.inner_r
                 .enter()
-                .expect("We deref through a write handle so this enter never fails")
-                .propagate_static_route(self.router_id);
-            for op in ops {
-                inner_w.append(op);
-            }
-            inner_w.publish();
+                .expect(
+                    "Write handle is saved on router so it is not dropped before the read handles",
+                )
+                .propagate_static_route(self.router_id, &mut self.source_table.write().unwrap());
         }
     }
 
@@ -1170,15 +1176,10 @@ impl Router {
 
             trace!("Propagating selected routes");
 
-            let mut inner_w = self.inner_w.lock().expect("Mutex isn't poinsoned");
-            let ops = inner_w
+            self.inner_r
                 .enter()
                 .expect("We deref through a write handle so this enter never fails")
-                .propagate_selected_routes();
-            for op in ops {
-                inner_w.append(op);
-            }
-            inner_w.publish();
+                .propagate_selected_routes(&mut self.source_table.write().unwrap());
         }
     }
 
@@ -1201,7 +1202,6 @@ impl Router {
 pub struct RouterInner {
     peer_interfaces: Vec<Peer>,
     routing_table: RoutingTable,
-    source_table: SourceTable,
     router_seqno: SeqNo,
     last_seqno_bump: Instant,
     static_routes: Vec<StaticRoute>,
@@ -1219,7 +1219,6 @@ impl RouterInner {
         let router_inner = RouterInner {
             peer_interfaces: Vec::new(),
             routing_table: RoutingTable::new(),
-            source_table: SourceTable::new(),
             router_seqno: SeqNo::default(),
             last_seqno_bump: Instant::now(),
             static_routes: vec![],
@@ -1234,7 +1233,14 @@ impl RouterInner {
         self.peer_interfaces.retain(|p| p != peer);
     }
 
-    fn send_update(&self, peer: &Peer, update: babel::Update) -> Option<RouterOpLogEntry> {
+    fn send_update(
+        &self,
+        peer: &Peer,
+        // TODO: This is a bit unfortunate, but this method should really just move to the top
+        // level at this point if possible.
+        source_table: &mut SourceTable,
+        update: babel::Update,
+    ) {
         // before sending an update, the source table might need to be updated
         let metric = update.metric();
         let seqno = update.seqno();
@@ -1244,32 +1250,31 @@ impl RouterInner {
         let source_key = SourceKey::new(subnet, router_id);
 
         // Nothing to do on route retraction.
-        let op = if metric.is_infinite() {
-            None
-        } else if let Some(source_entry) = self.source_table.get(&source_key) {
+        if let Some(source_entry) = source_table.get(&source_key) {
             // if seqno of the update is greater than the seqno in the source table, update the source table
             if !seqno.lt(&source_entry.seqno()) {
-                Some(RouterOpLogEntry::InsertSourceEntry(
+                source_table.insert(
                     source_key,
                     FeasibilityDistance::new(metric, seqno),
-                ))
+                    self.expired_source_key_sink.clone(),
+                );
             }
             // if seqno of the update is equal to the seqno in the source table, update the source table if the metric (of the update) is lower
             else if seqno == source_entry.seqno() && source_entry.metric() > metric {
-                Some(RouterOpLogEntry::InsertSourceEntry(
+                source_table.insert(
                     source_key,
                     FeasibilityDistance::new(metric, source_entry.seqno()),
-                ))
-            } else {
-                None
+                    self.expired_source_key_sink.clone(),
+                )
             }
         }
         // no entry for this source key, so insert it
         else {
-            Some(RouterOpLogEntry::InsertSourceEntry(
+            source_table.insert(
                 source_key,
                 FeasibilityDistance::new(metric, seqno),
-            ))
+                self.expired_source_key_sink.clone(),
+            )
         };
 
         // send the update to the peer
@@ -1277,26 +1282,20 @@ impl RouterInner {
         if let Err(e) = peer.send_control_packet(ControlPacket::Update(update)) {
             error!("Error sending update to peer: {:?}", e);
         }
-
-        op
     }
 
-    fn propagate_static_route(&self, router_id: RouterId) -> Vec<RouterOpLogEntry> {
-        let mut updates = vec![];
+    fn propagate_static_route(&self, router_id: RouterId, source_table: &mut SourceTable) {
         for peer in self.peer_interfaces.iter() {
-            updates.extend(self.propagate_static_route_to_peer(peer, router_id))
+            self.propagate_static_route_to_peer(peer, router_id, source_table)
         }
-
-        updates
     }
 
     fn propagate_static_route_to_peer(
         &self,
         peer: &Peer,
         router_id: RouterId,
-    ) -> Vec<RouterOpLogEntry> {
-        let mut updates = vec![];
-
+        source_table: &mut SourceTable,
+    ) {
         for sr in self.static_routes.iter() {
             let update = babel::Update::new(
                 UPDATE_INTERVAL,
@@ -1305,21 +1304,16 @@ impl RouterInner {
                 sr.subnet,
                 router_id,
             );
-            updates.push((peer.clone(), update));
+            self.send_update(peer, source_table, update);
         }
-
-        updates
-            .into_iter()
-            .filter_map(|(peer, update)| self.send_update(&peer, update))
-            .collect()
     }
 
     fn propagate_selected_route(
         &self,
         subnet: Subnet,
         router_id: RouterId,
-    ) -> Vec<RouterOpLogEntry> {
-        let mut updates = vec![];
+        source_table: &mut SourceTable,
+    ) {
         let (seqno, cost, router_id, maybe_neigh) =
             if let Some(sre) = self.routing_table.lookup_selected(subnet.address()) {
                 (
@@ -1349,17 +1343,11 @@ impl RouterInner {
                 subnet,
                 peer.connection_identifier()
             );
-            updates.push((peer.clone(), update));
+            self.send_update(peer, source_table, update);
         }
-
-        updates
-            .into_iter()
-            .filter_map(|(peer, update)| self.send_update(&peer, update))
-            .collect()
     }
 
-    fn propagate_selected_routes_to_peer(&self, peer: &Peer) -> Vec<RouterOpLogEntry> {
-        let mut updates = vec![];
+    fn propagate_selected_routes_to_peer(&self, peer: &Peer, source_table: &mut SourceTable) {
         for (srk, sre) in self.routing_table.iter().filter(|(_, sre)| sre.selected()) {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1383,21 +1371,14 @@ impl RouterInner {
                 sre.seqno(),
                 sre.metric() + neigh_link_cost,
             );
-            updates.push((peer.clone(), update));
+            self.send_update(peer, source_table, update);
         }
-
-        updates
-            .into_iter()
-            .filter_map(|(peer, update)| self.send_update(&peer, update))
-            .collect()
     }
 
-    fn propagate_selected_routes(&self) -> Vec<RouterOpLogEntry> {
-        let mut updates = vec![];
+    fn propagate_selected_routes(&self, source_table: &mut SourceTable) {
         for peer in self.peer_interfaces.iter() {
-            updates.extend(self.propagate_selected_routes_to_peer(peer));
+            self.propagate_selected_routes_to_peer(peer, source_table);
         }
-        updates
     }
 }
 
@@ -1408,10 +1389,6 @@ enum RouterOpLogEntry {
     AddPeer(Peer),
     /// Removes a peer from the router.
     RemovePeer(Peer),
-    /// Insert a new entry in the source table.
-    InsertSourceEntry(SourceKey, FeasibilityDistance),
-    /// Remove an entry from the source table.
-    RemoveSourceEntry(SourceKey),
     /// Insert a new entry in the routing table.
     InsertRoute(RouteKey, RouteEntry),
     /// Removes a route with the given route key.
@@ -1438,13 +1415,6 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::AddPeer(peer) => self.peer_interfaces.push(peer.clone()),
             RouterOpLogEntry::RemovePeer(peer) => {
                 self.remove_peer_interface(peer);
-            }
-            RouterOpLogEntry::InsertSourceEntry(sk, fd) => {
-                self.source_table
-                    .insert(*sk, *fd, self.expired_source_key_sink.clone());
-            }
-            RouterOpLogEntry::RemoveSourceEntry(sk) => {
-                self.source_table.remove(sk);
             }
             RouterOpLogEntry::InsertRoute(rk, re) => {
                 self.routing_table.insert(
@@ -1491,7 +1461,6 @@ impl Clone for RouterInner {
         let RouterInner {
             peer_interfaces,
             routing_table,
-            source_table,
             router_seqno,
             last_seqno_bump,
             static_routes,
@@ -1499,10 +1468,6 @@ impl Clone for RouterInner {
             expired_source_key_sink,
             expired_route_entry_sink,
         } = self;
-        let mut new_source_table = SourceTable::new();
-        for (k, v) in source_table.iter() {
-            new_source_table.insert(*k, *v, expired_source_key_sink.clone());
-        }
         let mut new_routing_table = RoutingTable::new();
         for (k, v) in routing_table.iter() {
             new_routing_table.insert(k.clone(), v.clone(), expired_route_entry_sink.clone());
@@ -1510,7 +1475,6 @@ impl Clone for RouterInner {
         RouterInner {
             peer_interfaces: peer_interfaces.clone(),
             routing_table: new_routing_table,
-            source_table: new_source_table,
             router_seqno: *router_seqno,
             last_seqno_bump: *last_seqno_bump,
             static_routes: static_routes.clone(),

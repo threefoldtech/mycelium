@@ -17,9 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- When joining a link local multicast group on an interface returns a `Address
-  already in use` error, the error is now ignored and the interface is considered
-  to be joined.
+- When joining a link local multicast group on an interface returns a
+  `Address already in use` error, the error is now ignored and the interface is
+  considered to be joined.
+- When sending an update to a peer, the source table is now correctly updated before
+  the update is sent, instead of doing a batched source table update afterward.
 
 ## [0.4.3] - 2024-03-15
 
