@@ -132,11 +132,6 @@ impl SourceTable {
             None => true,
         }
     }
-
-    /// Get an iterator over the `SourceTable`.
-    pub fn iter(&self) -> impl Iterator<Item = (&SourceKey, &FeasibilityDistance)> {
-        self.table.iter().map(|(k, (_, v))| (k, v))
-    }
 }
 
 impl fmt::Display for SourceKey {
