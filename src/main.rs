@@ -323,6 +323,7 @@ async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
 
         let mut file = OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .mode(0o600) // rw by the owner, not readable by group or others
             .open(path)
