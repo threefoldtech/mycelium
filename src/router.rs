@@ -409,14 +409,7 @@ impl Router {
             )));
             inner_w.publish();
 
-            Router::trigger_update(
-                &inner_w
-                    .enter()
-                    .expect("Reading through write handle always works"),
-                subnet,
-                self.router_id,
-                &mut self.source_table.write().unwrap(),
-            );
+            self.trigger_update(subnet, self.router_id);
         }
     }
 
@@ -500,12 +493,7 @@ impl Router {
                         .publish();
                     // If the entry wasn't retracted yet, notify our peers.
                     if !entry.metric().is_infinite() {
-                        Router::trigger_update(
-                            &inner.enter().expect("Read through write handle"),
-                            subnet,
-                            self.router_id,
-                            &mut self.source_table.write().unwrap(),
-                        );
+                        self.trigger_update(subnet, self.router_id);
                     }
                 }
             }
@@ -985,25 +973,16 @@ impl Router {
 
         if trigger_update {
             debug!("Send triggered update for {subnet} in response to update");
-            Router::trigger_update(
-                &inner_w
-                    .enter()
-                    .expect("Reading through the write handle always works"),
-                subnet,
-                router_id,
-                &mut self.source_table.write().unwrap(),
-            );
+            self.trigger_update(subnet, router_id);
         }
     }
 
     /// Trigger an update for the given [`Subnet`].
-    fn trigger_update(
-        inner_r: &left_right::ReadGuard<RouterInner>,
-        subnet: Subnet,
-        router_id: RouterId,
-        source_table: &mut SourceTable,
-    ) {
-        inner_r.propagate_selected_route(subnet, router_id, source_table);
+    fn trigger_update(&self, subnet: Subnet, router_id: RouterId) {
+        self.inner_r
+            .enter()
+            .expect("Read handle is saved on router so write handle is always in scope")
+            .propagate_selected_route(subnet, router_id, &mut self.source_table.write().unwrap());
     }
 
     fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
