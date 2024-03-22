@@ -1007,7 +1007,7 @@ impl MessageStack {
                 if let Some(msg) = if pop {
                     inbox.complete_msges.pop_front()
                 } else {
-                    inbox.complete_msges.front().map(Clone::clone)
+                    inbox.complete_msges.front().cloned()
                 } {
                     self.notify_read(&msg);
                     return msg;
