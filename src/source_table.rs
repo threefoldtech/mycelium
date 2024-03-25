@@ -100,6 +100,26 @@ impl SourceTable {
         };
     }
 
+    /// Resets the garbage collection timer for a given source key.
+    ///
+    /// Does nothing if the source key is not present.
+    pub fn reset_timer(&mut self, key: SourceKey, sink: mpsc::Sender<SourceKey>) {
+        self.table
+            .entry(key)
+            .and_modify(|(old_expiration_handle, _)| {
+                // First cancel the existing task
+                old_expiration_handle.abort();
+                // Then set the new one
+                *old_expiration_handle = tokio::spawn(async move {
+                    tokio::time::sleep(SOURCE_HOLD_DURATION).await;
+
+                    if let Err(e) = sink.send(key).await {
+                        error!("Failed to notify router of expired source key {e}");
+                    }
+                });
+            });
+    }
+
     /// Get the [`FeasibilityDistance`] currently associated with the [`SourceKey`].
     pub fn get(&self, key: &SourceKey) -> Option<&FeasibilityDistance> {
         self.table.get(key).map(|(_, v)| v)

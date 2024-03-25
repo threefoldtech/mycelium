@@ -1245,6 +1245,10 @@ impl RouterInner {
                     self.expired_source_key_sink.clone(),
                 )
             }
+            // We also reset the garbage collection timer (unless the update is a retraction)
+            else if !metric.is_infinite() {
+                source_table.reset_timer(source_key, self.expired_source_key_sink.clone());
+            }
         }
         // no entry for this source key, so insert it
         else {
