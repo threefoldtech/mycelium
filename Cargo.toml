@@ -48,7 +48,7 @@ axum = { version = "0.7.4", default-features = false, features = [
   "query",
   "tokio",
 ] }
-base64 = "0.21.5"
+base64 = "0.22.0"
 reqwest = { version = "0.11.22", default-features = false, features = ["json"] }
 etherparse = "0.14.2"
 quinn = { version = "0.10.2", default-features = false, features = [
