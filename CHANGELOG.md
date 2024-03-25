@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The feasibility distance of an existing source key is no longer incorrectly updated
+  when the metric increases.
+- Source key garbage collection timers are properly reset on update even if the
+  source key itself is not updated.
+
 ## [0.4.4] - 2024-03-22
 
 ### Changed
