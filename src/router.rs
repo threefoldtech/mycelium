@@ -1228,10 +1228,9 @@ impl RouterInner {
 
         let source_key = SourceKey::new(subnet, router_id);
 
-        // Nothing to do on route retraction.
         if let Some(source_entry) = source_table.get(&source_key) {
             // if seqno of the update is greater than the seqno in the source table, update the source table
-            if !seqno.lt(&source_entry.seqno()) {
+            if seqno.gt(&source_entry.seqno()) {
                 source_table.insert(
                     source_key,
                     FeasibilityDistance::new(metric, seqno),
