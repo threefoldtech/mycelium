@@ -747,7 +747,10 @@ impl Router {
                     re.neighbour().connection_identifier()
                 );
                 if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
-                    error!("Failed to foward seqno request: {e}");
+                    error!(
+                        "Failed to foward seqno request to {}: {e}",
+                        re.neighbour().connection_identifier(),
+                    );
                 }
                 return;
             }
@@ -764,7 +767,10 @@ impl Router {
                     re.neighbour().connection_identifier()
                 );
                 if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
-                    error!("Failed to foward seqno request: {e}");
+                    error!(
+                        "Failed to foward seqno request to {}: {e}",
+                        re.neighbour().connection_identifier(),
+                    );
                 }
             }
         }
