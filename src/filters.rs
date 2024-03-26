@@ -38,12 +38,16 @@ impl RouteUpdateFilter for AllowedSubnet {
 }
 
 /// Limit the announced subnets to those which contain the derived IP from the `RouterId`.
+///
+/// Since retractions can be sent by any node to indicate they don't have a route for the subnet,
+/// these are also allowed.
 pub struct RouterIdOwnsSubnet;
 
 impl RouteUpdateFilter for RouterIdOwnsSubnet {
     fn allow(&self, update: &babel::Update) -> bool {
-        update
-            .subnet()
-            .contains_ip(update.router_id().to_pubkey().address().into())
+        update.metric().is_infinite()
+            || update
+                .subnet()
+                .contains_ip(update.router_id().to_pubkey().address().into())
     }
 }

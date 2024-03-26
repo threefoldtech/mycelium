@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Size of data packets is limited to 65535 bytes.
 - Update interval is now expressed as centiseconds, in accordance with the babel
   RFC.
+- Update filters now allow retractions for a route from any router-id.
 
 ### Fixed
 
