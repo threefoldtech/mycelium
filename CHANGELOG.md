@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the metric increases.
 - Source key garbage collection timers are properly reset on update even if the
   source key itself is not updated.
+- Nodes now properly reply to route requests for a static route.
+- A retraction is now sent as reply to a route request if the route is not known.
 
 ## [0.4.4] - 2024-03-22
 
