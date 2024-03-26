@@ -27,7 +27,7 @@ futures = "0.3.29"
 toml = "0.8.12"
 serde = { version = "1.0.197", features = ["derive"] }
 rand = "0.8.5"
-bytes = "1.4.0"
+bytes = "1.6.0"
 x25519-dalek = { version = "2.0.1", features = ["getrandom", "static_secrets"] }
 serde_json = "1.0.114"
 blake2 = "0.10.6"
