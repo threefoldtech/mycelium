@@ -565,28 +565,64 @@ impl Router {
 
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
-            if let Some(sre) = inner.routing_table.lookup_selected(subnet.address()) {
+            let update = if let Some(sre) = inner.routing_table.lookup_selected(subnet.address()) {
+                trace!("Advertising selected route for {subnet} after route request");
                 // Optimization: Don't send an update if the selected route next-hop is the peer
                 // who requested the route, as per the babel protocol the update will never be
                 // accepted.
                 if sre.neighbour() == &source_peer {
+                    trace!("Not advertising route since the next-hop is the requesting peer");
                     return;
                 }
-                let update = babel::Update::new(
+                babel::Update::new(
                     UPDATE_INTERVAL,
                     sre.seqno(),
                     sre.metric() + Metric::from(sre.neighbour().link_cost()),
                     subnet,
                     sre.source().router_id(),
-                );
-                inner.send_update(
-                    &source_peer,
-                    &mut self.source_table.write().unwrap(),
-                    update,
-                );
+                )
             }
+            // Could be a request for a static route/subnet.
+            else if let Some(static_route) = inner
+                .static_routes
+                .iter()
+                .filter(|sr| sr.subnet.contains_subnet(&subnet))
+                .next()
+            {
+                trace!(
+                    "Advertising static route {} in response to route request for {subnet}",
+                    static_route.subnet
+                );
+                babel::Update::new(
+                    UPDATE_INTERVAL,
+                    inner.router_seqno, // Updates receive the seqno of the router
+                    Metric::from(0),    // Static route has no further hop costs
+                    static_route.subnet,
+                    self.router_id,
+                )
+            }
+            // If the requested route is not present, send a retraction
+            else {
+                trace!(
+                    "Sending retraction for unknown subnet {subnet} in response to route request"
+                );
+                babel::Update::new(
+                    UPDATE_INTERVAL,
+                    inner.router_seqno, // Retractions receive the seqno of the router
+                    Metric::infinite(), // Static route has no further hop costs
+                    subnet,             // Advertise the exact subnet requested
+                    self.router_id,     // Our own router ID, since we advertise this
+                )
+            };
+
+            inner.send_update(
+                &source_peer,
+                &mut self.source_table.write().unwrap(),
+                update,
+            );
         } else {
             // Requested a full route table dump
+            trace!("Dumping route table after wildcard route request");
             let mut source_table = self.source_table.write().unwrap();
             inner.propagate_selected_routes_to_peer(&source_peer, &mut source_table);
             inner.propagate_static_route_to_peer(&source_peer, self.router_id(), &mut source_table);
