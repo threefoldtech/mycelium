@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Size of data packets is limited to 65535 bytes.
+
 ### Fixed
 
 - The feasibility distance of an existing source key is no longer incorrectly updated

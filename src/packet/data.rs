@@ -7,7 +7,7 @@ use tokio_util::codec::{Decoder, Encoder};
 const DATA_PACKET_HEADER_SIZE: usize = 4;
 
 /// Mask to extract data length from
-const DATA_PACKET_LEN_MASK: u32 = (1 << 19) - 1;
+const DATA_PACKET_LEN_MASK: u32 = (1 << 16) - 1;
 
 #[derive(Debug, Clone)]
 pub struct DataPacket {
@@ -27,8 +27,7 @@ pub struct Codec {
 /// Data from the DataPacket header.
 #[derive(Clone, Copy)]
 struct HeaderValues {
-    // At most 19 bits atm but that can't be properly expressed.
-    len: u32,
+    len: u16,
     hop_limit: u8,
 }
 
@@ -59,7 +58,7 @@ impl Decoder for Codec {
             let raw_header = src.get_u32();
             // Hop limit is the last 8 bits.
             let hop_limit = (raw_header & 0xFF) as u8;
-            let data_len = (raw_header >> 8) & DATA_PACKET_LEN_MASK;
+            let data_len = ((raw_header >> 8) & DATA_PACKET_LEN_MASK) as u16;
             let header_vals = HeaderValues {
                 len: data_len,
                 hop_limit,

@@ -13,7 +13,7 @@ The packet header has a fixed size of 36 bytes, with the following layout:
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|Reserved |                Length               |   Hop Limit   |
+|    Reserved   |             Length            |   Hop Limit   |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
 +                                                               +
@@ -33,11 +33,11 @@ The packet header has a fixed size of 36 bytes, with the following layout:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-The first 5 bits are reserved and must be set to 0.
+The first 8 bits are reserved and must be set to 0.
 
-The next 19 bits are used to specify the length of the body. It is expected that
-the actual length of a packet does not exceed 256K right now, so the 19th bit is
-only needed because we have to account for some overhead related to the encryption.
+The next 16 bits are used to specify the length of the body. It is expected that
+the actual length of a packet does not exceed 65K right now, and overhead related
+to encryption should be handled by the client before sending the packet.
 
 The next byte is the hop-limit. Every node decrements this value by 1 before sending
 the packet. If a node decrements this value to 0, the packet is discarded.
