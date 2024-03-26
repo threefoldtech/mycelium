@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// Duration after which a source entry is deleted if it is not updated.
-const SOURCE_HOLD_DURATION: Duration = Duration::from_secs(60 * 5);
+const SOURCE_HOLD_DURATION: Duration = Duration::from_secs(60 * 30);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct SourceKey {

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Connection identifier is now included in the error log if we can't forward a
   seqno request.
+- Garbage collection time for source entries has been increased from 5 to 30 minutes
+  for now.
 
 ## [0.4.5] - 2024-03-26
 
