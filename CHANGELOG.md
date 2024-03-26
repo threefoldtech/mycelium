@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Connection identifier is now included in the error log if we can't forward a
+  seqno request.
+
 ## [0.4.5] - 2024-03-26
 
 ### Changed
