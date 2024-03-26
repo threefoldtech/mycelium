@@ -33,9 +33,9 @@ const HELLO_INTERVAL: u16 = 20;
 const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
 /// Base time used in UPDATE packets. For local (static) routes this is the timeout they are
 /// advertised with.
-const UPDATE_INTERVAL: u16 = HELLO_INTERVAL * 3;
+const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 3);
 /// Time between route table dumps to peers.
-const ROUTE_PROPAGATION_INTERVAL: Duration = Duration::from_secs(UPDATE_INTERVAL as u64);
+const ROUTE_PROPAGATION_INTERVAL: Duration = UPDATE_INTERVAL;
 /// Amount of seconds that can elapse before we consider a [`Peer`] as dead from the routers POV.
 /// Since IHU's are sent in response to HELLO packets, this MUST be greater than the
 /// [`HELLO_INTERVAL`].

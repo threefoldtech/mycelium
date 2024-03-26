@@ -1,4 +1,4 @@
-use std::{io, net::IpAddr};
+use std::{io, net::IpAddr, time::Duration};
 
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
@@ -27,7 +27,7 @@ impl ControlPacket {
     }
 
     pub fn new_update(
-        interval: u16,
+        interval: Duration,
         seqno: SeqNo,
         metric: Metric,
         subnet: Subnet,

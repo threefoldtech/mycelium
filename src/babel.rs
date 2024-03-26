@@ -184,7 +184,7 @@ impl Encoder<Tlv> for Codec {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv6Addr;
+    use std::{net::Ipv6Addr, time::Duration};
 
     use futures::{SinkExt, StreamExt};
     use tokio_util::codec::Framed;
@@ -238,7 +238,7 @@ mod tests {
         let mut receiver = Framed::new(rx, super::Codec::new());
 
         let update = super::Update::new(
-            400,
+            Duration::from_secs(400),
             16.into(),
             25.into(),
             Subnet::new(Ipv6Addr::new(0x400, 1, 2, 3, 0, 0, 0, 0).into(), 64)

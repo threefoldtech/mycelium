@@ -1,6 +1,9 @@
 //! The babel [Update TLV](https://datatracker.ietf.org/doc/html/rfc8966#name-update).
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    time::Duration,
+};
 
 use bytes::{Buf, BufMut};
 use log::trace;
@@ -43,16 +46,17 @@ pub struct Update {
 impl Update {
     /// Create a new `Update`.
     pub fn new(
-        interval: u16,
+        interval: Duration,
         seqno: SeqNo,
         metric: Metric,
         subnet: Subnet,
         router_id: RouterId,
     ) -> Self {
+        let interval_centiseconds = (interval.as_millis() / 10) as u16;
         Self {
             // No flags used for now
             flags: 0,
-            interval,
+            interval: interval_centiseconds,
             seqno,
             metric,
             subnet,
@@ -191,7 +195,10 @@ impl Update {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::{
+        net::{Ipv4Addr, Ipv6Addr},
+        time::Duration,
+    };
 
     use crate::{router_id::RouterId, subnet::Subnet};
     use bytes::Buf;
@@ -352,7 +359,7 @@ mod tests {
         let mut buf = bytes::BytesMut::new();
 
         let hello_src = super::Update::new(
-            64,
+            Duration::from_secs(64),
             10.into(),
             25.into(),
             Subnet::new(
