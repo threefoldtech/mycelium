@@ -195,6 +195,7 @@ impl Router {
         }
     }
 
+    /// Get the public key used by the router
     pub fn node_public_key(&self) -> PublicKey {
         self.node_keypair.1
     }
@@ -297,6 +298,7 @@ impl Router {
             .collect()
     }
 
+    /// Task which periodically checks for dead peers in the Router.
     async fn check_for_dead_peers(self) {
         loop {
             // check for dead peers every second
@@ -516,6 +518,7 @@ impl Router {
         warn!("Processing of dead peers halted");
     }
 
+    /// Task which ingests and processes control packets
     async fn handle_incoming_control_packet(
         self,
         mut router_control_rx: UnboundedReceiver<(ControlPacket, Peer)>,
@@ -539,6 +542,7 @@ impl Router {
         }
     }
 
+    /// Handle a received hello TLV
     fn handle_incoming_hello(&self, _: babel::Hello, source_peer: Peer) {
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
         let ihu = ControlPacket::new_ihu(IHU_INTERVAL, None);
@@ -547,6 +551,7 @@ impl Router {
         }
     }
 
+    /// Handle a received IHU TLV
     fn handle_incoming_ihu(&self, _: babel::Ihu, source_peer: Peer) {
         // reset the IHU timer associated with the peer
         // measure time between Hello and and IHU and set the link cost
@@ -630,6 +635,7 @@ impl Router {
         }
     }
 
+    /// Handle a received SeqNo request TLV.
     fn handle_incoming_seqno_request(&self, mut seqno_request: SeqNoRequest, source_peer: Peer) {
         // According to the babel rfc, we shoudl maintain a table of recent SeqNo requests and
         // periodically retry requests without reply. We will however not do this for now and rely
@@ -812,6 +818,7 @@ impl Router {
         best
     }
 
+    /// Handle a received update TLV
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {
         // Check if we actually allow this update based on filters.
         for filter in &*self.update_filters {
@@ -1067,6 +1074,7 @@ impl Router {
         }
     }
 
+    /// Handle a received data packet.
     async fn handle_incoming_data_packet(self, mut router_data_rx: Receiver<DataPacket>) {
         while let Some(data_packet) = router_data_rx.recv().await {
             self.route_packet(data_packet);
@@ -1096,6 +1104,7 @@ impl Router {
         )
     }
 
+    /// Send an oob icmp packet of the specified type in reply to the given DataPakcet.
     fn oob_icmp(&self, icmp_type: Icmpv6Type, mut data_packet: DataPacket) {
         let src_ip = if let IpAddr::V6(ip) = self.node_tun_subnet.address() {
             ip
@@ -1152,6 +1161,7 @@ impl Router {
         });
     }
 
+    /// Get's the best route for a destination IP if one is present.
     pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
         let inner = self
             .inner_r
