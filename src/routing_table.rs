@@ -13,7 +13,7 @@ use std::{
 };
 
 /// Default time before a route expires.
-const DEFAULT_ROUTE_EXPIRATION: Duration = Duration::from_secs(60 * 10);
+const DEFAULT_ROUTE_EXPIRATION: Duration = Duration::from_secs(60 * 3);
 
 /// Information about a routes expiration.
 pub enum RouteExpirationType {
