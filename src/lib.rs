@@ -8,7 +8,6 @@ use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
-use router::StaticRoute;
 use subnet::Subnet;
 
 pub mod api;
@@ -90,7 +89,7 @@ impl Stack {
         let router = match router::Router::new(
             tun_tx,
             node_subnet,
-            vec![StaticRoute::new(node_subnet)],
+            vec![node_subnet],
             (config.node_key, node_pub_key),
             vec![
                 Box::new(filters::AllowedSubnet::new(

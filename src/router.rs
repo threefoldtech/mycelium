@@ -20,7 +20,6 @@ use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
 use std::{
     error::Error,
-    fmt::Debug,
     net::{IpAddr, Ipv6Addr},
     sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
@@ -55,17 +54,6 @@ const BIG_METRIC_CHANGE_TRESHOLD: Metric = Metric::new(10);
 /// The amount a metric of a route needs to improve before we will consider switching to it.
 const SIGNIFICANT_METRIC_IMPROVEMENT: Metric = Metric::new(10);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StaticRoute {
-    subnet: Subnet,
-}
-
-impl StaticRoute {
-    pub fn new(subnet: Subnet) -> Self {
-        Self { subnet }
-    }
-}
-
 #[derive(Clone)]
 pub struct Router {
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
@@ -74,7 +62,7 @@ pub struct Router {
     source_table: Arc<RwLock<SourceTable>>,
     // Router SeqNo and last time it was bumped
     router_seqno: Arc<RwLock<(SeqNo, Instant)>>,
-    static_routes: Vec<StaticRoute>,
+    static_routes: Vec<Subnet>,
     router_id: RouterId,
     node_keypair: (SecretKey, PublicKey),
     router_data_tx: Sender<DataPacket>,
@@ -92,7 +80,7 @@ impl Router {
     pub fn new(
         node_tun: UnboundedSender<DataPacket>,
         node_tun_subnet: Subnet,
-        static_routes: Vec<StaticRoute>,
+        static_routes: Vec<Subnet>,
         node_keypair: (SecretKey, PublicKey),
         update_filters: Vec<Box<dyn RouteUpdateFilter + Send + Sync>>,
     ) -> Result<Self, Box<dyn Error>> {
@@ -598,17 +586,16 @@ impl Router {
             else if let Some(static_route) = self
                 .static_routes
                 .iter()
-                .find(|sr| sr.subnet.contains_subnet(&subnet))
+                .find(|sr| sr.contains_subnet(&subnet))
             {
                 trace!(
-                    "Advertising static route {} in response to route request for {subnet}",
-                    static_route.subnet
+                    "Advertising static route {static_route} in response to route request for {subnet}"
                 );
                 babel::Update::new(
                     UPDATE_INTERVAL,
                     self.router_seqno.read().unwrap().0, // Updates receive the seqno of the router
                     Metric::from(0),                     // Static route has no further hop costs
-                    static_route.subnet,
+                    *static_route,
                     self.router_id,
                 )
             }
@@ -696,9 +683,7 @@ impl Router {
         let (router_seqno, last_seqno_bump) = *self.router_seqno.read().unwrap();
         if seqno_request.router_id() == self.router_id
             && seqno_request.seqno().gt(&router_seqno)
-            && self.static_routes.contains(&StaticRoute {
-                subnet: seqno_request.prefix(),
-            })
+            && self.static_routes.contains(&seqno_request.prefix())
         {
             if last_seqno_bump.elapsed() >= SEQNO_BUMP_TIMEOUT {
                 trace!("Ignoring seqno bump request which happened too fast");
@@ -1034,7 +1019,7 @@ impl Router {
     /// Checks if a route key is an exact match for a static route.
     fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
         for sr in self.static_routes.iter() {
-            if sr.subnet == route_key.subnet() {
+            if sr == &route_key.subnet() {
                 return true;
             }
         }
@@ -1233,7 +1218,7 @@ impl Router {
                 UPDATE_INTERVAL,
                 self.router_seqno.read().unwrap().0, // updates receive the seqno of the router
                 Metric::from(0),                     // Static route has no further hop costs
-                sr.subnet,
+                *sr,
                 self.router_id,
             );
             self.send_update(peer, update);
