@@ -195,10 +195,6 @@ impl Router {
         }
     }
 
-    pub fn node_secret_key(&self) -> SecretKey {
-        self.node_keypair.0.clone()
-    }
-
     pub fn node_public_key(&self) -> PublicKey {
         self.node_keypair.1
     }
