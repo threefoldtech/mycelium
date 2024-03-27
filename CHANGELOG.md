@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seqno request.
 - Garbage collection time for source entries has been increased from 5 to 30 minutes
   for now.
+- The router implementation has been changed to use regular locks instead of an
+  always readable concurrency primitive for all but the actual routing table. This
+  should reduce the memory consumption a bit.
 
 ## [0.4.5] - 2024-03-26
 

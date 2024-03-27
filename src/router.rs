@@ -70,7 +70,11 @@ impl StaticRoute {
 pub struct Router {
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
     inner_r: ReadHandle<RouterInner>,
+    peer_interfaces: Arc<RwLock<Vec<Peer>>>,
     source_table: Arc<RwLock<SourceTable>>,
+    // Router SeqNo and last time it was bumped
+    router_seqno: Arc<RwLock<(SeqNo, Instant)>>,
+    static_routes: Vec<StaticRoute>,
     router_id: RouterId,
     node_keypair: (SecretKey, PublicKey),
     router_data_tx: Sender<DataPacket>,
@@ -80,6 +84,8 @@ pub struct Router {
     update_filters: Arc<Vec<Box<dyn RouteUpdateFilter + Send + Sync>>>,
     /// Channel injected into peers, so they can notify the router if they exit.
     dead_peer_sink: mpsc::Sender<Peer>,
+    /// Channel to notify the router of expired SourceKey's.
+    expired_source_key_sink: mpsc::Sender<SourceKey>,
 }
 
 impl Router {
@@ -98,17 +104,18 @@ impl Router {
         let (expired_route_entry_sink, expired_route_entry_stream) = mpsc::channel(1);
         let (dead_peer_sink, dead_peer_stream) = mpsc::channel(1);
 
-        let router_inner = RouterInner::new(expired_source_key_sink, expired_route_entry_sink)?;
-        let (mut inner_w, inner_r) = left_right::new_from_empty(router_inner);
-        inner_w.append(RouterOpLogEntry::SetStaticRoutes(static_routes));
-        inner_w.publish();
+        let router_inner = RouterInner::new(expired_route_entry_sink)?;
+        let (inner_w, inner_r) = left_right::new_from_empty(router_inner);
 
         let router_id = RouterId::new(node_keypair.1);
 
         let router = Router {
             inner_w: Arc::new(Mutex::new(inner_w)),
             inner_r,
+            peer_interfaces: Arc::new(RwLock::new(Vec::new())),
             source_table: Arc::new(RwLock::new(SourceTable::new())),
+            router_seqno: Arc::new(RwLock::new((SeqNo::new(), Instant::now()))),
+            static_routes,
             router_id,
             node_keypair,
             router_data_tx,
@@ -116,6 +123,7 @@ impl Router {
             node_tun,
             node_tun_subnet,
             dead_peer_sink,
+            expired_source_key_sink,
             update_filters: Arc::new(update_filters),
         };
 
@@ -128,7 +136,7 @@ impl Router {
             router.clone(),
             router_data_rx,
         ));
-        tokio::spawn(Router::propagate_static_route(router.clone()));
+        tokio::spawn(Router::propagate_static_routes(router.clone()));
         tokio::spawn(Router::propagate_selected_routes(router.clone()));
 
         tokio::spawn(Router::check_for_dead_peers(router.clone()));
@@ -164,21 +172,15 @@ impl Router {
         self.node_tun.clone()
     }
 
+    /// Get all peer interfaces known on the router.
     pub fn peer_interfaces(&self) -> Vec<Peer> {
-        self.inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .peer_interfaces
-            .clone()
+        self.peer_interfaces.read().unwrap().clone()
     }
 
+    /// Add a peer interface to the router.
     pub fn add_peer_interface(&self, peer: Peer) {
         debug!("Adding peer {} to router", peer.connection_identifier());
-        self.inner_w
-            .lock()
-            .expect("Mutex isn't poinsoned")
-            .append(RouterOpLogEntry::AddPeer(peer.clone()))
-            .publish();
+        self.peer_interfaces.write().unwrap().push(peer.clone());
 
         // Request route table dump of peer
         debug!(
@@ -260,6 +262,15 @@ impl Router {
         &self.dead_peer_sink
     }
 
+    /// Remove a peer from the Router.
+    fn remove_peer_interface(&self, peer: &Peer) {
+        debug!(
+            "Removing peer {} from the router",
+            peer.connection_identifier()
+        );
+        self.peer_interfaces.write().unwrap().retain(|p| p != peer);
+    }
+
     /// Get a list of all selected route entries.
     pub fn load_selected_routes(&self) -> Vec<RouteEntry> {
         let inner = self
@@ -300,7 +311,7 @@ impl Router {
             let dead_peers = {
                 // a peer is assumed dead when the peer's last sent ihu exceeds a threshold
                 let mut dead_peers = Vec::new();
-                for peer in self.inner_r.enter().expect("Write handle is saved on router so it can never go out of scope before read handle").peer_interfaces.iter() {
+                for peer in self.peer_interfaces.read().unwrap().iter() {
                     // check if the peer's last_received_ihu is greater than the threshold
                     if peer.time_last_received_ihu().elapsed() > DEAD_PEER_THRESHOLD {
                         // peer is dead
@@ -350,8 +361,7 @@ impl Router {
             // Make sure we release the read handle, so a publish on the write handle eventually
             // succeeds.
             drop(inner);
-            inner_w.append(RouterOpLogEntry::RemovePeer(dead_peer));
-            inner_w.publish();
+            self.remove_peer_interface(&dead_peer);
 
             subnets_to_select
         };
@@ -409,7 +419,7 @@ impl Router {
             )));
             inner_w.publish();
 
-            self.trigger_update(subnet, self.router_id);
+            self.trigger_update(subnet);
         }
     }
 
@@ -493,7 +503,7 @@ impl Router {
                         .publish();
                     // If the entry wasn't retracted yet, notify our peers.
                     if !entry.metric().is_infinite() {
-                        self.trigger_update(subnet, self.router_id);
+                        self.trigger_update(subnet);
                     }
                 }
             }
@@ -558,14 +568,15 @@ impl Router {
     /// requested subnet. If no subnet is requested (in other words the wildcard address), we dump
     /// the full routing table.
     fn handle_incoming_route_request(&self, route_request: babel::RouteRequest, source_peer: Peer) {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("We deref through a write handle so this is always Some; qed");
-
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
-            let update = if let Some(sre) = inner.routing_table.lookup_selected(subnet.address()) {
+            let update = if let Some(sre) = self
+                .inner_r
+                .enter()
+                .expect("We deref through a write handle so this is always Some; qed")
+                .routing_table
+                .lookup_selected(subnet.address())
+            {
                 trace!("Advertising selected route for {subnet} after route request");
                 // Optimization: Don't send an update if the selected route next-hop is the peer
                 // who requested the route, as per the babel protocol the update will never be
@@ -583,11 +594,10 @@ impl Router {
                 )
             }
             // Could be a request for a static route/subnet.
-            else if let Some(static_route) = inner
+            else if let Some(static_route) = self
                 .static_routes
                 .iter()
-                .filter(|sr| sr.subnet.contains_subnet(&subnet))
-                .next()
+                .find(|sr| sr.subnet.contains_subnet(&subnet))
             {
                 trace!(
                     "Advertising static route {} in response to route request for {subnet}",
@@ -595,8 +605,8 @@ impl Router {
                 );
                 babel::Update::new(
                     UPDATE_INTERVAL,
-                    inner.router_seqno, // Updates receive the seqno of the router
-                    Metric::from(0),    // Static route has no further hop costs
+                    self.router_seqno.read().unwrap().0, // Updates receive the seqno of the router
+                    Metric::from(0),                     // Static route has no further hop costs
                     static_route.subnet,
                     self.router_id,
                 )
@@ -608,24 +618,19 @@ impl Router {
                 );
                 babel::Update::new(
                     UPDATE_INTERVAL,
-                    inner.router_seqno, // Retractions receive the seqno of the router
-                    Metric::infinite(), // Static route has no further hop costs
-                    subnet,             // Advertise the exact subnet requested
-                    self.router_id,     // Our own router ID, since we advertise this
+                    self.router_seqno.read().unwrap().0, // Retractions receive the seqno of the router
+                    Metric::infinite(),                  // Static route has no further hop costs
+                    subnet,                              // Advertise the exact subnet requested
+                    self.router_id, // Our own router ID, since we advertise this
                 )
             };
 
-            inner.send_update(
-                &source_peer,
-                &mut self.source_table.write().unwrap(),
-                update,
-            );
+            self.send_update(&source_peer, update);
         } else {
             // Requested a full route table dump
             trace!("Dumping route table after wildcard route request");
-            let mut source_table = self.source_table.write().unwrap();
-            inner.propagate_selected_routes_to_peer(&source_peer, &mut source_table);
-            inner.propagate_static_route_to_peer(&source_peer, self.router_id(), &mut source_table);
+            self.propagate_selected_routes_to_peer(&source_peer);
+            self.propagate_static_route_to_peer(&source_peer);
         }
     }
 
@@ -669,14 +674,7 @@ impl Router {
                     route_entry.source().router_id(),
                 );
 
-                self.inner_r
-                    .enter()
-                    .expect("We enter through a write handle so this can never be None")
-                    .send_update(
-                        &source_peer,
-                        &mut self.source_table.write().unwrap(),
-                        update,
-                    );
+                self.send_update(&source_peer, update);
 
                 return;
             }
@@ -693,13 +691,14 @@ impl Router {
         // routes with the current router id and the current router seqno. So we check if the
         // prefix is part of our static routes, if the router id is our own, and if the
         // requested seqno is greater than our own.
+        let (router_seqno, last_seqno_bump) = *self.router_seqno.read().unwrap();
         if seqno_request.router_id() == self.router_id
-            && seqno_request.seqno().gt(&inner.router_seqno)
-            && inner.static_routes.contains(&StaticRoute {
+            && seqno_request.seqno().gt(&router_seqno)
+            && self.static_routes.contains(&StaticRoute {
                 subnet: seqno_request.prefix(),
             })
         {
-            if inner.last_seqno_bump.elapsed() >= SEQNO_BUMP_TIMEOUT {
+            if last_seqno_bump.elapsed() >= SEQNO_BUMP_TIMEOUT {
                 trace!("Ignoring seqno bump request which happened too fast");
                 return;
             }
@@ -707,17 +706,22 @@ impl Router {
             // TODO: should we only send an update to the peer who sent the seqno request
             // instad of updating all our peers?
             drop(inner);
-            let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
             debug!("Bumping local router sequence number");
-            inner_w.append(RouterOpLogEntry::BumpSequenceNumber(Instant::now()));
-            // We already need to publish here so the sequence number is set correctly when
-            // calling the method to propagate the static routes.
-            inner_w.publish();
+            // Scope the write lock on seqno
+            {
+                let mut router_seqno = self.router_seqno.write().unwrap();
+                // First check again if we should bump
+                if router_seqno.1.elapsed() >= SEQNO_BUMP_TIMEOUT {
+                    trace!("Ignoring seqno bump request which happened too fast");
+                    return;
+                }
+                // Bump seqno
+                router_seqno.0 += 1;
+                // Set last modified time
+                router_seqno.1 = Instant::now();
+            }
 
-            self.inner_r
-                .enter()
-                .expect("We enter through a write handle so this can never be None")
-                .propagate_static_route(self.router_id, &mut self.source_table.write().unwrap());
+            self.propagate_static_route();
 
             return;
         }
@@ -1015,25 +1019,18 @@ impl Router {
 
         if trigger_update {
             debug!("Send triggered update for {subnet} in response to update");
-            self.trigger_update(subnet, router_id);
+            self.trigger_update(subnet);
         }
     }
 
     /// Trigger an update for the given [`Subnet`].
-    fn trigger_update(&self, subnet: Subnet, router_id: RouterId) {
-        self.inner_r
-            .enter()
-            .expect("Read handle is saved on router so write handle is always in scope")
-            .propagate_selected_route(subnet, router_id, &mut self.source_table.write().unwrap());
+    fn trigger_update(&self, subnet: Subnet) {
+        self.propagate_selected_route(subnet);
     }
 
+    /// Checks if a route key is an exact match for a static route.
     fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
-        for sr in inner.static_routes.iter() {
+        for sr in self.static_routes.iter() {
             if sr.subnet == route_key.subnet() {
                 return true;
             }
@@ -1176,34 +1173,31 @@ impl Router {
             })
     }
 
-    pub async fn propagate_static_route(self) {
+    /// Task to propagete the static routes periodically
+    async fn propagate_static_routes(self) {
         loop {
             tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
 
             trace!("Propagating static routes");
 
-            self.inner_r
-                .enter()
-                .expect(
-                    "Write handle is saved on router so it is not dropped before the read handles",
-                )
-                .propagate_static_route(self.router_id, &mut self.source_table.write().unwrap());
+            for peer in self.peer_interfaces.read().unwrap().iter() {
+                self.propagate_static_route_to_peer(peer)
+            }
         }
     }
 
-    pub async fn propagate_selected_routes(self) {
+    /// Task to propagate selected routes periodically
+    async fn propagate_selected_routes(self) {
         loop {
             tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
 
             trace!("Propagating selected routes");
 
-            self.inner_r
-                .enter()
-                .expect("We deref through a write handle so this enter never fails")
-                .propagate_selected_routes(&mut self.source_table.write().unwrap());
+            self.propagate_static_route();
         }
     }
 
+    /// Task which periodically sends a Hello TLV to all known peers
     async fn start_periodic_hello_sender(self) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(HELLO_INTERVAL as u64)).await;
@@ -1218,57 +1212,121 @@ impl Router {
             }
         }
     }
-}
 
-pub struct RouterInner {
-    peer_interfaces: Vec<Peer>,
-    routing_table: RoutingTable,
-    router_seqno: SeqNo,
-    last_seqno_bump: Instant,
-    static_routes: Vec<StaticRoute>,
-    // map that contains the overlay ips of peers and their respective public keys
-    dest_pubkey_map: IpPubkeyMap,
-    expired_source_key_sink: mpsc::Sender<SourceKey>,
-    expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
-}
+    /// Propagates the static routes to all known peers.
+    fn propagate_static_route(&self) {
+        for peer in self.peer_interfaces.read().unwrap().iter() {
+            self.propagate_selected_routes_to_peer(peer);
+        }
+    }
 
-impl RouterInner {
-    pub fn new(
-        expired_source_key_sink: mpsc::Sender<SourceKey>,
-        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
-    ) -> Result<Self, Box<dyn Error>> {
-        let router_inner = RouterInner {
-            peer_interfaces: Vec::new(),
-            routing_table: RoutingTable::new(),
-            router_seqno: SeqNo::default(),
-            last_seqno_bump: Instant::now(),
-            static_routes: vec![],
-            dest_pubkey_map: IpPubkeyMap::new(),
-            expired_source_key_sink,
-            expired_route_entry_sink,
+    /// Propagate the static routes to a single peer
+    fn propagate_static_route_to_peer(&self, peer: &Peer) {
+        for sr in self.static_routes.iter() {
+            let update = babel::Update::new(
+                UPDATE_INTERVAL,
+                self.router_seqno.read().unwrap().0, // updates receive the seqno of the router
+                Metric::from(0),                     // Static route has no further hop costs
+                sr.subnet,
+                self.router_id,
+            );
+            self.send_update(peer, update);
+        }
+    }
+
+    /// Propagate a selected route to all known peers.
+    fn propagate_selected_route(&self, subnet: Subnet) {
+        let (seqno, cost, router_id, maybe_neigh) = if let Some(sre) = self
+            .inner_r
+            .enter()
+            .expect("Write handle is saved on the router so read handle is always available; qed")
+            .routing_table
+            .lookup_selected(subnet.address())
+        {
+            (
+                sre.seqno(),
+                sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                sre.source().router_id(),
+                Some(sre.neighbour().clone()),
+            )
+        } else {
+            // TODO: fix this by retaining the route for some time after a retraction.
+            info!("Retracting route for {subnet}");
+            (
+                self.router_seqno.read().unwrap().0,
+                Metric::infinite(),
+                self.router_id,
+                None,
+            )
         };
 
-        Ok(router_inner)
-    }
-    fn remove_peer_interface(&mut self, peer: &Peer) {
-        self.peer_interfaces.retain(|p| p != peer);
+        for peer in self.peer_interfaces.read().unwrap().iter() {
+            // Don't send updates for a route to the next hop of the route, as that peer will never
+            // select the route through us (that would caus a routing loop). The protocol can
+            // handle this just fine, leaving this out is essentially an easy optimization.
+            if let Some(ref neigh) = maybe_neigh {
+                if peer == neigh {
+                    continue;
+                }
+            }
+            let update = babel::Update::new(UPDATE_INTERVAL, seqno, cost, subnet, router_id);
+            debug!(
+                "Propagating route update for {} to {}",
+                subnet,
+                peer.connection_identifier()
+            );
+            self.send_update(peer, update);
+        }
     }
 
-    fn send_update(
-        &self,
-        peer: &Peer,
-        // TODO: This is a bit unfortunate, but this method should really just move to the top
-        // level at this point if possible.
-        source_table: &mut SourceTable,
-        update: babel::Update,
-    ) {
-        // before sending an update, the source table might need to be updated
+    /// Propagate all selected routes to all peers known in the router.
+    fn propagate_selected_routes_to_peer(&self, peer: &Peer) {
+        for (srk, sre) in self
+            .inner_r
+            .enter()
+            .expect("Write handle is saved on router so read handle is always available; qed")
+            .routing_table
+            .iter()
+            .filter(|(_, sre)| sre.selected())
+        {
+            let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
+            // Don't send updates for a route to the next hop of the route, as that peer will never
+            // select the route through us (that would caus a routing loop). The protocol can
+            // handle this just fine, leaving this out is essentially an easy optimization.
+            if peer == sre.neighbour() {
+                continue;
+            }
+            let update = babel::Update::new(
+                UPDATE_INTERVAL,
+                sre.seqno(),
+                // the cost of the route is the cost of the route + the cost of the link to the next-hop
+                sre.metric() + neigh_link_cost,
+                srk.subnet(),
+                sre.source().router_id(),
+            );
+            debug!(
+                "Propagating route update for {} to {} | D({}, {})",
+                srk.subnet(),
+                peer.connection_identifier(),
+                sre.seqno(),
+                sre.metric() + neigh_link_cost,
+            );
+            self.send_update(peer, update);
+        }
+    }
+
+    /// Send an update to a peer.
+    ///
+    /// This updates updates the source table before sending the udpate as described in the RFC.
+    fn send_update(&self, peer: &Peer, update: babel::Update) {
+        // Before sending an update, the source table might need to be updated
         let metric = update.metric();
         let seqno = update.seqno();
         let router_id = update.router_id();
         let subnet = update.subnet();
 
         let source_key = SourceKey::new(subnet, router_id);
+        let mut source_table = self.source_table.write().unwrap();
 
         if let Some(source_entry) = source_table.get(&source_key) {
             // if seqno of the update is greater than the seqno in the source table, update the source table
@@ -1283,7 +1341,10 @@ impl RouterInner {
             else if seqno == source_entry.seqno() && source_entry.metric() > metric {
                 source_table.insert(
                     source_key,
-                    FeasibilityDistance::new(metric, source_entry.seqno()),
+                    // Technically the seqno in the feasibility distance comes from the source
+                    // entry, but that gives a borrow conflict so we use seqno from the update,
+                    // which we just verified is the same.
+                    FeasibilityDistance::new(metric, seqno),
                     self.expired_source_key_sink.clone(),
                 )
             }
@@ -1307,112 +1368,32 @@ impl RouterInner {
             error!("Error sending update to peer: {:?}", e);
         }
     }
+}
 
-    fn propagate_static_route(&self, router_id: RouterId, source_table: &mut SourceTable) {
-        for peer in self.peer_interfaces.iter() {
-            self.propagate_static_route_to_peer(peer, router_id, source_table)
-        }
-    }
+pub struct RouterInner {
+    routing_table: RoutingTable,
+    // map that contains the overlay ips of peers and their respective public keys
+    dest_pubkey_map: IpPubkeyMap,
+    expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
+}
 
-    fn propagate_static_route_to_peer(
-        &self,
-        peer: &Peer,
-        router_id: RouterId,
-        source_table: &mut SourceTable,
-    ) {
-        for sr in self.static_routes.iter() {
-            let update = babel::Update::new(
-                UPDATE_INTERVAL,
-                self.router_seqno, // updates receive the seqno of the router
-                Metric::from(0),   // Static route has no further hop costs
-                sr.subnet,
-                router_id,
-            );
-            self.send_update(peer, source_table, update);
-        }
-    }
+impl RouterInner {
+    pub fn new(
+        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let router_inner = RouterInner {
+            routing_table: RoutingTable::new(),
+            dest_pubkey_map: IpPubkeyMap::new(),
+            expired_route_entry_sink,
+        };
 
-    fn propagate_selected_route(
-        &self,
-        subnet: Subnet,
-        router_id: RouterId,
-        source_table: &mut SourceTable,
-    ) {
-        let (seqno, cost, router_id, maybe_neigh) =
-            if let Some(sre) = self.routing_table.lookup_selected(subnet.address()) {
-                (
-                    sre.seqno(),
-                    sre.metric() + Metric::from(sre.neighbour().link_cost()),
-                    sre.source().router_id(),
-                    Some(sre.neighbour().clone()),
-                )
-            } else {
-                // TODO: fix this by retaining the route for some time after a retraction.
-                info!("Retracting route for {subnet}");
-                (self.router_seqno, Metric::infinite(), router_id, None)
-            };
-
-        for peer in self.peer_interfaces.iter() {
-            // Don't send updates for a route to the next hop of the route, as that peer will never
-            // select the route through us (that would caus a routing loop). The protocol can
-            // handle this just fine, leaving this out is essentially an easy optimization.
-            if let Some(ref neigh) = maybe_neigh {
-                if peer == neigh {
-                    continue;
-                }
-            }
-            let update = babel::Update::new(UPDATE_INTERVAL, seqno, cost, subnet, router_id);
-            debug!(
-                "Propagating route update for {} to {}",
-                subnet,
-                peer.connection_identifier()
-            );
-            self.send_update(peer, source_table, update);
-        }
-    }
-
-    fn propagate_selected_routes_to_peer(&self, peer: &Peer, source_table: &mut SourceTable) {
-        for (srk, sre) in self.routing_table.iter().filter(|(_, sre)| sre.selected()) {
-            let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
-            // Don't send updates for a route to the next hop of the route, as that peer will never
-            // select the route through us (that would caus a routing loop). The protocol can
-            // handle this just fine, leaving this out is essentially an easy optimization.
-            if peer == sre.neighbour() {
-                continue;
-            }
-            let update = babel::Update::new(
-                UPDATE_INTERVAL,
-                sre.seqno(),
-                // the cost of the route is the cost of the route + the cost of the link to the next-hop
-                sre.metric() + neigh_link_cost,
-                srk.subnet(),
-                sre.source().router_id(),
-            );
-            debug!(
-                "Propagating route update for {} to {} | D({}, {})",
-                srk.subnet(),
-                peer.connection_identifier(),
-                sre.seqno(),
-                sre.metric() + neigh_link_cost,
-            );
-            self.send_update(peer, source_table, update);
-        }
-    }
-
-    fn propagate_selected_routes(&self, source_table: &mut SourceTable) {
-        for peer in self.peer_interfaces.iter() {
-            self.propagate_selected_routes_to_peer(peer, source_table);
-        }
+        Ok(router_inner)
     }
 }
 
 enum RouterOpLogEntry {
     /// Add a destination public key and shared secret for this router.
     AddDestPubkey(Subnet, PublicKey, SharedSecret),
-    /// Add a new peer to the router.
-    AddPeer(Peer),
-    /// Removes a peer from the router.
-    RemovePeer(Peer),
     /// Insert a new entry in the routing table.
     InsertRoute(RouteKey, RouteEntry),
     /// Removes a route with the given route key.
@@ -1424,10 +1405,6 @@ enum RouterOpLogEntry {
     /// Update the route entry associated to the given route key in the fallback route table, if
     /// one exists
     UpdateRouteEntry(RouteKey, SeqNo, Metric, RouterId),
-    /// Sets the static routes of the router to the provided value.
-    SetStaticRoutes(Vec<StaticRoute>),
-    /// Increment the sequence number of the router.
-    BumpSequenceNumber(Instant),
 }
 
 impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
@@ -1435,10 +1412,6 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
         match operation {
             RouterOpLogEntry::AddDestPubkey(dest, pk, ss) => {
                 self.dest_pubkey_map.insert(*dest, *pk, ss.clone());
-            }
-            RouterOpLogEntry::AddPeer(peer) => self.peer_interfaces.push(peer.clone()),
-            RouterOpLogEntry::RemovePeer(peer) => {
-                self.remove_peer_interface(peer);
             }
             RouterOpLogEntry::InsertRoute(rk, re) => {
                 self.routing_table.insert(
@@ -1465,13 +1438,6 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
                         .reset_route_timer(rk, self.expired_route_entry_sink.clone());
                 }
             }
-            RouterOpLogEntry::SetStaticRoutes(static_routes) => {
-                self.static_routes = static_routes.clone();
-            }
-            RouterOpLogEntry::BumpSequenceNumber(ts) => {
-                self.router_seqno += 1;
-                self.last_seqno_bump = *ts;
-            }
         }
     }
 
@@ -1483,13 +1449,8 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
 impl Clone for RouterInner {
     fn clone(&self) -> Self {
         let RouterInner {
-            peer_interfaces,
             routing_table,
-            router_seqno,
-            last_seqno_bump,
-            static_routes,
             dest_pubkey_map,
-            expired_source_key_sink,
             expired_route_entry_sink,
         } = self;
         let mut new_routing_table = RoutingTable::new();
@@ -1497,13 +1458,8 @@ impl Clone for RouterInner {
             new_routing_table.insert(k.clone(), v.clone(), expired_route_entry_sink.clone());
         }
         RouterInner {
-            peer_interfaces: peer_interfaces.clone(),
             routing_table: new_routing_table,
-            router_seqno: *router_seqno,
-            last_seqno_bump: *last_seqno_bump,
-            static_routes: static_routes.clone(),
             dest_pubkey_map: dest_pubkey_map.clone(),
-            expired_source_key_sink: expired_source_key_sink.clone(),
             expired_route_entry_sink: expired_route_entry_sink.clone(),
         }
     }
