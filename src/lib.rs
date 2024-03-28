@@ -18,7 +18,6 @@ pub mod data;
 pub mod endpoint;
 pub mod filters;
 mod interval;
-mod ip_pubkey;
 #[cfg(feature = "message")]
 pub mod message;
 mod metric;

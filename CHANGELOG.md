@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The router implementation has been changed to use regular locks instead of an
   always readable concurrency primitive for all but the actual routing table. This
   should reduce the memory consumption a bit.
+- Public key and shared secret for a destination are now saved on the router, instead
+  of maintaining a separate mapping for them. This slightly reduces memory consumption
+  of the router, and ensures stale data is properly cleaned up when all routes to
+  a subnet are removed.
 
 ## [0.4.5] - 2024-03-26
 

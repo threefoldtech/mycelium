@@ -135,11 +135,26 @@ impl RouteEntry {
 }
 
 /// The `RoutingTable` contains all known subnets, and the associated [`RouteEntry`]'s.
-pub struct RoutingTable {
-    table: IpLookupTable<Ipv6Addr, Vec<(RouteEntry, JoinHandle<()>)>>,
+///
+/// Associated data can be saved on the `RoutingTable`. This is provided when the [`RouteKey`] is
+/// inserted for the first time. It is removed when there no longer are any
+/// [`RouteEntries`](RouteEntry) for the given [`RouteKey`].
+pub struct RoutingTable<T> {
+    table: IpLookupTable<Ipv6Addr, TableEntry<T>>,
 }
 
-impl RoutingTable {
+/// An entry in the RoutingTable.
+///
+/// Contians all actual route entries and their associated expiration timer handles, as well as the
+/// extra data for the IP/subnet.
+struct TableEntry<T> {
+    /// Additional data saved for the RouteKey
+    extra_data: T,
+    /// Route entries saved for the route key
+    entries: Vec<(RouteEntry, JoinHandle<()>)>,
+}
+
+impl<T> RoutingTable<T> {
     /// Create a new, empty `RoutingTable`.
     pub fn new() -> Self {
         Self {
@@ -157,6 +172,7 @@ impl RoutingTable {
 
         self.table
             .exact_match(addr, key.subnet.prefix_len() as u32)?
+            .entries
             .iter()
             .map(|(entry, _)| entry)
             .find(|entry| entry.neighbor == key.neighbor)
@@ -172,6 +188,7 @@ impl RoutingTable {
 
         self.table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)?
+            .entries
             .iter_mut()
             .map(|(entry, _)| entry)
             .find(|entry| entry.neighbor == key.neighbor)
@@ -184,6 +201,7 @@ impl RoutingTable {
     pub fn insert(
         &mut self,
         key: RouteKey,
+        extra_data: T,
         entry: RouteEntry,
         expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
     ) {
@@ -214,6 +232,7 @@ impl RoutingTable {
         match self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
+            .map(|entry| &mut entry.entries)
         {
             Some(entries) => {
                 let new_elem_idx = if let Some(idx) = entries
@@ -247,7 +266,10 @@ impl RoutingTable {
                 self.table.insert(
                     addr,
                     key.subnet.prefix_len() as u32,
-                    vec![(entry, expiration)],
+                    TableEntry {
+                        extra_data,
+                        entries: vec![(entry, expiration)],
+                    },
                 );
             }
         };
@@ -265,6 +287,7 @@ impl RoutingTable {
         match self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
+            .map(|entry| &mut entry.entries)
         {
             Some(entries) => {
                 let elem = entries
@@ -288,15 +311,16 @@ impl RoutingTable {
 
     /// Create an iterator over all key value pairs in the table.
     // TODO: remove this?
-    pub fn iter(&self) -> impl Iterator<Item = (RouteKey, &'_ RouteEntry)> {
-        self.table.iter().flat_map(|(addr, prefix, entries)| {
-            entries.iter().map(move |(value, _)| {
+    pub fn iter(&self) -> impl Iterator<Item = (RouteKey, &'_ T, &'_ RouteEntry)> {
+        self.table.iter().flat_map(|(addr, prefix, entry)| {
+            entry.entries.iter().map(move |(value, _)| {
                 (
                     RouteKey::new(
                         Subnet::new(addr.into(), prefix as u8)
                             .expect("Only proper subnets are inserted in the table; qed"),
                         value.neighbor.clone(),
                     ),
+                    &entry.extra_data,
                     value,
                 )
             })
@@ -306,7 +330,7 @@ impl RoutingTable {
     /// Look up a selected route for an [`IpAddr`] in the `RoutingTable`.
     ///
     /// Currently only IPv6 is supported, looking up an IPv4 address always returns [`Option::None`].
-    /// In the event where 2 distinc routes are inserted with selected set to true, the entry with
+    /// In the event where 2 distinct routes are inserted with selected set to true, the entry with
     /// the minimum `Metric` is selected. Note that it is an error to have 2 such entries, and this
     /// might result in a panic later.
     pub fn lookup_selected(&self, ip: IpAddr) -> Option<RouteEntry> {
@@ -314,7 +338,7 @@ impl RoutingTable {
             IpAddr::V6(addr) => addr,
             _ => return None,
         };
-        let entries = self.table.longest_match(addr)?.2;
+        let entries = &self.table.longest_match(addr)?.2.entries;
         if entries.is_empty() {
             // This is a logic error in our code, but don't crash as it is recoverable.
             warn!("Empty route entry list for {ip}, this is a bug");
@@ -325,6 +349,20 @@ impl RoutingTable {
         } else {
             None
         }
+    }
+
+    /// Look up extra data for an [`IpAddr`] in the `RoutingTable`.
+    ///
+    /// Currently only IPv6 is supported, looking up an IPv4 address always returns [`Option::None`].
+    /// Extra data is set when the route is inserted and no [`RouteKey`] is present in the table.
+    /// It remains valid until all present [`RouteEntries`](RouteEntry) have been removed.
+    pub fn lookup_extra_data(&self, ip: IpAddr) -> Option<&T> {
+        let addr = match ip {
+            IpAddr::V6(addr) => addr,
+            _ => return None,
+        };
+
+        Some(&self.table.longest_match(addr)?.2.extra_data)
     }
 
     /// Unselects a route defined by the [`RouteKey`]. This means there will no longer be a
@@ -341,10 +379,11 @@ impl RoutingTable {
             // obviously not the case.
             _ => panic!("RouteKey must exist, so it can't be IPv4"),
         };
-        let entries = self
+        let entries = &mut self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .expect("There is an entry for the provided RouteKey");
+            .expect("There is an entry for the provided RouteKey")
+            .entries;
         // No need for bounds check, RouteKey must exist so there must be at least 1 element.
         // The message on this assert assumes the invariant that the selected route is the first
         // element holds
@@ -372,10 +411,11 @@ impl RoutingTable {
             // obviously not the case.
             _ => panic!("RouteKey must exist, so it can't be IPv4"),
         };
-        let entries = self
+        let entries = &mut self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .expect("There is an entry for the provided RouteKey");
+            .expect("There is an entry for the provided RouteKey")
+            .entries;
         // No need for bounds check, RouteKey must exist so there must be at least 1 element.
         // The message on this assert assumes the invariant that the selected route is the first
         // element holds
@@ -403,7 +443,7 @@ impl RoutingTable {
         };
         self.table
             .exact_match(addr, subnet.prefix_len() as u32)
-            .map(Vec::as_slice)
+            .map(|entry| entry.entries.as_slice())
             .unwrap_or(&[])
             .iter()
             .map(|(entry, _)| entry)
@@ -425,6 +465,7 @@ impl RoutingTable {
         if let Some(entries) = self
             .table
             .exact_match_mut(addr, key.subnet.prefix_len() as u32)
+            .map(|entry| &mut entry.entries)
         {
             if let Some(idx) = entries
                 .iter()

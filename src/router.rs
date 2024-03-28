@@ -2,7 +2,6 @@ use crate::{
     babel::{self, RouteRequest, SeqNoRequest},
     crypto::{PacketBuffer, PublicKey, SecretKey, SharedSecret},
     filters::RouteUpdateFilter,
-    ip_pubkey::IpPubkeyMap,
     metric::Metric,
     packet::{ControlPacket, DataPacket},
     peer::Peer,
@@ -20,7 +19,7 @@ use left_right::{ReadHandle, WriteHandle};
 use log::{debug, error, info, trace, warn};
 use std::{
     error::Error,
-    net::{IpAddr, Ipv6Addr},
+    net::IpAddr,
     sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
 };
@@ -193,42 +192,24 @@ impl Router {
         self.router_id
     }
 
-    /// Add a new destination [`PublicKey`] to the destination map. This will also compute and store
-    /// the [`SharedSecret`] from the `Router`'s [`SecretKey`].
-    pub fn add_dest_pubkey_map_entry(&self, dest: Subnet, pubkey: PublicKey) {
-        let ss = self.node_keypair.0.shared_secret(&pubkey);
-
-        self.inner_w
-            .lock()
-            .expect("Mutex isn't poisoned")
-            .append(RouterOpLogEntry::AddDestPubkey(dest, pubkey, ss))
-            .publish();
-    }
-
-    /// Get the [`PublicKey`] for an [`Ipv6Addr`] if a mapping exists.
+    /// Get the [`PublicKey`] for an [`IpAddr`] if a route exists to the IP.
     pub fn get_pubkey(&self, ip: IpAddr) -> Option<PublicKey> {
-        if let IpAddr::V6(ip) = ip {
-            self.inner_r
-                .enter()
-                .expect(
-                    "Write handle is saved on router so it is not dropped before the read handles",
-                )
-                .dest_pubkey_map
-                .lookup(ip)
-                .map(|(pk, _)| pk)
-                .copied()
-        } else {
-            None
-        }
-    }
-
-    /// Gets the cached [`SharedSecret`] for the remote.
-    pub fn get_shared_secret_from_dest(&self, dest: Ipv6Addr) -> Option<SharedSecret> {
         self.inner_r
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .dest_pubkey_map
-            .lookup(dest)
+            .routing_table
+            .lookup_extra_data(ip)
+            .map(|(pk, _)| pk)
+            .copied()
+    }
+
+    /// Gets the cached [`SharedSecret`] for the remote.
+    pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
+        self.inner_r
+            .enter()
+            .expect("Write handle is saved on router so it is not dropped before the read handles")
+            .routing_table
+            .lookup_extra_data(dest)
             .map(|(_, ss)| ss.clone())
     }
 
@@ -237,8 +218,8 @@ impl Router {
         self.inner_r
             .enter()
             .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .dest_pubkey_map
-            .lookup(dest.address())
+            .routing_table
+            .lookup_extra_data(dest.address().into())
             .map(|(_, ss)| ss.clone())
     }
 
@@ -266,8 +247,8 @@ impl Router {
         inner
             .routing_table
             .iter()
-            .filter(|(_, re)| re.selected())
-            .map(|(_, re)| re.clone())
+            .filter(|(_, _, re)| re.selected())
+            .map(|(_, _, re)| re.clone())
             .collect()
     }
 
@@ -281,8 +262,8 @@ impl Router {
         inner
             .routing_table
             .iter()
-            .filter(|(_, re)| !re.selected())
-            .map(|(_, re)| re.clone())
+            .filter(|(_, _, re)| !re.selected())
+            .map(|(_, _, re)| re.clone())
             .collect()
     }
 
@@ -333,7 +314,7 @@ impl Router {
 
             let mut subnets_to_select = Vec::new();
 
-            for (rk, re) in inner.routing_table.iter() {
+            for (rk, _, re) in inner.routing_table.iter() {
                 if rk.neighbour() == &dead_peer {
                     subnets_to_select.push(rk.subnet());
                     inner_w.append(RouterOpLogEntry::UpdateRouteEntry(
@@ -818,9 +799,6 @@ impl Router {
         let seqno = update.seqno();
         let subnet = update.subnet();
 
-        // Make sure the shared secret is known for a destination.
-        self.add_dest_pubkey_map_entry(subnet, router_id.to_pubkey());
-
         // create route key from incoming update control struct
         let update_route_key = RouteKey::new(subnet, source_peer.clone());
         // used later to filter out static route
@@ -939,9 +917,13 @@ impl Router {
                 false,
             );
             routing_table_entries.push(re.clone());
+
+            let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
             inner_w.append(RouterOpLogEntry::InsertRoute(
                 RouteKey::new(subnet, source_peer),
                 re,
+                router_id.to_pubkey(),
+                ss,
             ));
         }
 
@@ -1125,7 +1107,7 @@ impl Router {
         header[1] = 2;
 
         // Get shared secret from node and dest address
-        let shared_secret = match self.get_shared_secret_from_dest(data_packet.src_ip) {
+        let shared_secret = match self.get_shared_secret_from_dest(data_packet.src_ip.into()) {
             Some(ss) => ss,
             None => {
                 debug!(
@@ -1272,13 +1254,13 @@ impl Router {
 
     /// Propagate all selected routes to all peers known in the router.
     fn propagate_selected_routes_to_peer(&self, peer: &Peer) {
-        for (srk, sre) in self
+        for (srk, _, sre) in self
             .inner_r
             .enter()
             .expect("Write handle is saved on router so read handle is always available; qed")
             .routing_table
             .iter()
-            .filter(|(_, sre)| sre.selected())
+            .filter(|(_, _, sre)| sre.selected())
         {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1362,9 +1344,7 @@ impl Router {
 }
 
 pub struct RouterInner {
-    routing_table: RoutingTable,
-    // map that contains the overlay ips of peers and their respective public keys
-    dest_pubkey_map: IpPubkeyMap,
+    routing_table: RoutingTable<(PublicKey, SharedSecret)>,
     expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
 }
 
@@ -1374,7 +1354,6 @@ impl RouterInner {
     ) -> Result<Self, Box<dyn Error>> {
         let router_inner = RouterInner {
             routing_table: RoutingTable::new(),
-            dest_pubkey_map: IpPubkeyMap::new(),
             expired_route_entry_sink,
         };
 
@@ -1383,10 +1362,8 @@ impl RouterInner {
 }
 
 enum RouterOpLogEntry {
-    /// Add a destination public key and shared secret for this router.
-    AddDestPubkey(Subnet, PublicKey, SharedSecret),
     /// Insert a new entry in the routing table.
-    InsertRoute(RouteKey, RouteEntry),
+    InsertRoute(RouteKey, RouteEntry, PublicKey, SharedSecret),
     /// Removes a route with the given route key.
     RemoveRoute(RouteKey),
     /// Unselect the route defined by the route key.
@@ -1401,12 +1378,10 @@ enum RouterOpLogEntry {
 impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
     fn absorb_first(&mut self, operation: &mut RouterOpLogEntry, _: &Self) {
         match operation {
-            RouterOpLogEntry::AddDestPubkey(dest, pk, ss) => {
-                self.dest_pubkey_map.insert(*dest, *pk, ss.clone());
-            }
-            RouterOpLogEntry::InsertRoute(rk, re) => {
+            RouterOpLogEntry::InsertRoute(rk, re, pk, ss) => {
                 self.routing_table.insert(
                     rk.clone(),
+                    (*pk, ss.clone()),
                     re.clone(),
                     self.expired_route_entry_sink.clone(),
                 );
@@ -1441,16 +1416,14 @@ impl Clone for RouterInner {
     fn clone(&self) -> Self {
         let RouterInner {
             routing_table,
-            dest_pubkey_map,
             expired_route_entry_sink,
         } = self;
         let mut new_routing_table = RoutingTable::new();
-        for (k, v) in routing_table.iter() {
-            new_routing_table.insert(k.clone(), v.clone(), expired_route_entry_sink.clone());
+        for (k, e, v) in routing_table.iter() {
+            new_routing_table.insert(k, e.clone(), v.clone(), expired_route_entry_sink.clone());
         }
         RouterInner {
             routing_table: new_routing_table,
-            dest_pubkey_map: dest_pubkey_map.clone(),
             expired_route_entry_sink: expired_route_entry_sink.clone(),
         }
     }

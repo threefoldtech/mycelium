@@ -213,7 +213,7 @@ impl DataPlane {
         packet: PacketBuffer,
     ) -> Option<PacketBuffer> {
         // Get shared secret from node and dest address
-        let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip) {
+        let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip.into()) {
             Some(ss) => ss,
             None => {
                 debug!(
@@ -265,13 +265,15 @@ impl DataPlane {
     {
         while let Some(data_packet) = host_packet_source.recv().await {
             // decrypt & send to TUN interface
-            let shared_secret =
-                if let Some(ss) = self.router.get_shared_secret_from_dest(data_packet.src_ip) {
-                    ss
-                } else {
-                    trace!("Received packet from unknown sender");
-                    continue;
-                };
+            let shared_secret = if let Some(ss) = self
+                .router
+                .get_shared_secret_from_dest(data_packet.src_ip.into())
+            {
+                ss
+            } else {
+                trace!("Received packet from unknown sender");
+                continue;
+            };
             let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
@@ -335,12 +337,13 @@ impl DataPlane {
                     );
                     trace!("ICMP for original target {dec_ip}");
 
-                    let key = if let Some(key) = self.router.get_shared_secret_from_dest(dec_ip) {
-                        key
-                    } else {
-                        debug!("Can't decrypt OOB ICMP packet from unknown host");
-                        continue;
-                    };
+                    let key =
+                        if let Some(key) = self.router.get_shared_secret_from_dest(dec_ip.into()) {
+                            key
+                        } else {
+                            debug!("Can't decrypt OOB ICMP packet from unknown host");
+                            continue;
+                        };
 
                     let (_, body) = match etherparse::IpHeaders::from_slice(&real_packet[16..]) {
                         Ok(r) => r,
