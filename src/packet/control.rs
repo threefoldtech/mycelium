@@ -15,8 +15,10 @@ pub struct Codec {
 }
 
 impl ControlPacket {
-    pub fn new_hello(dest_peer: &Peer, interval: u16) -> Self {
-        let tlv: babel::Tlv = babel::Hello::new_unicast(dest_peer.hello_seqno(), interval).into();
+    pub fn new_hello(dest_peer: &Peer, interval: Duration) -> Self {
+        let tlv: babel::Tlv =
+            babel::Hello::new_unicast(dest_peer.hello_seqno(), (interval.as_millis() / 10) as u16)
+                .into();
         dest_peer.increment_hello_seqno();
         tlv
     }

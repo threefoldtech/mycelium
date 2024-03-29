@@ -26,12 +26,12 @@ use std::{
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 
 /// Time between HELLO messags, in seconds
-const HELLO_INTERVAL: u16 = 20;
+const HELLO_INTERVAL: u64 = 20;
 /// Time filled in in IHU packet
-const IHU_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 3);
+const IHU_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3);
 /// Base time used in UPDATE packets. For local (static) routes this is the timeout they are
 /// advertised with.
-const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 3);
+const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3);
 /// Time between route table dumps to peers.
 const ROUTE_PROPAGATION_INTERVAL: Duration = UPDATE_INTERVAL;
 /// Amount of seconds that can elapse before we consider a [`Peer`] as dead from the routers POV.
@@ -39,7 +39,7 @@ const ROUTE_PROPAGATION_INTERVAL: Duration = UPDATE_INTERVAL;
 /// [`HELLO_INTERVAL`].
 ///
 /// We allow missing 1 hello, + some latency, so 2 HELLO's + 3 seconds for latency.
-const DEAD_PEER_THRESHOLD: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 2 + 3);
+const DEAD_PEER_THRESHOLD: Duration = Duration::from_secs(HELLO_INTERVAL * 2 + 3);
 /// The duration between checks for dead peers in the router. This check only looks for peers where
 /// time since the last IHU exceeds DEAD_PEER_THRESHOLD.
 const DEAD_PEER_CHECK_INTERVAL: Duration = Duration::from_secs(10);
@@ -1172,11 +1172,12 @@ impl Router {
 
     /// Task which periodically sends a Hello TLV to all known peers
     async fn start_periodic_hello_sender(self) {
+        let hello_interval = Duration::from_secs(HELLO_INTERVAL);
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(HELLO_INTERVAL as u64)).await;
+            tokio::time::sleep(hello_interval).await;
 
             for peer in self.peer_interfaces.read().unwrap().iter() {
-                let hello = ControlPacket::new_hello(peer, HELLO_INTERVAL);
+                let hello = ControlPacket::new_hello(peer, hello_interval);
                 peer.set_time_last_received_hello(tokio::time::Instant::now());
 
                 if let Err(error) = peer.send_control_packet(hello) {
