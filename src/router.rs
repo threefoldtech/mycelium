@@ -1175,7 +1175,7 @@ impl Router {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(HELLO_INTERVAL as u64)).await;
 
-            for peer in self.peer_interfaces().iter_mut() {
+            for peer in self.peer_interfaces.read().unwrap().iter() {
                 let hello = ControlPacket::new_hello(peer, HELLO_INTERVAL);
                 peer.set_time_last_received_hello(tokio::time::Instant::now());
 
