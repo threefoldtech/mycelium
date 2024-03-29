@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of maintaining a separate mapping for them. This slightly reduces memory consumption
   of the router, and ensures stale data is properly cleaned up when all routes to
   a subnet are removed.
+- Hello packets now set the interval in which the next Hello will be sent properly
+  in centiseconds.
+- IHU packets now set the interval properly in centiseconds.
+- IHU packets now set an RX cost. For now this is the link cost, in the future
+  this will be set properly.
 
 ## [0.4.5] - 2024-03-26
 
