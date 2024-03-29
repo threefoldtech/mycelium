@@ -514,7 +514,8 @@ impl Router {
     /// Handle a received hello TLV
     fn handle_incoming_hello(&self, _: babel::Hello, source_peer: Peer) {
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
-        let ihu = ControlPacket::new_ihu(IHU_INTERVAL, None);
+        // TODO: properly calculate RX cost, for now just set the link cost.
+        let ihu = ControlPacket::new_ihu(source_peer.link_cost().into(), IHU_INTERVAL, None);
         if let Err(e) = source_peer.send_control_packet(ihu) {
             error!("Error sending IHU to peer: {e}");
         }
