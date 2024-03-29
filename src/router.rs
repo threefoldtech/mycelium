@@ -1032,7 +1032,11 @@ impl Router {
             match self.select_best_route(IpAddr::V6(data_packet.dst_ip)) {
                 Some(route_entry) => {
                     if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
-                        error!("Error sending data packet to peer: {:?}", e);
+                        error!(
+                            "Error sending data packet to peer {}: {:?}",
+                            route_entry.neighbour().connection_identifier(),
+                            e
+                        );
                     }
                 }
                 None => {
