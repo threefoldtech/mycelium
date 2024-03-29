@@ -28,7 +28,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSend
 /// Time between HELLO messags, in seconds
 const HELLO_INTERVAL: u16 = 20;
 /// Time filled in in IHU packet
-const IHU_INTERVAL: u16 = HELLO_INTERVAL * 3;
+const IHU_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 3);
 /// Base time used in UPDATE packets. For local (static) routes this is the timeout they are
 /// advertised with.
 const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL as u64 * 3);
