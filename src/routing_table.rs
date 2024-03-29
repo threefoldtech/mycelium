@@ -333,7 +333,7 @@ impl<T> RoutingTable<T> {
     /// In the event where 2 distinct routes are inserted with selected set to true, the entry with
     /// the minimum `Metric` is selected. Note that it is an error to have 2 such entries, and this
     /// might result in a panic later.
-    pub fn lookup_selected(&self, ip: IpAddr) -> Option<RouteEntry> {
+    pub fn lookup_selected(&self, ip: IpAddr) -> Option<&RouteEntry> {
         let addr = match ip {
             IpAddr::V6(addr) => addr,
             _ => return None,
@@ -345,7 +345,7 @@ impl<T> RoutingTable<T> {
             return None;
         }
         if entries[0].0.selected {
-            Some(entries[0].0.clone())
+            Some(&entries[0].0)
         } else {
             None
         }

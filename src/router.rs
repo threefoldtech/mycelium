@@ -633,7 +633,6 @@ impl Router {
                     seqno_request.seqno(),
                     seqno_request.prefix()
                 );
-                drop(inner);
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
                     route_entry.seqno(), // updates receive the seqno of the router
@@ -644,6 +643,7 @@ impl Router {
                     // if the router_id is not in the map, then the route came from the node itself
                     route_entry.source().router_id(),
                 );
+                drop(inner);
 
                 self.send_update(&source_peer, update);
 
@@ -1142,7 +1142,7 @@ impl Router {
                 if entry.metric().is_infinite() {
                     None
                 } else {
-                    Some(entry)
+                    Some(entry.clone())
                 }
             })
     }
