@@ -60,13 +60,13 @@ const MESSAGE_ID_SIZE: usize = 8;
 const FLAG_MESSAGE_INIT: u16 = 0b1000_0000_0000_0000;
 // Flag indicating the message with the given ID is done, i.e. it has been fully transmitted.
 const FLAG_MESSAGE_DONE: u16 = 0b0100_0000_0000_0000;
-/// Indicats the message with this ID is aborted by the sender and the receiver should discard it.
+/// Indicates the message with this ID is aborted by the sender and the receiver should discard it.
 /// The receiver can ignore this if it fully received the message.
 const FLAG_MESSAGE_ABORTED: u16 = 0b0010_0000_0000_0000;
-/// Flag indicating we are transfering a data chunk.
+/// Flag indicating we are transferring a data chunk.
 const FLAG_MESSAGE_CHUNK: u16 = 0b0001_0000_0000_0000;
 /// Flag indicating the message with the given ID has been read by the receiver, that is it has
-/// been transfered to an external process.
+/// been transferred to an external process.
 const FLAG_MESSAGE_READ: u16 = 0b0000_1000_0000_0000;
 /// Flag indicating we are sending a reply to a received message. The message ID used is the same
 /// as the received message.
@@ -1074,7 +1074,7 @@ pub enum TransmissionProgress {
         /// Chunks which have been acknowledged and won't be sent again.
         acked: usize,
     },
-    /// The remote acknowledged full reception, including checksum verficiation.
+    /// The remote acknowledged full reception, including checksum verification.
     Received,
     /// The remote notified us that the message has been read at least once.
     Read,
@@ -1261,7 +1261,7 @@ impl fmt::Binary for Flags<'_> {
 
 /// A mutable reference to the flags in a message header.
 // We keep a separate struct because creating a u16 from a byte buffer will write the data in
-// native endiannes, but we need big endian. So we add a drop implementation which forces a big
+// native endianness, but we need big endian. So we add a drop implementation which forces a big
 // endian writeback to the buffer.
 struct FlagsMut<'a, 'b> {
     header: &'b mut MessagePacketHeaderMut<'a>,
@@ -1412,7 +1412,7 @@ pub struct Message {
     src: IpAddr,
     /// Destination IP
     dst: IpAddr,
-    /// An optional topic of the message, usefull to differentiate messages before reading.
+    /// An optional topic of the message, useful to differentiate messages before reading.
     topic: Vec<u8>,
     /// Data of the message
     data: Vec<u8>,
@@ -1448,7 +1448,7 @@ impl Message {
 impl fmt::Display for PushMessageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TopicTooLarge => f.write_str("topic too large, topic is limitted to 255 bytes"),
+            Self::TopicTooLarge => f.write_str("topic too large, topic is limited to 255 bytes"),
         }
     }
 }
