@@ -91,11 +91,11 @@ pub enum MessageCommand {
         /// `--wait` is set and this flag isn't, wait forever for a reply.
         #[arg(long = "timeout")]
         timeout: Option<u64>,
-        /// Optional topic of the message. Receivers can filter on this to only recieve messages
+        /// Optional topic of the message. Receivers can filter on this to only receive messages
         /// for a chosen topic.
         #[arg(short = 't', long = "topic")]
         topic: Option<String>,
-        /// Optional file to use as messge body.
+        /// Optional file to use as message body.
         #[arg(long = "msg-path")]
         msg_path: Option<PathBuf>,
         /// Optional message ID to reply to.
