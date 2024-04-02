@@ -29,7 +29,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSend
 const HELLO_INTERVAL: u64 = 20;
 /// Time filled in in IHU packet
 const IHU_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3);
-/// Base time used in UPDATE packets. For local (static) routes this is the timeout they are
+/// Max time used in UPDATE packets. For local (static) routes this is the timeout they are
 /// advertised with.
 const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3);
 /// Time between route table dumps to peers.
@@ -55,6 +55,9 @@ const SIGNIFICANT_METRIC_IMPROVEMENT: Metric = Metric::new(10);
 
 /// Hold retracted routes for 1 minute before purging them from the [`RoutingTable`].
 const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(60);
+
+/// The interval specified in updates if the update won't be repeated.
+const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(0);
 
 #[derive(Clone)]
 pub struct Router {
@@ -563,7 +566,7 @@ impl Router {
                     return;
                 }
                 babel::Update::new(
-                    UPDATE_INTERVAL,
+                    advertised_update_interval(&sre),
                     sre.seqno(),
                     sre.metric() + Metric::from(sre.neighbour().link_cost()),
                     subnet,
@@ -580,9 +583,9 @@ impl Router {
                     "Advertising static route {static_route} in response to route request for {subnet}"
                 );
                 babel::Update::new(
-                    UPDATE_INTERVAL,
+                    UPDATE_INTERVAL, // Static route is advertised with the default interval
                     self.router_seqno.read().unwrap().0, // Updates receive the seqno of the router
-                    Metric::from(0),                     // Static route has no further hop costs
+                    Metric::from(0), // Static route has no further hop costs
                     *static_route,
                     self.router_id,
                 )
@@ -593,7 +596,7 @@ impl Router {
                     "Sending retraction for unknown subnet {subnet} in response to route request"
                 );
                 babel::Update::new(
-                    UPDATE_INTERVAL,
+                    INTERVAL_NOT_REPEATING,
                     self.router_seqno.read().unwrap().0, // Retractions receive the seqno of the router
                     Metric::infinite(),                  // Static route has no further hop costs
                     subnet,                              // Advertise the exact subnet requested
@@ -640,7 +643,7 @@ impl Router {
                     seqno_request.prefix()
                 );
                 let update = babel::Update::new(
-                    UPDATE_INTERVAL,
+                    advertised_update_interval(&route_entry),
                     route_entry.seqno(), // updates receive the seqno of the router
                     route_entry.metric() + Metric::from(source_peer.link_cost()),
                     // the cost of the route is the cost of the route + the cost of the link to the peer
@@ -1225,28 +1228,33 @@ impl Router {
 
     /// Propagate a selected route to all known peers.
     fn propagate_selected_route(&self, subnet: Subnet) {
-        let (seqno, cost, router_id, maybe_neigh) = if let Some(sre) = self
+        let (update, maybe_neigh) = if let Some(sre) = self
             .inner_r
             .enter()
             .expect("Write handle is saved on the router so read handle is always available; qed")
             .routing_table
             .lookup_selected(subnet.address())
         {
-            (
+            let update = babel::Update::new(
+                advertised_update_interval(&sre),
                 sre.seqno(),
                 sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                sre.source().subnet(),
                 sre.source().router_id(),
-                Some(sre.neighbour().clone()),
-            )
+            );
+            (update, Some(sre.neighbour().clone()))
         } else {
             // TODO: fix this by retaining the route for some time after a retraction.
+            // TODO: is this possible in the first place?
             info!("Retracting route for {subnet}");
-            (
+            let update = babel::Update::new(
+                UPDATE_INTERVAL,
                 self.router_seqno.read().unwrap().0,
                 Metric::infinite(),
+                subnet,
                 self.router_id,
-                None,
-            )
+            );
+            (update, None)
         };
 
         for peer in self.peer_interfaces.read().unwrap().iter() {
@@ -1258,13 +1266,12 @@ impl Router {
                     continue;
                 }
             }
-            let update = babel::Update::new(UPDATE_INTERVAL, seqno, cost, subnet, router_id);
             debug!(
                 "Propagating route update for {} to {}",
                 subnet,
                 peer.connection_identifier()
             );
-            self.send_update(peer, update);
+            self.send_update(peer, update.clone());
         }
     }
 
@@ -1286,7 +1293,7 @@ impl Router {
                 continue;
             }
             let update = babel::Update::new(
-                UPDATE_INTERVAL,
+                advertised_update_interval(&sre),
                 sre.seqno(),
                 // the cost of the route is the cost of the route + the cost of the link to the next-hop
                 sre.metric() + neigh_link_cost,
@@ -1457,16 +1464,24 @@ fn route_hold_time(update: &babel::Update) -> Duration {
     Duration::from_millis((update.interval().as_millis() * 3 / 2) as u64)
 }
 
+/// Calculates the interval to use when announcing updates on (selected) routes.
+fn advertised_update_interval(sre: &RouteEntry) -> Duration {
+    sre.expires().min(UPDATE_INTERVAL)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
         net::{IpAddr, Ipv6Addr},
+        sync::{atomic::AtomicU64, Arc},
         time::Duration,
     };
 
+    use tokio::sync::mpsc;
+
     use crate::{
-        babel::Update, crypto::PublicKey, metric::Metric, router_id::RouterId,
-        sequence_number::SeqNo, subnet::Subnet,
+        babel::Update, crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId,
+        sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
     };
 
     #[test]
@@ -1495,5 +1510,65 @@ mod tests {
         // Duration::from_milis(478) is equal to Duration::from_millis(470);
         let update = Update::new(Duration::from_millis(478), seqno, metric, subnet, router_id);
         assert_eq!(Duration::from_millis(705), super::route_hold_time(&update));
+    }
+
+    #[tokio::test]
+    async fn calculate_advertised_update_interval() {
+        // Set up a dummy peer since that is needed to create a `RouteEntry`
+        let (router_data_tx, _router_data_rx) = mpsc::channel(1);
+        let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
+        let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
+        let (con1, _con2) = tokio::io::duplex(1500);
+        let neighbor = Peer::new(
+            router_data_tx,
+            router_control_tx,
+            con1,
+            dead_peer_sink,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("Can create a dummy peer");
+        let subnet = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0)), 64)
+            .expect("Valid subnet definition");
+        let router_id = RouterId::new(PublicKey::from([0; 32]));
+        let source = SourceKey::new(subnet, router_id);
+        let metric = Metric::new(0);
+        let seqno = SeqNo::new();
+        let selected = true;
+
+        let expiration = Duration::from_secs(15);
+        let re = super::RouteEntry::new(
+            source,
+            neighbor.clone(),
+            metric,
+            seqno,
+            selected,
+            expiration,
+        );
+        // We can't match exactly here since everything takes a non instant amount of time to do,
+        // but basically verify that the calculated interval is within expected parameters.
+        let advertised_interval = super::advertised_update_interval(&re).as_secs();
+        assert!(14 <= advertised_interval && advertised_interval <= 15);
+
+        // Expired route
+        let expiration = Duration::from_secs(0);
+        let re = super::RouteEntry::new(
+            source,
+            neighbor.clone(),
+            metric,
+            seqno,
+            selected,
+            expiration,
+        );
+        let advertised_interval = super::advertised_update_interval(&re).as_nanos();
+        assert_eq!(advertised_interval, 0);
+
+        // Check that the interval is properly capped
+        let expiration = Duration::from_secs(600);
+        let re = super::RouteEntry::new(source, neighbor, metric, seqno, selected, expiration);
+        // We can't match exactly here since everything takes a non instant amount of time to do,
+        // but basically verify that the calculated interval is within expected parameters.
+        let advertised_interval = super::advertised_update_interval(&re);
+        assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
     }
 }
