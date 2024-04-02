@@ -90,6 +90,12 @@ impl Update {
         UPDATE_BASE_WIRE_SIZE + address_bytes
     }
 
+    /// Get the time until a new `Update` for the [`Subnet`] is received at the latest.
+    pub fn interval(&self) -> Duration {
+        // Interval is expressed as centiseconds on the wire.
+        Duration::from_millis(self.interval as u64 * 10)
+    }
+
     /// Construct an `Update` from wire bytes.
     ///
     /// # Panics
