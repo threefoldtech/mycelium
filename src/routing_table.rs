@@ -9,11 +9,8 @@ use crate::{
 use core::fmt;
 use std::{
     net::{IpAddr, Ipv6Addr},
-    time::Duration,
+    time::{Duration, Instant},
 };
-
-/// Default time before a route expires.
-const DEFAULT_ROUTE_EXPIRATION: Duration = Duration::from_secs(60 * 3);
 
 /// Information about a routes expiration.
 pub enum RouteExpirationType {
@@ -48,6 +45,7 @@ pub struct RouteEntry {
     metric: Metric,
     seqno: SeqNo,
     selected: bool,
+    expires: Instant,
 }
 
 impl RouteKey {
@@ -72,12 +70,13 @@ impl RouteKey {
 
 impl RouteEntry {
     /// Create a new `RouteEntry`.
-    pub const fn new(
+    pub fn new(
         source: SourceKey,
         neighbor: Peer,
         metric: Metric,
         seqno: SeqNo,
         selected: bool,
+        expiration: Duration,
     ) -> Self {
         Self {
             source,
@@ -85,6 +84,7 @@ impl RouteEntry {
             metric,
             seqno,
             selected,
+            expires: Instant::now() + expiration,
         }
     }
 
@@ -128,9 +128,24 @@ impl RouteEntry {
         self.source.set_router_id(router_id);
     }
 
+    /// Updates when this `RouteEntry` expires.
+    ///
+    /// This is only the marker for the entry itself, after calling this you also need to call
+    /// [`RoutingTable::reset_route_timer`].
+    pub fn update_expiration(&mut self, expiration: Duration) {
+        self.expires = Instant::now() + expiration;
+    }
+
     /// Sets whether or not this `RouteEntry` is the selected route for the associated [`Peer`].
     pub fn set_selected(&mut self, selected: bool) {
         self.selected = selected
+    }
+
+    /// Get the remaining [`Duration`] until this `RouteEntry` expires, unles it is reset.
+    pub fn expires(&self) -> Duration {
+        // Explicitly use saturating_duration_since instead of a regular subtraction here, since
+        // this method could be called on an already expired `RouteEntry`.
+        self.expires.saturating_duration_since(Instant::now())
     }
 }
 
@@ -221,8 +236,9 @@ impl<T> RoutingTable<T> {
             } else {
                 RouteExpirationType::Retract
             };
+            let expires = entry.expires();
             async move {
-                tokio::time::sleep(DEFAULT_ROUTE_EXPIRATION).await;
+                tokio::time::sleep(expires).await;
 
                 if let Err(e) = expired_route_entry_sink.send((key, t)).await {
                     error!("Failed to notify router of expired key {e}");
@@ -481,8 +497,9 @@ impl<T> RoutingTable<T> {
                 };
                 let expiration = tokio::spawn({
                     let key = key.clone();
+                    let expires = entries[idx].0.expires();
                     async move {
-                        tokio::time::sleep(DEFAULT_ROUTE_EXPIRATION).await;
+                        tokio::time::sleep(expires).await;
 
                         if let Err(e) = expired_route_entry_sink.send((key, t)).await {
                             error!("Failed to notify router of expired key {e}");
@@ -492,5 +509,63 @@ impl<T> RoutingTable<T> {
                 entries[idx].1 = expiration;
             };
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{IpAddr, Ipv6Addr},
+        sync::{atomic::AtomicU64, Arc},
+        time::Duration,
+    };
+
+    use tokio::sync::mpsc;
+
+    use crate::{
+        crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
+        source_table::SourceKey, subnet::Subnet,
+    };
+
+    #[tokio::test]
+    async fn route_expiration() {
+        // Set up a dummy peer since that is needed to create a `RouteEntry`
+        let (router_data_tx, _router_data_rx) = mpsc::channel(1);
+        let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
+        let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
+        let (con1, _con2) = tokio::io::duplex(1500);
+        let neighbor = Peer::new(
+            router_data_tx,
+            router_control_tx,
+            con1,
+            dead_peer_sink,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("Can create a dummy peer");
+        let subnet = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0)), 64)
+            .expect("Valid subnet definition");
+        let router_id = RouterId::new(PublicKey::from([0; 32]));
+        let source = SourceKey::new(subnet, router_id);
+        let metric = Metric::new(0);
+        let seqno = SeqNo::new();
+        let selected = true;
+
+        let expiration = Duration::from_secs(5);
+        let re = super::RouteEntry::new(
+            source,
+            neighbor.clone(),
+            metric,
+            seqno,
+            selected,
+            expiration,
+        );
+        assert!(re.expires().as_nanos() > 0);
+
+        // 0 Second duration, since creating a route entry with a duration is not actually instant,
+        //   this tests if calling `expires` on an expired RouteEntry does not panic
+        let expiration = Duration::from_secs(0);
+        let re = super::RouteEntry::new(source, neighbor, metric, seqno, selected, expiration);
+        assert!(re.expires().as_nanos() == 0);
     }
 }

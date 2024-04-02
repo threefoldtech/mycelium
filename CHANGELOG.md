@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IHU packets now set the interval properly in centiseconds.
 - IHU packets now set an RX cost. For now this is the link cost, in the future
   this will be set properly.
+- Route expiration time is now calculated from the interval received in updates.
 
 ### Fixed
 

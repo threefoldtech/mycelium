@@ -53,6 +53,9 @@ const BIG_METRIC_CHANGE_TRESHOLD: Metric = Metric::new(10);
 /// The amount a metric of a route needs to improve before we will consider switching to it.
 const SIGNIFICANT_METRIC_IMPROVEMENT: Metric = Metric::new(10);
 
+/// Hold retracted routes for 1 minute before purging them from the [`RoutingTable`].
+const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(60);
+
 #[derive(Clone)]
 pub struct Router {
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
@@ -322,6 +325,7 @@ impl Router {
                         re.seqno(),
                         Metric::infinite(),
                         re.source().router_id(),
+                        RETRACTED_ROUTE_HOLD_TIME,
                     ));
                 }
             }
@@ -432,6 +436,7 @@ impl Router {
                     entry.seqno(),
                     Metric::infinite(),
                     entry.source().router_id(),
+                    RETRACTED_ROUTE_HOLD_TIME,
                 ));
             } else if entry.metric().is_infinite()
                 && matches!(expiration_type, RouteExpirationType::Remove)
@@ -899,6 +904,7 @@ impl Router {
                 seqno,
                 metric,
                 router_id,
+                route_hold_time(&update),
             ));
             // If the update is unfeasible the route must be unselected.
             if existing_entry.selected() && !update_feasible {
@@ -919,6 +925,7 @@ impl Router {
                 metric,
                 seqno,
                 false,
+                route_hold_time(&update),
             );
             routing_table_entries.push(re.clone());
 
@@ -1381,7 +1388,7 @@ enum RouterOpLogEntry {
     SelectRoute(RouteKey),
     /// Update the route entry associated to the given route key in the fallback route table, if
     /// one exists
-    UpdateRouteEntry(RouteKey, SeqNo, Metric, RouterId),
+    UpdateRouteEntry(RouteKey, SeqNo, Metric, RouterId, Duration),
 }
 
 impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
@@ -1404,11 +1411,12 @@ impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
             RouterOpLogEntry::SelectRoute(rk) => {
                 self.routing_table.select_route(rk);
             }
-            RouterOpLogEntry::UpdateRouteEntry(rk, seqno, metric, pk) => {
+            RouterOpLogEntry::UpdateRouteEntry(rk, seqno, metric, pk, expiration) => {
                 if let Some(re) = self.routing_table.get_mut(rk) {
                     re.update_seqno(*seqno);
                     re.update_metric(*metric);
                     re.update_router_id(*pk);
+                    re.update_expiration(*expiration);
                     self.routing_table
                         .reset_route_timer(rk, self.expired_route_entry_sink.clone());
                 }
@@ -1435,5 +1443,57 @@ impl Clone for RouterInner {
             routing_table: new_routing_table,
             expired_route_entry_sink: expired_route_entry_sink.clone(),
         }
+    }
+}
+
+/// Calculate the hold time for a [`RouteEntry`] from an [`Update`](babel::Update) .
+fn route_hold_time(update: &babel::Update) -> Duration {
+    // According to https://datatracker.ietf.org/doc/html/rfc8966#section-appendix.b a good value
+    // would be 3.5 times the update inteval. However we set this to 1.5 here for now since a value
+    // of less than 2 should allow bad routes which aren't announced anymore to fall out of scope
+    // eventually (assuming all anouncing nodes follow the same code, and limit announced interval).
+    // Route expiry time -> 3.5 times advertised Update interval.
+    // We set it to 3 times update interval just in case.
+    Duration::from_millis((update.interval().as_millis() * 3 / 2) as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{IpAddr, Ipv6Addr},
+        time::Duration,
+    };
+
+    use crate::{
+        babel::Update, crypto::PublicKey, metric::Metric, router_id::RouterId,
+        sequence_number::SeqNo, subnet::Subnet,
+    };
+
+    #[test]
+    fn calculate_route_hold_time() {
+        let router_id = RouterId::new(PublicKey::from([0; 32]));
+        let seqno = SeqNo::new();
+        let metric = Metric::new(0);
+        let subnet = Subnet::new(
+            IpAddr::V6(Ipv6Addr::new(
+                0x400, 0x0123, 0x4567, 0x89AB, 0xCDEF, 0, 0, 0,
+            )),
+            64,
+        )
+        .expect("Valid subnet definition");
+        let update = Update::new(Duration::from_secs(60), seqno, metric, subnet, router_id);
+        assert_eq!(
+            Duration::from_millis(90_000),
+            super::route_hold_time(&update)
+        );
+        let update = Update::new(Duration::from_secs(1), seqno, metric, subnet, router_id);
+        assert_eq!(
+            Duration::from_millis(1_500),
+            super::route_hold_time(&update)
+        );
+        // Since update is expressed in centiseconds, we lose precision and
+        // Duration::from_milis(478) is equal to Duration::from_millis(470);
+        let update = Update::new(Duration::from_millis(478), seqno, metric, subnet, router_id);
+        assert_eq!(Duration::from_millis(705), super::route_hold_time(&update));
     }
 }
