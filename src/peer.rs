@@ -250,6 +250,15 @@ impl Peer {
         self.inner.death_notifier.notify_one();
     }
 
+    /// Checks if the connection of this `Peer` is still alive.
+    ///
+    /// For connection types which don't have (real time) state information, this might return a
+    /// false positive if the connection has actually died, but the Peer did not notice this (yet)
+    /// and hasn't been informed.
+    pub fn alive(&self) -> bool {
+        self.inner.alive.load(Ordering::Relaxed)
+    }
+
     /// Create a new [`PeerRef`] that refers to this `Peer` instance.
     pub fn refer(&self) -> PeerRef {
         PeerRef {
