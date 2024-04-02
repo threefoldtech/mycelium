@@ -12,7 +12,7 @@ message = []
 http-api = []
 
 [dependencies]
-tokio = { version = "1.36.0", features = [
+tokio = { version = "1.37.0", features = [
   "fs",
   "macros",
   "net",
