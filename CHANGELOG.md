@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IHU packets now set an RX cost. For now this is the link cost, in the future
   this will be set properly.
 
+### Fixed
+
+- Don't try to forward seqno requests to a peer if we know its connection is dead.
+
 ## [0.4.5] - 2024-03-26
 
 ### Changed

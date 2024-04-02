@@ -711,6 +711,7 @@ impl Router {
             if let Some(re) = possible_routes.iter().find(|re| {
                 source_table.route_feasible(re)
                     && re.neighbour() != &source_peer
+                    && re.neighbour().alive()
                     && !re.metric().is_infinite()
             }) {
                 debug!(
@@ -729,10 +730,11 @@ impl Router {
             }
 
             // Finally consider infeasible routes as well.
-            if let Some(re) = possible_routes
-                .iter()
-                .find(|re| re.neighbour() != &source_peer && !re.metric().is_infinite())
-            {
+            if let Some(re) = possible_routes.iter().find(|re| {
+                re.neighbour() != &source_peer
+                    && re.neighbour().alive()
+                    && !re.metric().is_infinite()
+            }) {
                 debug!(
                     "Forwarding seqno request {} for {} to {}",
                     seqno_request.seqno(),
