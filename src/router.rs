@@ -328,6 +328,7 @@ impl Router {
             // Make sure we release the read handle, so a publish on the write handle eventually
             // succeeds.
             drop(inner);
+            inner_w.publish();
             self.remove_peer_interface(&dead_peer);
 
             subnets_to_select
