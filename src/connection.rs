@@ -137,3 +137,17 @@ impl Connection for Quic {
         })
     }
 }
+
+#[cfg(test)]
+use tokio::io::DuplexStream;
+
+#[cfg(test)]
+impl Connection for DuplexStream {
+    fn identifier(&self) -> Result<String, io::Error> {
+        Ok("Memory pipe".to_string())
+    }
+
+    fn static_link_cost(&self) -> Result<u16, io::Error> {
+        Ok(1)
+    }
+}
