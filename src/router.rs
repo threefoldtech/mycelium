@@ -1456,12 +1456,16 @@ impl Clone for RouterInner {
 /// Calculate the hold time for a [`RouteEntry`] from an [`Update`](babel::Update) .
 fn route_hold_time(update: &babel::Update) -> Duration {
     // According to https://datatracker.ietf.org/doc/html/rfc8966#section-appendix.b a good value
-    // would be 3.5 times the update inteval. However we set this to 1.5 here for now since a value
-    // of less than 2 should allow bad routes which aren't announced anymore to fall out of scope
-    // eventually (assuming all anouncing nodes follow the same code, and limit announced interval).
-    // Route expiry time -> 3.5 times advertised Update interval.
-    // We set it to 3 times update interval just in case.
-    Duration::from_millis((update.interval().as_millis() * 3 / 2) as u64)
+    // would be 3.5 times the update inteval.
+    // In case of a retracted route: in general this should not be added to the routing table, so
+    // the only reason this is called is because a route was retracted through an update. Even if
+    // the peer won't send this again, hold the route for some time so it can get flushed properly.
+    if update.metric().is_infinite() {
+        RETRACTED_ROUTE_HOLD_TIME
+    } else {
+        // Route expiry time -> 3.5 times advertised Update interval.
+        Duration::from_millis((update.interval().as_millis() * 7 / 2) as u64)
+    }
 }
 
 /// Calculates the interval to use when announcing updates on (selected) routes.
@@ -1507,18 +1511,34 @@ mod tests {
         .expect("Valid subnet definition");
         let update = Update::new(Duration::from_secs(60), seqno, metric, subnet, router_id);
         assert_eq!(
-            Duration::from_millis(90_000),
+            Duration::from_millis(210_000),
             super::route_hold_time(&update)
         );
         let update = Update::new(Duration::from_secs(1), seqno, metric, subnet, router_id);
         assert_eq!(
-            Duration::from_millis(1_500),
+            Duration::from_millis(3_500),
             super::route_hold_time(&update)
         );
         // Since update is expressed in centiseconds, we lose precision and
         // Duration::from_milis(478) is equal to Duration::from_millis(470);
         let update = Update::new(Duration::from_millis(478), seqno, metric, subnet, router_id);
-        assert_eq!(Duration::from_millis(705), super::route_hold_time(&update));
+        assert_eq!(
+            Duration::from_millis(1_645),
+            super::route_hold_time(&update)
+        );
+
+        // Retractions are also held for some time
+        let update = Update::new(
+            Duration::from_millis(0),
+            seqno,
+            Metric::infinite(),
+            subnet,
+            router_id,
+        );
+        assert_eq!(
+            super::RETRACTED_ROUTE_HOLD_TIME,
+            super::route_hold_time(&update)
+        );
     }
 
     #[tokio::test]
