@@ -9,8 +9,6 @@ use std::{
 };
 
 use aes_gcm::{aead::OsRng, AeadCore, AeadInPlace, Aes256Gcm, Key, KeyInit};
-use blake2::{Blake2b, Digest};
-use digest::consts::U16;
 use serde::{de::Visitor, Deserialize, Serialize};
 
 /// Default MTU for a packet. Ideally this would not be needed and the [`PacketBuffer`] takes a
@@ -83,9 +81,6 @@ impl Display for DecryptionError {
 
 impl Error for DecryptionError {}
 
-/// Type alias for a 16byte output blake2b hasher.
-type Blake2b128 = Blake2b<U16>;
-
 impl SecretKey {
     /// Generate a new `StaticSecret` using [`OsRng`] as an entropy source.
     pub fn new() -> Self {
@@ -115,11 +110,17 @@ impl PublicKey {
     ///
     /// The generated address is guaranteed to be part of the `400::/7` range.
     pub fn address(&self) -> Ipv6Addr {
-        let mut hasher = Blake2b128::default();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(self.as_bytes());
-        let mut buf = hasher.finalize();
-        buf[0] = 0x04 | buf[0] & 0x01;
-        Ipv6Addr::from(<[u8; 16]>::from(buf))
+        let mut buf = [0; 16];
+        hasher.finalize_xof().fill(&mut buf);
+        // Mangle the first byte to be of the expected form. Because of the network range
+        // requirement, we MUST set the third bit, and MAY set the last bit. Instead of discarding
+        // the first 7 bits of the hash, use the first byte to determine if the alast bit is set.
+        // If there is an odd number of bits set in the first byte, set the last bit of the result.
+        let lsb = buf[0].count_ones() as u8 % 2;
+        buf[0] = 0x04 | lsb;
+        Ipv6Addr::from(buf)
     }
 
     /// Convert this `PublicKey` to a byte array.
