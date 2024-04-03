@@ -1466,7 +1466,16 @@ fn route_hold_time(update: &babel::Update) -> Duration {
 
 /// Calculates the interval to use when announcing updates on (selected) routes.
 fn advertised_update_interval(sre: &RouteEntry) -> Duration {
-    sre.expires().min(UPDATE_INTERVAL)
+    // We actually just need to set the value of the update interval, since that is the upper bound
+    // on when we will advertise the route again.
+    // One caveat is an expired route. If an entry is expired, it means that it will change state
+    // so: Infinite metric -> route entry will be removed. Finite metric -> route entry will be
+    // retracted but will be announced again. In practice this shouldn't really happen anyway.
+    if sre.metric().is_infinite() && sre.expires().as_nanos() == 0 {
+        INTERVAL_NOT_REPEATING
+    } else {
+        UPDATE_INTERVAL
+    }
 }
 
 #[cfg(test)]
@@ -1547,10 +1556,10 @@ mod tests {
         );
         // We can't match exactly here since everything takes a non instant amount of time to do,
         // but basically verify that the calculated interval is within expected parameters.
-        let advertised_interval = super::advertised_update_interval(&re).as_secs();
-        assert!(14 <= advertised_interval && advertised_interval <= 15);
+        let advertised_interval = super::advertised_update_interval(&re);
+        assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
 
-        // Expired route
+        // Expired route with finite metric
         let expiration = Duration::from_secs(0);
         let re = super::RouteEntry::new(
             source,
@@ -1560,8 +1569,20 @@ mod tests {
             selected,
             expiration,
         );
-        let advertised_interval = super::advertised_update_interval(&re).as_nanos();
-        assert_eq!(advertised_interval, 0);
+        let advertised_interval = super::advertised_update_interval(&re);
+        assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
+
+        // Expired route with infinite metric
+        let re = super::RouteEntry::new(
+            source,
+            neighbor.clone(),
+            Metric::infinite(),
+            seqno,
+            selected,
+            expiration,
+        );
+        let advertised_interval = super::advertised_update_interval(&re);
+        assert_eq!(advertised_interval, super::INTERVAL_NOT_REPEATING);
 
         // Check that the interval is properly capped
         let expiration = Duration::from_secs(600);
