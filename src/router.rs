@@ -566,7 +566,7 @@ impl Router {
                     return;
                 }
                 babel::Update::new(
-                    advertised_update_interval(&sre),
+                    advertised_update_interval(sre),
                     sre.seqno(),
                     sre.metric() + Metric::from(sre.neighbour().link_cost()),
                     subnet,
@@ -643,7 +643,7 @@ impl Router {
                     seqno_request.prefix()
                 );
                 let update = babel::Update::new(
-                    advertised_update_interval(&route_entry),
+                    advertised_update_interval(route_entry),
                     route_entry.seqno(), // updates receive the seqno of the router
                     route_entry.metric() + Metric::from(source_peer.link_cost()),
                     // the cost of the route is the cost of the route + the cost of the link to the peer
@@ -1236,7 +1236,7 @@ impl Router {
             .lookup_selected(subnet.address())
         {
             let update = babel::Update::new(
-                advertised_update_interval(&sre),
+                advertised_update_interval(sre),
                 sre.seqno(),
                 sre.metric() + Metric::from(sre.neighbour().link_cost()),
                 sre.source().subnet(),
@@ -1293,7 +1293,7 @@ impl Router {
                 continue;
             }
             let update = babel::Update::new(
-                advertised_update_interval(&sre),
+                advertised_update_interval(sre),
                 sre.seqno(),
                 // the cost of the route is the cost of the route + the cost of the link to the next-hop
                 sre.metric() + neigh_link_cost,
