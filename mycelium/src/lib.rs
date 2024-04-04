@@ -9,6 +9,7 @@ use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
 use peer_manager::{PeerExists, PeerNotFound, PeerStats};
+use routing_table::RouteEntry;
 use subnet::Subnet;
 
 pub mod api;
@@ -216,5 +217,10 @@ impl Stack {
     /// Remove an existing peer identified by an [`Endpoint`] from the system.
     pub fn remove_peer(&self, endpoint: Endpoint) -> Result<(), PeerNotFound> {
         self._pm.delete_peer(&endpoint)
+    }
+
+    /// List all selected [`routes`](RouteEntry) in the system.
+    pub fn selected_routes(&self) -> Vec<RouteEntry> {
+        self._router.load_selected_routes()
     }
 }
