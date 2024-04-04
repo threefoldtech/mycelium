@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "aes-gcm",
  "axum",
