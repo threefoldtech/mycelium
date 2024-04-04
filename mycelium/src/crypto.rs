@@ -116,7 +116,7 @@ impl PublicKey {
         hasher.finalize_xof().fill(&mut buf);
         // Mangle the first byte to be of the expected form. Because of the network range
         // requirement, we MUST set the third bit, and MAY set the last bit. Instead of discarding
-        // the first 7 bits of the hash, use the first byte to determine if the alast bit is set.
+        // the first 7 bits of the hash, use the first byte to determine if the last bit is set.
         // If there is an odd number of bits set in the first byte, set the last bit of the result.
         let lsb = buf[0].count_ones() as u8 % 2;
         buf[0] = 0x04 | lsb;
