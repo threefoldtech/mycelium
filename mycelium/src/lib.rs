@@ -67,6 +67,12 @@ pub struct Stack {
     _api: api::Http,
 }
 
+/// General info about a node.
+pub struct NodeInfo {
+    /// The overlay subnet in use by the node.
+    pub node_subnet: Subnet,
+}
+
 impl Stack {
     /// Setup a new `Stack` with the provided [`Config`].
     pub async fn new(config: Config) -> Result<Self, Box<dyn std::error::Error>> {
@@ -187,5 +193,12 @@ impl Stack {
             #[cfg(feature = "http-api")]
             _api: api,
         })
+    }
+
+    /// Get information about the running `Stack`
+    pub fn info(&self) -> NodeInfo {
+        NodeInfo {
+            node_subnet: self._router.node_tun_subnet(),
+        }
     }
 }
