@@ -223,4 +223,9 @@ impl Stack {
     pub fn selected_routes(&self) -> Vec<RouteEntry> {
         self._router.load_selected_routes()
     }
+
+    /// List all fallback [`routes`](RouteEntry) in the system.
+    pub fn fallback_routes(&self) -> Vec<RouteEntry> {
+        self._router.load_fallback_routes()
+    }
 }
