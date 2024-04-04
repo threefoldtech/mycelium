@@ -8,7 +8,7 @@ use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
-use peer_manager::{PeerExists, PeerStats};
+use peer_manager::{PeerExists, PeerNotFound, PeerStats};
 use subnet::Subnet;
 
 pub mod api;
@@ -208,8 +208,13 @@ impl Stack {
         self._pm.peers()
     }
 
-    /// Add a new peer to the systemd identified by an [`Endpoint`].
+    /// Add a new peer to the system identified by an [`Endpoint`].
     pub fn add_peer(&self, endpoint: Endpoint) -> Result<(), PeerExists> {
         self._pm.add_peer(endpoint)
+    }
+
+    /// Remove an existing peer identified by an [`Endpoint`] from the system.
+    pub fn remove_peer(&self, endpoint: Endpoint) -> Result<(), PeerNotFound> {
+        self._pm.delete_peer(&endpoint)
     }
 }
