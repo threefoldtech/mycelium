@@ -30,7 +30,7 @@ jobs:
         components: clippy
     - uses: giraffate/clippy-action@v1
       with:
-        clippy-flags: -- -D warnings
+        clippy_flags: -- -D warnings
         github_token: ${{ secrets.GITHUB_TOKEN }}
   check_binary:
     strategy:
