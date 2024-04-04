@@ -8,6 +8,7 @@ use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
+use peer_manager::PeerStats;
 use subnet::Subnet;
 
 pub mod api;
@@ -200,5 +201,10 @@ impl Stack {
         NodeInfo {
             node_subnet: self._router.node_tun_subnet(),
         }
+    }
+
+    /// Get information about the current peers in the `Stack`
+    pub fn peer_info(&self) -> Vec<PeerStats> {
+        self._pm.peers()
     }
 }

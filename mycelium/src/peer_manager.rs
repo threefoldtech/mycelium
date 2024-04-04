@@ -96,7 +96,7 @@ pub enum ConnectionState {
 pub struct PeerStats {
     /// The endpoint of the [`Peer`].
     pub endpoint: Endpoint,
-    /// The (Type)[`PeerType`] of the [`Peer`].
+    /// The [`Type`](PeerType) of the [`Peer`].
     #[serde(rename = "type")]
     pub pt: PeerType,
     /// State of the connection to this [`Peer`]
