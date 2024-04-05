@@ -8,6 +8,7 @@ use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
+use message::ReceivedMessage;
 use peer_manager::{PeerExists, PeerNotFound, PeerStats};
 use routing_table::RouteEntry;
 use subnet::Subnet;
@@ -227,5 +228,21 @@ impl Stack {
     /// List all fallback [`routes`](RouteEntry) in the system.
     pub fn fallback_routes(&self) -> Vec<RouteEntry> {
         self._router.load_fallback_routes()
+    }
+}
+
+#[cfg(feature = "message")]
+impl Stack {
+    /// Wait for a messsage to arrive in the message stack.
+    ///
+    /// An the optional `topic` is provided, only messages which have exactly the same value in
+    /// `topic` will be returned. The `pop` argument decides if the message is removed from the
+    /// internal queue or not. If `pop` is `false`, the same message will be returned on the next
+    /// call (with the same topic).
+    ///
+    /// This method returns a future which will wait indefinitely until a message is received. It
+    /// is generally a good idea to put a limit on how long to wait by wrapping this in a [`tokio::time::timeout`].
+    pub async fn get_message(&self, pop: bool, topic: Option<Vec<u8>>) -> ReceivedMessage {
+        self._ms.message(pop, topic).await
     }
 }
