@@ -286,4 +286,15 @@ impl Stack {
     pub fn message_status(&self, id: MessageId) -> Option<MessageInfo> {
         self._ms.message_info(id)
     }
+
+    /// Send a reply to a previously received message.
+    pub fn reply_message(
+        &self,
+        id: MessageId,
+        dst: IpAddr,
+        data: Vec<u8>,
+        try_duration: Duration,
+    ) -> MessageId {
+        self._ms.reply_message(id, dst, data, try_duration)
+    }
 }
