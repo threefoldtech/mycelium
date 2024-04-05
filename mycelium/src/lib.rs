@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::{
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+    time::Duration,
+};
 
 #[cfg(feature = "http-api")]
 use api::Http;
@@ -8,7 +11,7 @@ use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
-use message::ReceivedMessage;
+use message::{MessagePushResponse, PushMessageError, ReceivedMessage};
 use peer_manager::{PeerExists, PeerNotFound, PeerStats};
 use routing_table::RouteEntry;
 use subnet::Subnet;
@@ -244,5 +247,34 @@ impl Stack {
     /// is generally a good idea to put a limit on how long to wait by wrapping this in a [`tokio::time::timeout`].
     pub async fn get_message(&self, pop: bool, topic: Option<Vec<u8>>) -> ReceivedMessage {
         self._ms.message(pop, topic).await
+    }
+
+    /// Push a new message to the message stack.
+    ///
+    /// The system will attempt to transmit the message for `try_duration`. A message is considered
+    /// transmitted when the receiver has indicated it completely received the message. If
+    /// `subscribe_reply` is `true`, the second return value will be [`Option::Some`], with a
+    /// watcher which will resolve if a reply for this exact message comes in. Since this relies on
+    /// the receiver actually sending a reply, ther is no guarantee that this will eventually
+    /// resolve.
+    pub fn push_message(
+        &self,
+        dst: IpAddr,
+        data: Vec<u8>,
+        topic: Option<Vec<u8>>,
+        try_duration: Duration,
+        subscribe_reply: bool,
+    ) -> Result<MessagePushResponse, PushMessageError> {
+        self._ms.new_message(
+            dst,
+            data,
+            if let Some(topic) = topic {
+                topic
+            } else {
+                vec![]
+            },
+            try_duration,
+            subscribe_reply,
+        )
     }
 }
