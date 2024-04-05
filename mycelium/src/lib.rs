@@ -65,10 +65,10 @@ pub struct Config {
 
 /// The Stack is the main structure in mycelium. It governs the entire data flow.
 pub struct Stack {
-    _router: router::Router,
-    _pm: peer_manager::PeerManager,
+    router: router::Router,
+    peer_manager: peer_manager::PeerManager,
     #[cfg(feature = "message")]
-    _ms: message::MessageStack,
+    message_stack: message::MessageStack,
     #[cfg(feature = "http-api")]
     _api: api::Http,
 }
@@ -192,10 +192,10 @@ impl Stack {
         );
 
         Ok(Stack {
-            _router: router,
-            _pm: pm,
+            router,
+            peer_manager: pm,
             #[cfg(feature = "message")]
-            _ms: ms,
+            message_stack: ms,
             #[cfg(feature = "http-api")]
             _api: api,
         })
@@ -204,33 +204,33 @@ impl Stack {
     /// Get information about the running `Stack`
     pub fn info(&self) -> NodeInfo {
         NodeInfo {
-            node_subnet: self._router.node_tun_subnet(),
+            node_subnet: self.router.node_tun_subnet(),
         }
     }
 
     /// Get information about the current peers in the `Stack`
     pub fn peer_info(&self) -> Vec<PeerStats> {
-        self._pm.peers()
+        self.peer_manager.peers()
     }
 
     /// Add a new peer to the system identified by an [`Endpoint`].
     pub fn add_peer(&self, endpoint: Endpoint) -> Result<(), PeerExists> {
-        self._pm.add_peer(endpoint)
+        self.peer_manager.add_peer(endpoint)
     }
 
     /// Remove an existing peer identified by an [`Endpoint`] from the system.
     pub fn remove_peer(&self, endpoint: Endpoint) -> Result<(), PeerNotFound> {
-        self._pm.delete_peer(&endpoint)
+        self.peer_manager.delete_peer(&endpoint)
     }
 
     /// List all selected [`routes`](RouteEntry) in the system.
     pub fn selected_routes(&self) -> Vec<RouteEntry> {
-        self._router.load_selected_routes()
+        self.router.load_selected_routes()
     }
 
     /// List all fallback [`routes`](RouteEntry) in the system.
     pub fn fallback_routes(&self) -> Vec<RouteEntry> {
-        self._router.load_fallback_routes()
+        self.router.load_fallback_routes()
     }
 }
 
@@ -246,7 +246,7 @@ impl Stack {
     /// This method returns a future which will wait indefinitely until a message is received. It
     /// is generally a good idea to put a limit on how long to wait by wrapping this in a [`tokio::time::timeout`].
     pub async fn get_message(&self, pop: bool, topic: Option<Vec<u8>>) -> ReceivedMessage {
-        self._ms.message(pop, topic).await
+        self.message_stack.message(pop, topic).await
     }
 
     /// Push a new message to the message stack.
@@ -265,7 +265,7 @@ impl Stack {
         try_duration: Duration,
         subscribe_reply: bool,
     ) -> Result<MessagePushResponse, PushMessageError> {
-        self._ms.new_message(
+        self.message_stack.new_message(
             dst,
             data,
             if let Some(topic) = topic {
@@ -284,7 +284,7 @@ impl Stack {
     /// retained for a limited time after a message has been received, or after the message has
     /// been aborted due to a timeout.
     pub fn message_status(&self, id: MessageId) -> Option<MessageInfo> {
-        self._ms.message_info(id)
+        self.message_stack.message_info(id)
     }
 
     /// Send a reply to a previously received message.
@@ -295,6 +295,7 @@ impl Stack {
         data: Vec<u8>,
         try_duration: Duration,
     ) -> MessageId {
-        self._ms.reply_message(id, dst, data, try_duration)
+        self.message_stack
+            .reply_message(id, dst, data, try_duration)
     }
 }
