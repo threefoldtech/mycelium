@@ -11,7 +11,7 @@ use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::MessageStack;
-use message::{MessagePushResponse, PushMessageError, ReceivedMessage};
+use message::{MessageId, MessageInfo, MessagePushResponse, PushMessageError, ReceivedMessage};
 use peer_manager::{PeerExists, PeerNotFound, PeerStats};
 use routing_table::RouteEntry;
 use subnet::Subnet;
@@ -276,5 +276,14 @@ impl Stack {
             try_duration,
             subscribe_reply,
         )
+    }
+
+    /// Get the status of a message sent previously.
+    ///
+    /// Returns [`Option::None`] if no message is found with the given id. Message info is only
+    /// retained for a limited time after a message has been received, or after the message has
+    /// been aborted due to a timeout.
+    pub fn message_status(&self, id: MessageId) -> Option<MessageInfo> {
+        self._ms.message_info(id)
     }
 }
