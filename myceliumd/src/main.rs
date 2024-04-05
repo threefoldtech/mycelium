@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use crypto::PublicKey;
 use log::{debug, error, warn, LevelFilter};
 use mycelium::endpoint::Endpoint;
-use mycelium::{crypto, Stack};
+use mycelium::{crypto, Node};
 use std::io;
 use std::net::Ipv4Addr;
 use std::path::Path;
@@ -283,7 +283,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         api_addr: cli.node_args.api_addr,
     };
 
-    let _stack = Stack::new(config).await?;
+    let _stack = Node::new(config).await?;
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     #[cfg(target_family = "unix")]

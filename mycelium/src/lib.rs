@@ -43,7 +43,7 @@ pub const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 
 /// The prefix length of the global subnet used.
 pub const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
-/// Config for a mycelium [`Stack`].
+/// Config for a mycelium [`Node`].
 pub struct Config {
     /// The secret key of the node.
     pub node_key: crypto::SecretKey,
@@ -63,8 +63,8 @@ pub struct Config {
     pub api_addr: SocketAddr,
 }
 
-/// The Stack is the main structure in mycelium. It governs the entire data flow.
-pub struct Stack {
+/// The Node is the main structure in mycelium. It governs the entire data flow.
+pub struct Node {
     router: router::Router,
     peer_manager: peer_manager::PeerManager,
     #[cfg(feature = "message")]
@@ -79,8 +79,8 @@ pub struct NodeInfo {
     pub node_subnet: Subnet,
 }
 
-impl Stack {
-    /// Setup a new `Stack` with the provided [`Config`].
+impl Node {
+    /// Setup a new `Node` with the provided [`Config`].
     pub async fn new(config: Config) -> Result<Self, Box<dyn std::error::Error>> {
         let node_pub_key = crypto::PublicKey::from(&config.node_key);
         let node_addr = node_pub_key.address();
@@ -191,7 +191,7 @@ impl Stack {
             config.api_addr,
         );
 
-        Ok(Stack {
+        Ok(Node {
             router,
             peer_manager: pm,
             #[cfg(feature = "message")]
@@ -201,14 +201,14 @@ impl Stack {
         })
     }
 
-    /// Get information about the running `Stack`
+    /// Get information about the running `Node`
     pub fn info(&self) -> NodeInfo {
         NodeInfo {
             node_subnet: self.router.node_tun_subnet(),
         }
     }
 
-    /// Get information about the current peers in the `Stack`
+    /// Get information about the current peers in the `Node`
     pub fn peer_info(&self) -> Vec<PeerStats> {
         self.peer_manager.peers()
     }
@@ -235,7 +235,7 @@ impl Stack {
 }
 
 #[cfg(feature = "message")]
-impl Stack {
+impl Node {
     /// Wait for a messsage to arrive in the message stack.
     ///
     /// An the optional `topic` is provided, only messages which have exactly the same value in
