@@ -6,9 +6,8 @@ license-file = "../LICENSE"
 readme = "../README.md"
 
 [features]
-default = ["message", "http-api"]
+default = ["message"]
 message = []
-http-api = []
 
 [dependencies]
 tokio = { version = "1.37.0", features = ["fs", "net", "sync", "time"] }
