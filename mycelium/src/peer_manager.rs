@@ -875,7 +875,17 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 /// Get a list of the interface identifiers of every network interface with a local IPv6 IP.
 fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>> {
     let mut nics = HashSet::new();
-    for nic in netdev::get_interfaces() {
+    for nic in netdev::get_interfaces()
+        .into_iter()
+        // Filter out interfaces we don't care about.
+        .filter(|nic| {
+            !nic.is_loopback()
+                && !nic.is_tun()
+                && !nic.is_point_to_point()
+                && nic.is_multicast()
+                && nic.is_up()
+        })
+    {
         for addr in nic.ipv6 {
             if addr.addr.segments()[..4] == [0xfe80, 0, 0, 0] {
                 nics.insert(nic.index);
