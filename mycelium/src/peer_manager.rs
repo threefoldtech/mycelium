@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, SocketAddrV6};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -663,18 +663,18 @@ impl Inner {
         // Keep track of which interfaces we are already a part of.
         let mut joined_interfaces = HashSet::new();
         // Join the multicast discovery group on newly detected interfaces.
-        let mut join_new_interfaces = || {
+        let join_new_interfaces = |joined_interfaces: &mut HashSet<_>| {
             let ipv6_nics = list_ipv6_interface_ids()?;
             // Keep the existing interfaces, removing interface ids we previously joined but are no
             // longer found when listing ids. We simply discard unknown ids, and assume if the
             // interface is gone (or it's IPv6), that we also implicitly left the group (i.e. no
             // cleanup is needed on our end).
             let kept_interfaces = joined_interfaces.intersection(&ipv6_nics);
-            joined_interfaces = kept_interfaces.copied().collect();
+            *joined_interfaces = kept_interfaces.copied().collect();
             // Since [`HashSet::difference`] keeps a reference to both sets we need to exhaust the
             // iterator first so we can later mutate the firs set.
             let new_interfaces = ipv6_nics
-                .difference(&joined_interfaces)
+                .difference(joined_interfaces)
                 .copied()
                 .collect::<Vec<_>>();
             for new_iface in new_interfaces {
@@ -722,15 +722,19 @@ impl Inner {
             let mut buf = [0; PEER_DISCOVERY_BEACON_SIZE];
             tokio::select! {
                 _ = send_timer.tick() => {
-                    if let Err(e) = join_new_interfaces() {
+                    if let Err(e) = join_new_interfaces(&mut joined_interfaces) {
                         error!("Issue while joining new IPv6 multicast interfaces: {e}");
                     };
-                    if let Err(e) = sock.send_to(
-                        &beacon,
-                        SocketAddr::new(multicast_destination.into(), peer_discovery_port),
-                    )
-                    .await {
-                        error!("Could not send multicast discovery beacon {e}");
+                    for iface in &joined_interfaces {
+                        let dst = SocketAddrV6::new(multicast_destination, peer_discovery_port, 0, *iface);
+                        debug!("Sending multicast discovery beacon to {dst}");
+                        if let Err(e) = sock.send_to(
+                            &beacon,
+                            dst,
+                        )
+                        .await {
+                            error!("Could not send multicast discovery beacon ({e}) on interface {iface}");
+                        }
                     }
                 },
                 recv_res = sock.recv_from(&mut buf) => {
