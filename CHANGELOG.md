@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The repo is now a workspace, and pure library code is separated out. This is mainly
+  done to make it easier to develop implementations on different platforms.
+- Link local discovery will now send discovery beacons on every interface the process
+  listens on for remote beacons.
+
 ## [0.5.0] - 2024-04-04
 
 ### Changed
