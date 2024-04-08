@@ -9,7 +9,7 @@ use axum::{
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use mycelium::{
     crypto::PublicKey,
     message::{MessageId, MessageInfo},
 };
@@ -111,7 +111,11 @@ async fn get_message(
     // poll of the internal future first, before polling the delay.
     tokio::time::timeout(
         Duration::from_secs(query.timeout_secs()),
-        state.message_stack.message(!query.peek(), query.topic),
+        state
+            .node
+            .lock()
+            .await
+            .get_message(!query.peek(), query.topic),
     )
     .await
     .or(Err(StatusCode::NO_CONTENT))
@@ -174,14 +178,10 @@ async fn push_message(
         message_info.payload.len(),
     );
 
-    let (id, sub) = match state.message_stack.new_message(
+    let (id, sub) = match state.node.lock().await.push_message(
         dst,
         message_info.payload,
-        if let Some(topic) = message_info.topic {
-            topic
-        } else {
-            vec![]
-        },
+        message_info.topic,
         DEFAULT_MESSAGE_TRY_DURATION,
         query.await_reply(),
     ) {
@@ -244,9 +244,12 @@ async fn reply_message(
         message_info.payload.len(),
     );
 
-    state
-        .message_stack
-        .reply_message(id, dst, message_info.payload, DEFAULT_MESSAGE_TRY_DURATION);
+    state.node.lock().await.reply_message(
+        id,
+        dst,
+        message_info.payload,
+        DEFAULT_MESSAGE_TRY_DURATION,
+    );
 
     StatusCode::NO_CONTENT
 }
@@ -258,8 +261,10 @@ async fn message_status(
     debug!("Fetching message status for message {}", id.as_hex());
 
     state
-        .message_stack
-        .message_info(id)
+        .node
+        .lock()
+        .await
+        .message_status(id)
         .ok_or(StatusCode::NOT_FOUND)
         .map(Json)
 }

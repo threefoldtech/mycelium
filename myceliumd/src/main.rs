@@ -16,6 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
 
+mod api;
 mod cli;
 
 /// The default port on the underlay to listen on for incoming TCP connections.
@@ -280,10 +281,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Some(cli.node_args.peer_discovery_port)
         },
         tun_name: cli.node_args.tun_name,
-        api_addr: cli.node_args.api_addr,
     };
 
-    let _stack = Node::new(config).await?;
+    let node = Node::new(config).await?;
+
+    let _api = api::Http::spawn(node, cli.node_args.api_addr);
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     #[cfg(target_family = "unix")]

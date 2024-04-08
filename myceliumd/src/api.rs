@@ -1,8 +1,4 @@
-use std::{
-    net::SocketAddr,
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+use std::{net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
     extract::{Path, State},
@@ -12,18 +8,14 @@ use axum::{
 };
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
-#[cfg(feature = "message")]
-use crate::message::MessageStack;
-use crate::{
+use mycelium::{
     endpoint::Endpoint,
-    peer_manager::{PeerExists, PeerManager, PeerNotFound, PeerStats},
+    peer_manager::{PeerExists, PeerNotFound, PeerStats},
 };
 
-#[cfg(feature = "message")]
 mod message;
-#[cfg(feature = "message")]
-pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
 /// the server is terminated.
@@ -36,28 +28,15 @@ pub struct Http {
 #[derive(Clone)]
 /// Shared state accessible in HTTP endpoint handlers.
 struct HttpServerState {
-    /// Access to the (`Router`)(crate::router::Router) state. This is only meant as read only view.
-    router: Arc<Mutex<crate::router::Router>>,
-    /// Access to the connection state of (`Peer`)[crate::peer::Peer]s.
-    peer_manager: PeerManager,
-    #[cfg(feature = "message")]
-    /// Access to messages.
-    message_stack: MessageStack,
+    /// Access to the (`node`)(mycelium::Node) state.
+    node: Arc<Mutex<mycelium::Node>>,
 }
 
 impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
-    pub fn spawn(
-        router: crate::router::Router,
-        peer_manager: PeerManager,
-        #[cfg(feature = "message")] message_stack: MessageStack,
-        listen_addr: SocketAddr,
-    ) -> Self {
+    pub fn spawn(node: mycelium::Node, listen_addr: SocketAddr) -> Self {
         let server_state = HttpServerState {
-            router: Arc::new(Mutex::new(router)),
-            peer_manager,
-            #[cfg(feature = "message")]
-            message_stack,
+            node: Arc::new(Mutex::new(node)),
         };
         let admin_routes = Router::new()
             .route("/admin", get(get_info))
@@ -66,12 +45,9 @@ impl Http {
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
             .with_state(server_state.clone());
-        let mut app = Router::new();
-        app = app.nest("/api/v1", admin_routes);
-        #[cfg(feature = "message")]
-        {
-            app = app.nest("/api/v1", message::message_router_v1(server_state));
-        }
+        let app = Router::new()
+            .nest("/api/v1", admin_routes)
+            .nest("/api/v1", message::message_router_v1(server_state));
 
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
 
@@ -101,7 +77,7 @@ impl Http {
 /// Get the stats of the current known peers
 async fn get_peers(State(state): State<HttpServerState>) -> Json<Vec<PeerStats>> {
     debug!("Fetching peer stats");
-    Json(state.peer_manager.peers())
+    Json(state.node.lock().await.peer_info())
 }
 
 /// Payload of an add_peer request
@@ -122,7 +98,7 @@ async fn add_peer(
         Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string())),
     };
 
-    match state.peer_manager.add_peer(endpoint) {
+    match state.node.lock().await.add_peer(endpoint) {
         Ok(()) => Ok(StatusCode::NO_CONTENT),
         Err(PeerExists) => Err((
             StatusCode::CONFLICT,
@@ -142,7 +118,7 @@ async fn delete_peer(
         Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string())),
     };
 
-    match state.peer_manager.delete_peer(&endpoint) {
+    match state.node.lock().await.remove_peer(endpoint) {
         Ok(()) => Ok(StatusCode::NO_CONTENT),
         Err(PeerNotFound) => Err((
             StatusCode::NOT_FOUND,
@@ -179,10 +155,10 @@ pub struct Route {
 async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<Route>> {
     debug!("Loading selected routes");
     let routes = state
-        .router
+        .node
         .lock()
-        .unwrap()
-        .load_selected_routes()
+        .await
+        .selected_routes()
         .into_iter()
         .map(|sr| Route {
             subnet: sr.source().subnet().to_string(),
@@ -203,10 +179,10 @@ async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<R
 async fn get_fallback_routes(State(state): State<HttpServerState>) -> Json<Vec<Route>> {
     debug!("Loading fallback routes");
     let routes = state
-        .router
+        .node
         .lock()
-        .unwrap()
-        .load_fallback_routes()
+        .await
+        .fallback_routes()
         .into_iter()
         .map(|sr| Route {
             subnet: sr.source().subnet().to_string(),
@@ -234,7 +210,7 @@ pub struct Info {
 /// Get general info about the node.
 async fn get_info(State(state): State<HttpServerState>) -> Json<Info> {
     Json(Info {
-        node_subnet: state.router.lock().unwrap().node_tun_subnet().to_string(),
+        node_subnet: state.node.lock().await.info().node_subnet.to_string(),
     })
 }
 

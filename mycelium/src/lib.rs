@@ -1,11 +1,9 @@
 use std::{
     future::Future,
-    net::{IpAddr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv6Addr},
     time::Duration,
 };
 
-#[cfg(feature = "http-api")]
-use api::Http;
 use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
@@ -17,7 +15,6 @@ use peer_manager::{PeerExists, PeerNotFound, PeerStats};
 use routing_table::RouteEntry;
 use subnet::Subnet;
 
-pub mod api;
 mod babel;
 mod connection;
 pub mod crypto;
@@ -60,8 +57,6 @@ pub struct Config {
     pub peer_discovery_port: Option<u16>,
     /// Name for the TUN device.
     pub tun_name: String,
-    /// IP and port for the api address.
-    pub api_addr: SocketAddr,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
@@ -70,8 +65,6 @@ pub struct Node {
     peer_manager: peer_manager::PeerManager,
     #[cfg(feature = "message")]
     message_stack: message::MessageStack,
-    #[cfg(feature = "http-api")]
-    _api: api::Http,
 }
 
 /// General info about a node.
@@ -183,22 +176,11 @@ impl Node {
         #[cfg(feature = "message")]
         let ms = MessageStack::new(_data_plane, msg_receiver);
 
-        #[cfg(feature = "http-api")]
-        let api = Http::spawn(
-            router.clone(),
-            pm.clone(),
-            #[cfg(feature = "message")]
-            ms.clone(),
-            config.api_addr,
-        );
-
         Ok(Node {
             router,
             peer_manager: pm,
             #[cfg(feature = "message")]
             message_stack: ms,
-            #[cfg(feature = "http-api")]
-            _api: api,
         })
     }
 

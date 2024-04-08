@@ -1048,8 +1048,6 @@ name = "mycelium"
 version = "0.5.0"
 dependencies = [
  "aes-gcm",
- "axum",
- "base64 0.22.0",
  "blake3",
  "bytes",
  "etherparse",
@@ -1068,7 +1066,6 @@ dependencies = [
  "rtnetlink",
  "rustls",
  "serde",
- "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-tun",
@@ -1082,6 +1079,8 @@ dependencies = [
 name = "myceliumd"
 version = "0.5.0"
 dependencies = [
+ "axum",
+ "base64 0.22.0",
  "clap",
  "log",
  "mycelium",
