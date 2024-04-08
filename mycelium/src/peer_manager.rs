@@ -6,7 +6,6 @@ use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
-use network_interface::NetworkInterfaceConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
@@ -876,13 +875,10 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 /// Get a list of the interface identifiers of every network interface with a local IPv6 IP.
 fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>> {
     let mut nics = HashSet::new();
-    for nic in network_interface::NetworkInterface::show()? {
-        for addr in nic.addr {
-            if let network_interface::Addr::V6(addr) = addr {
-                // Check if the address is part of fe80::/64
-                if addr.ip.segments()[..4] == [0xfe80, 0, 0, 0] {
-                    nics.insert(nic.index);
-                }
+    for nic in netdev::get_interfaces() {
+        for addr in nic.ipv6 {
+            if addr.addr.segments()[..4] == [0xfe80, 0, 0, 0] {
+                nics.insert(nic.index);
             }
         }
     }
