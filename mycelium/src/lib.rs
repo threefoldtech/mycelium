@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
@@ -245,8 +246,16 @@ impl Node {
     ///
     /// This method returns a future which will wait indefinitely until a message is received. It
     /// is generally a good idea to put a limit on how long to wait by wrapping this in a [`tokio::time::timeout`].
-    pub async fn get_message(&self, pop: bool, topic: Option<Vec<u8>>) -> ReceivedMessage {
-        self.message_stack.message(pop, topic).await
+    pub fn get_message(
+        &self,
+        pop: bool,
+        topic: Option<Vec<u8>>,
+    ) -> impl Future<Output = ReceivedMessage> + '_ {
+        // First reborrow only the message stack from self, then manually construct a future. This
+        // avoids a lifetime issue on the router, which is not sync. If a regular 'async' fn would
+        // be used here, we can't specify that at this point sadly.
+        let ms = &self.message_stack;
+        async move { ms.message(pop, topic).await }
     }
 
     /// Push a new message to the message stack.
