@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Link local discovery will now send discovery beacons on every interface the process
   listens on for remote beacons.
 
+### Changed
+
+- We no longer create an outbound connection to a link local discovered IP if that
+  IP is already known (usually as inbound address) with potentially a different
+  port.
+
 ## [0.5.0] - 2024-04-04
 
 ### Changed
