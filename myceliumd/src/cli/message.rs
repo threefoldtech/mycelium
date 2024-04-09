@@ -11,13 +11,10 @@ use base64::{
     Engine,
 };
 use log::{debug, error};
-use mycelium::{
-    api::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse},
-    crypto::PublicKey,
-    message::MessageId,
-    subnet::Subnet,
-};
+use mycelium::{crypto::PublicKey, message::MessageId, subnet::Subnet};
 use serde::{Serialize, Serializer};
+
+use crate::api::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
 enum Payload {
     Readable(String),

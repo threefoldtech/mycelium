@@ -16,6 +16,7 @@ use mycelium::{
 };
 
 mod message;
+pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
 /// the server is terminated.

@@ -74,7 +74,6 @@ pub enum Command {
         key: Option<String>,
     },
 
-    #[cfg(feature = "message")]
     /// Actions on the message subsystem
     Message {
         #[command(subcommand)]
@@ -224,7 +223,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 return Ok(());
             }
-            #[cfg(feature = "message")]
             Command::Message { command } => match command {
                 MessageCommand::Send {
                     wait,
