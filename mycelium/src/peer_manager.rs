@@ -578,6 +578,21 @@ impl Inner {
         peer: Option<Peer>,
     ) {
         let mut peers = self.peers.lock().unwrap();
+        // Filter out link local IP's we already know (because of reverse detection)
+        if discovery_type == PeerType::LinkLocalDiscovery {
+            if let IpAddr::V6(ip) = endpoint.address().ip() {
+                if ip.octets()[..8] == [0xfe, 0x80, 0, 0, 0, 0, 0, 0] {
+                    for known_endpoint in peers.keys() {
+                        if known_endpoint.address().ip() == endpoint.address().ip()
+                            && known_endpoint.proto() == endpoint.proto()
+                        {
+                            trace!("Refusing to add link local discovered address {endpoint} as there already is a reverse connection {known_endpoint}");
+                            return;
+                        }
+                    }
+                }
+            }
+        }
         // Only if we don't know it yet.
         if let Entry::Vacant(e) = peers.entry(endpoint) {
             e.insert(PeerInfo {
