@@ -6,12 +6,14 @@ use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn};
+use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr, SocketAddrV6};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -135,6 +137,8 @@ struct Inner {
     /// Listen port for new peer connections
     tcp_listen_port: u16,
     quic_socket: quinn::Endpoint,
+    /// Identity and name of a private network, if one exists
+    private_network_config: Option<(String, [u8; 32])>,
 }
 
 impl PeerManager {
@@ -145,8 +149,10 @@ impl PeerManager {
         quic_listen_port: u16,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
+        private_network_config: Option<(String, [u8; 32])>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let quic_socket = make_quic_endpoint(router.router_id(), quic_listen_port)?;
+        let is_private_net = private_network_config.is_some();
 
         let peer_manager = PeerManager {
             inner: Arc::new(Inner {
@@ -176,12 +182,19 @@ impl PeerManager {
                 ),
                 tcp_listen_port,
                 quic_socket,
+                private_network_config,
             }),
         };
 
-        // Start listeners for inbound connections.
-        tokio::spawn(peer_manager.inner.clone().tcp_listener());
-        tokio::spawn(peer_manager.inner.clone().quic_listener());
+        if is_private_net {
+            info!("Starting private network");
+            tokio::spawn(peer_manager.inner.clone().tls_listener());
+        } else {
+            // Start listeners for inbound connections.
+            info!("Starting public network");
+            tokio::spawn(peer_manager.inner.clone().tcp_listener());
+            tokio::spawn(peer_manager.inner.clone().quic_listener());
+        };
 
         // Start (re)connecting to outbound/local peers
         tokio::spawn(peer_manager.inner.clone().connect_to_peers());
@@ -340,6 +353,7 @@ impl Inner {
         debug!("Connecting to {endpoint}");
         match endpoint.proto() {
             Protocol::Tcp => self.connect_tcp_peer(endpoint, ct).await,
+            Protocol::Tls => self.connect_tls_peer(endpoint, ct).await,
             Protocol::Quic => self.connect_quic_peer(endpoint, ct).await,
         }
     }
@@ -369,6 +383,92 @@ impl Inner {
                         router_data_tx,
                         router_control_tx,
                         peer_stream,
+                        dead_peer_sink,
+                        ct.tx_bytes,
+                        ct.rx_bytes,
+                    )
+                };
+                match res {
+                    Ok(new_peer) => {
+                        info!("Connected to new peer {}", endpoint);
+                        (endpoint, Some(new_peer))
+                    }
+                    Err(e) => {
+                        error!("Failed to spawn peer {endpoint}: {e}");
+                        (endpoint, None)
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Couldn't connect to {endpoint}: {e}");
+                (endpoint, None)
+            }
+        }
+    }
+
+    async fn connect_tls_peer(
+        self: Arc<Self>,
+        endpoint: Endpoint,
+        ct: ConnectionTraffic,
+    ) -> (Endpoint, Option<Peer>) {
+        match TcpStream::connect(endpoint.address()).await {
+            Ok(peer_stream) => {
+                debug!("Opened connection to {endpoint}");
+                // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
+                if let Err(e) = peer_stream.set_nodelay(true) {
+                    error!("Couldn't disable Nagle's algorithm on stream {e}");
+                    return (endpoint, None);
+                }
+
+                let (net_name, net_key) = self.private_network_config.clone().unwrap();
+                let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
+                connector.set_psk_client_callback(move |_ssl_ref, id_hint, id, key| {
+                    info!("Called psk client callback with id_hint {id_hint:?} id {id:?} () and key {key:?}");
+
+                    info!("initial id length: {}", id.len());
+                    if id.len() < net_name.len() + 1 {
+                        warn!("Can't pass in key to SSL acceptor");
+                        return Ok(0);
+                    }
+                    id[..net_name.len()].copy_from_slice(net_name.as_bytes());
+                    id[net_name.len()] = 0;
+                    info!("initial key length: {}", key.len());
+                    if key.len() < 32 {
+                        warn!("Can't pass in key to SSL acceptor");
+                        return Ok(0);
+                    }
+                    // Copy key
+                    key[..32].copy_from_slice(&net_key[..]);
+
+                    Ok(32)
+                });
+                let connector = connector.build();
+                let mut ssl_stream = tokio_openssl::SslStream::new(
+                    Ssl::new(connector.context()).expect("Can create SSL object"),
+                    peer_stream,
+                )
+                .expect("can create ssl stream");
+                info!("Created wrapped stream");
+                {
+                    let pinned_stream = Pin::new(&mut ssl_stream);
+                    if let Err(e) = pinned_stream.connect().await {
+                        error!("Could not initiate TLS stream to {endpoint} {e}");
+                        return (endpoint, None);
+                    }
+                }
+                info!("Finished TLS handshake");
+
+                // Scope the MutexGuard, if we don't do this the future won't be Send
+                let res = {
+                    let router = self.router.lock().unwrap();
+                    let router_data_tx = router.router_data_tx();
+                    let router_control_tx = router.router_control_tx();
+                    let dead_peer_sink = router.dead_peer_sink().clone();
+
+                    Peer::new(
+                        router_data_tx,
+                        router_control_tx,
+                        ssl_stream,
                         dead_peer_sink,
                         ct.tx_bytes,
                         ct.rx_bytes,
@@ -498,6 +598,91 @@ impl Inner {
                         info!("Accepted new inbound peer {}", remote);
                         self.add_peer(
                             Endpoint::new(Protocol::Tcp, remote),
+                            PeerType::Inbound,
+                            ConnectionTraffic { tx_bytes, rx_bytes },
+                            Some(new_peer),
+                        );
+                    }
+                    Err(e) => {
+                        error!("Error accepting connection: {}", e);
+                    }
+                }
+            },
+            Err(e) => {
+                error!("Error starting listener: {}", e);
+            }
+        }
+    }
+
+    async fn tls_listener(self: Arc<Self>) {
+        // TODO
+        let (net_name, net_key) = self.private_network_config.clone().unwrap();
+        // Take a copy of every channel here first so we avoid lock contention in the loop later.
+        let router_data_tx = self.router.lock().unwrap().router_data_tx();
+        let router_control_tx = self.router.lock().unwrap().router_control_tx();
+        let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
+
+        let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls_server()).unwrap();
+        acceptor.set_psk_server_callback(move |_ssl_ref, id, key| {
+            info!("Called psk server callback with id {id:?} and key {key:?}");
+            if let Some(id) = id {
+                if id != net_name.as_bytes() {
+                    info!("id given by client does not match configured network name");
+                    return Ok(0);
+                }
+            } else {
+                info!("No name indicated by client");
+                return Ok(0);
+            }
+            info!("initial key length: {}", key.len());
+            if key.len() < 32 {
+                warn!("Can't pass in key to SSL acceptor");
+                return Ok(0);
+            }
+            // Copy key
+            key[..32].copy_from_slice(&net_key[..]);
+
+            Ok(32)
+        });
+        let acceptor = acceptor.build();
+
+        match TcpListener::bind(("::", self.tcp_listen_port)).await {
+            Ok(listener) => loop {
+                match listener.accept().await {
+                    Ok((stream, remote)) => {
+                        let mut ssl_stream = tokio_openssl::SslStream::new(
+                            Ssl::new(acceptor.context()).expect("Can create SSL object"),
+                            stream,
+                        )
+                        .expect("can create ssl stream");
+                        info!("Created wrapped stream");
+                        {
+                            let pinned_stream = Pin::new(&mut ssl_stream);
+                            if let Err(e) = pinned_stream.accept().await {
+                                error!("Could not accept TLS stream from {remote} {e}");
+                                continue;
+                            }
+                        }
+                        info!("Accepted TLS handshake");
+                        let tx_bytes = Arc::new(AtomicU64::new(0));
+                        let rx_bytes = Arc::new(AtomicU64::new(0));
+                        let new_peer = match Peer::new(
+                            router_data_tx.clone(),
+                            router_control_tx.clone(),
+                            ssl_stream,
+                            dead_peer_sink.clone(),
+                            tx_bytes.clone(),
+                            rx_bytes.clone(),
+                        ) {
+                            Ok(peer) => peer,
+                            Err(e) => {
+                                error!("Failed to spawn peer: {e}");
+                                continue;
+                            }
+                        };
+                        info!("Accepted new inbound peer {}", remote);
+                        self.add_peer(
+                            Endpoint::new(Protocol::Tls, remote),
                             PeerType::Inbound,
                             ConnectionTraffic { tx_bytes, rx_bytes },
                             Some(new_peer),
