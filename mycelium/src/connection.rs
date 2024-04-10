@@ -70,6 +70,26 @@ impl Connection for TcpStream {
     }
 }
 
+impl Connection for tokio_openssl::SslStream<TcpStream> {
+    fn identifier(&self) -> Result<String, io::Error> {
+        Ok(format!(
+            "TLS {} <-> {}",
+            self.get_ref().local_addr()?,
+            self.get_ref().peer_addr()?
+        ))
+    }
+
+    fn static_link_cost(&self) -> Result<u16, io::Error> {
+        Ok(match self.get_ref().peer_addr()? {
+            SocketAddr::V4(_) => PACKET_PROCESSING_COST_IP4_TCP,
+            SocketAddr::V6(ip) if ip.ip().to_ipv4_mapped().is_some() => {
+                PACKET_PROCESSING_COST_IP4_TCP
+            }
+            SocketAddr::V6(_) => PACKET_PROCESSING_COST_IP6_TCP,
+        })
+    }
+}
+
 impl AsyncRead for Quic {
     #[inline]
     fn poll_read(
