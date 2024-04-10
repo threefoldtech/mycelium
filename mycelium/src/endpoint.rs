@@ -23,6 +23,8 @@ pub enum EndpointParseError {
 pub enum Protocol {
     /// Standard plain text Tcp.
     Tcp,
+    /// Tls 1.3 with PSK over Tcp.
+    Tls,
     /// Quic protocol (over UDP).
     Quic,
 }
@@ -62,6 +64,7 @@ impl FromStr for Endpoint {
                 let proto = match proto.to_lowercase().as_str() {
                     "tcp" => Protocol::Tcp,
                     "quic" => Protocol::Quic,
+                    "tls" => Protocol::Tls,
                     _ => return Err(EndpointParseError::UnknownProtocol),
                 };
                 let socket_addr = SocketAddr::from_str(socket)?;
@@ -81,6 +84,7 @@ impl fmt::Display for Protocol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Tcp => "Tcp",
+            Self::Tls => "Tls",
             Self::Quic => "Quic",
         })
     }
