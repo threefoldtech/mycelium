@@ -129,6 +129,7 @@ impl Node {
                 0
             },
             config.peer_discovery_port.is_none(),
+            Some(("mycelium".to_string(), [0; 32])),
         )?;
         info!("Started peer manager");
 
