@@ -1,16 +1,15 @@
-use std::{
-    future::Future,
-    net::{IpAddr, Ipv6Addr},
-    time::Duration,
-};
+use std::net::{IpAddr, Ipv6Addr};
+#[cfg(feature = "message")]
+use std::{future::Future, time::Duration};
 
 use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
 use log::{error, info, warn};
 #[cfg(feature = "message")]
-use message::MessageStack;
-use message::{MessageId, MessageInfo, MessagePushResponse, PushMessageError, ReceivedMessage};
+use message::{
+    MessageId, MessageInfo, MessagePushResponse, MessageStack, PushMessageError, ReceivedMessage,
+};
 use peer_manager::{PeerExists, PeerNotFound, PeerStats};
 use routing_table::RouteEntry;
 use subnet::Subnet;
