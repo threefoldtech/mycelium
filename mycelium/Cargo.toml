@@ -6,7 +6,6 @@ license-file = "../LICENSE"
 readme = "../README.md"
 
 [features]
-default = ["message"]
 message = []
 
 [dependencies]
