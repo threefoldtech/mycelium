@@ -573,7 +573,6 @@ impl Inner {
         let acceptor = if let Some((net_name, net_key)) = self.private_network_config.clone() {
             let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls_server()).unwrap();
             acceptor.set_psk_server_callback(move |_ssl_ref, id, key| {
-                info!("Called psk server callback with id {id:?} and key {key:?}");
                 if let Some(id) = id {
                     if id != net_name.as_bytes() {
                         debug!("id given by client does not match configured private network name");
@@ -583,7 +582,6 @@ impl Inner {
                     debug!("No name indicated by client");
                     return Ok(0);
                 }
-                info!("initial key length: {}", key.len());
                 if key.len() < 32 {
                     warn!("Can't pass in key to SSL acceptor");
                     return Ok(0);
