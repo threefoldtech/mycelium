@@ -1047,6 +1047,7 @@ dependencies = [
  "axum",
  "base64 0.22.0",
  "clap",
+ "faster-hex",
  "log",
  "mycelium",
  "pretty_env_logger",
