@@ -78,6 +78,16 @@ pub struct NodeInfo {
 impl Node {
     /// Setup a new `Node` with the provided [`Config`].
     pub async fn new(config: Config) -> Result<Self, Box<dyn std::error::Error>> {
+        // If a private network is configured, validate network name
+        if let Some((net_name, _)) = &config.private_network_config {
+            if net_name.len() < 2 || net_name.len() > 64 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "network name must be between 2 and 64 characters",
+                )
+                .into());
+            }
+        }
         let node_pub_key = crypto::PublicKey::from(&config.node_key);
         let node_addr = node_pub_key.address();
         let (tun_tx, tun_rx) = tokio::sync::mpsc::unbounded_channel();
