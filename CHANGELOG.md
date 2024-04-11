@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   done to make it easier to develop implementations on different platforms.
 - Link local discovery will now send discovery beacons on every interface the process
   listens on for remote beacons.
+- Experimental private network support. See [the private network docs](/docs/private_network.md)
+  for more info.
 
 ### Changed
 
