@@ -10,7 +10,7 @@ use log::{error, info, warn};
 use message::{
     MessageId, MessageInfo, MessagePushResponse, MessageStack, PushMessageError, ReceivedMessage,
 };
-use peer_manager::{PeerExists, PeerNotFound, PeerStats};
+use peer_manager::{PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
 use routing_table::RouteEntry;
 use subnet::Subnet;
 
@@ -56,6 +56,9 @@ pub struct Config {
     pub peer_discovery_port: Option<u16>,
     /// Name for the TUN device.
     pub tun_name: String,
+    /// Configuration for a private network, if run in that mode. To enable private networking,
+    /// this must be a name + a PSK.
+    pub private_network_config: Option<(String, PrivateNetworkKey)>,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.

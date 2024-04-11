@@ -279,6 +279,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Some(cli.node_args.peer_discovery_port)
         },
         tun_name: cli.node_args.tun_name,
+        private_network_config: None,
     };
 
     let node = Node::new(config).await?;
