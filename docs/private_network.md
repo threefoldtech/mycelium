@@ -22,6 +22,9 @@ limit the network name and PSK as follows:
 - Network name must be a UTF-8 encoded string of 2 to 64 bytes.
 - PSK must be exactly 32 bytes.
 
+Not all cipher suites supported in TLS1.3 are supported. At present, _at least_
+`TLS_AES_128_GCM_SHA256` and `TLS_CHACHA20_POLY1305_SHA256` are supported.
+
 ## Enable private network
 
 If you are running the standard `mycelium` binary, private network functionality
