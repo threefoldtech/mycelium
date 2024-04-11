@@ -980,7 +980,14 @@ impl Inner {
         // scope_id to be set.
         remote.set_port(port);
         self.add_peer(
-            Endpoint::new(Protocol::Tcp, remote),
+            Endpoint::new(
+                if self.private_network_config.is_some() {
+                    Protocol::Tls
+                } else {
+                    Protocol::Tcp
+                },
+                remote,
+            ),
             PeerType::LinkLocalDiscovery,
             ConnectionTraffic {
                 tx_bytes: Arc::new(AtomicU64::new(0)),
