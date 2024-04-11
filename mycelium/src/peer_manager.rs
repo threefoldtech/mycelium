@@ -663,7 +663,14 @@ impl Inner {
                         };
                         info!("Accepted new inbound peer {}", remote);
                         self.add_peer(
-                            Endpoint::new(Protocol::Tcp, remote),
+                            Endpoint::new(
+                                if self.private_network_config.is_some() {
+                                    Protocol::Tls
+                                } else {
+                                    Protocol::Tcp
+                                },
+                                remote,
+                            ),
                             PeerType::Inbound,
                             ConnectionTraffic { tx_bytes, rx_bytes },
                             Some(new_peer),
