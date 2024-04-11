@@ -200,7 +200,7 @@ impl PeerManager {
         // actually be a tls listener.
         tokio::spawn(peer_manager.inner.clone().tcp_listener());
         if is_private_net {
-            info!("Starting private network");
+            info!("Enabled private network mode");
         } else {
             // Currently quic is not supported in private network mode.
             tokio::spawn(peer_manager.inner.clone().quic_listener());
