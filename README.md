@@ -25,11 +25,13 @@ Mycelium is an IPv6 overlay network written in Rust. Each node that joins the ov
 First, get an useable binary, either by downloading [an artifact from a release](https://github.com/threefoldtech/mycelium/releases),
 or by [checking out and building the code yourself](#developing).
 
-> On Windows, you must have `wintun.dll` in the same directory you are executing the binary from.
+> On Windows, you must have `wintun.dll` in the same directory you are executing
+> the binary from.
 
-Once you have an useable binary, simply start it. If you want to connect to other nodes, you can specify their listening address as
-part of the command (combined with the protocol they are listening on, usually TCP). Check the next
-section if you want to connect to hosted public nodes.
+Once you have an useable binary, simply start it. If you want to connect to other
+nodes, you can specify their listening address as part of the command (combined
+with the protocol they are listening on, usually TCP). Check the next section if
+you want to connect to hosted public nodes.
 
 ```sh
 mycelium --peers tcp://188.40.132.242:9651 quic://185.69.166.8:9651
@@ -40,7 +42,8 @@ sudo mycelium --peers tcp://188.40.132.242:9651 quic://185.69.166.8:9651 --tun-n
 
 ```
 
-By default, the node will listen on port `9651`, though this can be overwritten with the `-p` flag.
+By default, the node will listen on port `9651`, though this can be overwritten
+with the `-p` flag.
 
 To check your own info
 
@@ -96,14 +99,21 @@ It is up to the user to decide which peers he wants to use, over which protocol.
 Note that quotation may or may not be required, depending on which shell is being
 used.
 
+### Private network
+
+Mycelium supports running a private network, in which you must know the network name
+and a PSK (pre shared key) to connect to nodes in the network. For more info, check
+out [the relevant docs](/docs/private_network.md).
+
 ## API
 
-The node starts an HTTP API, which by default listens on `localhost:8989`. A different listening address
-can be specified on the CLI when starting the system through the `--api-server-addr` flag. The API
-allows access to [send and receive messages](#message-system), and will later be expanded to allow
-admin functionality on the system. Note that message are sent using the identity of the node, and a
-future admin API can be used to change the system behavior. As such, care should be taken that this
-API is not accessible to unauthorized users.
+The node starts an HTTP API, which by default listens on `localhost:8989`. A different
+listening address can be specified on the CLI when starting the system through the
+`--api-server-addr` flag. The API allows access to [send and receive messages](#message-system),
+and will later be expanded to allow admin functionality on the system. Note that
+message are sent using the identity of the node, and a future admin API can be
+used to change the system behavior. As such, care should be taken that this API
+is not accessible to unauthorized users.
 
 ## Message system
 
@@ -116,10 +126,9 @@ similar to the way TCP handles data. Messages are transmitted in chunks, which a
 same data stream used by L3 packets. As such, intermediate nodes can't distinguish between regular L3
 and message data.
 
-The primary way to interact with the message system is through [the API](#API). The message API is
+The primary way to interact with the message system is through [the API](#api). The message API is
 documented in [an OpenAPI spec in the docs folder](docs/api.yaml). For some more info about how to
 use the message system, see [the message docs](/docs/message.md).
-
 
 ## Inspecting node keys
 
@@ -144,9 +153,10 @@ mycelium inspect --json
 
 ## Developing
 
-This project is built in Rust, and you must have a rust compiler to build the code yourself. Please refer to [the official rust documentation](https://www.rust-lang.org/)
-for information on how to install `rustc` and `cargo`. Aside from the rust toolchain, no other dependencies should be required to
-build the project.
+This project is built in Rust, and you must have a rust compiler to build the code
+yourself. Please refer to [the official rust documentation](https://www.rust-lang.org/)
+for information on how to install `rustc` and `cargo`. Aside from the rust toolchain,
+no other dependencies should be required to build the project.
 
 First make sure you have cloned the repo
 
@@ -161,15 +171,16 @@ cd mycelium
 cargo build
 ```
 
-In case a release build is required, the `--release` flag can be added to the cargo command (`cargo build --release`).
+In case a release build is required, the `--release` flag can be added to the cargo
+command (`cargo build --release`).
 
 ## Cross compilation
 
-For cross compilation, it is advised to use the [`cross`](https://github.com/cross-rs/cross) project.
-Alternatively, the standard way of cross compiling in rust can be used (by specifying
-the `--target` flag in the `cargo build` command). This might require setting some
-environment variables or local cargo config.
+For cross compilation, it is advised to use the [`cross`](https://github.com/cross-rs/cross)
+project. Alternatively, the standard way of cross compiling in rust can be used
+(by specifying the `--target` flag in the `cargo build` command). This might require
+setting some environment variables or local cargo config.
 
 ## Remarks
 
--  The overlay network uses some of the core principles of the Babel routing protocol (<https://www.irif.fr/~jch/software/babel/>). 
+- The overlay network uses some of the core principles of the Babel routing protocol (<https://www.irif.fr/~jch/software/babel/>).
