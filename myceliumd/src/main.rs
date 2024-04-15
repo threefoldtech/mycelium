@@ -176,16 +176,16 @@ pub struct NodeArguments {
     /// instead of plain Tcp connections. The name provided here is used as the network name, other
     /// nodes must use the same name or the connection will be rejected. Note that the name is
     /// public, and is communicated when connecting to a remote. Do not put confidential data here.
-    #[arg(long = "network-name", requires = "network_key")]
+    #[arg(long = "network-name", requires = "network_key_file")]
     network_name: Option<String>,
 
-    /// The key to use for the private network.
+    /// The path to the file with the key to use for the private network.
     ///
-    /// The key is expected to be 32 bytes, hex encoded (so 64 characters). The key must be shared
-    /// between all nodes participating in the newtork, and is secret. If the key leaks, anyone can
-    /// then join the network.
-    #[arg(long = "network-key", requires = "network_name")]
-    network_key: Option<String>,
+    /// The key is expected to be exactly 32 bytes. The key must be shared between all nodes
+    /// participating in the newtork, and is secret. If the key leaks, anyone can then join the
+    /// network.
+    #[arg(long = "network-key-file", requires = "network_name")]
+    network_key_file: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -275,13 +275,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let private_network_config = match (cli.node_args.network_name, cli.node_args.network_key) {
-        (Some(network_name), Some(network_key)) => {
-            let mut net_key = [0; 32];
-            if let Err(e) = faster_hex::hex_decode(network_key.as_bytes(), &mut net_key) {
-                error!("Failed to decode private network key: {e}");
-                return Err(e.into());
-            }
+    let private_network_config = match (cli.node_args.network_name, cli.node_args.network_key_file)
+    {
+        (Some(network_name), Some(network_key_file)) => {
+            let net_key = load_key_file(&network_key_file).await?;
 
             Some((network_name, net_key))
         }
