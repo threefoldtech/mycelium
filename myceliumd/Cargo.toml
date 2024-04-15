@@ -31,4 +31,3 @@ axum = { version = "0.7.5", default-features = false, features = [
   "tokio",
 ] }
 base64 = "0.22.0"
-faster-hex = "0.9.0"
