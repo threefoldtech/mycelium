@@ -339,12 +339,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn load_key_file(path: &Path) -> Result<crypto::SecretKey, io::Error> {
+async fn load_key_file<T>(path: &Path) -> Result<T, io::Error>
+where
+    T: From<[u8; 32]>,
+{
     let mut file = File::open(path).await?;
     let mut secret_bytes = [0u8; 32];
     file.read_exact(&mut secret_bytes).await?;
 
-    Ok(crypto::SecretKey::from(secret_bytes))
+    Ok(T::from(secret_bytes))
 }
 
 async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
