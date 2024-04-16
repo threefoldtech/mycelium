@@ -18,6 +18,8 @@ use mycelium::{
 mod message;
 pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
+use crate::NoMetrics;
+
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
 /// the server is terminated.
 pub struct Http {
@@ -30,12 +32,12 @@ pub struct Http {
 /// Shared state accessible in HTTP endpoint handlers.
 struct HttpServerState {
     /// Access to the (`node`)(mycelium::Node) state.
-    node: Arc<Mutex<mycelium::Node>>,
+    node: Arc<Mutex<mycelium::Node<NoMetrics>>>,
 }
 
 impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
-    pub fn spawn(node: mycelium::Node, listen_addr: SocketAddr) -> Self {
+    pub fn spawn(node: mycelium::Node<NoMetrics>, listen_addr: SocketAddr) -> Self {
         let server_state = HttpServerState {
             node: Arc::new(Mutex::new(node)),
         };
