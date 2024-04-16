@@ -2,6 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use crypto::PublicKey;
 use log::{debug, error, warn, LevelFilter};
 use mycelium::endpoint::Endpoint;
+use mycelium::metrics::Metrics;
 use mycelium::{crypto, Node};
 use std::io;
 use std::net::Ipv4Addr;
@@ -15,6 +16,10 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
+
+#[derive(Clone)]
+struct NoMetrics;
+impl Metrics for NoMetrics {}
 
 mod api;
 mod cli;
@@ -307,6 +312,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
         tun_name: cli.node_args.tun_name,
         private_network_config,
+        metrics: NoMetrics,
     };
 
     let node = Node::new(config).await?;
