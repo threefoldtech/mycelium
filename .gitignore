@@ -15,3 +15,5 @@ profile.json
 
 # wintun.dll, windows tun driver in repo root for windows development
 wintun.dll
+
+result/
