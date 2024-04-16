@@ -8,6 +8,8 @@
     flake-utils.inputs.nixpkgs.follows = "nixpkgs";
 
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.tar.gz";
+
+    nix-filter.url = "github:numtide/nix-filter";
   };
 
   outputs = {
@@ -15,6 +17,7 @@
     nixpkgs,
     crane,
     flake-utils,
+    nix-filter,
     ...
   }:
     flake-utils.lib.eachSystem
@@ -52,7 +55,17 @@
       packages = {
         default = self.packages.${system}.mycelium;
         mycelium = lib.makeOverridable craneLib.buildPackage {
-          src = self;
+          src = nix-filter {
+            root = ./.;
+
+            # If no include is passed, it will include all the paths.
+            include = [
+              ./Cargo.toml
+              ./Cargo.lock
+              ./mycelium
+              ./myceliumd
+            ];
+          };
           pname = manifest.package.name;
           version = manifest.package.version;
 
