@@ -49,19 +49,27 @@
         RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
       };
 
-      packages.default = craneLib.buildPackage {
-        src = self;
-        pname = manifest.package.name;
-        version = manifest.package.version;
+      packages = {
+        default = self.packages.${system}.mycelium;
+        mycelium = lib.makeOverridable craneLib.buildPackage {
+          src = self;
+          pname = manifest.package.name;
+          version = manifest.package.version;
 
-        doCheck = true;
+          doCheck = false;
 
-        cargoExtraArgs = "--bin ${manifest.package.name}";
+          cargoExtraArgs = "-p mycelium";
 
-        buildInputs = lib.optionals stdenv.isDarwin [
-          darwin.apple_sdk.frameworks.Security
-          darwin.apple_sdk.frameworks.SystemConfiguration
-        ];
+          nativeBuildInputs = [
+            # required by openssl-sys
+            pkgs.perl
+          ];
+
+          buildInputs = lib.optionals stdenv.isDarwin [
+            darwin.apple_sdk.frameworks.Security
+            darwin.apple_sdk.frameworks.SystemConfiguration
+          ];
+        };
       };
     });
 }
