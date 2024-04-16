@@ -10,6 +10,7 @@ use log::{error, info, warn};
 use message::{
     MessageId, MessageInfo, MessagePushResponse, MessageStack, PushMessageError, ReceivedMessage,
 };
+use metrics::Metrics;
 use peer_manager::{PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
 use routing_table::RouteEntry;
 use subnet::Subnet;
@@ -42,7 +43,7 @@ pub const GLOBAL_SUBNET_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 
 pub const GLOBAL_SUBNET_PREFIX_LEN: u8 = 7;
 
 /// Config for a mycelium [`Node`].
-pub struct Config {
+pub struct Config<M> {
     /// The secret key of the node.
     pub node_key: crypto::SecretKey,
     /// Statically configured peers.
@@ -60,14 +61,18 @@ pub struct Config {
     /// Configuration for a private network, if run in that mode. To enable private networking,
     /// this must be a name + a PSK.
     pub private_network_config: Option<(String, PrivateNetworkKey)>,
+    /// Implementation of the `Metrics` trait, used to expose information about the system
+    /// internals.
+    pub metrics: M,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
-pub struct Node {
+pub struct Node<M> {
     router: router::Router,
     peer_manager: peer_manager::PeerManager,
     #[cfg(feature = "message")]
     message_stack: message::MessageStack,
+    metrics: M,
 }
 
 /// General info about a node.
@@ -76,9 +81,12 @@ pub struct NodeInfo {
     pub node_subnet: Subnet,
 }
 
-impl Node {
+impl<M> Node<M> {
     /// Setup a new `Node` with the provided [`Config`].
-    pub async fn new(config: Config) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(config: Config<M>) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        M: Metrics + Clone + Send + Sync,
+    {
         // If a private network is configured, validate network name
         if let Some((net_name, _)) = &config.private_network_config {
             if net_name.len() < 2 || net_name.len() > 64 {
@@ -195,6 +203,7 @@ impl Node {
             peer_manager: pm,
             #[cfg(feature = "message")]
             message_stack: ms,
+            metrics: config.metrics,
         })
     }
 
@@ -232,7 +241,7 @@ impl Node {
 }
 
 #[cfg(feature = "message")]
-impl Node {
+impl<M> Node<M> {
     /// Wait for a messsage to arrive in the message stack.
     ///
     /// An the optional `topic` is provided, only messages which have exactly the same value in
