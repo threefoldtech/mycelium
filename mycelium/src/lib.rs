@@ -24,6 +24,7 @@ mod interval;
 #[cfg(feature = "message")]
 pub mod message;
 mod metric;
+pub mod metrics;
 pub mod packet;
 mod peer;
 pub mod peer_manager;
