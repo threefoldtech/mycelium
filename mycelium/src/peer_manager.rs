@@ -1,5 +1,6 @@
 use crate::connection::Quic;
 use crate::endpoint::{Endpoint, Protocol};
+use crate::metrics::Metrics;
 use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
 use crate::router_id::RouterId;
@@ -39,8 +40,11 @@ const MAX_FAILED_LOCAL_PEER_CONNECTION_ATTEMPTS: usize = 3;
 /// connection. Once a connection is established, the created [`Peer`] is handed over to the
 /// [`Router`].
 #[derive(Clone)]
-pub struct PeerManager {
-    inner: Arc<Inner>,
+pub struct PeerManager<M>
+where
+    M: Clone,
+{
+    inner: Arc<Inner<M>>,
 }
 
 /// Details how the PeerManager learned about a remote.
@@ -133,9 +137,12 @@ pub struct PeerNotFound;
 /// PSK used to set up a shared network. Currently 32 bytes though this might change in the future.
 pub type PrivateNetworkKey = [u8; 32];
 
-struct Inner {
+struct Inner<M>
+where
+    M: Clone,
+{
     /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
-    router: Mutex<Router>,
+    router: Mutex<Router<M>>,
     peers: Mutex<HashMap<Endpoint, PeerInfo>>,
     /// Listen port for new peer connections
     tcp_listen_port: u16,
@@ -144,9 +151,12 @@ struct Inner {
     private_network_config: Option<(String, [u8; 32])>,
 }
 
-impl PeerManager {
+impl<M> PeerManager<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     pub fn new(
-        router: Router,
+        router: Router<M>,
         static_peers_sockets: Vec<Endpoint>,
         tcp_listen_port: u16,
         quic_listen_port: u16,
@@ -293,7 +303,10 @@ impl PeerManager {
     }
 }
 
-impl Inner {
+impl<M> Inner<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     /// Connect and if needed reconnect to known peers.
     async fn connect_to_peers(self: Arc<Self>) {
         let mut peer_check_interval = tokio::time::interval(PEER_CONNECT_INTERVAL);

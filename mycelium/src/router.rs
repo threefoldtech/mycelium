@@ -3,6 +3,7 @@ use crate::{
     crypto::{PacketBuffer, PublicKey, SecretKey, SharedSecret},
     filters::RouteUpdateFilter,
     metric::Metric,
+    metrics::Metrics,
     packet::{ControlPacket, DataPacket},
     peer::Peer,
     router_id::RouterId,
@@ -60,7 +61,10 @@ const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(60);
 const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(0);
 
 #[derive(Clone)]
-pub struct Router {
+pub struct Router<M>
+where
+    M: Clone,
+{
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
     inner_r: ReadHandle<RouterInner>,
     peer_interfaces: Arc<RwLock<Vec<Peer>>>,
@@ -79,15 +83,20 @@ pub struct Router {
     dead_peer_sink: mpsc::Sender<Peer>,
     /// Channel to notify the router of expired SourceKey's.
     expired_source_key_sink: mpsc::Sender<SourceKey>,
+    metrics: M,
 }
 
-impl Router {
+impl<M> Router<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     pub fn new(
         node_tun: UnboundedSender<DataPacket>,
         node_tun_subnet: Subnet,
         static_routes: Vec<Subnet>,
         node_keypair: (SecretKey, PublicKey),
         update_filters: Vec<Box<dyn RouteUpdateFilter + Send + Sync>>,
+        metrics: M,
     ) -> Result<Self, Box<dyn Error>> {
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel();
@@ -118,6 +127,7 @@ impl Router {
             dead_peer_sink,
             expired_source_key_sink,
             update_filters: Arc::new(update_filters),
+            metrics,
         };
 
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));

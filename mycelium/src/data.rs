@@ -5,7 +5,7 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, trace, warn};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::{crypto::PacketBuffer, packet::DataPacket, router::Router};
+use crate::{crypto::PacketBuffer, metrics::Metrics, packet::DataPacket, router::Router};
 
 /// Current version of the user data header.
 const USER_DATA_VERSION: u8 = 1;
@@ -49,17 +49,23 @@ const MESSAGE_HOP_LIMIT: u8 = 64;
 ///
 /// DataPlane itself can be cloned, but this is not cheap on the router and should be avoided.
 #[derive(Clone)]
-pub struct DataPlane {
-    router: Router,
+pub struct DataPlane<M>
+where
+    M: Clone,
+{
+    router: Router<M>,
 }
 
-impl DataPlane {
+impl<M> DataPlane<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     /// Create a new `DataPlane` using the given [`Router`] for packet handling.
     ///
     /// `l3_packet_stream` is a stream of l3 packets from the host, usually read from a TUN interface.
     /// `l3_packet_sink` is a sink for l3 packets received from a romte, usually send to a TUN interface,
     pub fn new<S, T, U>(
-        router: Router,
+        router: Router<M>,
         l3_packet_stream: S,
         l3_packet_sink: T,
         message_packet_sink: U,
@@ -88,7 +94,7 @@ impl DataPlane {
     }
 
     /// Get a reference to the [`Router`] used.
-    pub fn router(&self) -> &Router {
+    pub fn router(&self) -> &Router<M> {
         &self.router
     }
 

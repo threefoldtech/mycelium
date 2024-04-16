@@ -67,11 +67,14 @@ pub struct Config<M> {
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
-pub struct Node<M> {
-    router: router::Router,
-    peer_manager: peer_manager::PeerManager,
+pub struct Node<M>
+where
+    M: Clone,
+{
+    router: router::Router<M>,
+    peer_manager: peer_manager::PeerManager<M>,
     #[cfg(feature = "message")]
-    message_stack: message::MessageStack,
+    message_stack: message::MessageStack<M>,
     metrics: M,
 }
 
@@ -81,12 +84,12 @@ pub struct NodeInfo {
     pub node_subnet: Subnet,
 }
 
-impl<M> Node<M> {
+impl<M> Node<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     /// Setup a new `Node` with the provided [`Config`].
-    pub async fn new(config: Config<M>) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        M: Metrics + Clone + Send + Sync,
-    {
+    pub async fn new(config: Config<M>) -> Result<Self, Box<dyn std::error::Error>> {
         // If a private network is configured, validate network name
         if let Some((net_name, _)) = &config.private_network_config {
             if net_name.len() < 2 || net_name.len() > 64 {
@@ -125,6 +128,7 @@ impl<M> Node<M> {
                 Box::new(filters::MaxSubnetSize::<64>),
                 Box::new(filters::RouterIdOwnsSubnet),
             ],
+            config.metrics.clone(),
         ) {
             Ok(router) => {
                 info!(
@@ -241,7 +245,10 @@ impl<M> Node<M> {
 }
 
 #[cfg(feature = "message")]
-impl<M> Node<M> {
+impl<M> Node<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     /// Wait for a messsage to arrive in the message stack.
     ///
     /// An the optional `topic` is provided, only messages which have exactly the same value in
