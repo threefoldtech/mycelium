@@ -25,6 +25,7 @@ use crate::{
     crypto::{PacketBuffer, PublicKey},
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
+    metrics::Metrics,
 };
 
 mod chunk;
@@ -85,9 +86,12 @@ pub type Checksum = [u8; MESSAGE_CHECKSUM_LENGTH];
 pub type MessagePushResponse = (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>);
 
 #[derive(Clone)]
-pub struct MessageStack {
+pub struct MessageStack<M>
+where
+    M: Clone,
+{
     // The DataPlane is wrappen in a Mutex since it does not implement Sync.
-    data_plane: Arc<Mutex<DataPlane>>,
+    data_plane: Arc<Mutex<DataPlane<M>>>,
     inbox: Arc<Mutex<MessageInbox>>,
     outbox: Arc<Mutex<MessageOutbox>>,
     /// Receiver handle for inbox listeners (basically a condvar).
@@ -219,11 +223,14 @@ impl MessageOutbox {
     }
 }
 
-impl MessageStack {
+impl<M> MessageStack<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     /// Create a new `MessageStack`. This uses the provided [`DataPlane`] to inject message
     /// packets. Received packets must be injected into the `MessageStack` through the provided
     /// [`Stream`].
-    pub fn new<S>(data_plane: DataPlane, message_packet_stream: S) -> Self
+    pub fn new<S>(data_plane: DataPlane<M>, message_packet_stream: S) -> Self
     where
         S: Stream<Item = (PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
     {
@@ -588,7 +595,10 @@ impl MessageStack {
     }
 }
 
-impl MessageStack {
+impl<M> MessageStack<M>
+where
+    M: Metrics + Clone + Send + 'static,
+{
     /// Push a new message to be transmitted, which will be tried for the given duration. A
     /// [message id](MessageId) will be randomly generated, and returned.
     pub fn new_message(
