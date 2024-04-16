@@ -71,7 +71,7 @@
 
           doCheck = false;
 
-          cargoExtraArgs = "-p mycelium";
+          cargoExtraArgs = "--bin mycelium";
 
           nativeBuildInputs = [
             # required by openssl-sys
