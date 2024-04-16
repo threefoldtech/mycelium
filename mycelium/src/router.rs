@@ -184,6 +184,7 @@ where
     pub fn add_peer_interface(&self, peer: Peer) {
         debug!("Adding peer {} to router", peer.connection_identifier());
         self.peer_interfaces.write().unwrap().push(peer.clone());
+        self.metrics.router_peer_added();
 
         // Request route table dump of peer
         debug!(
@@ -251,6 +252,7 @@ where
             peer.connection_identifier()
         );
         self.peer_interfaces.write().unwrap().retain(|p| p != peer);
+        self.metrics.router_peer_removed();
     }
 
     /// Get a list of all selected route entries.
@@ -315,6 +317,7 @@ where
 
     /// Remove a dead peer from the router.
     pub fn handle_dead_peer(&self, dead_peer: Peer) {
+        self.metrics.router_peer_died();
         debug!(
             "Cleaning up peer {} which is reportedly dead",
             dead_peer.connection_identifier()
@@ -359,6 +362,7 @@ where
 
     /// Run route selection for a given subnet
     fn route_selection(&self, subnet: Subnet) {
+        self.metrics.router_route_selection_ran();
         debug!("Running route selection for {subnet}");
         let mut inner_w = self.inner_w.lock().unwrap();
 
@@ -416,6 +420,7 @@ where
         while let Some(sk) = expired_source_key_stream.recv().await {
             debug!("Removing expired source entry {sk}");
             self.source_table.write().unwrap().remove(&sk);
+            self.metrics.router_source_key_expired();
         }
         warn!("Expired source key processing halted");
     }
@@ -426,6 +431,8 @@ where
         mut expired_route_key_stream: mpsc::Receiver<(RouteKey, RouteExpirationType)>,
     ) {
         while let Some((rk, expiration_type)) = expired_route_key_stream.recv().await {
+            self.metrics
+                .router_route_key_expired(matches!(expiration_type, RouteExpirationType::Remove));
             debug!("Got expiration event for route {rk}");
             let subnet = rk.subnet();
             let mut inner = self.inner_w.lock().unwrap();
@@ -465,6 +472,7 @@ where
             // selected route generally means no other routes are viable anyway, so the short lived
             // black hole this could create is not really a concern.
             if entry.selected() {
+                self.metrics.router_selected_route_expired();
                 let routes = inner
                     .enter()
                     .expect("We enter through a write handle so this can never be None")
@@ -532,6 +540,7 @@ where
 
     /// Handle a received hello TLV
     fn handle_incoming_hello(&self, _: babel::Hello, source_peer: Peer) {
+        self.metrics.router_incoming_hello();
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
         // TODO: properly calculate RX cost, for now just set the link cost.
         let ihu = ControlPacket::new_ihu(source_peer.link_cost().into(), IHU_INTERVAL, None);
@@ -542,6 +551,7 @@ where
 
     /// Handle a received IHU TLV
     fn handle_incoming_ihu(&self, _: babel::Ihu, source_peer: Peer) {
+        self.metrics.router_incoming_ihu();
         // reset the IHU timer associated with the peer
         // measure time between Hello and and IHU and set the link cost
         let time_diff = tokio::time::Instant::now()
@@ -558,6 +568,8 @@ where
     /// requested subnet. If no subnet is requested (in other words the wildcard address), we dump
     /// the full routing table.
     fn handle_incoming_route_request(&self, route_request: babel::RouteRequest, source_peer: Peer) {
+        self.metrics
+            .router_incoming_route_request(route_request.prefix().is_none());
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
             let update = if let Some(sre) = self
@@ -625,6 +637,7 @@ where
 
     /// Handle a received SeqNo request TLV.
     fn handle_incoming_seqno_request(&self, mut seqno_request: SeqNoRequest, source_peer: Peer) {
+        self.metrics.router_incoming_seqno_request();
         // According to the babel rfc, we shoudl maintain a table of recent SeqNo requests and
         // periodically retry requests without reply. We will however not do this for now and rely
         // on the fact that we have stable links in general.
@@ -808,6 +821,7 @@ where
 
     /// Handle a received update TLV
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {
+        self.metrics.router_incoming_update();
         // Check if we actually allow this update based on filters.
         for filter in &*self.update_filters {
             if !filter.allow(&update) {
@@ -1019,6 +1033,7 @@ where
 
     /// Trigger an update for the given [`Subnet`].
     fn trigger_update(&self, subnet: Subnet) {
+        self.metrics.router_triggered_update();
         self.propagate_selected_route(subnet);
     }
 
@@ -1033,6 +1048,7 @@ where
     }
 
     pub fn route_packet(&self, mut data_packet: DataPacket) {
+        self.metrics.router_route_packet();
         let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
@@ -1042,12 +1058,14 @@ where
         );
 
         if data_packet.hop_limit < 2 {
+            self.metrics.router_route_packet_ttl_expired();
             self.time_exceeded(data_packet);
             return;
         }
         data_packet.hop_limit -= 1;
 
         if node_tun_subnet.contains_ip(data_packet.dst_ip.into()) {
+            self.metrics.router_route_packet_local();
             if let Err(e) = self.node_tun().send(data_packet) {
                 error!("Error sending data packet to TUN interface: {:?}", e);
             }
@@ -1063,6 +1081,7 @@ where
                     }
                 }
                 None => {
+                    self.metrics.router_route_packet_no_route();
                     self.no_route_to_host(data_packet);
                 }
             }
