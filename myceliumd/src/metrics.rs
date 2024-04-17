@@ -1,10 +1,14 @@
 //! Implementations of the [`Metrics`] trait. There are 2 provided options: a NOOP, which
 //! essentially disables metrics collection, and a prometheus exporter.
 
+use std::net::SocketAddr;
+
+use axum::{routing::get, Router};
+use log::error;
 use mycelium::metrics::Metrics;
 use prometheus::{
-    opts, register_int_counter, register_int_counter_vec, register_int_gauge, IntCounter,
-    IntCounterVec, IntGauge,
+    opts, register_int_counter, register_int_counter_vec, register_int_gauge, Encoder, IntCounter,
+    IntCounterVec, IntGauge, TextEncoder,
 };
 
 #[derive(Clone)]
@@ -108,6 +112,41 @@ impl PrometheusExporter {
             .expect("Can register int counter vec in the default registry"),
         }
     }
+
+    /// Spawns a HTTP server on the provided [`SocketAddr`], to export the gathered metrics. Metrics
+    /// are served under the /metrics endpoint.
+    pub fn spawn(&self, listen_addr: SocketAddr) {
+        let app = Router::new().route("/metrics", get(serve_metrics));
+        tokio::spawn(async move {
+            let listener = match tokio::net::TcpListener::bind(listen_addr).await {
+                Ok(listener) => listener,
+                Err(e) => {
+                    error!("Failed to bind listener for Http Api server: {e}");
+                    error!("API disabled");
+                    return;
+                }
+            };
+
+            let server = axum::serve(listener, app.into_make_service());
+            if let Err(e) = server.await {
+                error!("Http API server error: {e}");
+            }
+        });
+    }
+}
+
+/// Expose prometheus formatted metrics
+async fn serve_metrics() -> String {
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+
+    // Gather the metrics.
+    let metric_families = prometheus::gather();
+    // Encode them to send.
+    encoder
+        .encode(&metric_families, &mut buffer)
+        .expect("Can encode metrics");
+    String::from_utf8(buffer).expect("Metrics are encoded in valid prometheus format")
 }
 
 impl Metrics for PrometheusExporter {
