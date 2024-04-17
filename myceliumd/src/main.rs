@@ -187,6 +187,14 @@ pub struct NodeArguments {
     /// network.
     #[arg(long = "network-key-file", requires = "network_name")]
     network_key_file: Option<PathBuf>,
+
+    /// The address on which to expose prometheus metrics, if desired.
+    ///
+    /// Setting this flag will attempt to start an HTTP server on the provided address, to serve
+    /// prometheus metrics on the /metrics endpoint. If this flag is not set, metrics are also not
+    /// collected.
+    #[arg(long = "metrics-api-address")]
+    metrics_api_address: Option<SocketAddr>,
 }
 
 #[tokio::main]
@@ -295,25 +303,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
         secret_key
     };
 
-    let config = mycelium::Config {
-        node_key: node_secret_key,
-        peers: cli.node_args.static_peers,
-        no_tun: cli.node_args.no_tun,
-        tcp_listen_port: cli.node_args.tcp_listen_port,
-        quic_listen_port: cli.node_args.quic_listen_port,
-        peer_discovery_port: if cli.node_args.disable_peer_discovery {
-            None
-        } else {
-            Some(cli.node_args.peer_discovery_port)
-        },
-        tun_name: cli.node_args.tun_name,
-        private_network_config,
-        metrics: metrics::NoMetrics,
+    let _api = if let Some(metrics_api_addr) = cli.node_args.metrics_api_address {
+        let metrics = metrics::PrometheusExporter::new();
+        let config = mycelium::Config {
+            node_key: node_secret_key,
+            peers: cli.node_args.static_peers,
+            no_tun: cli.node_args.no_tun,
+            tcp_listen_port: cli.node_args.tcp_listen_port,
+            quic_listen_port: cli.node_args.quic_listen_port,
+            peer_discovery_port: if cli.node_args.disable_peer_discovery {
+                None
+            } else {
+                Some(cli.node_args.peer_discovery_port)
+            },
+            tun_name: cli.node_args.tun_name,
+            private_network_config,
+            metrics: metrics.clone(),
+        };
+        metrics.spawn(metrics_api_addr);
+        let node = Node::new(config).await?;
+        api::Http::spawn(node, cli.node_args.api_addr)
+    } else {
+        let config = mycelium::Config {
+            node_key: node_secret_key,
+            peers: cli.node_args.static_peers,
+            no_tun: cli.node_args.no_tun,
+            tcp_listen_port: cli.node_args.tcp_listen_port,
+            quic_listen_port: cli.node_args.quic_listen_port,
+            peer_discovery_port: if cli.node_args.disable_peer_discovery {
+                None
+            } else {
+                Some(cli.node_args.peer_discovery_port)
+            },
+            tun_name: cli.node_args.tun_name,
+            private_network_config,
+            metrics: metrics::NoMetrics,
+        };
+        let node = Node::new(config).await?;
+        api::Http::spawn(node, cli.node_args.api_addr)
     };
-
-    let node = Node::new(config).await?;
-
-    let _api = api::Http::spawn(node, cli.node_args.api_addr);
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
     #[cfg(target_family = "unix")]
