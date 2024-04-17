@@ -75,7 +75,6 @@ where
     peer_manager: peer_manager::PeerManager<M>,
     #[cfg(feature = "message")]
     message_stack: message::MessageStack<M>,
-    metrics: M,
 }
 
 /// General info about a node.
@@ -156,7 +155,7 @@ where
             },
             config.peer_discovery_port.is_none(),
             config.private_network_config,
-            config.metrics.clone(),
+            config.metrics,
         )?;
         info!("Started peer manager");
 
@@ -208,7 +207,6 @@ where
             peer_manager: pm,
             #[cfg(feature = "message")]
             message_stack: ms,
-            metrics: config.metrics,
         })
     }
 
