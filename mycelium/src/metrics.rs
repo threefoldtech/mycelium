@@ -80,13 +80,13 @@ pub trait Metrics {
     #[inline]
     fn router_triggered_update(&self) {}
 
-    /// The [`Router`](crate::router::Router) got a packet to route.
-    #[inline]
-    fn router_route_packet(&self) {}
-
     /// The [`Router`](crate::router::Router) extracted a packet for the local subnet.
     #[inline]
     fn router_route_packet_local(&self) {}
+
+    /// The [`Router`](crate::router::Router) forwarded a packet to a peer.
+    #[inline]
+    fn router_route_packet_forward(&self) {}
 
     /// The [`Router`](crate::router::Router) dropped a packet it was routing because it's TTL
     /// reached 0.
