@@ -12,13 +12,12 @@ use tokio::sync::Mutex;
 
 use mycelium::{
     endpoint::Endpoint,
+    metrics::Metrics,
     peer_manager::{PeerExists, PeerNotFound, PeerStats},
 };
 
 mod message;
 pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
-
-use crate::metrics::NoMetrics;
 
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
 /// the server is terminated.
@@ -30,14 +29,20 @@ pub struct Http {
 
 #[derive(Clone)]
 /// Shared state accessible in HTTP endpoint handlers.
-struct HttpServerState {
+struct HttpServerState<M>
+where
+    M: Clone,
+{
     /// Access to the (`node`)(mycelium::Node) state.
-    node: Arc<Mutex<mycelium::Node<NoMetrics>>>,
+    node: Arc<Mutex<mycelium::Node<M>>>,
 }
 
 impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
-    pub fn spawn(node: mycelium::Node<NoMetrics>, listen_addr: SocketAddr) -> Self {
+    pub fn spawn<M>(node: mycelium::Node<M>, listen_addr: SocketAddr) -> Self
+    where
+        M: Metrics + Clone + Send + Sync + 'static,
+    {
         let server_state = HttpServerState {
             node: Arc::new(Mutex::new(node)),
         };
@@ -78,7 +83,10 @@ impl Http {
 }
 
 /// Get the stats of the current known peers
-async fn get_peers(State(state): State<HttpServerState>) -> Json<Vec<PeerStats>> {
+async fn get_peers<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<PeerStats>>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!("Fetching peer stats");
     Json(state.node.lock().await.peer_info())
 }
@@ -91,10 +99,13 @@ pub struct AddPeer {
 }
 
 /// Add a new peer to the system
-async fn add_peer(
-    State(state): State<HttpServerState>,
+async fn add_peer<M>(
+    State(state): State<HttpServerState<M>>,
     Json(payload): Json<AddPeer>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, (StatusCode, String)>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!("Attempting to add peer {} to  the system", payload.endpoint);
     let endpoint = match Endpoint::from_str(&payload.endpoint) {
         Ok(endpoint) => endpoint,
@@ -111,10 +122,13 @@ async fn add_peer(
 }
 
 /// remove an existing peer from the system
-async fn delete_peer(
-    State(state): State<HttpServerState>,
+async fn delete_peer<M>(
+    State(state): State<HttpServerState<M>>,
     Path(endpoint): Path<String>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, (StatusCode, String)>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!("Attempting to remove peer {} to  the system", endpoint);
     let endpoint = match Endpoint::from_str(&endpoint) {
         Ok(endpoint) => endpoint,
@@ -155,7 +169,10 @@ pub struct Route {
 }
 
 /// List all currently selected routes.
-async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<Route>> {
+async fn get_selected_routes<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<Route>>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!("Loading selected routes");
     let routes = state
         .node
@@ -179,7 +196,10 @@ async fn get_selected_routes(State(state): State<HttpServerState>) -> Json<Vec<R
 }
 
 /// List all active fallback routes.
-async fn get_fallback_routes(State(state): State<HttpServerState>) -> Json<Vec<Route>> {
+async fn get_fallback_routes<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<Route>>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!("Loading fallback routes");
     let routes = state
         .node
@@ -211,7 +231,10 @@ pub struct Info {
 }
 
 /// Get general info about the node.
-async fn get_info(State(state): State<HttpServerState>) -> Json<Info> {
+async fn get_info<M>(State(state): State<HttpServerState<M>>) -> Json<Info>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     Json(Info {
         node_subnet: state.node.lock().await.info().node_subnet.to_string(),
     })
