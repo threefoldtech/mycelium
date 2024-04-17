@@ -4,7 +4,7 @@
 use std::net::SocketAddr;
 
 use axum::{routing::get, Router};
-use log::error;
+use log::{error, info};
 use mycelium::metrics::Metrics;
 use prometheus::{
     opts, register_int_counter, register_int_counter_vec, register_int_gauge, Encoder, IntCounter,
@@ -16,6 +16,7 @@ pub struct NoMetrics;
 impl Metrics for NoMetrics {}
 
 /// A [`Metrics`] implementation which uses prometheus to expose the metrics to the outside world.
+#[derive(Clone)]
 pub struct PrometheusExporter {
     router_incoming_tlv: IntCounterVec,
     router_peer_added: IntCounter,
@@ -115,14 +116,15 @@ impl PrometheusExporter {
 
     /// Spawns a HTTP server on the provided [`SocketAddr`], to export the gathered metrics. Metrics
     /// are served under the /metrics endpoint.
-    pub fn spawn(&self, listen_addr: SocketAddr) {
+    pub fn spawn(self, listen_addr: SocketAddr) {
+        info!("Enable system metrics on http://{listen_addr}/metrics");
         let app = Router::new().route("/metrics", get(serve_metrics));
         tokio::spawn(async move {
             let listener = match tokio::net::TcpListener::bind(listen_addr).await {
                 Ok(listener) => listener,
                 Err(e) => {
-                    error!("Failed to bind listener for Http Api server: {e}");
-                    error!("API disabled");
+                    error!("Failed to bind listener for Http metrics server: {e}");
+                    error!("metrics disabled");
                     return;
                 }
             };
