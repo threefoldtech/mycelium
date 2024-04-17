@@ -156,6 +156,7 @@ impl<M> PeerManager<M>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         router: Router<M>,
         static_peers_sockets: Vec<Endpoint>,
