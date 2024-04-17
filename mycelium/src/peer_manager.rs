@@ -149,11 +149,12 @@ where
     quic_socket: Option<quinn::Endpoint>,
     /// Identity and name of a private network, if one exists
     private_network_config: Option<(String, [u8; 32])>,
+    metrics: M,
 }
 
 impl<M> PeerManager<M>
 where
-    M: Metrics + Clone + Send + 'static,
+    M: Metrics + Clone + Send + Sync + 'static,
 {
     pub fn new(
         router: Router<M>,
@@ -163,6 +164,7 @@ where
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
         private_network_config: Option<(String, PrivateNetworkKey)>,
+        metrics: M,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let is_private_net = private_network_config.is_some();
 
@@ -172,6 +174,9 @@ where
         } else {
             None
         };
+
+        // Set the initially configured peer count in metrics.
+        metrics.peer_manager_known_peers(static_peers_sockets.len());
 
         let peer_manager = PeerManager {
             inner: Arc::new(Inner {
@@ -202,6 +207,7 @@ where
                 tcp_listen_port,
                 quic_socket,
                 private_network_config,
+                metrics,
             }),
         };
 
@@ -327,6 +333,7 @@ where
                     let mut peers = self.peers.lock().unwrap();
                     if let Some(pi) = peers.get_mut(&endpoint) {
                         // Regardless of what happened, we are no longer connecting.
+                        self.metrics.peer_manager_connection_finished();
                         pi.connecting = false;
                         if let Some(peer) = maybe_new_peer {
                             // We did find a new Peer, insert into router and keep track of it
@@ -360,6 +367,7 @@ where
                             // Mark that we are connecting to the peer.
                             pi.connecting = true;
                             connection_futures.push(self.clone().connect_peer(*endpoint, pi.con_traffic.clone()));
+                            self.metrics.peer_manager_connection_attempted();
                         }
                     }
                 }
@@ -768,6 +776,7 @@ where
         con_traffic: ConnectionTraffic,
         peer: Option<Peer>,
     ) {
+        self.metrics.peer_manager_peer_added(discovery_type.clone());
         let mut peers = self.peers.lock().unwrap();
         // Filter out link local IP's we already know (because of reverse detection)
         if discovery_type == PeerType::LinkLocalDiscovery {
@@ -836,6 +845,7 @@ where
         } else {
             debug!("Ignoring request to add {endpoint} as it already exists");
         }
+        self.metrics.peer_manager_known_peers(peers.len());
     }
 
     /// Use multicast discovery to find local peers.
