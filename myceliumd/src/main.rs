@@ -2,7 +2,6 @@ use clap::{Args, Parser, Subcommand};
 use crypto::PublicKey;
 use log::{debug, error, warn, LevelFilter};
 use mycelium::endpoint::Endpoint;
-use mycelium::metrics::Metrics;
 use mycelium::{crypto, Node};
 use std::io;
 use std::net::Ipv4Addr;
@@ -17,12 +16,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
 
-#[derive(Clone)]
-struct NoMetrics;
-impl Metrics for NoMetrics {}
-
 mod api;
 mod cli;
+mod metrics;
 
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
@@ -312,7 +308,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
         tun_name: cli.node_args.tun_name,
         private_network_config,
-        metrics: NoMetrics,
+        metrics: metrics::NoMetrics,
     };
 
     let node = Node::new(config).await?;
