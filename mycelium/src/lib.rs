@@ -86,7 +86,7 @@ pub struct NodeInfo {
 
 impl<M> Node<M>
 where
-    M: Metrics + Clone + Send + 'static,
+    M: Metrics + Clone + Send + Sync + 'static,
 {
     /// Setup a new `Node` with the provided [`Config`].
     pub async fn new(config: Config<M>) -> Result<Self, Box<dyn std::error::Error>> {
@@ -156,6 +156,7 @@ where
             },
             config.peer_discovery_port.is_none(),
             config.private_network_config,
+            config.metrics.clone(),
         )?;
         info!("Started peer manager");
 
