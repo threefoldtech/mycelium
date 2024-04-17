@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use mycelium::{
     crypto::PublicKey,
     message::{MessageId, MessageInfo},
+    metrics::Metrics,
 };
 
 use super::HttpServerState;
@@ -20,7 +21,10 @@ use super::HttpServerState;
 const DEFAULT_MESSAGE_TRY_DURATION: Duration = Duration::from_secs(60 * 5);
 
 /// Return a router which has message endpoints and their handlers mounted.
-pub fn message_router_v1(server_state: HttpServerState) -> Router {
+pub fn message_router_v1<M>(server_state: HttpServerState<M>) -> Router
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     Router::new()
         .route("/messages", get(get_message).post(push_message))
         .route("/messages/status/:id", get(message_status))
@@ -96,10 +100,13 @@ impl GetMessageQuery {
     }
 }
 
-async fn get_message(
-    State(state): State<HttpServerState>,
+async fn get_message<M>(
+    State(state): State<HttpServerState<M>>,
     Query(query): Query<GetMessageQuery>,
-) -> Result<Json<MessageReceiveInfo>, StatusCode> {
+) -> Result<Json<MessageReceiveInfo>, StatusCode>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!(
         "Attempt to get message, peek {}, timeout {} seconds",
         query.peek(),
@@ -167,11 +174,14 @@ impl PushMessageQuery {
     }
 }
 
-async fn push_message(
-    State(state): State<HttpServerState>,
+async fn push_message<M>(
+    State(state): State<HttpServerState<M>>,
     Query(query): Query<PushMessageQuery>,
     Json(message_info): Json<MessageSendInfo>,
-) -> Result<(StatusCode, Json<PushMessageResponse>), StatusCode> {
+) -> Result<(StatusCode, Json<PushMessageResponse>), StatusCode>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     let dst = message_info.dst.ip();
     debug!(
         "Pushing new message of {} bytes to message stack for target {dst}",
@@ -232,11 +242,14 @@ async fn push_message(
     }
 }
 
-async fn reply_message(
-    State(state): State<HttpServerState>,
+async fn reply_message<M>(
+    State(state): State<HttpServerState<M>>,
     Path(id): Path<MessageId>,
     Json(message_info): Json<MessageSendInfo>,
-) -> StatusCode {
+) -> StatusCode
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     let dst = message_info.dst.ip();
     debug!(
         "Pushing new reply to {} of {} bytes to message stack for target {dst}",
@@ -254,10 +267,13 @@ async fn reply_message(
     StatusCode::NO_CONTENT
 }
 
-async fn message_status(
-    State(state): State<HttpServerState>,
+async fn message_status<M>(
+    State(state): State<HttpServerState<M>>,
     Path(id): Path<MessageId>,
-) -> Result<Json<MessageInfo>, StatusCode> {
+) -> Result<Json<MessageInfo>, StatusCode>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
     debug!("Fetching message status for message {}", id.as_hex());
 
     state
