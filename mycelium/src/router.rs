@@ -1048,7 +1048,6 @@ where
     }
 
     pub fn route_packet(&self, mut data_packet: DataPacket) {
-        self.metrics.router_route_packet();
         let node_tun_subnet = self.node_tun_subnet();
 
         trace!(
@@ -1072,6 +1071,7 @@ where
         } else {
             match self.select_best_route(IpAddr::V6(data_packet.dst_ip)) {
                 Some(route_entry) => {
+                    self.metrics.router_route_packet_forward();
                     if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
                         error!(
                             "Error sending data packet to peer {}: {:?}",
