@@ -2,6 +2,8 @@
 //! interest is the [`Metrics`] trait. Users can provide their own implementation of this, or use
 //! the default provided implementation to disable gathering metrics.
 
+use crate::peer_manager::PeerType;
+
 /// The collection of all metrics exported by a [`mycelium node`](crate::Node). It is up to the
 /// user to provide an implementation which implements the methods for metrics they are interested
 /// in. All methods have a default implementation, so if the user is not interested in any metrics,
@@ -77,4 +79,20 @@ pub trait Metrics {
     /// The [`Router`](crate::router::Router) dropped a packet it was routing because there was no
     /// route for the destination IP.
     fn router_route_packet_no_route(&self) {}
+
+    /// A new [`Peer`](crate::peer::Peer) was added to the
+    /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
+    fn peer_manager_peer_added(&self, _pt: PeerType) {}
+
+    /// Sets the amount of [`Peers`](crate::peer::Peer) known by the
+    /// [`PeerManager`](crate::peer_manager::PeerManager).
+    fn peer_manager_known_peers(&self, _amount: usize) {}
+
+    /// The [`PeerManager`](crate::peer_manager::PeerManager) started an attempt to connect to a
+    /// remote endpoint.
+    fn peer_manager_connection_attempted(&self) {}
+
+    /// The [`PeerManager`](crate::peer_manager::PeerManager) finished an attempt to connect to a
+    /// remote endpoint. The connection could have failed.
+    fn peer_manager_connection_finished(&self) {}
 }
