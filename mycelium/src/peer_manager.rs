@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
 use std::net::{IpAddr, SocketAddr, SocketAddrV6};
-#[cfg(target_family = "unix")]
+#[cfg(target_os = "linux")]
 use std::os::fd::AsFd;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
