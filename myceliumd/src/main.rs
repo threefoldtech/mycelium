@@ -183,7 +183,7 @@ pub struct NodeArguments {
     /// The path to the file with the key to use for the private network.
     ///
     /// The key is expected to be exactly 32 bytes. The key must be shared between all nodes
-    /// participating in the newtork, and is secret. If the key leaks, anyone can then join the
+    /// participating in the network, and is secret. If the key leaks, anyone can then join the
     /// network.
     #[arg(long = "network-key-file", requires = "network_name")]
     network_key_file: Option<PathBuf>,
@@ -195,6 +195,14 @@ pub struct NodeArguments {
     /// collected.
     #[arg(long = "metrics-api-address")]
     metrics_api_address: Option<SocketAddr>,
+
+    /// The firewall mark to set on the mycelium sockets.
+    ///
+    /// This allows to identify packets that contain encapsulated mycelium packets so that
+    /// different routing policies can be applied to them.
+    /// This option only has an effect on Linux.
+    #[arg(long = "firewall-mark")]
+    firewall_mark: Option<u32>,
 }
 
 #[tokio::main]
@@ -319,6 +327,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tun_name: cli.node_args.tun_name,
             private_network_config,
             metrics: metrics.clone(),
+            firewall_mark: cli.node_args.firewall_mark,
         };
         metrics.spawn(metrics_api_addr);
         let node = Node::new(config).await?;
@@ -338,6 +347,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tun_name: cli.node_args.tun_name,
             private_network_config,
             metrics: metrics::NoMetrics,
+            firewall_mark: cli.node_args.firewall_mark,
         };
         let node = Node::new(config).await?;
         api::Http::spawn(node, cli.node_args.api_addr)

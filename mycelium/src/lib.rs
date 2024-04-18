@@ -64,6 +64,8 @@ pub struct Config<M> {
     /// Implementation of the `Metrics` trait, used to expose information about the system
     /// internals.
     pub metrics: M,
+    /// Mark that's set on all packets that we send on the underlying network
+    pub firewall_mark: Option<u32>,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
@@ -156,6 +158,7 @@ where
             config.peer_discovery_port.is_none(),
             config.private_network_config,
             config.metrics,
+            config.firewall_mark,
         )?;
         info!("Started peer manager");
 

@@ -5,7 +5,7 @@ use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
 use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use log::{debug, error, info, trace, warn};
 use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::io;
 use std::net::{IpAddr, SocketAddr, SocketAddrV6};
+#[cfg(target_family = "unix")]
+use std::os::fd::AsFd;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -150,6 +153,7 @@ where
     /// Identity and name of a private network, if one exists
     private_network_config: Option<(String, [u8; 32])>,
     metrics: M,
+    firewall_mark: Option<u32>,
 }
 
 impl<M> PeerManager<M>
@@ -166,12 +170,17 @@ where
         disable_peer_discovery: bool,
         private_network_config: Option<(String, PrivateNetworkKey)>,
         metrics: M,
+        firewall_mark: Option<u32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let is_private_net = private_network_config.is_some();
 
         // Currently we don't support Quic when a private network is used.
         let quic_socket = if !is_private_net {
-            Some(make_quic_endpoint(router.router_id(), quic_listen_port)?)
+            Some(make_quic_endpoint(
+                router.router_id(),
+                quic_listen_port,
+                firewall_mark,
+            )?)
         } else {
             None
         };
@@ -209,6 +218,7 @@ where
                 quic_socket,
                 private_network_config,
                 metrics,
+                firewall_mark,
             }),
         };
 
@@ -426,7 +436,10 @@ where
             None
         };
 
-        match TcpStream::connect(endpoint.address()).await {
+        match TcpStream::connect(endpoint.address())
+            .map(|result| result.and_then(|socket| set_fw_mark(socket, self.firewall_mark)))
+            .await
+        {
             Ok(peer_stream) => {
                 debug!("Opened connection to {endpoint}");
                 // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
@@ -623,7 +636,10 @@ where
         let router_control_tx = self.router.lock().unwrap().router_control_tx();
         let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
 
-        match TcpListener::bind(("::", self.tcp_listen_port)).await {
+        let listener = TcpListener::bind(("::", self.tcp_listen_port))
+            .map(|result| result.and_then(|listener| set_fw_mark(listener, self.firewall_mark)));
+
+        match listener.await {
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, remote)) => {
@@ -860,6 +876,7 @@ where
             "::".parse().expect("Valid all interface IPv6 designator"),
             peer_discovery_port,
         ))
+        .map(|result| result.and_then(|sock| set_fw_mark(sock, self.firewall_mark)))
         .await
         {
             Ok(sock) => sock,
@@ -1032,6 +1049,7 @@ where
 fn make_quic_endpoint(
     router_id: RouterId,
     quic_listen_port: u16,
+    firewall_mark: Option<u32>,
 ) -> Result<quinn::Endpoint, Box<dyn std::error::Error>> {
     // Generate self signed certificate certificate.
     // TODO: sign with router keys
@@ -1058,7 +1076,8 @@ fn make_quic_endpoint(
     transport_config.datagram_send_buffer_size(0);
     // TODO: further tweak this.
 
-    let socket = std::net::UdpSocket::bind(("::", quic_listen_port))?;
+    let socket = std::net::UdpSocket::bind(("::", quic_listen_port))
+        .and_then(|socket| set_fw_mark(socket, firewall_mark))?;
     debug!("Bound UDP socket for Quic");
 
     //TODO tweak or confirm
@@ -1071,6 +1090,26 @@ fn make_quic_endpoint(
     )?;
 
     Ok(endpoint)
+}
+
+// Firewall marks are only supported on Linux
+#[cfg(target_os = "linux")]
+fn set_fw_mark<S: AsFd>(socket: S, mark: Option<u32>) -> io::Result<S> {
+    use nix::sys::socket::{setsockopt, sockopt};
+
+    if let Some(mark) = mark {
+        setsockopt(&socket, sockopt::Mark, &mark).map_or_else(
+            |errno| Err(io::Error::new(io::ErrorKind::Other, errno)),
+            |_| Ok(socket),
+        )
+    } else {
+        Ok(socket)
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_fw_mark<S>(socket: S, _mark: Option<u32>) -> io::Result<S> {
+    Ok(socket)
 }
 
 /// Dummy certificate verifier that treats any certificate as valid.
