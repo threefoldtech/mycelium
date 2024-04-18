@@ -49,6 +49,7 @@ tokio-openssl = "0.6.4"
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.14.1"
 tokio-tun = "0.11.4"
+nix = { version = "0.28.0", features = ["socket"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
