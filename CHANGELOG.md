@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   setting the --metrics-api-address flag.
 - On Linux, you can now set an optional firewall mark by setting the --firewall-mark
   flag.
+- Added a nix flake to the repo.
 
 ### Changed
 
