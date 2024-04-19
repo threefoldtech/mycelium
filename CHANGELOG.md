@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listens on for remote beacons.
 - Experimental private network support. See [the private network docs](/docs/private_network.md)
   for more info.
+- You can now optionally expose Prometheus compatible metrics about the system by
+  setting the --metrics-api-address flag.
+- On Linux, you can now set an optional firewall mark by setting the --firewall-mark
+  flag.
 
 ### Changed
 
