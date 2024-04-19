@@ -10,6 +10,7 @@ message = []
 
 [dependencies]
 tokio = { version = "1.37.0", features = [
+  "io-util",
   "fs",
   "macros",
   "net",
