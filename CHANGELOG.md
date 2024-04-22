@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- If a peer died, unselect the selected routes which have it as next-hop if there
+  is no other feasible route.
+- Properly unselect a route if a retraction update comes in and there is no other
+  feasible route.
+
 ## [0.5.1] - 2024-04-19
 
 ### Added
