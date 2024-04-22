@@ -989,7 +989,16 @@ where
                 subnet,
                 nbr.neighbour().clone(),
             )));
-        }
+        } else if let Some(osr) = old_selected_route.as_ref() {
+            // If there is no new selected route, but there was one previously, update the routing
+            // table. This is not covered above, as there only unfeasible updates cause a selected
+            // route to be unselected. However, this may also be the result of a feasible update
+            // (e.g. retraction with no feasible fallback routes).
+            inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
+                subnet,
+                osr.neighbour().clone(),
+            )));
+        };
 
         // Already publish here, we won't make any other adjustments to the routing table.
         inner_w.publish();
