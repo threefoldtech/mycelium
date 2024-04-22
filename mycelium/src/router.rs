@@ -360,7 +360,9 @@ where
         }
     }
 
-    /// Run route selection for a given subnet
+    /// Run route selection for a given subnet.
+    ///
+    /// This will cause a triggered update if needed.
     fn route_selection(&self, subnet: Subnet) {
         self.metrics.router_route_selection_ran();
         debug!("Running route selection for {subnet}");
@@ -406,10 +408,18 @@ where
                 subnet,
                 new_selected.neighbour().clone(),
             )));
-            inner_w.publish();
-
-            self.trigger_update(subnet);
+        } else if routes[0].selected() {
+            // This means we went from a selected route to a non-selected route. Unselect route and
+            // trigger update.
+            inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
+                subnet,
+                routes[0].neighbour().clone(),
+            )));
         }
+
+        inner_w.publish();
+
+        self.trigger_update(subnet);
     }
 
     /// Remove expired source keys from the router state.
@@ -799,7 +809,9 @@ where
         let source_table = self.source_table.read().unwrap();
         let best = routes
             .iter()
-            .filter(|re| source_table.route_feasible(re))
+            // Infinite metrics are technically feasible, but for route selection we explicitly
+            // don't want infinite metrics as those routes are unreachable.
+            .filter(|re| !re.metric().is_infinite() && source_table.route_feasible(re))
             .min_by_key(|re| re.metric() + Metric::from(re.neighbour().link_cost()));
 
         if let (Some(best), Some(current)) = (best, current) {
@@ -1273,8 +1285,8 @@ where
             );
             (update, Some(sre.neighbour().clone()))
         } else {
-            // TODO: fix this by retaining the route for some time after a retraction.
-            // TODO: is this possible in the first place?
+            // This can happen if the only feasible route gets an infinite metric, as those are
+            // never selected.
             info!("Retracting route for {subnet}");
             let update = babel::Update::new(
                 UPDATE_INTERVAL,
