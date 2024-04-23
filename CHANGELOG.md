@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Disabled the protobuf feature on prometheus, this removes protobuf related code
+  and significantly reduces the release binary size.
+
 ### Fixed
 
 - If a peer died, unselect the selected routes which have it as next-hop if there
