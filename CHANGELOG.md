@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New CI workflow to build and test the mycelium library separately from the full
+  provided binary build.
+
 ### Changed
 
 - Disabled the protobuf feature on prometheus, this removes protobuf related code
