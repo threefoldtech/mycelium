@@ -36,13 +36,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest,windows-latest]
-      runs-on: ${{ matrix.os }}
-      steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build -p mycelium --all-features --verbose
-      - name: Run tests
-        run: cargo test -p mycelium --all-features --verbose
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build -p mycelium --all-features --verbose
+    - name: Run tests
+      run: cargo test -p mycelium --all-features --verbose
   check_binary:
     strategy:
       matrix:
