@@ -64,6 +64,7 @@
               ./Cargo.lock
               ./mycelium
               ./myceliumd
+              ./mobile
             ];
           };
           pname = manifest.package.name;

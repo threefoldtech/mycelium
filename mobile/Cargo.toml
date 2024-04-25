@@ -1,0 +1,24 @@
+[package]
+name = "mobile"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+mycelium = { path = "../mycelium"}
+tokio = { version = "1.37.0", features = [
+    "io-util",
+    "fs",
+    "macros",
+    "net",
+    "sync",
+    "time",
+    "signal",
+    "rt-multi-thread",
+] }
+log = "0.4.21"
+clap = { version = "4.5.4", features = ["derive"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.13.3"

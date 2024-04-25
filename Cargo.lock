@@ -62,6 +62,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "android_log-sys"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ecc8056bf6ab9892dcd53216c83d1597487d7dacac16c8df6b877d127df9937"
+
+[[package]]
+name = "android_logger"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c494134f746c14dc653a35a4ea5aca24ac368529da5370ecf41fe0341c35772f"
+dependencies = [
+ "android_log-sys",
+ "env_logger",
+ "log",
+ "once_cell",
+]
+
+[[package]]
 name = "anstream"
 version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1037,6 +1055,17 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "mobile"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "clap",
+ "log",
+ "mycelium",
+ "tokio",
 ]
 
 [[package]]

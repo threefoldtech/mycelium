@@ -15,3 +15,8 @@ pub use darwin::new;
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::new;
+
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(target_os = "android")]
+pub use android::new;
