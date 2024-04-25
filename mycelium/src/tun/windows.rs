@@ -14,6 +14,7 @@ const WINDOWS_TUNNEL_TYPE: &str = "Mycelium";
 
 pub async fn new(
     name: &str,
+    _tun_fd: Option<i32>,
     node_subnet: Subnet,
     route_subnet: Subnet,
 ) -> Result<

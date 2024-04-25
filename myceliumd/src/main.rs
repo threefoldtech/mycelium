@@ -1,8 +1,3 @@
-use clap::{Args, Parser, Subcommand};
-use crypto::PublicKey;
-use log::{debug, error, warn, LevelFilter};
-use mycelium::endpoint::Endpoint;
-use mycelium::{crypto, Node};
 use std::io;
 use std::net::Ipv4Addr;
 use std::path::Path;
@@ -11,10 +6,17 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
 };
+
+use clap::{Args, Parser, Subcommand};
+use log::{debug, error, warn, LevelFilter};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
+
+use crypto::PublicKey;
+use mycelium::endpoint::Endpoint;
+use mycelium::{crypto, Node};
 
 mod api;
 mod cli;
@@ -328,6 +330,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             private_network_config,
             metrics: metrics.clone(),
             firewall_mark: cli.node_args.firewall_mark,
+            tun_fd: None,
         };
         metrics.spawn(metrics_api_addr);
         let node = Node::new(config).await?;
@@ -348,6 +351,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             private_network_config,
             metrics: metrics::NoMetrics,
             firewall_mark: cli.node_args.firewall_mark,
+            tun_fd: None,
         };
         let node = Node::new(config).await?;
         api::Http::spawn(node, cli.node_args.api_addr)

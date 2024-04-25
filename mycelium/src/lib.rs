@@ -66,6 +66,12 @@ pub struct Config<M> {
     pub metrics: M,
     /// Mark that's set on all packets that we send on the underlying network
     pub firewall_mark: Option<u32>,
+
+    // tun_fd is android and iOS specific option
+    // We can't create TUN device from the Rust code in android and iOS.
+    // So, we create the TUN device on Kotlin(android) or Swift(iOS) then pass
+    // the TUN's file descriptor to mycelium.
+    pub tun_fd: Option<i32>,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
@@ -183,14 +189,25 @@ where
                 tun_rx,
             )
         } else {
-            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+            #[cfg(not(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "windows",
+                target_os = "android"
+            )))]
             {
                 panic!("On this platform, you can only run with --no-tun");
             }
-            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "windows",
+                target_os = "android"
+            ))]
             {
                 let (rxhalf, txhalf) = tun::new(
                     &config.tun_name,
+                    config.tun_fd,
                     Subnet::new(node_addr.into(), 64)
                         .expect("64 is a valid subnet size for IPv6; qed"),
                     Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)

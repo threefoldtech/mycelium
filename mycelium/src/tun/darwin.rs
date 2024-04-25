@@ -73,6 +73,7 @@ pub struct AddressLifetime {
 /// This function will panic if called outside of the context of a tokio runtime.
 pub async fn new(
     name: &str,
+    _tun_fd: Option<i32>,
     node_subnet: Subnet,
     route_subnet: Subnet,
 ) -> Result<
