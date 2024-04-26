@@ -25,7 +25,7 @@ use crate::{
 
 /// The maximum amount of packets to immediately send if they are ready when the first one is
 /// received.
-const PACKET_COALESCE_WINDOW: usize = 5;
+const PACKET_COALESCE_WINDOW: usize = 50;
 
 /// The default link cost assigned to new peers before their actual cost is known.
 ///
@@ -122,52 +122,55 @@ impl Peer {
                         }
 
                         Some(packet) = from_routing_data.recv() => {
-                            let mut packet_buf: [_; PACKET_COALESCE_WINDOW] = std::array::from_fn(|_| None);
-                            let mut packets_received = 1;
-                            packet_buf[0] = Some(packet);
-                            for buf_slot in packet_buf.iter_mut().skip(1) {
-                                // There can be 2 cases of errors here, empty channel and no more
-                                // senders. In both cases we don't really care at this point
-                                *buf_slot = if let Ok(packet) = from_routing_data.try_recv() {
-                                    trace!("Instantly queued ready packet to transfer to peer");
-                                    packets_received += 1;
-                                    Some(packet)
-                                } else { break }
+                            if let Err(e) = framed.feed(Packet::DataPacket(packet)).await {
+                                error!("Failed to feed data packet to connection: {e}");
+                                break
                             }
-                            let mut packet_stream = futures::stream::iter(
-                                packet_buf
-                                    .into_iter()
-                                    .take(packets_received)
-                                    .filter_map(|item| item.map(|item| Ok(Packet::DataPacket(item)))));
-                            if let Err(e) = framed.send_all(&mut packet_stream).await {
-                                error!("Error writing to stream: {}", e);
-                                break;
+
+                            for _ in 1..PACKET_COALESCE_WINDOW {
+                                // There can be 2 cases of errors here, empty channel and no more
+                                // senders. In both cases we don't really care at this point.
+                                if let Ok(packet) = from_routing_data.try_recv() {
+                                    if let Err(e) = framed.feed(Packet::DataPacket(packet)).await {
+                                        error!("Failed to feed data packet to connection: {e}");
+                                        break
+                                    }
+                                    trace!("Instantly queued ready packet to transfer to peer");
+                                } else {
+                                    // No packets ready, flush currently buffered ones
+                                    break
+                                }
+                            }
+
+                            if let Err(e) = framed.flush().await {
+                                error!("Failed to flush buffered peer connection data packets: {e}");
+                                break
                             }
                         }
 
                         Some(packet) = from_routing_control.recv() => {
-                            // TODO: better handling
-                            let mut packet_buf: [_; PACKET_COALESCE_WINDOW * 10] = std::array::from_fn(|_| None);
-                            let mut packets_received = 1;
-                            packet_buf[0] = Some(packet);
-                            for buf_slot in packet_buf.iter_mut().skip(1) {
-                                // There can be 2 cases of errors here, empty channel and no more
-                                // senders. In both cases we don't really care at this point
-                                *buf_slot = if let Ok(packet) = from_routing_control.try_recv() {
-                                    trace!("Instantly queued ready packet to transfer to peer");
-                                    packets_received += 1;
-                                    Some(packet)
-                                } else { break }
+                            if let Err(e) = framed.feed(Packet::ControlPacket(packet)).await {
+                                error!("Failed to feed control packet to connection: {e}");
+                                break
                             }
-                            let mut packet_stream = futures::stream::iter(
-                                packet_buf
-                                    .into_iter()
-                                    .take(packets_received)
-                                    .filter_map(|item| item.map(|item| Ok(Packet::ControlPacket(item)))));
 
-                            if let Err(e) = framed.send_all(&mut packet_stream).await {
-                                error!("Error writing to stream: {}", e);
-                                break;
+                            for _ in 1..PACKET_COALESCE_WINDOW {
+                                // There can be 2 cases of errors here, empty channel and no more
+                                // senders. In both cases we don't really care at this point.
+                                if let Ok(packet) = from_routing_control.try_recv() {
+                                    if let Err(e) = framed.feed(Packet::ControlPacket(packet)).await {
+                                        error!("Failed to feed data packet to connection: {e}");
+                                        break
+                                    }
+                                } else {
+                                    // No packets ready, flush currently buffered ones
+                                    break
+                                }
+                            }
+
+                            if let Err(e) = framed.flush().await {
+                                error!("Failed to flush buffered peer connection control packets: {e}");
+                                break
                             }
                         }
 
