@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved performance of sending protocol messages to peers by queueing up multiple
   packets at once (if multiple are ready).
 - Before trying to send an update we now check if it makes sense to do so.
+- If a peer died, fallback routes using it are no longer retained with an infinite
+  metric but removed immediately.
+- No longer run route selection for subnets if a peer died and the route is not
+  selected.
 
 ### Fixed
 

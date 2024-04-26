@@ -335,14 +335,18 @@ where
 
             for (rk, _, re) in inner.routing_table.iter() {
                 if rk.neighbour() == &dead_peer {
-                    subnets_to_select.push(rk.subnet());
-                    inner_w.append(RouterOpLogEntry::UpdateRouteEntry(
-                        rk,
-                        re.seqno(),
-                        Metric::infinite(),
-                        re.source().router_id(),
-                        RETRACTED_ROUTE_HOLD_TIME,
-                    ));
+                    if re.selected() {
+                        subnets_to_select.push(rk.subnet());
+                        inner_w.append(RouterOpLogEntry::UpdateRouteEntry(
+                            rk,
+                            re.seqno(),
+                            Metric::infinite(),
+                            re.source().router_id(),
+                            RETRACTED_ROUTE_HOLD_TIME,
+                        ));
+                    } else {
+                        inner_w.append(RouterOpLogEntry::RemoveRoute(rk));
+                    }
                 }
             }
             // Make sure we release the read handle, so a publish on the write handle eventually
