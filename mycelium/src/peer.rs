@@ -146,8 +146,26 @@ impl Peer {
                         }
 
                         Some(packet) = from_routing_control.recv() => {
-                            // Send it over the TCP stream
-                            if let Err(e) = framed.send(Packet::ControlPacket(packet)).await {
+                            // TODO: better handling
+                            let mut packet_buf: [_; PACKET_COALESCE_WINDOW * 10] = std::array::from_fn(|_| None);
+                            let mut packets_received = 1;
+                            packet_buf[0] = Some(packet);
+                            for buf_slot in packet_buf.iter_mut().skip(1) {
+                                // There can be 2 cases of errors here, empty channel and no more
+                                // senders. In both cases we don't really care at this point
+                                *buf_slot = if let Ok(packet) = from_routing_control.try_recv() {
+                                    trace!("Instantly queued ready packet to transfer to peer");
+                                    packets_received += 1;
+                                    Some(packet)
+                                } else { break }
+                            }
+                            let mut packet_stream = futures::stream::iter(
+                                packet_buf
+                                    .into_iter()
+                                    .take(packets_received)
+                                    .filter_map(|item| item.map(|item| Ok(Packet::ControlPacket(item)))));
+
+                            if let Err(e) = framed.send_all(&mut packet_stream).await {
                                 error!("Error writing to stream: {}", e);
                                 break;
                             }

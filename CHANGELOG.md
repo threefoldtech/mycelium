@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and significantly reduces the release binary size.
 - Changed log level when sending a protocol message to a peer which is no longer
   alive from error to trace in most instances.
+- Improved performance of sending protocol messages to peers by queueing up multiple
+  packets at once (if multiple are ready).
 
 ### Fixed
 
