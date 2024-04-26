@@ -735,7 +735,7 @@ where
                 router_seqno.1 = Instant::now();
             }
 
-            self.propagate_static_route();
+            self.propagate_static_routes_to_peers();
 
             return;
         }
@@ -1228,7 +1228,7 @@ where
             })
     }
 
-    /// Task to propagete the static routes periodically
+    /// Task to propagate the static routes periodically
     async fn propagate_static_routes(self) {
         loop {
             tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
@@ -1241,6 +1241,13 @@ where
         }
     }
 
+    /// Propagate all static routes to all known peers.
+    fn propagate_static_routes_to_peers(&self) {
+        for peer in self.peer_interfaces.read().unwrap().iter() {
+            self.propagate_static_route_to_peer(peer);
+        }
+    }
+
     /// Task to propagate selected routes periodically
     async fn propagate_selected_routes(self) {
         loop {
@@ -1248,7 +1255,7 @@ where
 
             trace!("Propagating selected routes");
 
-            self.propagate_static_route();
+            self.propagate_selected_routes_to_peers();
         }
     }
 
@@ -1273,7 +1280,7 @@ where
     }
 
     /// Propagates the static routes to all known peers.
-    fn propagate_static_route(&self) {
+    fn propagate_selected_routes_to_peers(&self) {
         for peer in self.peer_interfaces.read().unwrap().iter() {
             self.propagate_selected_routes_to_peer(peer);
         }

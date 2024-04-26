@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is no other feasible route.
 - Properly unselect a route if a retraction update comes in and there is no other
   feasible route.
+- If the router bumps it's seqno it now properly announces the local route to it's
+  peers instead of the selected routes
 
 ## [0.5.1] - 2024-04-19
 
