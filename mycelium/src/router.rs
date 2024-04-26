@@ -534,6 +534,8 @@ where
         mut router_control_rx: UnboundedReceiver<(ControlPacket, Peer)>,
     ) {
         while let Some((control_packet, source_peer)) = router_control_rx.recv().await {
+            // First update metrics with the remaining outstanding TLV's
+            self.metrics.router_pending_tlvs(router_control_rx.len());
             trace!(
                 "Received control packet from {}",
                 source_peer.connection_identifier()

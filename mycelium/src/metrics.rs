@@ -52,6 +52,11 @@ pub trait Metrics {
     #[inline]
     fn router_update_dead_peer(&self) {}
 
+    /// The amount of outstanding TLV's received from peers, waiting to be processed by the
+    /// [`Router`](crate::router::Router).
+    #[inline]
+    fn router_pending_tlvs(&self, _pending: usize) {}
+
     /// A [`Peer`](crate::peer::Peer) was added to the [`Router`](crate::router::Router).
     #[inline]
     fn router_peer_added(&self) {}
