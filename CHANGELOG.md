@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metric but removed immediately.
 - No longer run route selection for subnets if a peer died and the route is not
   selected.
+- If routes are removed, shrink the capacity of the route list in the route table
+  if it is larger than required.
 
 ### Fixed
 

@@ -315,7 +315,12 @@ impl<T> RoutingTable<T> {
                 // behind.
                 if entries.is_empty() {
                     self.table.remove(addr, key.subnet.prefix_len() as u32);
+                } else if entries.len() + 2 < entries.capacity() {
+                    // Clean up some wasted space if a lot of routes get removed.
+                    entries.shrink_to(entries.len() + 2);
                 }
+
+                // Cancel timer for the entry
                 elem.map(|(entry, expiration)| {
                     expiration.abort();
                     entry
