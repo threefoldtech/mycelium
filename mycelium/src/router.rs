@@ -1389,6 +1389,13 @@ where
     ///
     /// This updates updates the source table before sending the udpate as described in the RFC.
     fn send_update(&self, peer: &Peer, update: babel::Update) {
+        // Sanity check, verify what we are doing is actually usefull
+        if !peer.alive() {
+            trace!("Cowardly refusing to sent update to peer which we know is dead");
+            self.metrics.router_update_dead_peer();
+            return;
+        }
+
         // Before sending an update, the source table might need to be updated
         let metric = update.metric();
         let seqno = update.seqno();

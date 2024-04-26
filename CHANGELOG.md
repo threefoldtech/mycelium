@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alive from error to trace in most instances.
 - Improved performance of sending protocol messages to peers by queueing up multiple
   packets at once (if multiple are ready).
+- Before trying to send an update we now check if it makes sense to do so.
 
 ### Fixed
 

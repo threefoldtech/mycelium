@@ -43,6 +43,15 @@ pub trait Metrics {
     #[inline]
     fn router_incoming_unknown_tlv(&self) {}
 
+    /// The [`Router`](crate::router::Router) tried to send an update to a peer, but before sending
+    /// it we found out the peer is actually already dead.
+    ///
+    /// This can happen, since a peer is a remote entity we have no control over, and it can be
+    /// removed at any time for any reason. However, in normal operation, the amount of times this
+    /// happens should be fairly small compared to the amount of updates we send/receive.
+    #[inline]
+    fn router_update_dead_peer(&self) {}
+
     /// A [`Peer`](crate::peer::Peer) was added to the [`Router`](crate::router::Router).
     #[inline]
     fn router_peer_added(&self) {}
