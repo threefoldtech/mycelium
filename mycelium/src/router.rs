@@ -540,6 +540,13 @@ where
                 "Received control packet from {}",
                 source_peer.connection_identifier()
             );
+            // Before processing, verify the peer is actually still alive. This is important in
+            // case of possible backlog.
+            if !source_peer.alive() {
+                trace!("Dropping TLV since sender is dead.");
+                self.metrics.router_tlv_source_died();
+                continue;
+            }
             match control_packet {
                 babel::Tlv::Hello(hello) => self.handle_incoming_hello(hello, source_peer),
                 babel::Tlv::Ihu(ihu) => self.handle_incoming_ihu(ihu, source_peer),

@@ -30,6 +30,7 @@ pub struct PrometheusExporter {
     router_route_packet: IntCounterVec,
     router_update_dead_peer: IntCounter,
     router_pending_tlvs: IntGauge,
+    router_tlv_source_died: IntCounter,
     peer_manager_peer_added: IntCounterVec,
     peer_manager_known_peers: IntGauge,
     peer_manager_connection_attemps: IntCounterVec,
@@ -102,6 +103,11 @@ impl PrometheusExporter {
                 "Amount of tlv's received by peers waiting to be processed by the router",
             )
             .expect("Can register an int gague in the default registry"),
+            router_tlv_source_died: register_int_counter!(
+                "mycelium_router_tlv_source_died",
+                "Dropped TLV's which have been received, but where the peer has died before they could be processed",
+            )
+            .expect("Can register an int counter in default registry"),
             peer_manager_peer_added: register_int_counter_vec!(
                 opts!(
                     "mycelium_peer_manager_peers_added",
@@ -280,6 +286,11 @@ impl Metrics for PrometheusExporter {
     #[inline]
     fn router_pending_tlvs(&self, pending: usize) {
         self.router_pending_tlvs.set(pending as i64)
+    }
+
+    #[inline]
+    fn router_tlv_source_died(&self) {
+        self.router_tlv_source_died.inc()
     }
 
     #[inline]

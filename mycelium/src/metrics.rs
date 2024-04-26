@@ -57,6 +57,11 @@ pub trait Metrics {
     #[inline]
     fn router_pending_tlvs(&self, _pending: usize) {}
 
+    /// The [`Router`](crate::router::Router) dropped a received TLV before processing it, as the
+    /// peer who sent it has already died in the meantime.
+    #[inline]
+    fn router_tlv_source_died(&self) {}
+
     /// A [`Peer`](crate::peer::Peer) was added to the [`Router`](crate::router::Router).
     #[inline]
     fn router_peer_added(&self) {}
