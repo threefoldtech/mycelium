@@ -554,8 +554,11 @@ where
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
         // TODO: properly calculate RX cost, for now just set the link cost.
         let ihu = ControlPacket::new_ihu(source_peer.link_cost().into(), IHU_INTERVAL, None);
-        if let Err(e) = source_peer.send_control_packet(ihu) {
-            error!("Error sending IHU to peer: {e}");
+        if source_peer.send_control_packet(ihu).is_err() {
+            trace!(
+                "Failed to send IHU reply to peer: {}",
+                source_peer.connection_identifier()
+            );
         }
     }
 
@@ -762,9 +765,13 @@ where
                     seqno_request.prefix(),
                     re.neighbour().connection_identifier()
                 );
-                if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
-                    error!(
-                        "Failed to foward seqno request to {}: {e}",
+                if re
+                    .neighbour()
+                    .send_control_packet(seqno_request.into())
+                    .is_err()
+                {
+                    trace!(
+                        "Failed to foward seqno request to {}",
                         re.neighbour().connection_identifier(),
                     );
                 }
@@ -783,9 +790,13 @@ where
                     seqno_request.prefix(),
                     re.neighbour().connection_identifier()
                 );
-                if let Err(e) = re.neighbour().send_control_packet(seqno_request.into()) {
-                    error!(
-                        "Failed to foward seqno request to {}: {e}",
+                if re
+                    .neighbour()
+                    .send_control_packet(seqno_request.into())
+                    .is_err()
+                {
+                    trace!(
+                        "Failed to foward seqno request to infeasible peer {}",
                         re.neighbour().connection_identifier(),
                     );
                 }
@@ -911,16 +922,19 @@ where
                     fd.seqno() + 1,
                     update.subnet(),
                 );
-                if let Err(e) = source_peer.send_control_packet(
-                    SeqNoRequest::new(
-                        fd.seqno() + 1,
-                        existing_entry.source().router_id(),
-                        update.subnet(),
+                if source_peer
+                    .send_control_packet(
+                        SeqNoRequest::new(
+                            fd.seqno() + 1,
+                            existing_entry.source().router_id(),
+                            update.subnet(),
+                        )
+                        .into(),
                     )
-                    .into(),
-                ) {
-                    error!(
-                        "Failed to send seqno request to {}: {e}",
+                    .is_err()
+                {
+                    trace!(
+                        "Failed to send seqno request to {}",
                         source_peer.connection_identifier()
                     );
                 }
@@ -1248,8 +1262,11 @@ where
                 let hello = ControlPacket::new_hello(peer, hello_interval);
                 peer.set_time_last_received_hello(tokio::time::Instant::now());
 
-                if let Err(error) = peer.send_control_packet(hello) {
-                    error!("Error sending hello to peer: {}", error);
+                if peer.send_control_packet(hello).is_err() {
+                    trace!(
+                        "Failed to send Hello TLV to dead peer {}",
+                        peer.connection_identifier()
+                    );
                 }
             }
         }
@@ -1410,8 +1427,15 @@ where
 
         // send the update to the peer
         trace!("Sending update to peer");
-        if let Err(e) = peer.send_control_packet(ControlPacket::Update(update)) {
-            error!("Error sending update to peer: {:?}", e);
+        if peer
+            .send_control_packet(ControlPacket::Update(update))
+            .is_err()
+        {
+            // An error indicates the peer is dead
+            trace!(
+                "Failed to send update to dead peer {}",
+                peer.connection_identifier()
+            );
         }
     }
 }

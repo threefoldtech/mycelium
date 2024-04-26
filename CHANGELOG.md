@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Disabled the protobuf feature on prometheus, this removes protobuf related code
   and significantly reduces the release binary size.
+- Changed log level when sending a protocol message to a peer which is no longer
+  alive from error to trace in most instances.
 
 ### Fixed
 
