@@ -913,6 +913,10 @@ where
              maybe_existing_entry_idx.is_some(),
          );
 
+        // Track if we unselected the current existing route. This is required to avoid an issue
+        // where we try to unselect the selected route twice if it is lost.
+        let mut existing_route_unselected = false;
+
         if let Some(existing_entry_idx) = maybe_existing_entry_idx {
             let existing_entry = &mut routing_table_entries[existing_entry_idx];
             // Unfeasible updates to the selected route are not applied, but we do request a seqno
@@ -974,6 +978,7 @@ where
             ));
             // If the update is unfeasible the route must be unselected.
             if existing_entry.selected() && !update_feasible {
+                existing_route_unselected = true;
                 existing_entry.set_selected(false);
                 inner_w.append(RouterOpLogEntry::UnselectRoute(rk));
             }
@@ -1021,10 +1026,13 @@ where
             // table. This is not covered above, as there only unfeasible updates cause a selected
             // route to be unselected. However, this may also be the result of a feasible update
             // (e.g. retraction with no feasible fallback routes).
-            inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
-                subnet,
-                osr.neighbour().clone(),
-            )));
+            // Only do this if we did not unselect the existing route previously.
+            if !existing_route_unselected {
+                inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
+                    subnet,
+                    osr.neighbour().clone(),
+                )));
+            }
         };
 
         // Already publish here, we won't make any other adjustments to the routing table.
