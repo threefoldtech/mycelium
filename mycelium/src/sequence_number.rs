@@ -103,10 +103,16 @@ mod tests {
         assert!(s1.lt(&s2));
         assert!(!s2.lt(&s1));
 
+        assert!(s2.gt(&s1));
+        assert!(!s1.gt(&s2));
+
         let s1 = SeqNo::from(3);
         let s2 = SeqNo::from(30_000);
         assert!(s1.lt(&s2));
         assert!(!s2.lt(&s1));
+
+        assert!(s2.gt(&s1));
+        assert!(!s1.gt(&s2));
     }
 
     #[test]
@@ -116,20 +122,32 @@ mod tests {
         assert!(s1.lt(&s2));
         assert!(!s2.lt(&s1));
 
+        assert!(s2.gt(&s1));
+        assert!(!s1.gt(&s2));
+
         // Test equality quirk at cutoff point.
         let s1 = SeqNo::from(0);
         let s2 = SeqNo::from(32_768);
         assert!(!s1.lt(&s2));
         assert!(!s2.lt(&s1));
 
+        assert!(!s2.gt(&s1));
+        assert!(!s1.gt(&s2));
+
         let s1 = SeqNo::from(0);
         let s2 = SeqNo::from(32_769);
         assert!(!s1.lt(&s2));
         assert!(s2.lt(&s1));
 
+        assert!(!s2.gt(&s1));
+        assert!(s1.gt(&s2));
+
         let s1 = SeqNo::from(6);
         let s2 = SeqNo::from(60_000);
         assert!(!s1.lt(&s2));
         assert!(s2.lt(&s1));
+
+        assert!(!s2.gt(&s1));
+        assert!(s1.gt(&s2));
     }
 }
