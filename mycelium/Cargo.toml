@@ -39,7 +39,7 @@ quinn = { version = "0.10.2", default-features = false, features = [
 ] }
 # For now dangerous_configuration is needed to setup the certificate
 # verifier for the dummy quinn certificates.
-rustls = { version = "0.21.11", default-features = false, features = [
+rustls = { version = "0.21.12", default-features = false, features = [
   "dangerous_configuration",
 ] }
 rcgen = "0.12.1"
