@@ -705,6 +705,8 @@ where
 
                 self.send_update(&source_peer, update);
 
+                self.metrics.router_seqno_request_reply_local();
+
                 return;
             }
         }
@@ -750,6 +752,8 @@ where
 
             self.propagate_static_routes_to_peers();
 
+            self.metrics.router_seqno_request_bump_seqno();
+
             return;
         }
 
@@ -759,7 +763,12 @@ where
         // packet there if the next hop is not the sender of this packet. Otherwise, we check for
         // any route which might potentially be unfeasible, which also did not originate the
         // packet.
-        if seqno_request.router_id() != self.router_id && seqno_request.hop_count() > 1 {
+        if seqno_request.hop_count() < 2 {
+            self.metrics.router_seqno_request_dropped_ttl();
+            return;
+        }
+
+        if seqno_request.router_id() != self.router_id {
             seqno_request.decrement_hop_count();
 
             let possible_routes = inner.routing_table.entries(seqno_request.prefix());
@@ -788,6 +797,9 @@ where
                         re.neighbour().connection_identifier(),
                     );
                 }
+
+                self.metrics.router_seqno_request_forward_feasible();
+
                 return;
             }
 
@@ -813,8 +825,14 @@ where
                         re.neighbour().connection_identifier(),
                     );
                 }
+
+                self.metrics.router_seqno_request_forward_unfeasible();
+
+                return;
             }
         }
+
+        self.metrics.router_seqno_request_unhandled();
     }
 
     /// Finds the best feasible route from a list of [`route entries`](RouteEntry). It is possible

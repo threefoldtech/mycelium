@@ -117,6 +117,34 @@ pub trait Metrics {
     #[inline]
     fn router_route_packet_no_route(&self) {}
 
+    /// The [`Router`](crate::router::Router) replied to a seqno request with a local route, which
+    /// is more recent (bigger seqno) than the request.
+    #[inline]
+    fn router_seqno_request_reply_local(&self) {}
+
+    /// The [`Router`](crate::router::Router) replied to a seqno request by bumping its own seqno
+    /// and advertising the local route.
+    #[inline]
+    fn router_seqno_request_bump_seqno(&self) {}
+
+    /// The [`Router`](crate::router::Router) dropped a seqno request because the TTL reached 0.
+    #[inline]
+    fn router_seqno_request_dropped_ttl(&self) {}
+
+    /// The [`Router`](crate::router::Router) forwarded a seqno request to a feasible route.
+    #[inline]
+    fn router_seqno_request_forward_feasible(&self) {}
+
+    /// The [`Router`](crate::router::Router) forwarded a seqno request to a (potentially)
+    /// unfeasible route.
+    #[inline]
+    fn router_seqno_request_forward_unfeasible(&self) {}
+
+    /// The [`Router`](crate::router::Router) dropped a seqno request becase none of the other
+    /// handling methods applied.
+    #[inline]
+    fn router_seqno_request_unhandled(&self) {}
+
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
     #[inline]
