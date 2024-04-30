@@ -29,6 +29,7 @@ pub struct PrometheusExporter {
     router_triggered_update: IntCounter,
     router_route_packet: IntCounterVec,
     router_seqno_action: IntCounterVec,
+    router_tlv_handling_time_spent: IntCounter,
     router_update_dead_peer: IntCounter,
     router_pending_tlvs: IntGauge,
     router_tlv_source_died: IntCounter,
@@ -102,6 +103,11 @@ impl PrometheusExporter {
                 &["action"],
             )
             .expect("Can register int counter vec in default registry"),
+            router_tlv_handling_time_spent: register_int_counter!(
+                "mycelium_router_tlv_handling_time",
+                "Amount of time spent handling incoming TLV packets, in nanoseconds",
+            )
+            .expect("Can register an int counter in default registry"),
             router_update_dead_peer: register_int_counter!(
                 "mycelium_router_update_dead_peer",
                 "Amount of updates we tried to send to a peer, where we found the peer to be dead before actually sending"
@@ -327,6 +333,12 @@ impl Metrics for PrometheusExporter {
         self.router_seqno_action
             .with_label_values(&["unhandled"])
             .inc()
+    }
+
+    #[inline]
+    fn router_time_spent_handling_tlv(&self, duration: std::time::Duration) {
+        self.router_tlv_handling_time_spent
+            .inc_by(duration.as_nanos() as u64)
     }
 
     #[inline]
