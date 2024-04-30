@@ -2,6 +2,7 @@ use std::net::{IpAddr, Ipv6Addr};
 #[cfg(feature = "message")]
 use std::{future::Future, time::Duration};
 
+use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
@@ -57,7 +58,9 @@ pub struct Config<M> {
     /// Udp port for peer discovery.
     pub peer_discovery_port: Option<u16>,
     /// Name for the TUN device.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     pub tun_name: String,
+
     /// Configuration for a private network, if run in that mode. To enable private networking,
     /// this must be a name + a PSK.
     pub private_network_config: Option<(String, PrivateNetworkKey)>,
@@ -71,7 +74,8 @@ pub struct Config<M> {
     // We can't create TUN device from the Rust code in android and iOS.
     // So, we create the TUN device on Kotlin(android) or Swift(iOS) then pass
     // the TUN's file descriptor to mycelium.
-    pub tun_fd: Option<i32>,
+    #[cfg(any(target_os = "android"))]
+    pub tun_fd: i32,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
@@ -205,15 +209,21 @@ where
                 target_os = "android"
             ))]
             {
-                let (rxhalf, txhalf) = tun::new(
-                    &config.tun_name,
-                    config.tun_fd,
-                    Subnet::new(node_addr.into(), 64)
+                #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+                let tun_config = TunConfig {
+                    name: config.tun_name.clone(),
+                    node_subnet: Subnet::new(node_addr.into(), 64)
                         .expect("64 is a valid subnet size for IPv6; qed"),
-                    Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
+                    route_subnet: Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
                         .expect("Static configured TUN route is valid; qed"),
-                )
-                .await?;
+                };
+                #[cfg(any(target_os = "android"))]
+                let tun_config = TunConfig {
+                    tun_fd: config.tun_fd,
+                };
+
+                let (rxhalf, txhalf) = tun::new(tun_config).await?;
+
                 info!("Node overlay IP: {node_addr}");
                 DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
             }

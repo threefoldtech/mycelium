@@ -326,11 +326,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 Some(cli.node_args.peer_discovery_port)
             },
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             tun_name: cli.node_args.tun_name,
             private_network_config,
             metrics: metrics.clone(),
             firewall_mark: cli.node_args.firewall_mark,
-            tun_fd: None,
+            #[cfg(any(target_os = "android"))]
+            tun_fd: 1,
         };
         metrics.spawn(metrics_api_addr);
         let node = Node::new(config).await?;
@@ -347,11 +349,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 Some(cli.node_args.peer_discovery_port)
             },
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             tun_name: cli.node_args.tun_name,
             private_network_config,
             metrics: metrics::NoMetrics,
             firewall_mark: cli.node_args.firewall_mark,
-            tun_fd: None,
+            #[cfg(any(target_os = "android"))]
+            tun_fd: 1,
         };
         let node = Node::new(config).await?;
         api::Http::spawn(node, cli.node_args.api_addr)

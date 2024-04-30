@@ -1,5 +1,19 @@
 //! The tun module implements a platform independent Tun interface.
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::subnet::Subnet;
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub struct TunConfig {
+    pub name: String,
+    pub node_subnet: Subnet,
+    pub route_subnet: Subnet,
+}
+
+#[cfg(any(target_os = "android"))]
+pub struct TunConfig {
+    pub tun_fd: i32,
+}
 #[cfg(target_os = "linux")]
 mod linux;
 

@@ -4,6 +4,7 @@ use futures::{Sink, Stream};
 use log::{error, info, warn};
 use tokio::sync::mpsc;
 
+use crate::tun::TunConfig;
 use crate::{crypto::PacketBuffer, subnet::Subnet};
 
 // TODO
@@ -13,10 +14,7 @@ const LINK_MTU: usize = 1400;
 const WINDOWS_TUNNEL_TYPE: &str = "Mycelium";
 
 pub async fn new(
-    name: &str,
-    _tun_fd: Option<i32>,
-    node_subnet: Subnet,
-    route_subnet: Subnet,
+    tun_config: TunConfig,
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
@@ -35,14 +33,18 @@ pub async fn new(
         }
     };
     info!("Loaded wintun.dll - running version {wintun_version}");
-    let tun = wintun::Adapter::create(&wintun, name, WINDOWS_TUNNEL_TYPE, None)?;
+    let tun = wintun::Adapter::create(&wintun, &tun_config.name, WINDOWS_TUNNEL_TYPE, None)?;
     info!("Created wintun tunnel interface");
     // Configure created network adapter.
     tun.set_mtu(LINK_MTU)?;
     // Set address, this will use a `netsh` command under the hood unfortunately.
     // TODO: fix in library
     // tun.set_network_addresses_tuple(node_subnet.address(), route_subnet.mask(), None)?;
-    add_address(name, node_subnet, route_subnet)?;
+    add_address(
+        &tun_config.name,
+        tun_config.node_subnet,
+        tun_config.route_subnet,
+    )?;
     // Build 2 separate sessions - one for receiving, one for sending.
     let rx_session = Arc::new(tun.start_session(wintun::MAX_RING_CAPACITY)?);
     let tx_session = rx_session.clone();
