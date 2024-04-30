@@ -28,6 +28,7 @@ pub struct PrometheusExporter {
     router_selected_route_expired: IntCounter,
     router_triggered_update: IntCounter,
     router_route_packet: IntCounterVec,
+    router_seqno_action: IntCounterVec,
     router_update_dead_peer: IntCounter,
     router_pending_tlvs: IntGauge,
     router_tlv_source_died: IntCounter,
@@ -91,6 +92,14 @@ impl PrometheusExporter {
                     "What happened to a routed data packet"
                 ),
                 &["verdict"],
+            )
+            .expect("Can register int counter vec in default registry"),
+            router_seqno_action: register_int_counter_vec!(
+                opts!(
+                    "mycelium_router_seqno_handling",
+                    "What happened to a received seqno request",
+                ),
+                &["action"],
             )
             .expect("Can register int counter vec in default registry"),
             router_update_dead_peer: register_int_counter!(
@@ -275,6 +284,48 @@ impl Metrics for PrometheusExporter {
     fn router_route_packet_no_route(&self) {
         self.router_route_packet
             .with_label_values(&["no_route"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_seqno_request_reply_local(&self) {
+        self.router_seqno_action
+            .with_label_values(&["reply_local"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_seqno_request_bump_seqno(&self) {
+        self.router_seqno_action
+            .with_label_values(&["bump_seqno"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_seqno_request_dropped_ttl(&self) {
+        self.router_seqno_action
+            .with_label_values(&["ttl_expired"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_seqno_request_forward_feasible(&self) {
+        self.router_seqno_action
+            .with_label_values(&["forward_feasible"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_seqno_request_forward_unfeasible(&self) {
+        self.router_seqno_action
+            .with_label_values(&["forward_unfeasible"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_seqno_request_unhandled(&self) {
+        self.router_seqno_action
+            .with_label_values(&["unhandled"])
             .inc()
     }
 
