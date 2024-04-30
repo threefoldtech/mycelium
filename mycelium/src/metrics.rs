@@ -52,10 +52,10 @@ pub trait Metrics {
     #[inline]
     fn router_update_dead_peer(&self) {}
 
-    /// The amount of outstanding TLV's received from peers, waiting to be processed by the
+    /// The amount of TLV's received from peers, to be processed by the
     /// [`Router`](crate::router::Router).
     #[inline]
-    fn router_pending_tlvs(&self, _pending: usize) {}
+    fn router_received_tlv(&self) {}
 
     /// The [`Router`](crate::router::Router) dropped a received TLV before processing it, as the
     /// peer who sent it has already died in the meantime.
@@ -148,7 +148,7 @@ pub trait Metrics {
     /// The [`time`](std::time::Duration) used by the [`Router`](crate::router::Router) to handle a
     /// control packet.
     #[inline]
-    fn router_time_spent_handling_tlv(&self, _duration: std::time::Duration) {}
+    fn router_time_spent_handling_tlv(&self, _duration: std::time::Duration, _tlv_type: &str) {}
 
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.

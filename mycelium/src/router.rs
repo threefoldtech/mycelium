@@ -1,5 +1,5 @@
 use crate::{
-    babel::{self, RouteRequest, SeqNoRequest},
+    babel::{self, Hello, Ihu, RouteRequest, SeqNoRequest, Update},
     crypto::{PacketBuffer, PublicKey, SecretKey, SharedSecret},
     filters::RouteUpdateFilter,
     metric::Metric,
@@ -528,40 +528,150 @@ where
         warn!("Processing of dead peers halted");
     }
 
-    /// Task which ingests and processes control packets
+    /// Task which ingests and processes control packets. This spawns another background task for
+    /// every TLV type, and forwards the inbound packets to the proper background task.
     async fn handle_incoming_control_packet(
         self,
         mut router_control_rx: UnboundedReceiver<(ControlPacket, Peer)>,
     ) {
-        while let Some((control_packet, source_peer)) = router_control_rx.recv().await {
-            let start = std::time::Instant::now();
+        let (hello_tx, hello_rx) = mpsc::unbounded_channel();
+        let (ihu_tx, ihu_rx) = mpsc::unbounded_channel();
+        let (update_tx, update_rx) = mpsc::unbounded_channel();
+        let (rr_tx, rr_rx) = mpsc::unbounded_channel();
+        let (sn_tx, sn_rx) = mpsc::unbounded_channel();
 
+        tokio::spawn(self.clone().hello_processor(hello_rx));
+        tokio::spawn(self.clone().ihu_processor(ihu_rx));
+        tokio::spawn(self.clone().update_processor(update_rx));
+        tokio::spawn(self.clone().route_request_processor(rr_rx));
+        tokio::spawn(self.clone().seqno_request_processor(sn_rx));
+
+        while let Some((control_packet, source_peer)) = router_control_rx.recv().await {
             // First update metrics with the remaining outstanding TLV's
-            self.metrics.router_pending_tlvs(router_control_rx.len());
+            self.metrics.router_received_tlv();
             trace!(
                 "Received control packet from {}",
                 source_peer.connection_identifier()
             );
-            // Before processing, verify the peer is actually still alive. This is important in
-            // case of possible backlog.
+
+            // Route packet to proper work queue.
+            match control_packet {
+                babel::Tlv::Hello(hello) => {
+                    if hello_tx.send((hello, source_peer)).is_err() {
+                        break;
+                    };
+                }
+                babel::Tlv::Ihu(ihu) => {
+                    if ihu_tx.send((ihu, source_peer)).is_err() {
+                        break;
+                    };
+                }
+                babel::Tlv::Update(update) => {
+                    if update_tx.send((update, source_peer)).is_err() {
+                        break;
+                    };
+                }
+                babel::Tlv::RouteRequest(route_request) => {
+                    if rr_tx.send((route_request, source_peer)).is_err() {
+                        break;
+                    };
+                }
+                babel::Tlv::SeqNoRequest(seqno_request) => {
+                    if sn_tx.send((seqno_request, source_peer)).is_err() {
+                        break;
+                    };
+                }
+            }
+        }
+    }
+
+    /// Background task to process hello TLV's.
+    async fn hello_processor(self, mut hello_rx: UnboundedReceiver<(Hello, Peer)>) {
+        while let Some((hello, source_peer)) = hello_rx.recv().await {
+            let start = std::time::Instant::now();
+
             if !source_peer.alive() {
-                trace!("Dropping TLV since sender is dead.");
+                trace!("Dropping Hello TLV since sender is dead.");
                 self.metrics.router_tlv_source_died();
                 continue;
             }
-            match control_packet {
-                babel::Tlv::Hello(hello) => self.handle_incoming_hello(hello, source_peer),
-                babel::Tlv::Ihu(ihu) => self.handle_incoming_ihu(ihu, source_peer),
-                babel::Tlv::Update(update) => self.handle_incoming_update(update, source_peer),
-                babel::Tlv::RouteRequest(route_request) => {
-                    self.handle_incoming_route_request(route_request, source_peer)
-                }
-                babel::Tlv::SeqNoRequest(seqno_request) => {
-                    self.handle_incoming_seqno_request(seqno_request, source_peer)
-                }
+
+            self.handle_incoming_hello(hello, source_peer);
+
+            self.metrics
+                .router_time_spent_handling_tlv(start.elapsed(), "hello");
+        }
+    }
+
+    /// Background task to process IHU TLV's.
+    async fn ihu_processor(self, mut ihu_rx: UnboundedReceiver<(Ihu, Peer)>) {
+        while let Some((ihu, source_peer)) = ihu_rx.recv().await {
+            let start = std::time::Instant::now();
+
+            if !source_peer.alive() {
+                trace!("Dropping IHU TLV since sender is dead.");
+                self.metrics.router_tlv_source_died();
+                continue;
             }
 
-            self.metrics.router_time_spent_handling_tlv(start.elapsed());
+            self.handle_incoming_ihu(ihu, source_peer);
+
+            self.metrics
+                .router_time_spent_handling_tlv(start.elapsed(), "ihu");
+        }
+    }
+
+    /// Background task to process Update TLV's.
+    async fn update_processor(self, mut update_rx: UnboundedReceiver<(Update, Peer)>) {
+        while let Some((update, source_peer)) = update_rx.recv().await {
+            let start = std::time::Instant::now();
+
+            if !source_peer.alive() {
+                trace!("Dropping Update TLV since sender is dead.");
+                self.metrics.router_tlv_source_died();
+                continue;
+            }
+
+            self.handle_incoming_update(update, source_peer);
+
+            self.metrics
+                .router_time_spent_handling_tlv(start.elapsed(), "update");
+        }
+    }
+
+    /// Background task to process Route Request TLV's.
+    async fn route_request_processor(self, mut rr_rx: UnboundedReceiver<(RouteRequest, Peer)>) {
+        while let Some((rr, source_peer)) = rr_rx.recv().await {
+            let start = std::time::Instant::now();
+
+            if !source_peer.alive() {
+                trace!("Dropping Route request TLV since sender is dead.");
+                self.metrics.router_tlv_source_died();
+                continue;
+            }
+
+            self.handle_incoming_route_request(rr, source_peer);
+
+            self.metrics
+                .router_time_spent_handling_tlv(start.elapsed(), "route_request");
+        }
+    }
+
+    /// Background task to process Seqno Request TLV's.
+    async fn seqno_request_processor(self, mut sn_rx: UnboundedReceiver<(SeqNoRequest, Peer)>) {
+        while let Some((sn, source_peer)) = sn_rx.recv().await {
+            let start = std::time::Instant::now();
+
+            if !source_peer.alive() {
+                trace!("Dropping Route request TLV since sender is dead.");
+                self.metrics.router_tlv_source_died();
+                continue;
+            }
+
+            self.handle_incoming_seqno_request(sn, source_peer);
+
+            self.metrics
+                .router_time_spent_handling_tlv(start.elapsed(), "seqno");
         }
     }
 

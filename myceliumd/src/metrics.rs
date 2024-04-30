@@ -29,9 +29,9 @@ pub struct PrometheusExporter {
     router_triggered_update: IntCounter,
     router_route_packet: IntCounterVec,
     router_seqno_action: IntCounterVec,
-    router_tlv_handling_time_spent: IntCounter,
+    router_tlv_handling_time_spent: IntCounterVec,
     router_update_dead_peer: IntCounter,
-    router_pending_tlvs: IntGauge,
+    router_received_tlvs: IntCounter,
     router_tlv_source_died: IntCounter,
     peer_manager_peer_added: IntCounterVec,
     peer_manager_known_peers: IntGauge,
@@ -103,21 +103,24 @@ impl PrometheusExporter {
                 &["action"],
             )
             .expect("Can register int counter vec in default registry"),
-            router_tlv_handling_time_spent: register_int_counter!(
-                "mycelium_router_tlv_handling_time",
-                "Amount of time spent handling incoming TLV packets, in nanoseconds",
+            router_tlv_handling_time_spent: register_int_counter_vec!(
+                opts!(
+                    "mycelium_router_tlv_handling_time",
+                    "Amount of time spent handling incoming TLV packets, in nanoseconds",
+                ),
+                &["tlv_type"],
             )
-            .expect("Can register an int counter in default registry"),
+            .expect("Can register an int counter vec in default registry"),
             router_update_dead_peer: register_int_counter!(
                 "mycelium_router_update_dead_peer",
                 "Amount of updates we tried to send to a peer, where we found the peer to be dead before actually sending"
             )
             .expect("Can register an int counter in default registry"),
-            router_pending_tlvs: register_int_gauge!(
-                "mycelium_router_pending_tlvs",
-                "Amount of tlv's received by peers waiting to be processed by the router",
+            router_received_tlvs: register_int_counter!(
+                "mycelium_router_received_tlvs",
+                "Amount of tlv's received by peers",
             )
-            .expect("Can register an int gague in the default registry"),
+            .expect("Can register an int counter in the default registry"),
             router_tlv_source_died: register_int_counter!(
                 "mycelium_router_tlv_source_died",
                 "Dropped TLV's which have been received, but where the peer has died before they could be processed",
@@ -336,8 +339,9 @@ impl Metrics for PrometheusExporter {
     }
 
     #[inline]
-    fn router_time_spent_handling_tlv(&self, duration: std::time::Duration) {
+    fn router_time_spent_handling_tlv(&self, duration: std::time::Duration, tlv_type: &str) {
         self.router_tlv_handling_time_spent
+            .with_label_values(&[tlv_type])
             .inc_by(duration.as_nanos() as u64)
     }
 
@@ -347,8 +351,8 @@ impl Metrics for PrometheusExporter {
     }
 
     #[inline]
-    fn router_pending_tlvs(&self, pending: usize) {
-        self.router_pending_tlvs.set(pending as i64)
+    fn router_received_tlv(&self) {
+        self.router_received_tlvs.inc()
     }
 
     #[inline]

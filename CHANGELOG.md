@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If routes are removed, shrink the capacity of the route list in the route table
   if it is larger than required.
 - Check if the originator of a TLV is still available before processing said TLV.
+- The router now uses a dedicated task per TLV type to handle received TLV's from
+  peers.
 
 ### Fixed
 
