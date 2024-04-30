@@ -145,6 +145,11 @@ pub trait Metrics {
     #[inline]
     fn router_seqno_request_unhandled(&self) {}
 
+    /// The [`time`](std::time::Duration) used by the [`Router`](crate::router::Router) to handle a
+    /// control packet.
+    #[inline]
+    fn router_time_spent_handling_tlv(&self, _duration: std::time::Duration) {}
+
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
     #[inline]

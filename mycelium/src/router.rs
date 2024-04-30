@@ -534,6 +534,8 @@ where
         mut router_control_rx: UnboundedReceiver<(ControlPacket, Peer)>,
     ) {
         while let Some((control_packet, source_peer)) = router_control_rx.recv().await {
+            let start = std::time::Instant::now();
+
             // First update metrics with the remaining outstanding TLV's
             self.metrics.router_pending_tlvs(router_control_rx.len());
             trace!(
@@ -558,6 +560,8 @@ where
                     self.handle_incoming_seqno_request(seqno_request, source_peer)
                 }
             }
+
+            self.metrics.router_time_spent_handling_tlv(start.elapsed());
         }
     }
 
