@@ -19,6 +19,7 @@ use tokio::{
 
 use crate::crypto::PacketBuffer;
 use crate::subnet::Subnet;
+use crate::tun::TunConfig;
 
 // TODO
 const LINK_MTU: i32 = 1400;
@@ -72,10 +73,7 @@ pub struct AddressLifetime {
 ///
 /// This function will panic if called outside of the context of a tokio runtime.
 pub async fn new(
-    name: &str,
-    _tun_fd: Option<i32>,
-    node_subnet: Subnet,
-    route_subnet: Subnet,
+    tun_config: TunConfig,
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
@@ -83,15 +81,15 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    if !validate_utun_name(name) {
+    if !validate_utun_name(&tun_config.name) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "TUN device name must be of the form 'utunXXX...' where X is a digit",
         ))?;
     }
-    let mut tun = create_tun_interface(name)?;
-    let iface = Iface::by_name(name)?;
-    iface.add_address(node_subnet, route_subnet)?;
+    let mut tun = create_tun_interface(&tun_config.name)?;
+    let iface = Iface::by_name(&tun_config.name)?;
+    iface.add_address(tun_config.node_subnet, tun_config.route_subnet)?;
 
     let (tun_sink, mut sink_receiver) = mpsc::channel::<PacketBuffer>(1000);
     let (tun_stream, stream_receiver) = mpsc::unbounded_channel();

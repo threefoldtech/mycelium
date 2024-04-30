@@ -11,7 +11,7 @@ use tokio::{
 };
 
 use crate::crypto::PacketBuffer;
-use crate::subnet::Subnet;
+use crate::tun::TunConfig;
 
 // TODO
 const LINK_MTU: i32 = 1400;
@@ -22,10 +22,7 @@ const LINK_MTU: i32 = 1400;
 ///
 /// This function will panic if called outside of the context of a tokio runtime.
 pub async fn new(
-    _name: &str,
-    tun_fd: Option<i32>,
-    _node_subnet: Subnet,
-    _route_subnet: Subnet,
+    tun_config: TunConfig,
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
@@ -34,9 +31,7 @@ pub async fn new(
     Box<dyn std::error::Error>,
 > {
     let name = "tun0";
-    let mut tun = create_tun_interface(name, tun_fd.unwrap())?;
-    //IBK: let iface = Iface::by_name(name)?;
-    //IBK: iface.add_address(node_subnet, route_subnet)?;
+    let mut tun = create_tun_interface(name, tun_config.tun_fd)?;
 
     let (tun_sink, mut sink_receiver) = mpsc::channel::<PacketBuffer>(1000);
     let (tun_stream, stream_receiver) = mpsc::unbounded_channel();

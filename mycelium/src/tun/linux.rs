@@ -10,6 +10,7 @@ use tokio_tun::{Tun, TunBuilder};
 
 use crate::crypto::PacketBuffer;
 use crate::subnet::Subnet;
+use crate::tun::TunConfig;
 
 // TODO
 const LINK_MTU: i32 = 1400;
@@ -20,10 +21,7 @@ const LINK_MTU: i32 = 1400;
 ///
 /// This function will panic if called outside of the context of a tokio runtime.
 pub async fn new(
-    name: &str,
-    _tun_fd: Option<i32>,
-    node_subnet: Subnet,
-    route_subnet: Subnet,
+    tun_config: TunConfig,
 ) -> Result<
     (
         impl Stream<Item = io::Result<PacketBuffer>>,
@@ -31,21 +29,28 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    let tun = create_tun_interface(name)?;
+    let tun = create_tun_interface(&tun_config.name)?;
 
     let (conn, handle, _) = rtnetlink::new_connection()?;
     let netlink_task_handle = tokio::spawn(conn);
 
-    let tun_index = link_index_by_name(handle.clone(), name.to_string()).await?;
+    let tun_index = link_index_by_name(handle.clone(), tun_config.name).await?;
 
     if let Err(e) = add_address(
         handle.clone(),
         tun_index,
-        Subnet::new(node_subnet.address(), route_subnet.prefix_len()).unwrap(),
+        Subnet::new(
+            tun_config.node_subnet.address(),
+            tun_config.route_subnet.prefix_len(),
+        )
+        .unwrap(),
     )
     .await
     {
-        error!("Failed to add address {node_subnet} to TUN interface: {e}");
+        error!(
+            "Failed to add address {0} to TUN interface: {e}",
+            tun_config.node_subnet
+        );
         return Err(e);
     }
 

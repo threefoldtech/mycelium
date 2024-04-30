@@ -2,8 +2,6 @@ use std::convert::TryFrom;
 use std::io;
 
 use log::info;
-#[cfg(target_family = "unix")]
-use tokio::signal::{self, unix::SignalKind};
 
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
@@ -33,11 +31,14 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
         quic_listen_port: DEFAULT_QUIC_LISTEN_PORT,
         peer_discovery_port: Some(DEFAULT_PEER_DISCOVERY_PORT),
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         tun_name: "tun0".to_string(),
+
         metrics: NoMetrics,
         private_network_config: None,
         firewall_mark: None,
-        tun_fd: Some(tun_fd),
+        #[cfg(any(target_os = "android"))]
+        tun_fd: tun_fd,
     };
     let _node = Node::new(config).await;
 
@@ -48,23 +49,8 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
     };
 
     // TODO: check what is the better way in Android and iOS
-    #[cfg(target_family = "unix")]
-    {
-        let mut sigint =
-            signal::unix::signal(SignalKind::interrupt()).expect("Can install SIGINT handler");
-        let mut sigterm =
-            signal::unix::signal(SignalKind::terminate()).expect("Can install SIGTERM handler");
-
-        tokio::select! {
-            _ = sigint.recv() => { }
-            _ = sigterm.recv() => { }
-        }
-    }
-    #[cfg(not(target_family = "unix"))]
-    {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            log::error!("Failed to wait for SIGINT: {e}");
-        }
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        log::error!("Failed to wait for SIGINT: {e}");
     }
 }
 
