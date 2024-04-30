@@ -331,8 +331,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             private_network_config,
             metrics: metrics.clone(),
             firewall_mark: cli.node_args.firewall_mark,
-            #[cfg(any(target_os = "android"))]
-            tun_fd: 1,
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            tun_fd: None, // this code is never called on android or ios
         };
         metrics.spawn(metrics_api_addr);
         let node = Node::new(config).await?;
@@ -354,8 +354,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             private_network_config,
             metrics: metrics::NoMetrics,
             firewall_mark: cli.node_args.firewall_mark,
-            #[cfg(any(target_os = "android"))]
-            tun_fd: 1,
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            tun_fd: None, // this code is never called on android or ios
         };
         let node = Node::new(config).await?;
         api::Http::spawn(node, cli.node_args.api_addr)

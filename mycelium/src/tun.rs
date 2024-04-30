@@ -10,7 +10,7 @@ pub struct TunConfig {
     pub route_subnet: Subnet,
 }
 
-#[cfg(any(target_os = "android"))]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 pub struct TunConfig {
     pub tun_fd: i32,
 }
