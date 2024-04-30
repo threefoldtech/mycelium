@@ -74,8 +74,8 @@ pub struct Config<M> {
     // We can't create TUN device from the Rust code in android and iOS.
     // So, we create the TUN device on Kotlin(android) or Swift(iOS) then pass
     // the TUN's file descriptor to mycelium.
-    #[cfg(any(target_os = "android"))]
-    pub tun_fd: i32,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    pub tun_fd: Option<i32>,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
@@ -217,9 +217,9 @@ where
                     route_subnet: Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
                         .expect("Static configured TUN route is valid; qed"),
                 };
-                #[cfg(any(target_os = "android"))]
+                #[cfg(target_os = "android")]
                 let tun_config = TunConfig {
-                    tun_fd: config.tun_fd,
+                    tun_fd: config.tun_fd.unwrap(),
                 };
 
                 let (rxhalf, txhalf) = tun::new(tun_config).await?;
