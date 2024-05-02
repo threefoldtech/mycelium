@@ -183,21 +183,26 @@ mod tests {
             64,
         )
         .unwrap();
+        let subnet_6 =
+            Subnet::new(Ipv6Addr::new(12, 23, 34, 45, 56, 67, 78, 89).into(), 63).unwrap();
 
         assert_eq!(subnet_1, subnet_2);
         assert_ne!(subnet_1, subnet_3);
         assert_eq!(subnet_1, subnet_4);
         assert_eq!(subnet_1, subnet_5);
+        assert_ne!(subnet_1, subnet_6);
 
         let subnet_1 = Subnet::new(Ipv4Addr::new(10, 1, 2, 3).into(), 24).unwrap();
         let subnet_2 = Subnet::new(Ipv4Addr::new(10, 1, 2, 102).into(), 24).unwrap();
         let subnet_3 = Subnet::new(Ipv4Addr::new(10, 1, 4, 3).into(), 24).unwrap();
         let subnet_4 = Subnet::new(Ipv4Addr::new(10, 1, 2, 0).into(), 24).unwrap();
         let subnet_5 = Subnet::new(Ipv4Addr::new(10, 1, 2, 255).into(), 24).unwrap();
+        let subnet_6 = Subnet::new(Ipv4Addr::new(10, 1, 2, 3).into(), 16).unwrap();
 
         assert_eq!(subnet_1, subnet_2);
         assert_ne!(subnet_1, subnet_3);
         assert_eq!(subnet_1, subnet_4);
         assert_eq!(subnet_1, subnet_5);
+        assert_ne!(subnet_1, subnet_6);
     }
 }
