@@ -98,6 +98,20 @@ impl Subnet {
     }
 
     /// Returns the network part of the `Subnet`. All non prefix bits are set to 0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mycelium::subnet::Subnet;
+    /// use std::net::{IpAddr, Ipv4Addr,Ipv6Addr};
+    ///
+    /// let subnet_1 = Subnet::new(Ipv6Addr::new(12,34,56,78,90,0xab,0xcd,0xef).into(),
+    /// 32).unwrap();
+    /// let subnet_2 = Subnet::new(Ipv4Addr::new(10,1,2,3).into(), 8).unwrap();
+    ///
+    /// assert_eq!(subnet_1.network(), IpAddr::V6(Ipv6Addr::new(12,34,0,0,0,0,0,0)));
+    /// assert_eq!(subnet_2.network(), IpAddr::V4(Ipv4Addr::new(10,0,0,0)));
+    /// ```
     pub fn network(&self) -> IpAddr {
         self.inner.network()
     }
