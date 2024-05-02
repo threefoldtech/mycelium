@@ -39,6 +39,8 @@ jobs:
         with:
           # Name of the compiled binary, also name of the non-extension part of the produced file
           bin: mycelium
+          # Set the vendored-openssl flag for provided release builds
+          features: vendored-openssl
           # --target flag value, default is host
           target: ${{ matrix.target }}
           # Name of the archive when uploaded

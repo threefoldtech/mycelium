@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check if the originator of a TLV is still available before processing said TLV.
 - The router now uses a dedicated task per TLV type to handle received TLV's from
   peers.
+- Statically linking openssl is now a feature flag when building yourself.
 
 ### Fixed
 

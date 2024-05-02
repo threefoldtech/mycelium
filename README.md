@@ -156,7 +156,9 @@ mycelium inspect --json
 This project is built in Rust, and you must have a rust compiler to build the code
 yourself. Please refer to [the official rust documentation](https://www.rust-lang.org/)
 for information on how to install `rustc` and `cargo`. Aside from the rust toolchain,
-no other dependencies should be required to build the project.
+you might require an `openssl` install to be present on the machine. If you want
+to build a statically linked binary, you can add the `vendored-openssl` feature
+flag to the build command.
 
 First make sure you have cloned the repo
 
@@ -179,7 +181,9 @@ command (`cargo build --release`).
 For cross compilation, it is advised to use the [`cross`](https://github.com/cross-rs/cross)
 project. Alternatively, the standard way of cross compiling in rust can be used
 (by specifying the `--target` flag in the `cargo build` command). This might require
-setting some environment variables or local cargo config.
+setting some environment variables or local cargo config. On top of this, you should
+also provide the `vendored-openssl` feature flag to build and statically link a copy
+of openssl.
 
 ## Remarks
 
