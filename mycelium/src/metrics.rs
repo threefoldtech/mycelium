@@ -19,29 +19,25 @@ use crate::peer_manager::PeerType;
 pub trait Metrics {
     /// The [`Router`](crate::router::Router) received a new Hello TLV from a peer.
     #[inline]
-    fn router_incoming_hello(&self) {}
+    fn router_process_hello(&self) {}
 
     /// The [`Router`](crate::router::Router) received a new IHU TLV from a peer.
     #[inline]
-    fn router_incoming_ihu(&self) {}
+    fn router_process_ihu(&self) {}
 
     /// The [`Router`](crate::router::Router) received a new Seqno request TLV from a peer.
     #[inline]
-    fn router_incoming_seqno_request(&self) {}
+    fn router_process_seqno_request(&self) {}
 
     /// The [`Router`](crate::router::Router) received a new Route request TLV from a peer.
     /// Additionally, it is recorded if this is a wildcard request (route table dump request)
     /// or a request for a specific subnet.
     #[inline]
-    fn router_incoming_route_request(&self, _wildcard: bool) {}
+    fn router_process_route_request(&self, _wildcard: bool) {}
 
     /// The [`Router`](crate::router::Router) received a new Update TLV from a peer.
     #[inline]
-    fn router_incoming_update(&self) {}
-
-    /// The [`Router`](crate::router::Router) received a new TLV from a peer, but the type is unknown.
-    #[inline]
-    fn router_incoming_unknown_tlv(&self) {}
+    fn router_process_update(&self) {}
 
     /// The [`Router`](crate::router::Router) tried to send an update to a peer, but before sending
     /// it we found out the peer is actually already dead.

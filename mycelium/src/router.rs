@@ -677,7 +677,7 @@ where
 
     /// Handle a received hello TLV
     fn handle_incoming_hello(&self, _: babel::Hello, source_peer: Peer) {
-        self.metrics.router_incoming_hello();
+        self.metrics.router_process_hello();
         // Upon receiving and Hello message from a peer, this node has to send a IHU back
         // TODO: properly calculate RX cost, for now just set the link cost.
         let ihu = ControlPacket::new_ihu(source_peer.link_cost().into(), IHU_INTERVAL, None);
@@ -691,7 +691,7 @@ where
 
     /// Handle a received IHU TLV
     fn handle_incoming_ihu(&self, _: babel::Ihu, source_peer: Peer) {
-        self.metrics.router_incoming_ihu();
+        self.metrics.router_process_ihu();
         // reset the IHU timer associated with the peer
         // measure time between Hello and and IHU and set the link cost
         let time_diff = tokio::time::Instant::now()
@@ -709,7 +709,7 @@ where
     /// the full routing table.
     fn handle_incoming_route_request(&self, route_request: babel::RouteRequest, source_peer: Peer) {
         self.metrics
-            .router_incoming_route_request(route_request.prefix().is_none());
+            .router_process_route_request(route_request.prefix().is_none());
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
             let update = if let Some(sre) = self
@@ -777,7 +777,7 @@ where
 
     /// Handle a received SeqNo request TLV.
     fn handle_incoming_seqno_request(&self, mut seqno_request: SeqNoRequest, source_peer: Peer) {
-        self.metrics.router_incoming_seqno_request();
+        self.metrics.router_process_seqno_request();
         // According to the babel rfc, we shoudl maintain a table of recent SeqNo requests and
         // periodically retry requests without reply. We will however not do this for now and rely
         // on the fact that we have stable links in general.
@@ -989,7 +989,7 @@ where
 
     /// Handle a received update TLV
     fn handle_incoming_update(&self, update: babel::Update, source_peer: Peer) {
-        self.metrics.router_incoming_update();
+        self.metrics.router_process_update();
         // Check if we actually allow this update based on filters.
         for filter in &*self.update_filters {
             if !filter.allow(&update) {

@@ -18,7 +18,7 @@ impl Metrics for NoMetrics {}
 /// A [`Metrics`] implementation which uses prometheus to expose the metrics to the outside world.
 #[derive(Clone)]
 pub struct PrometheusExporter {
-    router_incoming_tlv: IntCounterVec,
+    router_processed_tlvs: IntCounterVec,
     router_peer_added: IntCounter,
     router_peer_removed: IntCounter,
     router_peer_died: IntCounter,
@@ -42,10 +42,10 @@ impl PrometheusExporter {
     /// Create a new [`PrometheusExporter`].
     pub fn new() -> Self {
         Self {
-            router_incoming_tlv: register_int_counter_vec!(
+            router_processed_tlvs: register_int_counter_vec!(
                 opts!(
-                    "mycelium_router_incoming_tlv",
-                    "Amount of incoming TLV's from peers, by type of TLV"
+                    "mycelium_router_processed_tlvs",
+                    "Amount of processed TLV's from peers, by type of TLV"
                 ), &["tlv_type"]
             ).expect("Can register int counter vec in default registry"),
             router_peer_added: register_int_counter!(
@@ -189,43 +189,38 @@ async fn serve_metrics() -> String {
 
 impl Metrics for PrometheusExporter {
     #[inline]
-    fn router_incoming_hello(&self) {
-        self.router_incoming_tlv.with_label_values(&["hello"]).inc()
+    fn router_process_hello(&self) {
+        self.router_processed_tlvs
+            .with_label_values(&["hello"])
+            .inc()
     }
 
     #[inline]
-    fn router_incoming_ihu(&self) {
-        self.router_incoming_tlv.with_label_values(&["ihu"]).inc()
+    fn router_process_ihu(&self) {
+        self.router_processed_tlvs.with_label_values(&["ihu"]).inc()
     }
 
     #[inline]
-    fn router_incoming_seqno_request(&self) {
-        self.router_incoming_tlv
+    fn router_process_seqno_request(&self) {
+        self.router_processed_tlvs
             .with_label_values(&["seqno_request"])
             .inc()
     }
 
     #[inline]
-    fn router_incoming_route_request(&self, wildcard: bool) {
+    fn router_process_route_request(&self, wildcard: bool) {
         let label = if wildcard {
             "wildcard_route_request"
         } else {
             "route_request"
         };
-        self.router_incoming_tlv.with_label_values(&[label]).inc()
+        self.router_processed_tlvs.with_label_values(&[label]).inc()
     }
 
     #[inline]
-    fn router_incoming_update(&self) {
-        self.router_incoming_tlv
+    fn router_process_update(&self) {
+        self.router_processed_tlvs
             .with_label_values(&["update"])
-            .inc()
-    }
-
-    #[inline]
-    fn router_incoming_unknown_tlv(&self) {
-        self.router_incoming_tlv
-            .with_label_values(&["unknown"])
             .inc()
     }
 
