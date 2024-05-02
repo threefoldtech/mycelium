@@ -39,6 +39,20 @@ impl Subnet {
     }
 
     /// Retuns the address in this subnet.
+    ///
+    /// The returned address is a full IP address, used to construct this `Subnet`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mycelium::subnet::Subnet;
+    /// use std::net::Ipv6Addr;
+    ///
+    /// let address = Ipv6Addr::new(12,34,56,78,90,0xab,0xcd,0xef).into();
+    /// let subnet = Subnet::new(address, 64).unwrap();
+    ///
+    /// assert_eq!(subnet.address(), address);
+    /// ```
     pub fn address(&self) -> IpAddr {
         self.inner.addr()
     }
