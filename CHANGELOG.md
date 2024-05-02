@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   feasible route.
 - If the router bumps it's seqno it now properly announces the local route to it's
   peers instead of the selected routes
+- Seqno bump requests for advertised local routes now properly bump the router
+  seqno.
 
 ## [0.5.1] - 2024-04-19
 
