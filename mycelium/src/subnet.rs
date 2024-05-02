@@ -14,7 +14,7 @@ use std::net::IpAddr;
 use ipnet::IpNet;
 
 /// Representation of a subnet. A subnet can be either IPv4 or IPv6.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialOrd, Ord, Hash)]
 pub struct Subnet {
     inner: IpNet,
 }
@@ -150,6 +150,18 @@ impl fmt::Display for PrefixLenError {
 }
 
 impl std::error::Error for PrefixLenError {}
+
+impl PartialEq for Subnet {
+    fn eq(&self, other: &Self) -> bool {
+        // Quic check, subnets of different sizes are never equal.
+        if self.prefix_len() != other.prefix_len() {
+            return false;
+        }
+
+        // Full check
+        self.network() == other.network()
+    }
+}
 
 #[cfg(test)]
 mod tests {
