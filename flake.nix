@@ -74,6 +74,9 @@
           cargoExtraArgs = "--bin mycelium";
 
           nativeBuildInputs = [
+            pkgs.pkg-config
+            # openssl base library
+            pkgs.openssl
             # required by openssl-sys
             pkgs.perl
           ];

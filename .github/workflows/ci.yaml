@@ -24,6 +24,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+    - name: Set windows VCPKG_ROOT env variable
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      if: runner.os == 'Windows'
+    - name: Install windows openssl
+      run: vcpkg install openssl:x64-windows-static-md
+      if: runner.os == 'Windows'
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
       with:
@@ -38,6 +44,12 @@ jobs:
         os: [ubuntu-latest, macos-latest,windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+    - name: Set windows VCPKG_ROOT env variable
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      if: runner.os == 'Windows'
+    - name: Install windows openssl
+      run: vcpkg install openssl:x64-windows-static-md
+      if: runner.os == 'Windows'
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build -p mycelium --all-features --verbose
@@ -49,6 +61,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+    - name: Set windows VCPKG_ROOT env variable
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      if: runner.os == 'Windows'
+    - name: Install windows openssl
+      run: vcpkg install openssl:x64-windows-static-md
+      if: runner.os == 'Windows'
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
