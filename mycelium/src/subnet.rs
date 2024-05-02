@@ -150,3 +150,42 @@ impl fmt::Display for PrefixLenError {
 }
 
 impl std::error::Error for PrefixLenError {}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use super::Subnet;
+
+    #[test]
+    fn test_subnet_equality() {
+        let subnet_1 =
+            Subnet::new(Ipv6Addr::new(12, 23, 34, 45, 56, 67, 78, 89).into(), 64).unwrap();
+        let subnet_2 =
+            Subnet::new(Ipv6Addr::new(12, 23, 34, 45, 67, 78, 89, 90).into(), 64).unwrap();
+        let subnet_3 =
+            Subnet::new(Ipv6Addr::new(12, 23, 34, 40, 67, 78, 89, 90).into(), 64).unwrap();
+        let subnet_4 = Subnet::new(Ipv6Addr::new(12, 23, 34, 45, 0, 0, 0, 0).into(), 64).unwrap();
+        let subnet_5 = Subnet::new(
+            Ipv6Addr::new(12, 23, 34, 45, 0xffff, 0xffff, 0xffff, 0xffff).into(),
+            64,
+        )
+        .unwrap();
+
+        assert_eq!(subnet_1, subnet_2);
+        assert_ne!(subnet_1, subnet_3);
+        assert_eq!(subnet_1, subnet_4);
+        assert_eq!(subnet_1, subnet_5);
+
+        let subnet_1 = Subnet::new(Ipv4Addr::new(10, 1, 2, 3).into(), 24).unwrap();
+        let subnet_2 = Subnet::new(Ipv4Addr::new(10, 1, 2, 102).into(), 24).unwrap();
+        let subnet_3 = Subnet::new(Ipv4Addr::new(10, 1, 4, 3).into(), 24).unwrap();
+        let subnet_4 = Subnet::new(Ipv4Addr::new(10, 1, 2, 0).into(), 24).unwrap();
+        let subnet_5 = Subnet::new(Ipv4Addr::new(10, 1, 2, 255).into(), 24).unwrap();
+
+        assert_eq!(subnet_1, subnet_2);
+        assert_ne!(subnet_1, subnet_3);
+        assert_eq!(subnet_1, subnet_4);
+        assert_eq!(subnet_1, subnet_5);
+    }
+}
