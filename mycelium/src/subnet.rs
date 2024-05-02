@@ -77,6 +77,22 @@ impl Subnet {
     }
 
     /// Checks if this `Subnet` contains the provided [`IpAddr`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mycelium::subnet::Subnet;
+    /// use std::net::{Ipv4Addr,Ipv6Addr};
+    ///
+    /// let ip_1 = Ipv6Addr::new(12,34,56,78,90,0xab,0xcd,0xef).into();
+    /// let ip_2 = Ipv6Addr::new(90,0xab,0xcd,0xef,12,34,56,78).into();
+    /// let ip_3 = Ipv4Addr::new(10,1,2,3).into();
+    /// let subnet = Subnet::new(Ipv6Addr::new(12,34,5,6,7,8,9,0).into(), 32).unwrap();
+    ///
+    /// assert!(subnet.contains_ip(ip_1));
+    /// assert!(!subnet.contains_ip(ip_2));
+    /// assert!(!subnet.contains_ip(ip_3));
+    /// ```
     pub fn contains_ip(&self, ip: IpAddr) -> bool {
         self.inner.contains(&ip)
     }
