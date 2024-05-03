@@ -8,12 +8,6 @@ edition = "2021"
 [dependencies]
 mycelium = { path = "../mycelium"}
 tokio = { version = "1.37.0", features = [
-    "io-util",
-    "fs",
-    "macros",
-    "net",
-    "sync",
-    "time",
     "signal",
     "rt-multi-thread",
 ] }

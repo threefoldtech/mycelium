@@ -13,6 +13,7 @@ fn setup_the_logger() {
     android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Trace));
 }
 #[tokio::main]
+#[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
     let endpoints: Vec<Endpoint> = peers
         .into_iter()
