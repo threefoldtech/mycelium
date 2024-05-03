@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "aes-gcm",
  "blake3",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "myceliumd"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "axum",
  "base64 0.22.0",
