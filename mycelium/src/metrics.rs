@@ -146,6 +146,15 @@ pub trait Metrics {
     #[inline]
     fn router_time_spent_handling_tlv(&self, _duration: std::time::Duration, _tlv_type: &str) {}
 
+    /// The [`time`](std::time::Duration) used by the [`Router`](crate::router::Router) to
+    /// periodically propagate selected routes to peers.
+    #[inline]
+    fn router_time_spent_periodic_propagating_selected_routes(
+        &self,
+        _duration: std::time::Duration,
+    ) {
+    }
+
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
     #[inline]

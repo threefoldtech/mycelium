@@ -1408,7 +1408,10 @@ where
 
             trace!("Propagating selected routes");
 
+            let start = Instant::now();
             self.propagate_selected_routes_to_peers();
+            self.metrics
+                .router_time_spent_periodic_propagating_selected_routes(start.elapsed());
         }
     }
 
