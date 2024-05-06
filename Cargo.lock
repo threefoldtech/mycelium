@@ -2239,7 +2239,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "tun"
 version = "0.6.1"
-source = "git+https://github.com/LeeSmet/rust-tun#eaad3340ef74475def7e080dedff77f7d830f3b8"
+source = "git+https://github.com/LeeSmet/rust-tun#eb4d41c0a5d6a6e9c55340e2f61e50683d9f4731"
 dependencies = [
  "byteorder",
  "bytes",
