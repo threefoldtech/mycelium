@@ -35,6 +35,6 @@ axum = { version = "0.7.5", default-features = false, features = [
   "tokio",
 ] }
 base64 = "0.22.0"
-prometheus = { version = "0.13.3", default-features = false, features = [
+prometheus = { version = "0.13.4", default-features = false, features = [
   "process",
 ] }
