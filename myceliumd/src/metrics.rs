@@ -33,6 +33,7 @@ pub struct PrometheusExporter {
     router_update_dead_peer: IntCounter,
     router_received_tlvs: IntCounter,
     router_tlv_source_died: IntCounter,
+    router_propage_selected_peers_time_spent: IntCounter,
     peer_manager_peer_added: IntCounterVec,
     peer_manager_known_peers: IntGauge,
     peer_manager_connection_attemps: IntCounterVec,
@@ -124,6 +125,11 @@ impl PrometheusExporter {
             router_tlv_source_died: register_int_counter!(
                 "mycelium_router_tlv_source_died",
                 "Dropped TLV's which have been received, but where the peer has died before they could be processed",
+            )
+            .expect("Can register an int counter in default registry"),
+            router_propage_selected_peers_time_spent: register_int_counter!(
+                "mycelium_router_propagate_selected_route_time",
+                "Time spent in the propagate_selected_route task, which periodically announces selected routes to peers. Measurement is in nanoseconds",
             )
             .expect("Can register an int counter in default registry"),
             peer_manager_peer_added: register_int_counter_vec!(
@@ -353,6 +359,15 @@ impl Metrics for PrometheusExporter {
     #[inline]
     fn router_tlv_source_died(&self) {
         self.router_tlv_source_died.inc()
+    }
+
+    #[inline]
+    fn router_time_spent_periodic_propagating_selected_routes(
+        &self,
+        duration: std::time::Duration,
+    ) {
+        self.router_propage_selected_peers_time_spent
+            .inc_by(duration.as_nanos() as u64)
     }
 
     #[inline]
