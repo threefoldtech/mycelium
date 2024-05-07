@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::io;
 
-use log::info;
+use log::{error, info};
 
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
@@ -10,18 +10,29 @@ use mycelium::{crypto, metrics, Config, Node};
 #[cfg(target_os = "android")]
 fn setup_the_logger() {
     use log::LevelFilter;
-    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Trace));
+    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
 }
+
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+use tokio::sync::mpsc;
+// Declare the channel globally so we can use it on the start & stop mycelium functions
+static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Lazy::new(|| {
+    let (tx, rx) = mpsc::channel::<()>(1);
+    (Mutex::new(tx), Mutex::new(rx))
+});
+
 #[tokio::main]
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
+    #[cfg(target_os = "android")]
+    setup_the_logger();
+
+    info!("starting mycelium");
     let endpoints: Vec<Endpoint> = peers
         .into_iter()
         .filter_map(|peer| peer.parse().ok())
         .collect();
-
-    #[cfg(target_os = "android")]
-    setup_the_logger();
 
     let secret_key = build_secret_key(priv_key).await.unwrap();
 
@@ -45,14 +56,29 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
 
     match _node {
         Ok(_) => info!("node successfully created"),
-        // use info! here because error! is not printed
-        Err(err) => info!("failed to create stack: {err}"),
+        Err(err) => error!("failed to create mycelium node: {err}"),
     };
 
-    // TODO: check what is the better way in Android and iOS
-    if let Err(e) = tokio::signal::ctrl_c().await {
-        log::error!("Failed to wait for SIGINT: {e}");
+    let mut rx = CHANNEL.1.lock().unwrap();
+    tokio::select! {
+        _ = tokio::signal::ctrl_c()  => {
+            info!("Received SIGINT, stopping mycelium node");
+        }
+       _ = rx.recv() => {
+            info!("Received stop channel, stopping mycelium node");
+        }
     }
+    info!("mycelium stopped");
+}
+
+#[tokio::main]
+pub async fn stop_mycelium() {
+    info!("stopping mycelium by sending stop channel");
+    // TODO: check what happens if we send multiple times?
+    // it is currently OK to have this implementation because
+    // we prevent multiple calls to stop_mycelium from the UI side.
+    let tx = CHANNEL.0.lock().unwrap();
+    tx.send(()).await.unwrap();
 }
 
 #[derive(Clone)]
