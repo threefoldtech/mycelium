@@ -1047,6 +1047,7 @@ dependencies = [
  "android_logger",
  "log",
  "mycelium",
+ "once_cell",
  "tokio",
 ]
 
