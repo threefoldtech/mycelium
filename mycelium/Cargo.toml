@@ -37,8 +37,6 @@ quinn = { version = "0.11.0", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
-# For now dangerous_configuration is needed to setup the certificate
-# verifier for the dummy quinn certificates.
 rustls = { version = "0.23.5", default-features = false, features = ["ring"] }
 rcgen = "0.12.1"
 netdev = "0.25.0"
