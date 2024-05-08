@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Manually implement Hash for Subnet, previously we could potentially have multiple
+  distinct entries in the source table for the same source key.
+
 ## [0.5.2] - 2024-05-03
 
 ### Added
