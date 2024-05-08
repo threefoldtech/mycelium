@@ -108,7 +108,9 @@ impl AsyncWrite for Quic {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<Result<usize, io::Error>> {
-        Pin::new(&mut self.tx).poll_write(cx, buf)
+        Pin::new(&mut self.tx)
+            .poll_write(cx, buf)
+            .map_err(From::from)
     }
 
     #[inline]
