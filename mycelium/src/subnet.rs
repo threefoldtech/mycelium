@@ -9,12 +9,12 @@
 //! might not be optimal for other uses.
 
 use core::fmt;
-use std::net::IpAddr;
+use std::{hash::Hash, net::IpAddr};
 
 use ipnet::IpNet;
 
 /// Representation of a subnet. A subnet can be either IPv4 or IPv6.
-#[derive(Debug, Clone, Copy, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialOrd, Ord)]
 pub struct Subnet {
     inner: IpNet,
 }
@@ -165,6 +165,16 @@ impl PartialEq for Subnet {
 
         // Full check
         self.network() == other.network()
+    }
+}
+
+impl Hash for Subnet {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // First write the subnet size
+        state.write_u8(self.prefix_len());
+        // Then write the IP of the network. This sets the non prefix bits to 0, so hash values
+        // will be equal according to the PartialEq rules.
+        self.network().hash(state)
     }
 }
 
