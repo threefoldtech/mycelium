@@ -15,8 +15,9 @@ use super::Connection;
 pub struct Tracked<C> {
     /// Bytes read counter
     read: Arc<AtomicU64>,
-    ///
+    /// Bytes written counter
     write: Arc<AtomicU64>,
+    /// Underlying connection we are measuring
     con: C,
 }
 
