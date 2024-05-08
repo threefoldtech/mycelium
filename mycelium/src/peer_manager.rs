@@ -8,6 +8,7 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, info, trace, warn};
 use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
+use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use serde::{Deserialize, Serialize};
@@ -533,12 +534,21 @@ where
             error!("Attempting to connect to quic peer while quic is disabled");
             return (endpoint, None);
         };
-        let mut config = quinn::ClientConfig::new(Arc::new(
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .expect("We have a quic socket so there is a crypto provider installed");
+        let qcc = match QuicClientConfig::try_from(
             rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_custom_certificate_verifier(SkipServerVerification::new())
+                .dangerous()
+                .with_custom_certificate_verifier(SkipServerVerification::new(provider.clone()))
                 .with_no_client_auth(),
-        ));
+        ) {
+            Ok(qcc) => qcc,
+            Err(err) => {
+                error!("Failed to build quic client config: {err}");
+                return (endpoint, None);
+            }
+        };
+        let mut config = quinn::ClientConfig::new(Arc::new(qcc));
         // Todo: tweak transport config
         let mut transport_config = TransportConfig::default();
         transport_config.max_concurrent_uni_streams(0_u8.into());
