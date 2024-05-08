@@ -10,7 +10,7 @@ use log::{debug, error, info, trace, warn};
 use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
 use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -1065,12 +1065,11 @@ fn make_quic_endpoint(
     // Generate self signed certificate certificate.
     // TODO: sign with router keys
     let cert = rcgen::generate_simple_self_signed(vec![format!("{router_id}")])?;
-    let certificate_der = cert.serialize_der()?;
-    let private_key_der = cert.serialize_private_key_der();
-    let private_key = rustls::PrivateKey(private_key_der);
-    let certificate_chain = vec![rustls::Certificate(certificate_der)];
+    let certificate_der = CertificateDer::from(cert.cert);
+    let private_key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+    let certificate_chain = vec![certificate_der];
 
-    let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key)?;
+    let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key.into())?;
     // We can unwrap this since it's the only current instance.
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
     // We don't use unidirectional streams.
