@@ -60,6 +60,10 @@
               darwin.apple_sdk.frameworks.SystemConfiguration
               final.libiconv
             ];
+
+            meta = {
+              mainProgram = "mycelium";
+            };
           };
       };
     } //
