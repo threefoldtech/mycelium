@@ -353,7 +353,17 @@ where
                             // Use fully qualified call to aid compiler in type inference.
                             pi.pr = Peer::refer(&peer);
                             self.router.lock().unwrap().add_peer_interface(peer);
+
+                            // We successfully connected, reset the connection_attempts counter to 0
+                            pi.connection_attempts = 0;
                         } else {
+                            // Only log an error on the first connection failure, to avoid spamming the logs
+                            if pi.connection_attempts == 0 {
+                                error!("Couldn't connect to {endpoint}, turn on debug logging for more details");
+                            } else {
+                                debug!("Couldn't connect to {endpoint}, attempt {}", pi.connection_attempts + 1)
+                            }
+
                             // Connection failed, add a failed attempt and forget about the peer if
                             // needed.
                             pi.connection_attempts += 1;
@@ -407,9 +417,9 @@ where
         ct: ConnectionTraffic,
     ) -> (Endpoint, Option<Peer>) {
         match (endpoint.proto(), &self.private_network_config) {
-            (Protocol::Tcp, Some(_)) => warn!("Attempting to connect to {} over Tcp while a private newtork is configured, connection will be upgraded to Tls", endpoint.address()),
+            (Protocol::Tcp, Some(_)) => warn!("Attempting to connect to {} over Tcp while a private network is configured, connection will be upgraded to Tls", endpoint.address()),
             (Protocol::Tls, None) => {
-                warn!("Attempting to connecto to {} over Tls while a private network is not enabled, refusing to connect. Use \"Tcp\" instead", endpoint.address());
+                warn!("Attempting to connect to {} over Tls while a private network is not enabled, refusing to connect. Use \"Tcp\" instead", endpoint.address());
                 return (endpoint, None);
             },
             _ => {},
@@ -444,9 +454,9 @@ where
         {
             Ok(peer_stream) => {
                 debug!("Opened connection to {endpoint}");
-                // Make sure Nagle's algorithm is disabeld as it can cause latency spikes.
+                // Make sure Nagle's algorithm is disabled as it can cause latency spikes.
                 if let Err(e) = peer_stream.set_nodelay(true) {
-                    error!("Couldn't disable Nagle's algorithm on stream {e}");
+                    debug!("Couldn't disable Nagle's algorithm on stream {e}");
                     return (endpoint, None);
                 }
 
@@ -465,14 +475,14 @@ where
                         let ssl = match Ssl::new(connector.context()) {
                             Ok(ssl) => ssl,
                             Err(e) => {
-                                error!("Failed to create SSL object from acceptor after connecting to remote {endpoint}: {e}");
+                                debug!("Failed to create SSL object from acceptor after connecting to remote {endpoint}: {e}");
                                 return (endpoint, None);
                             }
                         };
                         let mut ssl_stream = match tokio_openssl::SslStream::new(ssl, peer_stream) {
                             Ok(ssl_stream) => ssl_stream,
                             Err(e) => {
-                                error!("Failed to create TLS stream from tcp connection to {endpoint}: {e}");
+                                debug!("Failed to create TLS stream from tcp connection to {endpoint}: {e}");
                                 return (endpoint, None);
                             }
                         };
@@ -511,13 +521,13 @@ where
                         (endpoint, Some(new_peer))
                     }
                     Err(e) => {
-                        error!("Failed to spawn peer {endpoint}: {e}");
+                        debug!("Failed to spawn peer {endpoint}: {e}");
                         (endpoint, None)
                     }
                 }
             }
             Err(e) => {
-                error!("Couldn't connect to {endpoint}: {e}");
+                debug!("Couldn't connect to {endpoint}: {e}");
                 (endpoint, None)
             }
         }
@@ -531,7 +541,7 @@ where
         let quic_socket = if let Some(quic_socket) = &self.quic_socket {
             quic_socket
         } else {
-            error!("Attempting to connect to quic peer while quic is disabled");
+            debug!("Attempting to connect to quic peer while quic is disabled");
             return (endpoint, None);
         };
         let provider = rustls::crypto::CryptoProvider::get_default()
@@ -544,7 +554,7 @@ where
         ) {
             Ok(qcc) => qcc,
             Err(err) => {
-                error!("Failed to build quic client config: {err}");
+                debug!("Failed to build quic client config: {err}");
                 return (endpoint, None);
             }
         };
@@ -590,23 +600,23 @@ where
                                 (endpoint, Some(new_peer))
                             }
                             Err(e) => {
-                                error!("Failed to spawn peer {endpoint}: {e}");
+                                debug!("Failed to spawn peer {endpoint}: {e}");
                                 (endpoint, None)
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Couldn't open bidirectional quic stream to {endpoint}: {e}");
+                        debug!("Couldn't open bidirectional quic stream to {endpoint}: {e}");
                         (endpoint, None)
                     }
                 },
                 Err(e) => {
-                    error!("Couldn't complete quic connection to {endpoint}: {e}");
+                    debug!("Couldn't complete quic connection to {endpoint}: {e}");
                     (endpoint, None)
                 }
             },
             Err(e) => {
-                error!("Couldn't initiate connection to {endpoint}: {e}");
+                debug!("Couldn't initiate connection to {endpoint}: {e}");
                 (endpoint, None)
             }
         }
