@@ -29,10 +29,7 @@ pub struct Http {
 
 #[derive(Clone)]
 /// Shared state accessible in HTTP endpoint handlers.
-struct HttpServerState<M>
-where
-    M: Clone,
-{
+struct HttpServerState<M> {
     /// Access to the (`node`)(mycelium::Node) state.
     node: Arc<Mutex<mycelium::Node<M>>>,
 }
