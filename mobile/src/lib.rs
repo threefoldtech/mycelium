@@ -14,9 +14,10 @@ fn setup_the_logger() {
 }
 
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
+
 // Declare the channel globally so we can use it on the start & stop mycelium functions
+#[allow(clippy::type_complexity)]
 static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Lazy::new(|| {
     let (tx, rx) = mpsc::channel::<()>(1);
     (Mutex::new(tx), Mutex::new(rx))
@@ -59,7 +60,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         Err(err) => error!("failed to create mycelium node: {err}"),
     };
 
-    let mut rx = CHANNEL.1.lock().unwrap();
+    let mut rx = CHANNEL.1.lock().await;
     tokio::select! {
         _ = tokio::signal::ctrl_c()  => {
             info!("Received SIGINT, stopping mycelium node");
@@ -77,7 +78,7 @@ pub async fn stop_mycelium() {
     // TODO: check what happens if we send multiple times?
     // it is currently OK to have this implementation because
     // we prevent multiple calls to stop_mycelium from the UI side.
-    let tx = CHANNEL.0.lock().unwrap();
+    let tx = CHANNEL.0.lock().await;
     tx.send(()).await.unwrap();
 }
 
