@@ -79,10 +79,7 @@ pub struct Config<M> {
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
-pub struct Node<M>
-where
-    M: Clone,
-{
+pub struct Node<M> {
     router: router::Router<M>,
     peer_manager: peer_manager::PeerManager<M>,
     #[cfg(feature = "message")]
