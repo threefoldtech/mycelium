@@ -85,11 +85,7 @@ pub type Checksum = [u8; MESSAGE_CHECKSUM_LENGTH];
 /// Response type when pushing a message.
 pub type MessagePushResponse = (MessageId, Option<watch::Receiver<Option<ReceivedMessage>>>);
 
-#[derive(Clone)]
-pub struct MessageStack<M>
-where
-    M: Clone,
-{
+pub struct MessageStack<M> {
     // The DataPlane is wrappen in a Mutex since it does not implement Sync.
     data_plane: Arc<Mutex<DataPlane<M>>>,
     inbox: Arc<Mutex<MessageInbox>>,
@@ -1052,6 +1048,18 @@ where
                 debug!("Can only send messages between two IPv6 addresses")
             }
         };
+    }
+}
+
+impl<M> Clone for MessageStack<M> {
+    fn clone(&self) -> Self {
+        Self {
+            data_plane: self.data_plane.clone(),
+            inbox: self.inbox.clone(),
+            outbox: self.outbox.clone(),
+            subscriber: self.subscriber.clone(),
+            reply_subscribers: self.reply_subscribers.clone(),
+        }
     }
 }
 
