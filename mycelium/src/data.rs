@@ -48,11 +48,7 @@ const MESSAGE_HOP_LIMIT: u8 = 64;
 /// encryption/decryption of them.
 ///
 /// DataPlane itself can be cloned, but this is not cheap on the router and should be avoided.
-#[derive(Clone)]
-pub struct DataPlane<M>
-where
-    M: Clone,
-{
+pub struct DataPlane<M> {
     router: Router<M>,
 }
 
@@ -414,5 +410,16 @@ where
         }
 
         warn!("Extract loop from router to host ended");
+    }
+}
+
+impl<M> Clone for DataPlane<M>
+where
+    M: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            router: self.router.clone(),
+        }
     }
 }
