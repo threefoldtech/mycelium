@@ -142,10 +142,7 @@ pub struct PeerNotFound;
 /// PSK used to set up a shared network. Currently 32 bytes though this might change in the future.
 pub type PrivateNetworkKey = [u8; 32];
 
-struct Inner<M>
-where
-    M: Clone,
-{
+struct Inner<M> {
     /// Router is unfortunately wrapped in a Mutex, because router is not Sync.
     router: Mutex<Router<M>>,
     peers: Mutex<HashMap<Endpoint, PeerInfo>>,
