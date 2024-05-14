@@ -60,11 +60,7 @@ const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(60);
 /// The interval specified in updates if the update won't be repeated.
 const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(0);
 
-#[derive(Clone)]
-pub struct Router<M>
-where
-    M: Clone,
-{
+pub struct Router<M> {
     inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
     inner_r: ReadHandle<RouterInner>,
     peer_interfaces: Arc<RwLock<Vec<Peer>>>,
@@ -1606,6 +1602,34 @@ where
                 "Failed to send update to dead peer {}",
                 peer.connection_identifier()
             );
+        }
+    }
+}
+
+/// Manual clone implementation to avoid placing a where bound on `Router`, which would in turn
+/// require a where bound on all structs which end up containing Router.
+impl<M> Clone for Router<M>
+where
+    M: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner_w: self.inner_w.clone(),
+            inner_r: self.inner_r.clone(),
+            peer_interfaces: self.peer_interfaces.clone(),
+            source_table: self.source_table.clone(),
+            router_seqno: self.router_seqno.clone(),
+            static_routes: self.static_routes.clone(),
+            router_id: self.router_id,
+            node_keypair: self.node_keypair.clone(),
+            router_data_tx: self.router_data_tx.clone(),
+            router_control_tx: self.router_control_tx.clone(),
+            node_tun: self.node_tun.clone(),
+            node_tun_subnet: self.node_tun_subnet,
+            update_filters: self.update_filters.clone(),
+            dead_peer_sink: self.dead_peer_sink.clone(),
+            expired_source_key_sink: self.expired_source_key_sink.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 }
