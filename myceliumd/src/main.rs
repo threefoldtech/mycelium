@@ -320,7 +320,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             peers: cli.node_args.static_peers,
             no_tun: cli.node_args.no_tun,
             tcp_listen_port: cli.node_args.tcp_listen_port,
-            quic_listen_port: cli.node_args.quic_listen_port,
+            quic_listen_port: Some(cli.node_args.quic_listen_port),
             peer_discovery_port: if cli.node_args.disable_peer_discovery {
                 None
             } else {
@@ -340,7 +340,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             peers: cli.node_args.static_peers,
             no_tun: cli.node_args.no_tun,
             tcp_listen_port: cli.node_args.tcp_listen_port,
-            quic_listen_port: cli.node_args.quic_listen_port,
+            quic_listen_port: Some(cli.node_args.quic_listen_port),
             peer_discovery_port: if cli.node_args.disable_peer_discovery {
                 None
             } else {

@@ -161,7 +161,7 @@ where
         router: Router<M>,
         static_peers_sockets: Vec<Endpoint>,
         tcp_listen_port: u16,
-        quic_listen_port: u16,
+        quic_listen_port: Option<u16>,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
         private_network_config: Option<(String, PrivateNetworkKey)>,
@@ -172,11 +172,15 @@ where
 
         // Currently we don't support Quic when a private network is used.
         let quic_socket = if !is_private_net {
-            Some(make_quic_endpoint(
-                router.router_id(),
-                quic_listen_port,
-                firewall_mark,
-            )?)
+            if let Some(quic_listen_port) = quic_listen_port {
+                Some(make_quic_endpoint(
+                    router.router_id(),
+                    quic_listen_port,
+                    firewall_mark,
+                )?)
+            } else {
+                None
+            }
         } else {
             None
         };

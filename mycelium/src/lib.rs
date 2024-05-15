@@ -54,7 +54,7 @@ pub struct Config<M> {
     /// Listen port for TCP connections.
     pub tcp_listen_port: u16,
     /// Listen port for Quic connections.
-    pub quic_listen_port: u16,
+    pub quic_listen_port: Option<u16>,
     /// Udp port for peer discovery.
     pub peer_discovery_port: Option<u16>,
     /// Name for the TUN device.

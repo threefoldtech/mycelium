@@ -42,7 +42,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         peers: endpoints,
         no_tun: false,
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
-        quic_listen_port: DEFAULT_QUIC_LISTEN_PORT,
+        quic_listen_port: Some(DEFAULT_QUIC_LISTEN_PORT),
         peer_discovery_port: Some(DEFAULT_PEER_DISCOVERY_PORT),
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         tun_name: "tun0".to_string(),
