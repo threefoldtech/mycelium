@@ -170,9 +170,7 @@ where
         metrics: M,
         firewall_mark: Option<u32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // hardcoded for now because of this issue https://github.com/threefoldtech/mycelium/issues/251
-        // TODO: fix it
-        let is_private_net = true; //private_network_config.is_some();
+        let is_private_net = private_network_config.is_some();
 
         // Currently we don't support Quic when a private network is used.
         let quic_socket = if !is_private_net {

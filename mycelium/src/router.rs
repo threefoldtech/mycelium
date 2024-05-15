@@ -1193,7 +1193,7 @@ where
                     || new_route.metric().delta(&old_route.metric()) > BIG_METRIC_CHANGE_TRESHOLD
             }
             (None, Some(new_route)) => {
-                debug!(
+                info!(
                     "Acquired route to {subnet} via {}",
                     new_route.neighbour().connection_identifier()
                 );
