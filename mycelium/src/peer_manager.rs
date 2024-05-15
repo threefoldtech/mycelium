@@ -44,7 +44,6 @@ const MAX_FAILED_LOCAL_PEER_CONNECTION_ATTEMPTS: usize = 3;
 /// The PeerManager creates new peers by connecting to configured addresses, and setting up the
 /// connection. Once a connection is established, the created [`Peer`] is handed over to the
 /// [`Router`].
-#[derive(Clone)]
 pub struct PeerManager<M> {
     inner: Arc<Inner<M>>,
 }
