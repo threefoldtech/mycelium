@@ -13,6 +13,15 @@ fn setup_the_logger() {
     android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
 }
 
+#[cfg(target_os = "ios")]
+fn setup_the_logger() {
+    use log::LevelFilter;
+    oslog::OsLogger::new("mycelium")
+        .level_filter(LevelFilter::Info)
+        .init()
+        .unwrap();
+}
+
 use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, Mutex};
 
@@ -26,7 +35,7 @@ static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Laz
 #[tokio::main]
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     setup_the_logger();
 
     info!("starting mycelium");
@@ -42,8 +51,8 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         peers: endpoints,
         no_tun: false,
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
-        quic_listen_port: Some(DEFAULT_QUIC_LISTEN_PORT),
-        peer_discovery_port: Some(DEFAULT_PEER_DISCOVERY_PORT),
+        quic_listen_port: None,
+        peer_discovery_port: None, // disable multicast discovery
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         tun_name: "tun0".to_string(),
 
@@ -88,10 +97,6 @@ impl Metrics for NoMetrics {}
 
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
-/// The default port on the underlay to listen on for incoming Quic connections.
-const DEFAULT_QUIC_LISTEN_PORT: u16 = 9651;
-/// The default port to use for IPv6 link local peer discovery (UDP).
-const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9650;
 
 fn convert_slice_to_array32(slice: &[u8]) -> Result<[u8; 32], std::array::TryFromSliceError> {
     <[u8; 32]>::try_from(slice)
