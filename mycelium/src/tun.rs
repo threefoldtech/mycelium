@@ -34,3 +34,8 @@ pub use windows::new;
 mod android;
 #[cfg(target_os = "android")]
 pub use android::new;
+
+#[cfg(target_os = "ios")]
+mod ios;
+#[cfg(target_os = "ios")]
+pub use ios::new;

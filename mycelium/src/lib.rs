@@ -194,7 +194,8 @@ where
                 target_os = "linux",
                 target_os = "macos",
                 target_os = "windows",
-                target_os = "android"
+                target_os = "android",
+                target_os = "ios"
             )))]
             {
                 panic!("On this platform, you can only run with --no-tun");
@@ -203,7 +204,8 @@ where
                 target_os = "linux",
                 target_os = "macos",
                 target_os = "windows",
-                target_os = "android"
+                target_os = "android",
+                target_os = "ios"
             ))]
             {
                 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -214,7 +216,7 @@ where
                     route_subnet: Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
                         .expect("Static configured TUN route is valid; qed"),
                 };
-                #[cfg(target_os = "android")]
+                #[cfg(any(target_os = "android", target_os = "ios"))]
                 let tun_config = TunConfig {
                     tun_fd: config.tun_fd.unwrap(),
                 };
