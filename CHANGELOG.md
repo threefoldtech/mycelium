@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- We now send seqno requests to all peers who advertised a subnet if the selected
+  route to it is lost as a result of the next-hop dying, or and update coming in
+  which causes no routes to be feasible anymore.
+
 ### Fixed
 
 - Manually implement Hash for Subnet, previously we could potentially have multiple

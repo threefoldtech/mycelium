@@ -411,6 +411,10 @@ where
         } else if routes[0].selected() {
             // This means we went from a selected route to a non-selected route. Unselect route and
             // trigger update.
+            // At this point we also send a seqno request to all peers which advertised this route
+            // to us, to try and get an updated entry. This uses the source key of the unselected
+            // entry.
+            self.send_seqno_request(routes[0].source(), None);
             inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
                 subnet,
                 routes[0].neighbour().clone(),
@@ -1126,6 +1130,10 @@ where
             // route to be unselected. However, this may also be the result of a feasible update
             // (e.g. retraction with no feasible fallback routes).
             // Only do this if we did not unselect the existing route previously.
+            // Regardless if we unselect the route here or not, we lost a selected route for the
+            // subnet, so we try to refresh the route by sending out a seqno request to all
+            // neigbours who advertised the route at some point.
+            self.send_seqno_request(osr.source(), None);
             if !existing_route_unselected {
                 inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
                     subnet,
