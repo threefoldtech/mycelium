@@ -1007,7 +1007,6 @@ where
         }
 
         let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
-        let source_table = self.source_table.read().unwrap();
 
         // We load all routes here from the routing table in memory. Because we hold the mutex for the
         // writer, this view is accurate and we can't diverge until the mutex is released. We will
@@ -1020,7 +1019,10 @@ where
                 .expect("We deref through a write handle so this enter never fails");
             (
                 inner.routing_table.entries(subnet),
-                source_table.is_update_feasible(&update),
+                self.source_table
+                    .read()
+                    .unwrap()
+                    .is_update_feasible(&update),
             )
         };
 
@@ -1053,36 +1055,7 @@ where
                 && !update_feasible
                 && existing_entry.source().router_id() == router_id
             {
-                let fd = source_table
-                    .get(&existing_entry.source())
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "An update came in for {subnet} which is unfeasible so a source table entry must exist"
-                        )
-                    });
-
-                debug!(
-                    "Sending seqno_request to {} for seqno {} of {}",
-                    source_peer.connection_identifier(),
-                    fd.seqno() + 1,
-                    update.subnet(),
-                );
-                if source_peer
-                    .send_control_packet(
-                        SeqNoRequest::new(
-                            fd.seqno() + 1,
-                            existing_entry.source().router_id(),
-                            update.subnet(),
-                        )
-                        .into(),
-                    )
-                    .is_err()
-                {
-                    trace!(
-                        "Failed to send seqno request to {}",
-                        source_peer.connection_identifier()
-                    );
-                }
+                self.send_seqno_request(existing_entry.source(), Some(source_peer));
                 return;
             }
 
@@ -1136,8 +1109,6 @@ where
                 ss,
             ));
         }
-
-        drop(source_table);
 
         // Now that we applied the update, run route selection.
         let new_selected_route =
@@ -1219,6 +1190,53 @@ where
     fn trigger_update(&self, subnet: Subnet) {
         self.metrics.router_triggered_update();
         self.propagate_selected_route(subnet);
+    }
+
+    /// Send a seqno request for a subnet. This can be sent to a given peer, or to all peers for
+    /// the subnet if no peer is given.
+    ///
+    /// The SourceKey must exist in the source table.
+    fn send_seqno_request(&self, source: SourceKey, to: Option<Peer>) {
+        let fd = match self.source_table.read().unwrap().get(&source) {
+            Some(fd) => *fd,
+            None => {
+                warn!("Requesting seqno for source key {source} which does not exist in the source table");
+                return;
+            }
+        };
+
+        let sn: ControlPacket =
+            SeqNoRequest::new(fd.seqno() + 1, source.router_id(), source.subnet()).into();
+
+        let targets = if let Some(target) = to {
+            vec![target]
+        } else {
+            // If we don't have a deidcated peers to send to, just send to every peer which
+            // announced the subnet.
+            self.inner_r
+                .enter()
+                .expect("Write handle is saved on router so this read always succeeds; qed")
+                .routing_table
+                .entries(source.subnet())
+                .into_iter()
+                .map(|re| re.neighbour().clone())
+                .collect()
+        };
+
+        for peer in targets {
+            debug!(
+                "Sending seqno_request to {} for seqno {} of {}",
+                peer.connection_identifier(),
+                fd.seqno() + 1,
+                source.subnet(),
+            );
+            if peer.send_control_packet(sn.clone()).is_err() {
+                trace!(
+                    "Failed to send seqno request to {}",
+                    peer.connection_identifier()
+                );
+            }
+        }
     }
 
     /// Checks if a route key is an exact match for a static route.
