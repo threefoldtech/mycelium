@@ -25,7 +25,8 @@ rand = "0.8.5"
 bytes = "1.6.0"
 x25519-dalek = { version = "2.0.1", features = ["getrandom", "static_secrets"] }
 aes-gcm = "0.10.3"
-log = { version = "0.4.21" }
+tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 faster-hex = "0.9.0"
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 left-right = "0.11.5"

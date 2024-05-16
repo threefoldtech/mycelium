@@ -6,9 +6,9 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
-use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tracing::{debug, error};
 
 use mycelium::{
     endpoint::Endpoint,

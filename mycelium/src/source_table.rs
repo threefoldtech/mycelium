@@ -1,8 +1,8 @@
 use core::fmt;
 use std::{collections::HashMap, time::Duration};
 
-use log::error;
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::error;
 
 use crate::{
     babel, metric::Metric, router_id::RouterId, routing_table::RouteEntry, sequence_number::SeqNo,

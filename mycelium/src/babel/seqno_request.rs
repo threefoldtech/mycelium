@@ -4,7 +4,7 @@ use std::{
 };
 
 use bytes::{Buf, BufMut};
-use log::{debug, trace};
+use tracing::{debug, trace};
 
 use crate::{router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
 

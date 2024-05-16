@@ -1,7 +1,7 @@
 //! The babel [Hello TLV](https://datatracker.ietf.org/doc/html/rfc8966#section-4.6.5).
 
 use bytes::{Buf, BufMut};
-use log::trace;
+use tracing::trace;
 
 use crate::sequence_number::SeqNo;
 

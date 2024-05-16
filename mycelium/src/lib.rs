@@ -6,7 +6,6 @@ use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
-use log::{error, info, warn};
 #[cfg(feature = "message")]
 use message::{
     MessageId, MessageInfo, MessagePushResponse, MessageStack, PushMessageError, ReceivedMessage,
@@ -15,6 +14,7 @@ use metrics::Metrics;
 use peer_manager::{PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
 use routing_table::RouteEntry;
 use subnet::Subnet;
+use tracing::{error, info, warn};
 
 mod babel;
 mod connection;

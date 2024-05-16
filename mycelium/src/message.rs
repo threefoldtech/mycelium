@@ -16,10 +16,10 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
-use log::{debug, error, trace, warn};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use tokio::sync::watch;
+use tracing::{debug, error, trace, warn};
 
 use crate::{
     crypto::{PacketBuffer, PublicKey},

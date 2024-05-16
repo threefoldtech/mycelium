@@ -3,10 +3,10 @@
 use std::io;
 
 use futures::{Sink, Stream, TryStreamExt};
-use log::{error, info};
 use rtnetlink::Handle;
 use tokio::{select, sync::mpsc};
 use tokio_tun::{Tun, TunBuilder};
+use tracing::{error, info};
 
 use crate::crypto::PacketBuffer;
 use crate::subnet::Subnet;

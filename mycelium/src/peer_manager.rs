@@ -6,7 +6,6 @@ use crate::router::Router;
 use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
-use log::{debug, error, info, trace, warn};
 use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
 use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
@@ -27,6 +26,7 @@ use tokio::net::TcpStream;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::AbortHandle;
 use tokio::time::MissedTickBehavior;
+use tracing::{debug, error, info, trace, warn};
 
 /// Magic bytes to identify a multicast UDP packet used in link local peer discovery.
 const MYCELIUM_MULTICAST_DISCOVERY_MAGIC: &[u8; 8] = b"mycelium";

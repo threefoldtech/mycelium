@@ -1,5 +1,4 @@
 use futures::{SinkExt, StreamExt};
-use log::{debug, error, info, trace};
 use std::{
     error::Error,
     io,
@@ -13,6 +12,7 @@ use tokio::{
     sync::{mpsc, Notify},
 };
 use tokio_util::codec::Framed;
+use tracing::{debug, error, info, trace};
 
 use crate::{
     connection::{self, Connection},
