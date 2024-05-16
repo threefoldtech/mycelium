@@ -1,25 +1,29 @@
 use std::convert::TryFrom;
 use std::io;
 
-use log::{error, info};
+use tracing::{error, info};
 
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, metrics, Config, Node};
 
 #[cfg(target_os = "android")]
-fn setup_the_logger() {
-    use log::LevelFilter;
-    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
+fn setup_logging() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    tracing_subscriber::registry()
+        .with(tracing_android::layer("mycelium").expect("failed to setup logger"))
+        .init();
 }
 
 #[cfg(target_os = "ios")]
-fn setup_the_logger() {
-    use log::LevelFilter;
-    oslog::OsLogger::new("mycelium")
-        .level_filter(LevelFilter::Info)
-        .init()
-        .unwrap();
+fn setup_logging() {
+    use tracing_oslog::OsLogger;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    tracing_subscriber::registry()
+        .with(OsLogger::new("mycelium", "default"))
+        .init();
 }
 
 use once_cell::sync::Lazy;
@@ -36,7 +40,7 @@ static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Laz
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    setup_the_logger();
+    setup_logging();
 
     info!("starting mycelium");
     let endpoints: Vec<Endpoint> = peers

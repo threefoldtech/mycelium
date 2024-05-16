@@ -2,8 +2,8 @@ use std::net::{IpAddr, Ipv6Addr};
 
 use etherparse::{icmpv6::DestUnreachableCode, Icmpv6Type, PacketBuilder};
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use log::{debug, error, trace, warn};
 use tokio::sync::mpsc::UnboundedReceiver;
+use tracing::{debug, error, trace, warn};
 
 use crate::{crypto::PacketBuffer, metrics::Metrics, packet::DataPacket, router::Router};
 
@@ -279,7 +279,7 @@ where
             let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
                 Err(_) => {
-                    log::debug!("Dropping data packet with invalid encrypted content");
+                    debug!("Dropping data packet with invalid encrypted content");
                     continue;
                 }
             };

@@ -1,6 +1,6 @@
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use log::{error, warn};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{error, warn};
 
 use crate::{
     metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,

@@ -4,12 +4,12 @@
 use std::net::SocketAddr;
 
 use axum::{routing::get, Router};
-use log::{error, info};
 use mycelium::metrics::Metrics;
 use prometheus::{
     opts, register_int_counter, register_int_counter_vec, register_int_gauge, Encoder, IntCounter,
     IntCounterVec, IntGauge, TextEncoder,
 };
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct NoMetrics;

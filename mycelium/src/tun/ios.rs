@@ -3,12 +3,12 @@
 use std::io::{self, IoSlice};
 
 use futures::{Sink, Stream};
-use log::{error, info};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
     sync::mpsc,
 };
+use tracing::{error, info};
 
 use crate::crypto::PacketBuffer;
 use crate::tun::TunConfig;

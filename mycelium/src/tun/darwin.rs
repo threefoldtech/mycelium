@@ -9,13 +9,13 @@ use std::{
 };
 
 use futures::{Sink, Stream};
-use log::{debug, error, info};
 use nix::sys::socket::SockaddrIn6;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
     sync::mpsc,
 };
+use tracing::{debug, error, info};
 
 use crate::crypto::PacketBuffer;
 use crate::subnet::Subnet;

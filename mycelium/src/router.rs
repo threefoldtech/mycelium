@@ -17,7 +17,6 @@ use etherparse::{
     Icmpv6Type,
 };
 use left_right::{ReadHandle, WriteHandle};
-use log::{debug, error, info, trace, warn};
 use std::{
     error::Error,
     net::IpAddr,
@@ -25,6 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tracing::{debug, error, info, trace, warn};
 
 /// Time between HELLO messags, in seconds
 const HELLO_INTERVAL: u64 = 20;

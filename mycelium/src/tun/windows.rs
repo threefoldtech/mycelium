@@ -1,8 +1,8 @@
 use std::{io, ops::Deref, sync::Arc};
 
 use futures::{Sink, Stream};
-use log::{error, info, warn};
 use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 
 use crate::tun::TunConfig;
 use crate::{crypto::PacketBuffer, subnet::Subnet};

@@ -6,8 +6,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use log::debug;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use mycelium::{
     crypto::PublicKey,

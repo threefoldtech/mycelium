@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use bytes::{Buf, BufMut};
-use log::trace;
+use tracing::trace;
 
 use crate::subnet::Subnet;
 

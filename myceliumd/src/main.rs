@@ -8,15 +8,18 @@ use std::{
 };
 
 use clap::{Args, Parser, Subcommand};
-use log::{debug, error, warn, LevelFilter};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
+use tracing::{debug, error, warn};
 
 use crypto::PublicKey;
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, Node};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 mod api;
 mod cli;
@@ -211,16 +214,22 @@ pub struct NodeArguments {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    pretty_env_logger::formatted_timed_builder()
-        .filter_module(
-            "mycelium",
-            if cli.silent {
-                LevelFilter::Error
-            } else if cli.debug {
-                LevelFilter::Debug
-            } else {
-                LevelFilter::Info
-            },
+    let level = if cli.silent {
+        tracing::Level::ERROR
+    } else if cli.debug {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
+    };
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::Layer::new().compact().with_filter(
+                EnvFilter::builder()
+                    .with_default_directive(level.into())
+                    .from_env()
+                    .expect("invalid RUST_LOG"),
+            ),
         )
         .init();
 
@@ -371,7 +380,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(not(target_family = "unix"))]
     {
         if let Err(e) = tokio::signal::ctrl_c().await {
-            log::error!("Failed to wait for SIGINT: {e}");
+            error!("Failed to wait for SIGINT: {e}");
         }
     }
 

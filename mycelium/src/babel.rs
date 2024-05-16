@@ -7,8 +7,8 @@
 use std::io;
 
 use bytes::{Buf, BufMut};
-use log::trace;
 use tokio_util::codec::{Decoder, Encoder};
+use tracing::trace;
 
 pub use self::{
     hello::Hello, ihu::Ihu, route_request::RouteRequest, seqno_request::SeqNoRequest,

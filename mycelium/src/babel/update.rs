@@ -6,7 +6,7 @@ use std::{
 };
 
 use bytes::{Buf, BufMut};
-use log::trace;
+use tracing::trace;
 
 use crate::{metric::Metric, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
 
