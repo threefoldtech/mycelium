@@ -50,7 +50,7 @@ nix = { version = "0.28.0", features = ["socket"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
-libc = "0.2.154"
+libc = "0.2.155"
 nix = { version = "0.28.0", features = ["net", "socket", "ioctl"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
