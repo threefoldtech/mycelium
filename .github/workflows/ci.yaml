@@ -50,6 +50,47 @@ jobs:
       run: cargo build -p mycelium --all-features --verbose
     - name: Run tests
       run: cargo test -p mycelium --all-features --verbose
+  check_ios_library:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: install ios target
+      run: rustup target add aarch64-apple-ios
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build
+      run: cargo build --target aarch64-apple-ios
+      working-directory: mobile
+
+  check_android_library:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: install android target
+      run: rustup target add aarch64-linux-android
+    - name: Setup Java
+      uses: actions/setup-java@v2
+      with:
+        distribution: 'adopt'
+        java-version: '17'
+    - name: Set up Android NDK
+      uses: android-actions/setup-android@v3
+    - name: Accept Android Licenses
+      run: yes | sdkmanager --licenses || true
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: install cargo NDK
+      run: cargo install cargo-ndk
+    - name: Build
+      run: cargo ndk -t arm64-v8a build
+      working-directory: mobile
+
   check_binary:
     strategy:
       matrix:
