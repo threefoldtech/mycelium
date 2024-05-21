@@ -87,7 +87,16 @@ pub async fn new(
             "TUN device name must be of the form 'utunXXX...' where X is a digit",
         ))?;
     }
-    let mut tun = create_tun_interface(&tun_config.name)?;
+    let mut tun = match create_tun_interface(&tun_config.name) {
+        Ok(tun) => tun,
+        Err(e) => {
+            error!(
+                "Could not create tun device named \"{}\", make sure the name is not yet in use, and you have sufficient privileges to create a network device",
+                tun_config.name,
+            );
+            return Err(e);
+        }
+    };
     let iface = Iface::by_name(&tun_config.name)?;
     iface.add_address(tun_config.node_subnet, tun_config.route_subnet)?;
 

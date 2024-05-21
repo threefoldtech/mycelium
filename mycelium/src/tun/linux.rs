@@ -29,7 +29,16 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    let tun = create_tun_interface(&tun_config.name)?;
+    let tun = match create_tun_interface(&tun_config.name) {
+        Ok(tun) => tun,
+        Err(e) => {
+            error!(
+                "Could not create tun device named \"{}\", make sure the name is not yet in use, and you have sufficient privileges to create a network device",
+                tun_config.name,
+            );
+            return Err(e);
+        }
+    };
 
     let (conn, handle, _) = rtnetlink::new_connection()?;
     let netlink_task_handle = tokio::spawn(conn);
