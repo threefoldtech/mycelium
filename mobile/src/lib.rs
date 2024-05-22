@@ -11,7 +11,6 @@ use mycelium::{crypto, metrics, Config, Node};
 fn setup_logging() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    tracing_log::LogTracer::init().expect("failed to setup tracing_log");
     tracing_subscriber::registry()
         .with(tracing_android::layer("mycelium").expect("failed to setup logger"))
         .init();
@@ -22,7 +21,6 @@ fn setup_logging() {
     use tracing_oslog::OsLogger;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    tracing_log::LogTracer::init().expect("failed to setup tracing_log");
     tracing_subscriber::registry()
         .with(OsLogger::new("mycelium", "default"))
         .init();

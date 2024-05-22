@@ -1155,7 +1155,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-android",
- "tracing-log",
  "tracing-oslog",
  "tracing-subscriber",
 ]
@@ -1209,7 +1208,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
- "tracing-log",
  "tracing-subscriber",
 ]
 

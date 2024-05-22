@@ -222,15 +222,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tracing::Level::INFO
     };
 
-    // convert all `log` records from other crates to `tracing` `Event`s.
-    tracing_log::LogTracer::init_with_filter(if cli.silent {
-        tracing_log::log::LevelFilter::Error
-    } else if cli.debug {
-        tracing_log::log::LevelFilter::Debug
-    } else {
-        tracing_log::log::LevelFilter::Info
-    })?;
-
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::Layer::new().compact().with_filter(
