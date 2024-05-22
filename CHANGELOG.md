@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- On Linux and macOS, a more descriptive error is printed when setting up the tun
+  device fails because a device with the same name already exists.
+
 ### Changed
 
 - We now send seqno requests to all peers who advertised a subnet if the selected
   route to it is lost as a result of the next-hop dying, or and update coming in
   which causes no routes to be feasible anymore.
+- Switched from the log to the tracing ecosystem.
 
 ### Fixed
 
