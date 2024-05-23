@@ -54,7 +54,7 @@ mycelium inspect --json
   "address": "5c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca"
 }
 # test that network works, ping to anyone in the network
-ping6 5c4:c176:bf44:b2ab:5e7e:f6a:b7e2:11ca
+ping6 54b:83ab:6cb5:7b38:44ae:cd14:53f3:a907
 ```
 
 The node uses a `x25519` key pair from which its identity is derived. The private key of this key pair
