@@ -79,14 +79,16 @@ anyone to join the global network. These are hosted in 3 geographic regions, on 
 IPv4 and IPv6, and supporting both the Tcp and Quic protocols. The nodes are the
 following:
 
-| Node ID | Region | IPv4 | IPv6 | Tcp port | Quic port |
-| --- | --- | --- | --- | --- | --- |
-| 01 | DE | 188.40.132.242 | 2a01:4f8:221:1e0b::2 | 9651 | 9651 |
-| 02 | DE | 136.243.47.186 | 2a01:4f8:212:fa6::2 | 9651 | 9651 |
-| 03 | BE | 185.69.166.7 | 2a02:1802:5e:0:8478:51ff:fee2:3331 | 9651 | 9651 |
-| 04 | BE | 185.69.166.8 | 2a02:1802:5e:0:8c9e:7dff:fec9:f0d2 | 9651 | 9651 |
-| 05 | FI | 65.21.231.58 | 2a01:4f9:6a:1dc5::2 | 9651 | 9651 |
-| 06 | FI | 65.109.18.113 | 2a01:4f9:5a:1042::2 | 9651 | 9651 |
+| Node ID | Region | IPv4 | IPv6 | Tcp port | Quic port | Mycelium IP |
+| --- | --- | --- | --- | --- | --- | --- |
+| 01 | DE | 188.40.132.242 | 2a01:4f8:221:1e0b::2 | 9651 | 9651 | 54b:83ab:6cb5:7b38:44ae:cd14:53f3:a907 |
+| 02 | DE | 136.243.47.186 | 2a01:4f8:212:fa6::2 | 9651 | 9651 | |
+| 03 | BE | 185.69.166.7 | 2a02:1802:5e:0:8478:51ff:fee2:3331 | 9651 | 9651 | 597:a4ef:806:b09:6650:cbbf:1b68:cc94 |
+| 04 | BE | 185.69.166.8 | 2a02:1802:5e:0:8c9e:7dff:fec9:f0d2 | 9651 | 9651 | |
+| 05 | FI | 65.21.231.58 | 2a01:4f9:6a:1dc5::2 | 9651 | 9651 | 410:2778:53bf:6f41:af28:1b60:d7c0:707a |
+| 06 | FI | 65.109.18.113 | 2a01:4f9:5a:1042::2 | 9651 | 9651 | |
+
+> Nodes which don't have the mycelium IP set are still on v0.4.x, their IP will change once they get updated to v0.5.x
 
 These nodes are all interconnected, so 2 peers who each connect to a different node
 (or set of disjoint nodes) will still be able to reach each other. For optimal performance,
