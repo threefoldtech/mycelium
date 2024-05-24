@@ -9,7 +9,7 @@ use core::ops::{Add, AddAssign};
 const SEQNO_COMPARE_TRESHOLD: u16 = 32_768;
 
 /// A sequence number on a route.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SeqNo(u16);
 
 impl SeqNo {
