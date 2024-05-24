@@ -8,6 +8,7 @@ use crate::{
     peer::Peer,
     router_id::RouterId,
     routing_table::{RouteEntry, RouteExpirationType, RouteKey, RoutingTable},
+    seqno_cache::SeqnoCache,
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     subnet::Subnet,
@@ -79,6 +80,7 @@ pub struct Router<M> {
     dead_peer_sink: mpsc::Sender<Peer>,
     /// Channel to notify the router of expired SourceKey's.
     expired_source_key_sink: mpsc::Sender<SourceKey>,
+    seqno_cache: SeqnoCache,
     metrics: M,
 }
 
@@ -107,6 +109,8 @@ where
 
         let router_id = RouterId::new(node_keypair.1);
 
+        let seqno_cache = SeqnoCache::new();
+
         let router = Router {
             inner_w: Arc::new(Mutex::new(inner_w)),
             inner_r,
@@ -122,6 +126,7 @@ where
             node_tun_subnet,
             dead_peer_sink,
             expired_source_key_sink,
+            seqno_cache,
             update_filters: Arc::new(update_filters),
             metrics,
         };
@@ -1655,6 +1660,7 @@ where
             update_filters: self.update_filters.clone(),
             dead_peer_sink: self.dead_peer_sink.clone(),
             expired_source_key_sink: self.expired_source_key_sink.clone(),
+            seqno_cache: self.seqno_cache.clone(),
             metrics: self.metrics.clone(),
         }
     }
