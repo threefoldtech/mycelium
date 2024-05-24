@@ -33,6 +33,7 @@ pub mod peer_manager;
 pub mod router;
 mod router_id;
 mod routing_table;
+mod seqno_cache;
 mod sequence_number;
 mod source_table;
 pub mod subnet;
