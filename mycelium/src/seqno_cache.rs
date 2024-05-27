@@ -19,10 +19,10 @@ const SEQNO_DEDUP_TTL: Duration = Duration::from_secs(60);
 
 /// A sequence number request, either forwarded or originated by the local node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SeqnoRequest {
-    router_id: RouterId,
-    subnet: Subnet,
-    seqno: SeqNo,
+pub struct SeqnoRequestCacheKey {
+    pub router_id: RouterId,
+    pub subnet: Subnet,
+    pub seqno: SeqNo,
 }
 
 /// Information retained for sequence number requests we've sent.
@@ -52,7 +52,7 @@ pub struct SeqnoCache {
 struct SeqnoCacheInner {
     /// Actual cache, maps requests to the peers who originated them. The local node is not
     /// represented, since it always processes the update.
-    cache: RwLock<HashMap<SeqnoRequest, SeqnoForwardInfo>>,
+    cache: RwLock<HashMap<SeqnoRequestCacheKey, SeqnoForwardInfo>>,
 }
 
 impl SeqnoCache {
@@ -69,7 +69,7 @@ impl SeqnoCache {
 
     /// Record a forwarded seqno request to a given target. Also keep track of the origin of the
     /// request. If the local node generated the request, source must be [`None`]
-    pub fn forward(&self, request: SeqnoRequest, target: Peer, source: Option<Peer>) {
+    pub fn forward(&self, request: SeqnoRequestCacheKey, target: Peer, source: Option<Peer>) {
         let mut cache = self.inner.cache.write().unwrap();
         let info = cache.entry(request).or_default();
         info.last_sent = Instant::now();
@@ -93,7 +93,7 @@ impl SeqnoCache {
 
     /// Get a list of all peers which we've already sent the given seqno request to, as well as
     /// when we've last sent a request.
-    pub fn info(&self, request: &SeqnoRequest) -> Option<(Instant, Vec<Peer>)> {
+    pub fn info(&self, request: &SeqnoRequestCacheKey) -> Option<(Instant, Vec<Peer>)> {
         self.inner
             .cache
             .read()
@@ -104,7 +104,7 @@ impl SeqnoCache {
 
     /// Removes forwarding info from the seqno cache. If forwarding info is available, the source
     /// peers (peers which requested us to forward this request) are returned.
-    pub fn remove(&self, request: &SeqnoRequest) -> Option<Vec<Peer>> {
+    pub fn remove(&self, request: &SeqnoRequestCacheKey) -> Option<Vec<Peer>> {
         self.inner
             .cache
             .write()
