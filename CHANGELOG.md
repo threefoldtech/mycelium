@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   route to it is lost as a result of the next-hop dying, or and update coming in
   which causes no routes to be feasible anymore.
 - Switched from the log to the tracing ecosystem.
+- Only do the periodic route announcement every 5 minutes instead of every minute.
 
 ### Fixed
 
