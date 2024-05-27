@@ -18,7 +18,7 @@ use crate::{peer::Peer, router_id::RouterId, sequence_number::SeqNo, subnet::Sub
 const SEQNO_DEDUP_TTL: Duration = Duration::from_secs(60);
 
 /// A sequence number request, either forwarded or originated by the local node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SeqnoRequestCacheKey {
     pub router_id: RouterId,
     pub subnet: Subnet,
@@ -164,5 +164,15 @@ impl Default for SeqnoForwardInfo {
             first_sent: Instant::now(),
             last_sent: Instant::now(),
         }
+    }
+}
+
+impl std::fmt::Debug for SeqnoRequestCacheKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeqnoRequestCacheKey")
+            .field("router_id", &self.router_id.to_string())
+            .field("subnet", &self.subnet.to_string())
+            .field("seqno", &self.seqno.to_string())
+            .finish()
     }
 }
