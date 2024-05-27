@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - On Linux and macOS, a more descriptive error is printed when setting up the tun
   device fails because a device with the same name already exists.
+- Seqno request cache, to avoid spamming peers with duplicate seqno requests and
+  to make sure seqno's are forwarded to different peers.
 
 ### Changed
 
