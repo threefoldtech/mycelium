@@ -176,23 +176,6 @@ pub struct NodeArguments {
     #[arg(long = "tun-name", default_value = TUN_NAME)]
     tun_name: String,
 
-    /// Enable a private network, with this name.
-    ///
-    /// If this flag is set, the system will run in "private network mode", and use Tls connections
-    /// instead of plain Tcp connections. The name provided here is used as the network name, other
-    /// nodes must use the same name or the connection will be rejected. Note that the name is
-    /// public, and is communicated when connecting to a remote. Do not put confidential data here.
-    #[arg(long = "network-name", requires = "network_key_file")]
-    network_name: Option<String>,
-
-    /// The path to the file with the key to use for the private network.
-    ///
-    /// The key is expected to be exactly 32 bytes. The key must be shared between all nodes
-    /// participating in the network, and is secret. If the key leaks, anyone can then join the
-    /// network.
-    #[arg(long = "network-key-file", requires = "network_name")]
-    network_key_file: Option<PathBuf>,
-
     /// The address on which to expose prometheus metrics, if desired.
     ///
     /// Setting this flag will attempt to start an HTTP server on the provided address, to serve
@@ -303,16 +286,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let private_network_config = match (cli.node_args.network_name, cli.node_args.network_key_file)
-    {
-        (Some(network_name), Some(network_key_file)) => {
-            let net_key = load_key_file(&network_key_file).await?;
-
-            Some((network_name, net_key))
-        }
-        _ => None,
-    };
-
     let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
         node_secret_key
     } else {
@@ -336,7 +309,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Some(cli.node_args.peer_discovery_port)
             },
             tun_name: cli.node_args.tun_name,
-            private_network_config,
+            private_network_config: None,
             metrics: metrics.clone(),
             firewall_mark: cli.node_args.firewall_mark,
         };
@@ -356,7 +329,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Some(cli.node_args.peer_discovery_port)
             },
             tun_name: cli.node_args.tun_name,
-            private_network_config,
+            private_network_config: None,
             metrics: metrics::NoMetrics,
             firewall_mark: cli.node_args.firewall_mark,
         };

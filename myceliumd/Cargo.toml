@@ -6,9 +6,6 @@ license-file = "../LICENSE"
 readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[features]
-vendored-openssl = ["mycelium/vendored-openssl"]
-
 
 [[bin]]
 name = "mycelium"
