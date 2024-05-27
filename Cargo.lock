@@ -1212,6 +1212,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "myceliumd-private"
+version = "0.5.2"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "clap 4.5.4",
+ "mycelium",
+ "prometheus",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "netdev"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

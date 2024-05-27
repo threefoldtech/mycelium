@@ -1,5 +1,5 @@
 [workspace]
-members = ["myceliumd", "mycelium", "mobile"]
+members = ["myceliumd", "myceliumd-private", "mycelium", "mobile"]
 resolver = "2"
 
 
