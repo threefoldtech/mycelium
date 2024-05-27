@@ -8,7 +8,7 @@ use crate::{
     peer::Peer,
     router_id::RouterId,
     routing_table::{RouteEntry, RouteExpirationType, RouteKey, RoutingTable},
-    seqno_cache::SeqnoCache,
+    seqno_cache::{SeqnoCache, SeqnoRequestCacheKey},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     subnet::Subnet,
@@ -419,7 +419,7 @@ where
             // At this point we also send a seqno request to all peers which advertised this route
             // to us, to try and get an updated entry. This uses the source key of the unselected
             // entry.
-            self.send_seqno_request(routes[0].source(), None);
+            self.send_seqno_request(routes[0].source(), None, None);
             inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
                 subnet,
                 routes[0].neighbour().clone(),
@@ -1064,7 +1064,7 @@ where
                 && !update_feasible
                 && existing_entry.source().router_id() == router_id
             {
-                self.send_seqno_request(existing_entry.source(), Some(source_peer));
+                self.send_seqno_request(existing_entry.source(), Some(source_peer), None);
                 return;
             }
 
@@ -1138,7 +1138,7 @@ where
             // Regardless if we unselect the route here or not, we lost a selected route for the
             // subnet, so we try to refresh the route by sending out a seqno request to all
             // neigbours who advertised the route at some point.
-            self.send_seqno_request(osr.source(), None);
+            self.send_seqno_request(osr.source(), None, None);
             if !existing_route_unselected {
                 inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
                     subnet,
@@ -1209,7 +1209,12 @@ where
     /// the subnet if no peer is given.
     ///
     /// The SourceKey must exist in the source table.
-    fn send_seqno_request(&self, source: SourceKey, to: Option<Peer>) {
+    fn send_seqno_request(
+        &self,
+        source: SourceKey,
+        to: Option<Peer>,
+        request_origin: Option<Peer>,
+    ) {
         let fd = match self.source_table.read().unwrap().get(&source) {
             Some(fd) => *fd,
             None => {
@@ -1221,18 +1226,42 @@ where
         let sn: ControlPacket =
             SeqNoRequest::new(fd.seqno() + 1, source.router_id(), source.subnet()).into();
 
+        let srck = SeqnoRequestCacheKey {
+            router_id: source.router_id(),
+            subnet: source.subnet(),
+            seqno: fd.seqno() + 1,
+        };
+
+        let seqno_info = self.seqno_cache.info(&srck);
+
         let targets = if let Some(target) = to {
             vec![target]
         } else {
-            // If we don't have a deidcated peers to send to, just send to every peer which
-            // announced the subnet.
+            // If we don't have a dedicated peer to send to, just send to every peer which
+            // announced the subnet. But avoid repetitions.
+            let mut peers_sent = vec![];
+            if let Some((last_sent, visited)) = seqno_info {
+                // If it's more than some time since we last sent an update to any peer for this
+                // seqno request, send it again. We use the seqno bump timeout here, since that is
+                // the quickest time between bumps from a peer.
+                if last_sent.elapsed() < SEQNO_BUMP_TIMEOUT {
+                    peers_sent = visited;
+                }
+            };
+
             self.inner_r
                 .enter()
                 .expect("Write handle is saved on router so this read always succeeds; qed")
                 .routing_table
                 .entries(source.subnet())
                 .into_iter()
-                .map(|re| re.neighbour().clone())
+                .filter_map(|re| {
+                    if !peers_sent.contains(re.neighbour()) {
+                        Some(re.neighbour().clone())
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         };
 
@@ -1243,12 +1272,16 @@ where
                 fd.seqno() + 1,
                 source.subnet(),
             );
+
             if peer.send_control_packet(sn.clone()).is_err() {
                 trace!(
                     "Failed to send seqno request to {}",
                     peer.connection_identifier()
                 );
+                continue;
             }
+
+            self.seqno_cache.forward(srck, peer, request_origin.clone());
         }
     }
 
