@@ -428,7 +428,7 @@ where
 
         inner_w.publish();
 
-        self.trigger_update(subnet);
+        self.trigger_update(subnet, None);
     }
 
     /// Remove expired source keys from the router state.
@@ -516,7 +516,7 @@ where
                         .publish();
                     // If the entry wasn't retracted yet, notify our peers.
                     if !entry.metric().is_infinite() {
-                        self.trigger_update(subnet);
+                        self.trigger_update(subnet, None);
                     }
                 }
             }
@@ -1040,6 +1040,13 @@ where
             return;
         }
 
+        // We accepted the update, check if we have a seqno request sent for this update
+        let interested_peers = self.seqno_cache.remove(&SeqnoRequestCacheKey {
+            router_id,
+            subnet,
+            seqno,
+        });
+
         let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
 
         // We load all routes here from the routing table in memory. Because we hold the mutex for the
@@ -1220,14 +1227,22 @@ where
 
         if trigger_update {
             debug!("Send triggered update for {subnet} in response to update");
-            self.trigger_update(subnet);
+            self.trigger_update(subnet, None);
+        } else if interested_peers.is_some() {
+            debug!(
+                "Send update to peers who registered interest through a seqno request for {subnet}"
+            );
+            self.trigger_update(subnet, interested_peers);
+            // If we have some interest in an update because we forwarded a seqno request but we
+            // aren't triggering an update, notify just the interested peers.
         }
     }
 
-    /// Trigger an update for the given [`Subnet`].
-    fn trigger_update(&self, subnet: Subnet) {
+    /// Trigger an update for the given [`Subnet`]. If `peers` is [`None`], send the update to all
+    /// peers the `Router` knows.
+    fn trigger_update(&self, subnet: Subnet, peers: Option<Vec<Peer>>) {
         self.metrics.router_triggered_update();
-        self.propagate_selected_route(subnet);
+        self.propagate_selected_route(subnet, peers);
     }
 
     /// Send a seqno request for a subnet. This can be sent to a given peer, or to all peers for
@@ -1541,8 +1556,9 @@ where
         }
     }
 
-    /// Propagate a selected route to all known peers.
-    fn propagate_selected_route(&self, subnet: Subnet) {
+    /// Propagate a selected route. Unless peers are specified, all knwon peers in the router are
+    /// used.
+    fn propagate_selected_route(&self, subnet: Subnet, peers: Option<Vec<Peer>>) {
         let (update, maybe_neigh) = if let Some(sre) = self
             .inner_r
             .enter()
@@ -1572,13 +1588,13 @@ where
             (update, None)
         };
 
-        for peer in self.peer_interfaces.read().unwrap().iter() {
+        let send_update = |peer: &Peer| {
             // Don't send updates for a route to the next hop of the route, as that peer will never
             // select the route through us (that would caus a routing loop). The protocol can
             // handle this just fine, leaving this out is essentially an easy optimization.
             if let Some(ref neigh) = maybe_neigh {
                 if peer == neigh {
-                    continue;
+                    return;
                 }
             }
             debug!(
@@ -1587,7 +1603,17 @@ where
                 peer.connection_identifier()
             );
             self.send_update(peer, update.clone());
-        }
+        };
+
+        if let Some(peers) = peers {
+            for peer in peers {
+                send_update(&peer);
+            }
+        } else {
+            for peer in self.peer_interfaces.read().unwrap().iter() {
+                send_update(peer);
+            }
+        };
     }
 
     /// Propagate all selected routes to all peers known in the router.
