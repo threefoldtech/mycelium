@@ -7,6 +7,7 @@ readme = "../README.md"
 
 [features]
 message = []
+private-network = ["dep:openssl", "dep:tokio-openssl"]
 vendored-openssl = ["openssl/vendored"]
 
 [dependencies]
@@ -41,8 +42,8 @@ quinn = { version = "0.11.0", default-features = false, features = [
 rustls = { version = "0.23.7", default-features = false, features = ["ring"] }
 rcgen = "0.13.1"
 netdev = "0.26.0"
-openssl = "0.10.64"
-tokio-openssl = "0.6.4"
+openssl = { version = "0.10.64", optional = true }
+tokio-openssl = { version = "0.6.4", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.14.1"

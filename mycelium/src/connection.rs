@@ -8,6 +8,7 @@ use tokio::{
 mod tracked;
 pub use tracked::Tracked;
 
+#[cfg(feature = "private-network")]
 mod tls;
 
 /// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.

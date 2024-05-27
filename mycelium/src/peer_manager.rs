@@ -6,6 +6,7 @@ use crate::router::Router;
 use crate::router_id::RouterId;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
+#[cfg(feature = "private-network")]
 use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
 use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
@@ -18,6 +19,7 @@ use std::io;
 use std::net::{IpAddr, SocketAddr, SocketAddrV6};
 #[cfg(target_os = "linux")]
 use std::os::fd::AsFd;
+#[cfg(feature = "private-network")]
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -438,6 +440,8 @@ where
             },
             _ => {},
         }
+
+        #[cfg(feature = "private-network")]
         let connector = if let Some((net_name, net_key)) = self.private_network_config.clone() {
             let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
             connector.set_psk_client_callback(move |_, _, id, key| {
@@ -484,6 +488,7 @@ where
                     )
                 };
 
+                #[cfg(feature = "private-network")]
                 let res = {
                     if let Some(connector) = connector {
                         let ssl = match Ssl::new(connector.context()) {
@@ -529,6 +534,17 @@ where
                         )
                     }
                 };
+
+                #[cfg(not(feature = "private-network"))]
+                let res = Peer::new(
+                    router_data_tx,
+                    router_control_tx,
+                    peer_stream,
+                    dead_peer_sink,
+                    ct.tx_bytes,
+                    ct.rx_bytes,
+                );
+
                 match res {
                     Ok(new_peer) => {
                         info!("Connected to new peer {}", endpoint);
@@ -640,6 +656,7 @@ where
     /// will instead listen for incoming tls connections.
     async fn tcp_listener(self: Arc<Self>) {
         // Setup TLS acceptor for private network, if required.
+        #[cfg(feature = "private-network")]
         let acceptor = if let Some((net_name, net_key)) = self.private_network_config.clone() {
             let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls_server()).unwrap();
             acceptor.set_psk_server_callback(move |_ssl_ref, id, key| {
@@ -681,6 +698,7 @@ where
                         let tx_bytes = Arc::new(AtomicU64::new(0));
                         let rx_bytes = Arc::new(AtomicU64::new(0));
 
+                        #[cfg(feature = "private-network")]
                         let new_peer = if let Some(acceptor) = &acceptor {
                             let ssl = match Ssl::new(acceptor.context()) {
                                 Ok(ssl) => ssl,
@@ -725,6 +743,17 @@ where
                                 rx_bytes.clone(),
                             )
                         };
+
+                        #[cfg(not(feature = "private-network"))]
+                        let new_peer = Peer::new(
+                            router_data_tx.clone(),
+                            router_control_tx.clone(),
+                            stream,
+                            dead_peer_sink.clone(),
+                            tx_bytes.clone(),
+                            rx_bytes.clone(),
+                        );
+
                         let new_peer = match new_peer {
                             Ok(peer) => peer,
                             Err(e) => {
