@@ -890,12 +890,61 @@ where
         if seqno_request.router_id() != self.router_id {
             seqno_request.decrement_hop_count();
 
+            let srck = SeqnoRequestCacheKey {
+                router_id: seqno_request.router_id(),
+                subnet: seqno_request.prefix(),
+                seqno: seqno_request.seqno(),
+            };
+
+            let mut visited_peers = vec![];
+            if let Some((last_sent, visited)) = self.seqno_cache.info(&srck) {
+                if last_sent.elapsed() < SEQNO_BUMP_TIMEOUT {
+                    visited_peers = visited;
+                }
+            }
+
             let possible_routes = inner.routing_table.entries(seqno_request.prefix());
 
-            // First only consider feasible routes.
-            let source_table = self.source_table.read().unwrap();
-            if let Some(re) = possible_routes.iter().find(|re| {
-                source_table.route_feasible(re)
+            {
+                let source_table = self.source_table.read().unwrap();
+                // First only consider feasible routes.
+                for re in possible_routes.iter().filter(|re| {
+                    !visited_peers.contains(re.neighbour())
+                        && source_table.route_feasible(re)
+                        && re.neighbour() != &source_peer
+                        && re.neighbour().alive()
+                        && !re.metric().is_infinite()
+                }) {
+                    debug!(
+                        "Forwarding seqno request {} for {} to {}",
+                        seqno_request.seqno(),
+                        seqno_request.prefix(),
+                        re.neighbour().connection_identifier()
+                    );
+                    if re
+                        .neighbour()
+                        .send_control_packet(seqno_request.clone().into())
+                        .is_err()
+                    {
+                        trace!(
+                            "Failed to foward seqno request to {}",
+                            re.neighbour().connection_identifier(),
+                        );
+                        continue;
+                    }
+
+                    self.seqno_cache
+                        .forward(srck, re.neighbour().clone(), Some(source_peer));
+
+                    self.metrics.router_seqno_request_forward_feasible();
+
+                    return;
+                }
+            }
+
+            // Finally consider infeasible routes as well.
+            for re in possible_routes.iter().filter(|re| {
+                !visited_peers.contains(re.neighbour())
                     && re.neighbour() != &source_peer
                     && re.neighbour().alive()
                     && !re.metric().is_infinite()
@@ -908,42 +957,18 @@ where
                 );
                 if re
                     .neighbour()
-                    .send_control_packet(seqno_request.into())
-                    .is_err()
-                {
-                    trace!(
-                        "Failed to foward seqno request to {}",
-                        re.neighbour().connection_identifier(),
-                    );
-                }
-
-                self.metrics.router_seqno_request_forward_feasible();
-
-                return;
-            }
-
-            // Finally consider infeasible routes as well.
-            if let Some(re) = possible_routes.iter().find(|re| {
-                re.neighbour() != &source_peer
-                    && re.neighbour().alive()
-                    && !re.metric().is_infinite()
-            }) {
-                debug!(
-                    "Forwarding seqno request {} for {} to {}",
-                    seqno_request.seqno(),
-                    seqno_request.prefix(),
-                    re.neighbour().connection_identifier()
-                );
-                if re
-                    .neighbour()
-                    .send_control_packet(seqno_request.into())
+                    .send_control_packet(seqno_request.clone().into())
                     .is_err()
                 {
                     trace!(
                         "Failed to foward seqno request to infeasible peer {}",
                         re.neighbour().connection_identifier(),
                     );
+                    continue;
                 }
+
+                self.seqno_cache
+                    .forward(srck, re.neighbour().clone(), Some(source_peer));
 
                 self.metrics.router_seqno_request_forward_unfeasible();
 
