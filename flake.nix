@@ -37,6 +37,7 @@
                 ./Cargo.lock
                 ./mycelium
                 ./myceliumd
+                ./myceliumd-private
                 ./mobile
               ];
             };
