@@ -19,7 +19,7 @@ jobs:
           # (required) GitHub token for creating GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  upload-assets:
+  upload-assets-mycelium:
     needs: create-release
     strategy:
       matrix:
@@ -35,10 +35,42 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Change directory
+        run: cd myceliumd
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           # Name of the compiled binary, also name of the non-extension part of the produced file
           bin: mycelium
+          # --target flag value, default is host
+          target: ${{ matrix.target }}
+          # Name of the archive when uploaded
+          archive: $bin-$target
+          # (required) GitHub token for uploading assets to GitHub Releases.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # TODO: Figure out the correct matrix setup to have this in a single action
+  upload-assets-myceliumd-private:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Change directory
+        run: cd myceliumd-private
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          # Name of the compiled binary, also name of the non-extension part of the produced file
+          bin: mycelium-private
           # Set the vendored-openssl flag for provided release builds
           features: vendored-openssl
           # --target flag value, default is host
