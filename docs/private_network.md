@@ -27,9 +27,9 @@ Not all cipher suites supported in TLS1.3 are supported. At present, _at least_
 
 ## Enable private network
 
-If you are running the standard `mycelium` binary, private network functionality
-can be enabled by setting both the `network-name` and `network-key-file` flags on
-the command line. All nodes who which to join the network must use the same values
-for both flags.
+In order to use the private network implementation of `mycelium`, a separate `mycelium-private`
+binary is available. Private network functionality can be enabled by setting both
+the `network-name` and `network-key-file` flags on the command line. All nodes who
+wish to join the network must use the same values for both flags.
 
 > ⚠️ Network name is public, do not put any confidential data here.
