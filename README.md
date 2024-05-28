@@ -157,23 +157,34 @@ mycelium inspect --json
 
 This project is built in Rust, and you must have a rust compiler to build the code
 yourself. Please refer to [the official rust documentation](https://www.rust-lang.org/)
-for information on how to install `rustc` and `cargo`. Aside from the rust toolchain,
-you might require an `openssl` install to be present on the machine. If you want
-to build a statically linked binary, you can add the `vendored-openssl` feature
-flag to the build command.
+for information on how to install `rustc` and `cargo`. This project is a workspace,
+however the binaries (`myceliumd` and `myceliumd-private`) are explicitly _not_
+part of this workspace. The reason for this is the way the cargo resolver unifies
+features. Making both binaries part of the workspace would make the library build
+for the regular binary include the code for the private network, and since that
+is internal code it won't be removed at link time.
 
 First make sure you have cloned the repo
 
 ```sh
 git clone https://github.com/threefoldtech/mycelium.git
+cd mycelium
 ```
 
-Then go into the cloned directory and build it
+If you only want to build the library, you can do so from the root of the repo
 
 ```sh
-cd mycelium
 cargo build
 ```
+
+If you instead want to build a binary, that must be done from the appropriate subdirectory
+
+```sh
+cd myceliumd
+cargo build
+```
+
+Refer to the README files in those directories for more info.
 
 In case a release build is required, the `--release` flag can be added to the cargo
 command (`cargo build --release`).
