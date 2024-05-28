@@ -19,13 +19,15 @@
     }@inputs:
     {
       overlays.default = final: prev: {
-        mycelium =
+        myceliumd =
           let
             craneLib = crane.lib.${final.system};
 
             inherit (final) lib stdenv darwin;
 
-            manifest = builtins.fromTOML (lib.readFile ./mycelium/Cargo.toml);
+            manifest = builtins.fromTOML (lib.readFile ./myceliumd/Cargo.toml);
+
+            sourceRoot = "./myceliumd";
           in
           lib.makeOverridable craneLib.buildPackage {
             src = nix-filter {
@@ -46,8 +48,6 @@
 
             doCheck = false;
 
-            cargoExtraArgs = "--bin mycelium";
-
             nativeBuildInputs = [
               final.pkg-config
               # openssl base library
@@ -64,6 +64,52 @@
 
             meta = {
               mainProgram = "mycelium";
+            };
+          };
+        mycelium-private =
+          let
+            craneLib = crane.lib.${final.system};
+
+            inherit (final) lib stdenv darwin;
+
+            manifest = builtins.fromTOML (lib.readFile ./myceliumd-private/Cargo.toml);
+
+            sourceRoot = "./myceliumd-private";
+          in
+          lib.makeOverridable craneLib.buildPackage {
+            src = nix-filter {
+              root = ./.;
+
+              include = [
+                ./Cargo.toml
+                ./Cargo.lock
+                ./mycelium
+                ./myceliumd
+                ./myceliumd-private
+                ./mobile
+              ];
+            };
+            pname = manifest.package.name;
+            inherit (manifest.package) version;
+
+            doCheck = false;
+
+            nativeBuildInputs = [
+              final.pkg-config
+              # openssl base library
+              final.openssl
+              # required by openssl-sys
+              final.perl
+            ];
+
+            buildInputs = lib.optionals stdenv.isDarwin [
+              darwin.apple_sdk.frameworks.Security
+              darwin.apple_sdk.frameworks.SystemConfiguration
+              final.libiconv
+            ];
+
+            meta = {
+              mainProgram = "mycelium-private";
             };
           };
       };
