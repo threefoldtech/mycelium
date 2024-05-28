@@ -9,20 +9,32 @@ use mycelium::{crypto, metrics, Config, Node};
 
 #[cfg(target_os = "android")]
 fn setup_logging() {
+    use tracing::level_filters::LevelFilter;
+    use tracing_subscriber::filter::Targets;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
+    let targets = Targets::new()
+        .with_default(LevelFilter::INFO)
+        .with_target("mycelium::router", LevelFilter::WARN);
     tracing_subscriber::registry()
         .with(tracing_android::layer("mycelium").expect("failed to setup logger"))
+        .with(targets)
         .init();
 }
 
 #[cfg(target_os = "ios")]
 fn setup_logging() {
+    use tracing::level_filters::LevelFilter;
     use tracing_oslog::OsLogger;
+    use tracing_subscriber::filter::Targets;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
+    let targets = Targets::new()
+        .with_default(LevelFilter::INFO)
+        .with_target("mycelium::router", LevelFilter::WARN);
     tracing_subscriber::registry()
         .with(OsLogger::new("mycelium", "default"))
+        .with(targets)
         .init();
 }
 
