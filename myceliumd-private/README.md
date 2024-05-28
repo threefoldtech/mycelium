@@ -17,5 +17,10 @@ in line with the regular `mycelium` binary, the produced binary here is renamed
 to `mycelium-private`. Optionally, the `--release` flag can be used when building.
 This is recommended if you are not just developing.
 
+While this binary can currently be used to connect to the public network, it is
+not guaranteed that this will always be the case. If you intend to connect to the
+public network, consider using [`the mycelium binary`](../myceliumd/README.md)
+instead.
+
 For more information about the project, please refer to [the README file in the
 repository root](../README.md).
