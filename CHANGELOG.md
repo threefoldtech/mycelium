@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   device fails because a device with the same name already exists.
 - Seqno request cache, to avoid spamming peers with duplicate seqno requests and
   to make sure seqno's are forwarded to different peers.
+- Added myceliumd-private binary, which contains private network functionality.
 
 ### Changed
 
@@ -21,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which causes no routes to be feasible anymore.
 - Switched from the log to the tracing ecosystem.
 - Only do the periodic route announcement every 5 minutes instead of every minute.
+- Mycelium binary is no longer part of the workspace, and no longer contains private
+  network functionality.
 
 ### Fixed
 
