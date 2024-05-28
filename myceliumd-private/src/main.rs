@@ -23,7 +23,6 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 mod api;
 mod cli;
-mod metrics;
 
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
@@ -323,7 +322,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let _api = if let Some(metrics_api_addr) = cli.node_args.metrics_api_address {
-        let metrics = metrics::PrometheusExporter::new();
+        let metrics = mycelium_metrics::PrometheusExporter::new();
         let config = mycelium::Config {
             node_key: node_secret_key,
             peers: cli.node_args.static_peers,
@@ -357,7 +356,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             },
             tun_name: cli.node_args.tun_name,
             private_network_config,
-            metrics: metrics::NoMetrics,
+            metrics: mycelium_metrics::NoMetrics,
             firewall_mark: cli.node_args.firewall_mark,
         };
         let node = Node::new(config).await?;

@@ -1039,6 +1039,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-metrics"
+version = "0.5.2"
+dependencies = [
+ "axum",
+ "mycelium",
+ "prometheus",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "myceliumd-private"
 version = "0.5.2"
 dependencies = [
@@ -1046,7 +1057,7 @@ dependencies = [
  "base64",
  "clap",
  "mycelium",
- "prometheus",
+ "mycelium-metrics",
  "reqwest",
  "serde",
  "serde_json",
