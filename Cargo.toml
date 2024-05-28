@@ -1,5 +1,5 @@
 [workspace]
-members = ["mycelium", "mobile"]
+members = ["mycelium", "mobile", "prometheus-metrics"]
 exclude = ["myceliumd", "myceliumd-private"]
 resolver = "2"
 

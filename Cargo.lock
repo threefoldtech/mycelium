@@ -1188,6 +1188,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus-metrics"
+version = "0.1.0"
+
+[[package]]
 name = "quinn"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
