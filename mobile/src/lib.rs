@@ -12,14 +12,18 @@ fn setup_logging() {
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::filter::Targets;
     use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
     let targets = Targets::new()
         .with_default(LevelFilter::INFO)
         .with_target("mycelium::router", LevelFilter::WARN);
-    tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
         .with(tracing_android::layer("mycelium").expect("failed to setup logger"))
-        .with(targets)
-        .init();
+        .with(targets);
+    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+        // the error is expected to happen on second start, we can ignore it.
+        if e.to_string() != "a global default trace dispatcher has already been set" {
+            error!("Failed to set global default subscriber: {}", e);
+        }
+    }
 }
 
 #[cfg(target_os = "ios")]
