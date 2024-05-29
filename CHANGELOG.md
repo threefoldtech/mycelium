@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Only do the periodic route announcement every 5 minutes instead of every minute.
 - Mycelium binary is no longer part of the workspace, and no longer contains private
   network functionality.
+- If a packet received from a peer can't be forwarded to the router, terminate the
+  connection to the peer.
 
 ### Fixed
 

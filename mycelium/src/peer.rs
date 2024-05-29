@@ -98,13 +98,19 @@ impl Peer {
                                 Some(Ok(packet)) => {
                                     match packet {
                                         Packet::DataPacket(packet) => {
+                                            // An error here means the receiver is dropped/closed,
+                                            // this is not recoverable.
                                             if let Err(error) = router_data_tx.send(packet).await{
                                                 error!("Error sending to to_routing_data: {}", error);
+                                                break
                                             }
                                         }
                                         Packet::ControlPacket(packet) => {
                                             if let Err(error) = router_control_tx.send((packet, peer.clone())) {
+                                                // An error here means the receiver is dropped/closed,
+                                                // this is not recoverable.
                                                 error!("Error sending to to_routing_control: {}", error);
+                                                break
                                             }
 
                                         }
