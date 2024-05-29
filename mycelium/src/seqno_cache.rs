@@ -137,7 +137,7 @@ impl SeqnoCacheInner {
             cache.retain(|_, info| info.first_sent.elapsed() <= SEQNO_DEDUP_TTL);
 
             debug!(
-                cleaned_entries = cache.len() - prev_entries,
+                cleaned_entries = prev_entries - cache.len(),
                 "Cleaned up stale seqno request cache entries"
             );
         }
