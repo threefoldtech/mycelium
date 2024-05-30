@@ -1022,6 +1022,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-api"
+version = "0.5.2"
+dependencies = [
+ "axum",
+ "base64",
+ "mycelium",
+ "mycelium-metrics",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "mycelium-metrics"
 version = "0.5.2"
 dependencies = [
@@ -1036,10 +1049,10 @@ dependencies = [
 name = "myceliumd"
 version = "0.5.2"
 dependencies = [
- "axum",
  "base64",
  "clap",
  "mycelium",
+ "mycelium-api",
  "mycelium-metrics",
  "reqwest",
  "serde",

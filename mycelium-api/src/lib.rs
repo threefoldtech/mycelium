@@ -16,7 +16,9 @@ use mycelium::{
     peer_manager::{PeerExists, PeerNotFound, PeerStats},
 };
 
+#[cfg(feature = "message")]
 mod message;
+#[cfg(feature = "message")]
 pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
@@ -50,9 +52,9 @@ impl Http {
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
             .with_state(server_state.clone());
-        let app = Router::new()
-            .nest("/api/v1", admin_routes)
-            .nest("/api/v1", message::message_router_v1(server_state));
+        let app = Router::new().nest("/api/v1", admin_routes);
+        #[cfg(feature = "message")]
+        let app = app.nest("/api/v1", message::message_router_v1(server_state));
 
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
 
