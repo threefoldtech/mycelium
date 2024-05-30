@@ -19,6 +19,7 @@ tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 mycelium = { path = "../mycelium", features = ["private-network", "message"] }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
+mycelium-api = { path = "../mycelium-api", features = ["message"] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
 tokio = { version = "1.37.0", features = [
@@ -27,11 +28,4 @@ tokio = { version = "1.37.0", features = [
   "signal",
 ] }
 reqwest = { version = "0.12.4", default-features = false, features = ["json"] }
-axum = { version = "0.7.5", default-features = false, features = [
-  "http1",
-  "http2",
-  "json",
-  "query",
-  "tokio",
-] }
 base64 = "0.22.1"
