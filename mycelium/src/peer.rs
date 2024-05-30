@@ -354,7 +354,7 @@ struct PeerState {
 
 impl PeerState {
     /// Create a new `PeerInner`, holding the mutable state of a [`Peer`]
-    pub fn new() -> Self {
+    fn new() -> Self {
         // Initialize last_sent_hello_seqno to 0
         let hello_seqno = SeqNo::default();
         let link_cost = DEFAULT_LINK_COST;
