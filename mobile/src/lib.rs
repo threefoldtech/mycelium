@@ -6,24 +6,22 @@ use tracing::{error, info};
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, metrics, Config, Node};
+use once_cell::sync::Lazy;
+use tokio::sync::{mpsc, Mutex};
 
 #[cfg(target_os = "android")]
 fn setup_logging() {
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::filter::Targets;
     use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
     let targets = Targets::new()
         .with_default(LevelFilter::INFO)
         .with_target("mycelium::router", LevelFilter::WARN);
-    let subscriber = tracing_subscriber::registry()
+    tracing_subscriber::registry()
         .with(tracing_android::layer("mycelium").expect("failed to setup logger"))
-        .with(targets);
-    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
-        // the error is expected to happen on second start, we can ignore it.
-        if e.to_string() != "a global default trace dispatcher has already been set" {
-            error!("Failed to set global default subscriber: {}", e);
-        }
-    }
+        .with(targets)
+        .init();
 }
 
 #[cfg(target_os = "ios")]
@@ -42,8 +40,16 @@ fn setup_logging() {
         .init();
 }
 
-use once_cell::sync::Lazy;
-use tokio::sync::{mpsc, Mutex};
+#[cfg(any(target_os = "android", target_os = "ios"))]
+static INIT_LOG: Lazy<()> = Lazy::new(|| {
+    setup_logging();
+});
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn setup_logging_once() {
+    // Accessing the Lazy value will ensure setup_logging is called exactly once
+    let _ = &*INIT_LOG;
+}
 
 // Declare the channel globally so we can use it on the start & stop mycelium functions
 #[allow(clippy::type_complexity)]
@@ -56,7 +62,7 @@ static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Laz
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    setup_logging();
+    setup_logging_once();
 
     info!("starting mycelium");
     let endpoints: Vec<Endpoint> = peers
