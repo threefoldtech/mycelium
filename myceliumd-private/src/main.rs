@@ -21,7 +21,6 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-mod api;
 mod cli;
 
 /// The default port on the underlay to listen on for incoming TCP connections.
@@ -341,7 +340,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
         metrics.spawn(metrics_api_addr);
         let node = Node::new(config).await?;
-        api::Http::spawn(node, cli.node_args.api_addr)
+        mycelium_api::Http::spawn(node, cli.node_args.api_addr)
     } else {
         let config = mycelium::Config {
             node_key: node_secret_key,
@@ -360,7 +359,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             firewall_mark: cli.node_args.firewall_mark,
         };
         let node = Node::new(config).await?;
-        api::Http::spawn(node, cli.node_args.api_addr)
+        mycelium_api::Http::spawn(node, cli.node_args.api_addr)
     };
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
