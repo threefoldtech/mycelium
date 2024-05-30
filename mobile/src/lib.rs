@@ -6,6 +6,8 @@ use tracing::{error, info};
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, metrics, Config, Node};
+use once_cell::sync::Lazy;
+use tokio::sync::{mpsc, Mutex};
 
 #[cfg(target_os = "android")]
 fn setup_logging() {
@@ -38,8 +40,16 @@ fn setup_logging() {
         .init();
 }
 
-use once_cell::sync::Lazy;
-use tokio::sync::{mpsc, Mutex};
+#[cfg(any(target_os = "android", target_os = "ios"))]
+static INIT_LOG: Lazy<()> = Lazy::new(|| {
+    setup_logging();
+});
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn setup_logging_once() {
+    // Accessing the Lazy value will ensure setup_logging is called exactly once
+    let _ = &*INIT_LOG;
+}
 
 // Declare the channel globally so we can use it on the start & stop mycelium functions
 #[allow(clippy::type_complexity)]
@@ -52,7 +62,7 @@ static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Laz
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    setup_logging();
+    setup_logging_once();
 
     info!("starting mycelium");
     let endpoints: Vec<Endpoint> = peers
