@@ -320,6 +320,30 @@ paths:
                 $ref: '#/components/schemas/MessageStatusResponse'
         '404':
           description: Message not found
+  
+  '/api/v1/pubkey/{mycelium_ip}':
+    get:
+      summary: Get the pubkey from node ip
+      description: |
+        Get the node's public key from it's IP address.
+      operationId: TODO
+      parameters:
+        - in: path
+          name: mycelium_ip
+          required: true
+          schema:
+            type: string
+            format: ipv6
+            example: 5fd:7636:b80:9ad0::1
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicKeyResponse'
+        '404':
+          description: Public key not found
 
 
 components:
@@ -565,3 +589,14 @@ components:
                   minimum: 0
                   example: 3
       example: 'received'
+
+    PublicKeyResponse:
+      description: Public key requested based on a node's IP 
+      type: object
+      properties:
+        NodePubKey:
+          type: string
+          format: hex
+          minLength: 64
+          maxLength: 64
+          example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf

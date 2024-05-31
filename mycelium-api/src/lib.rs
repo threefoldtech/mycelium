@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::IpAddr, net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
     extract::{Path, State},
@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, error};
 
 use mycelium::{
+    crypto::PublicKey,
     endpoint::Endpoint,
     metrics::Metrics,
     peer_manager::{PeerExists, PeerNotFound, PeerStats},
@@ -51,6 +52,7 @@ impl Http {
             .route("/admin/peers/:endpoint", delete(delete_peer))
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
+            .route("/pubkey/:ip", get(get_pubk_from_ip))
             .with_state(server_state.clone());
         let app = Router::new().nest("/api/v1", admin_routes);
         #[cfg(feature = "message")]
@@ -237,6 +239,28 @@ where
     Json(Info {
         node_subnet: state.node.lock().await.info().node_subnet.to_string(),
     })
+}
+
+/// Public key from a node.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PubKey {
+    /// The public key from the node
+    pub public_key: PublicKey,
+}
+
+/// Get public key from IP.
+async fn get_pubk_from_ip<M>(
+    State(state): State<HttpServerState<M>>,
+    Path(ip): Path<IpAddr>,
+) -> Result<Json<PubKey>, StatusCode>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    match state.node.lock().await.get_pubkey_from_ip(ip) {
+        Some(pubkey) => Ok(Json(PubKey { public_key: pubkey })),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 impl Serialize for Metric {
