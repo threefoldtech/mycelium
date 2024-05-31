@@ -326,7 +326,7 @@ paths:
       summary: Get the pubkey from node ip
       description: |
         Get the node's public key from it's IP address.
-      operationId: TODO
+      operationId: getPublicKeyFromIp
       parameters:
         - in: path
           name: mycelium_ip
