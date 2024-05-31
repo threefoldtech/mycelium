@@ -271,6 +271,11 @@ where
     pub fn fallback_routes(&self) -> Vec<RouteEntry> {
         self.router.load_fallback_routes()
     }
+
+    /// Get public key from the IP of `Node`
+    pub fn get_pubkey_from_ip(&self, ip: IpAddr) -> Option<crypto::PublicKey> {
+        self.router.get_pubkey(ip)
+    }
 }
 
 #[cfg(feature = "message")]
