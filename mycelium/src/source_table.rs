@@ -162,3 +162,185 @@ impl fmt::Display for SourceKey {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        babel,
+        crypto::SecretKey,
+        metric::Metric,
+        router_id::RouterId,
+        sequence_number::SeqNo,
+        source_table::{FeasibilityDistance, SourceKey, SourceTable},
+        subnet::Subnet,
+    };
+    use std::{net::Ipv6Addr, time::Duration};
+
+    /// A retraction is always considered to be feasible.
+    #[tokio::test]
+    async fn retraction_is_feasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            SourceKey::new(sn, rid),
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let update = babel::Update::new(
+            Duration::from_secs(60),
+            SeqNo::from(0),
+            Metric::infinite(),
+            sn,
+            rid,
+        );
+
+        assert!(st.is_update_feasible(&update));
+    }
+
+    /// An update with a smaller metric but with the same seqno is feasible.
+    #[tokio::test]
+    async fn smaller_metric_is_feasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            SourceKey::new(sn, rid),
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let update = babel::Update::new(
+            Duration::from_secs(60),
+            SeqNo::from(1),
+            Metric::from(9),
+            sn,
+            rid,
+        );
+
+        assert!(st.is_update_feasible(&update));
+    }
+
+    /// An update with the same metric and seqno is not feasible.
+    #[tokio::test]
+    async fn equal_metric_is_unfeasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            SourceKey::new(sn, rid),
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let update = babel::Update::new(
+            Duration::from_secs(60),
+            SeqNo::from(1),
+            Metric::from(10),
+            sn,
+            rid,
+        );
+
+        assert!(!st.is_update_feasible(&update));
+    }
+
+    /// An update with a larger metric and the same seqno is not feasible.
+    #[tokio::test]
+    async fn larger_metric_is_unfeasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            SourceKey::new(sn, rid),
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let update = babel::Update::new(
+            Duration::from_secs(60),
+            SeqNo::from(1),
+            Metric::from(11),
+            sn,
+            rid,
+        );
+
+        assert!(!st.is_update_feasible(&update));
+    }
+
+    /// An update with a lower seqno is not feasible.
+    #[tokio::test]
+    async fn lower_seqno_is_unfeasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            SourceKey::new(sn, rid),
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let update = babel::Update::new(
+            Duration::from_secs(60),
+            SeqNo::from(0),
+            Metric::from(1),
+            sn,
+            rid,
+        );
+
+        assert!(!st.is_update_feasible(&update));
+    }
+
+    /// An update with a higher seqno is feasible.
+    #[tokio::test]
+    async fn higher_seqno_is_feasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            SourceKey::new(sn, rid),
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let update = babel::Update::new(
+            Duration::from_secs(60),
+            SeqNo::from(2),
+            Metric::from(200),
+            sn,
+            rid,
+        );
+
+        assert!(st.is_update_feasible(&update));
+    }
+}
