@@ -178,7 +178,7 @@ mod tests {
 
     /// A retraction is always considered to be feasible.
     #[tokio::test]
-    async fn retraction_is_feasible() {
+    async fn retraction_update_is_feasible() {
         let (sink, _) = tokio::sync::mpsc::channel(1);
         let sk = SecretKey::new();
         let pk = (&sk).into();
@@ -206,7 +206,7 @@ mod tests {
 
     /// An update with a smaller metric but with the same seqno is feasible.
     #[tokio::test]
-    async fn smaller_metric_is_feasible() {
+    async fn smaller_metric_update_is_feasible() {
         let (sink, _) = tokio::sync::mpsc::channel(1);
         let sk = SecretKey::new();
         let pk = (&sk).into();
@@ -234,7 +234,7 @@ mod tests {
 
     /// An update with the same metric and seqno is not feasible.
     #[tokio::test]
-    async fn equal_metric_is_unfeasible() {
+    async fn equal_metric_update_is_unfeasible() {
         let (sink, _) = tokio::sync::mpsc::channel(1);
         let sk = SecretKey::new();
         let pk = (&sk).into();
@@ -262,7 +262,7 @@ mod tests {
 
     /// An update with a larger metric and the same seqno is not feasible.
     #[tokio::test]
-    async fn larger_metric_is_unfeasible() {
+    async fn larger_metric_update_is_unfeasible() {
         let (sink, _) = tokio::sync::mpsc::channel(1);
         let sk = SecretKey::new();
         let pk = (&sk).into();
@@ -290,7 +290,7 @@ mod tests {
 
     /// An update with a lower seqno is not feasible.
     #[tokio::test]
-    async fn lower_seqno_is_unfeasible() {
+    async fn lower_seqno_update_is_unfeasible() {
         let (sink, _) = tokio::sync::mpsc::channel(1);
         let sk = SecretKey::new();
         let pk = (&sk).into();
@@ -318,7 +318,7 @@ mod tests {
 
     /// An update with a higher seqno is feasible.
     #[tokio::test]
-    async fn higher_seqno_is_feasible() {
+    async fn higher_seqno_update_is_feasible() {
         let (sink, _) = tokio::sync::mpsc::channel(1);
         let sk = SecretKey::new();
         let pk = (&sk).into();
