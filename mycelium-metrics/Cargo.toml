@@ -18,7 +18,7 @@ mycelium = { path = "../mycelium", default-features = false }
 prometheus = { version = "0.13.4", default-features = false, optional = true, features = [
   "process",
 ] }
-tokio = { version = "1.37.0", default-features = false, optional = true, features = [
+tokio = { version = "1.38.0", default-features = false, optional = true, features = [
   "net",
   "rt",
 ] }
