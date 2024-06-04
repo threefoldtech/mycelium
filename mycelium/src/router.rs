@@ -1278,7 +1278,8 @@ where
             vec![target]
         } else {
             // If we don't have a dedicated peer to send to, just send to every peer which
-            // announced the subnet. But avoid repetitions.
+            // announced the subnet. But avoid repetitions. Additionally, if we don't have any
+            // peer which announced the subnet (because all anounces are unfeasible)
             let mut peers_sent = vec![];
             if let Some((last_sent, visited)) = seqno_info {
                 // If it's more than some time since we last sent an update to any peer for this
@@ -1289,20 +1290,33 @@ where
                 }
             };
 
-            self.inner_r
+            let known_routes = self
+                .inner_r
                 .enter()
                 .expect("Write handle is saved on router so this read always succeeds; qed")
                 .routing_table
-                .entries(source.subnet())
-                .into_iter()
-                .filter_map(|re| {
-                    if !peers_sent.contains(re.neighbour()) {
-                        Some(re.neighbour().clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
+                .entries(source.subnet());
+
+            if known_routes.is_empty() {
+                // If we don't know the route just ask all our peers
+                self.peer_interfaces
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .cloned()
+                    .collect()
+            } else {
+                known_routes
+                    .into_iter()
+                    .filter_map(|re| {
+                        if !peers_sent.contains(re.neighbour()) {
+                            Some(re.neighbour().clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            }
         };
 
         for peer in targets {
