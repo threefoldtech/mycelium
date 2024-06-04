@@ -26,7 +26,7 @@ pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::erro
                         "Protocol",
                         "Socket",
                         "Type",
-                        "Connected",
+                        "Connection",
                         "Rx total",
                         "Tx total"
                     ]);
