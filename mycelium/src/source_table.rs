@@ -165,16 +165,24 @@ impl fmt::Display for SourceKey {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::mpsc;
+
     use crate::{
         babel,
         crypto::SecretKey,
         metric::Metric,
+        peer::Peer,
         router_id::RouterId,
+        routing_table::RouteEntry,
         sequence_number::SeqNo,
         source_table::{FeasibilityDistance, SourceKey, SourceTable},
         subnet::Subnet,
     };
-    use std::{net::Ipv6Addr, time::Duration};
+    use std::{
+        net::Ipv6Addr,
+        sync::{atomic::AtomicU64, Arc},
+        time::Duration,
+    };
 
     /// A retraction is always considered to be feasible.
     #[tokio::test]
@@ -342,5 +350,140 @@ mod tests {
         );
 
         assert!(st.is_update_feasible(&update));
+    }
+
+    /// A route with a smaller metric but with the same seqno is feasible.
+    #[tokio::test]
+    async fn smaller_metric_route_is_feasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let source_key = SourceKey::new(sn, rid);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            source_key,
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let (router_data_tx, _router_data_rx) = mpsc::channel(1);
+        let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
+        let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
+        let (con1, _con2) = tokio::io::duplex(1500);
+        let neighbor = Peer::new(
+            router_data_tx,
+            router_control_tx,
+            con1,
+            dead_peer_sink,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("Can create a dummy peer");
+
+        let re = RouteEntry::new(
+            source_key,
+            neighbor,
+            Metric::new(9),
+            SeqNo::from(1),
+            true,
+            Duration::from_secs(60),
+        );
+
+        assert!(st.route_feasible(&re));
+    }
+
+    /// If a route has the same metric as the source table it is not feasible.
+    #[tokio::test]
+    async fn equal_metric_route_is_unfeasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let source_key = SourceKey::new(sn, rid);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            source_key,
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let (router_data_tx, _router_data_rx) = mpsc::channel(1);
+        let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
+        let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
+        let (con1, _con2) = tokio::io::duplex(1500);
+        let neighbor = Peer::new(
+            router_data_tx,
+            router_control_tx,
+            con1,
+            dead_peer_sink,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("Can create a dummy peer");
+
+        let re = RouteEntry::new(
+            source_key,
+            neighbor,
+            Metric::new(10),
+            SeqNo::from(1),
+            true,
+            Duration::from_secs(60),
+        );
+
+        assert!(!st.route_feasible(&re));
+    }
+
+    /// If a route has a higher metric as the source table it is not feasible.
+    #[tokio::test]
+    async fn higher_metric_route_is_unfeasible() {
+        let (sink, _) = tokio::sync::mpsc::channel(1);
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
+        let source_key = SourceKey::new(sn, rid);
+
+        let mut st = SourceTable::new();
+        st.insert(
+            source_key,
+            FeasibilityDistance::new(Metric::new(10), SeqNo::from(1)),
+            sink,
+        );
+
+        let (router_data_tx, _router_data_rx) = mpsc::channel(1);
+        let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
+        let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
+        let (con1, _con2) = tokio::io::duplex(1500);
+        let neighbor = Peer::new(
+            router_data_tx,
+            router_control_tx,
+            con1,
+            dead_peer_sink,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("Can create a dummy peer");
+
+        let re = RouteEntry::new(
+            source_key,
+            neighbor,
+            Metric::new(11),
+            SeqNo::from(1),
+            true,
+            Duration::from_secs(60),
+        );
+
+        assert!(!st.route_feasible(&re));
     }
 }
