@@ -93,7 +93,7 @@ where
 }
 
 /// Payload of an add_peer request
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct AddPeer {
     /// The endpoint used to connect to the peer
     pub endpoint: String,

@@ -83,6 +83,12 @@ pub enum Command {
         #[command(subcommand)]
         command: MessageCommand,
     },
+
+    /// Actions related to peers (list, remove, add)
+    Peers {
+        #[command(subcommand)]
+        command: PeersCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,6 +132,16 @@ pub enum MessageCommand {
         #[arg(long = "raw")]
         raw: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PeersCommand {
+    /// List the connected peers
+    List {},
+    /// Add a peer
+    Add { peers: Vec<String> },
+    /// Remove a peer
+    Remove { peers: Vec<String> },
 }
 
 #[derive(Debug, Args)]
@@ -279,6 +295,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } => {
                     return cli::recv_msg(timeout, topic, msg_path, raw, cli.node_args.api_addr)
                         .await
+                }
+            },
+            Command::Peers { command } => match command {
+                PeersCommand::List {} => {
+                    return cli::list_peers(cli.node_args.api_addr).await;
+                }
+                PeersCommand::Add { peers } => {
+                    return cli::add_peers(cli.node_args.api_addr, peers).await;
+                }
+                PeersCommand::Remove { peers } => {
+                    return cli::remove_peers(cli.node_args.api_addr, peers).await;
                 }
             },
         }
