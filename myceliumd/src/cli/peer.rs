@@ -36,8 +36,8 @@ pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::erro
                             peer.endpoint.address(),
                             peer.pt,
                             peer.connection_state,
-                            peer.rx_bytes,
-                            peer.tx_bytes
+                            format_bytes(peer.rx_bytes),
+                            format_bytes(peer.tx_bytes),
                         ]);
                     }
                     table.printstd();
@@ -47,6 +47,16 @@ pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::erro
     };
 
     Ok(())
+}
+
+fn format_bytes(bytes: u64) -> String {
+    let byte = byte_unit::Byte::from_u64(bytes);
+    let adjusted_byte = byte.get_appropriate_unit(byte_unit::UnitType::Binary);
+    format!(
+        "{:.2} {}",
+        adjusted_byte.get_value(),
+        adjusted_byte.get_unit()
+    )
 }
 
 /// Remove peer(s) by (underlay) IP

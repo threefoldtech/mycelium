@@ -1261,7 +1261,7 @@ impl fmt::Display for ConnectionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Alive => "Alive",
-            Self::Connecting => "Connection",
+            Self::Connecting => "Connecting",
             Self::Dead => "Dead",
         })
     }
