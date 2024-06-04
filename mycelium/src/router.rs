@@ -1258,8 +1258,12 @@ where
         let fd = match self.source_table.read().unwrap().get(&source) {
             Some(fd) => *fd,
             None => {
-                warn!("Requesting seqno for source key {source} which does not exist in the source table");
-                return;
+                // This can happen if you only have 1 peer, or in case we haven't announced our
+                // subnets yet.
+                debug!("Requesting seqno for source key {source} which does not exist in the source table");
+                // Since we don't know the real seqno, just use the default. Either the peer will
+                // reply if it has an adequate route, or it will forward the request.
+                FeasibilityDistance::new(Metric::new(0), SeqNo::new())
             }
         };
 
