@@ -137,10 +137,10 @@ pub enum MessageCommand {
 #[derive(Debug, Subcommand)]
 pub enum PeersCommand {
     /// List the connected peers
-    List {},
-    /// Add a peer
+    List,
+    /// Add peer(s)
     Add { peers: Vec<String> },
-    /// Remove a peer
+    /// Remove peer(s)
     Remove { peers: Vec<String> },
 }
 

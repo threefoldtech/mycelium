@@ -1257,6 +1257,26 @@ fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>>
     Ok(nics)
 }
 
+impl fmt::Display for ConnectionState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Alive => "Alive",
+            Self::Connecting => "Connection",
+            Self::Dead => "Dead",
+        })
+    }
+}
+
+impl fmt::Display for PeerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Static => "Static",
+            Self::Inbound => "Inbound",
+            Self::LinkLocalDiscovery => "LinkLocalDiscovery",
+        })
+    }
+}
+
 impl fmt::Display for PeerExists {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Peer identified by endpoint already exists")

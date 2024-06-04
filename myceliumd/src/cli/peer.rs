@@ -22,9 +22,23 @@ pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::erro
                 }
                 Ok(peers) => {
                     let mut table = Table::new();
-                    table.add_row(row!["Protocol", "Socket"]);
+                    table.add_row(row![
+                        "Protocol",
+                        "Socket",
+                        "Type",
+                        "Connected",
+                        "Rx total",
+                        "Tx total"
+                    ]);
                     for peer in peers.iter() {
-                        table.add_row(row![peer.endpoint.proto(), peer.endpoint.address()]);
+                        table.add_row(row![
+                            peer.endpoint.proto(),
+                            peer.endpoint.address(),
+                            peer.pt,
+                            peer.connection_state,
+                            peer.rx_bytes,
+                            peer.tx_bytes
+                        ]);
                     }
                     table.printstd();
                 }
@@ -35,7 +49,7 @@ pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-/// Remove peer(s) by (overlay) IP
+/// Remove peer(s) by (underlay) IP
 pub async fn remove_peers(
     server_addr: SocketAddr,
     peers: Vec<String>,
