@@ -18,6 +18,8 @@ use mycelium::{
     peer_manager::{PeerExists, PeerNotFound, PeerStats},
 };
 
+const INFINITE_STR: &str = "infinite";
+
 #[cfg(feature = "message")]
 mod message;
 #[cfg(feature = "message")]
@@ -271,7 +273,7 @@ impl Serialize for Metric {
         S: serde::Serializer,
     {
         match self {
-            Self::Infinite => serializer.serialize_str("infinite"),
+            Self::Infinite => serializer.serialize_str(INFINITE_STR),
             Self::Value(v) => serializer.serialize_u16(*v),
         }
     }
@@ -296,10 +298,10 @@ impl<'de> Deserialize<'de> for Metric {
                 E: serde::de::Error,
             {
                 match value {
-                    "infinite" => Ok(Metric::Infinite),
+                    INFINITE_STR => Ok(Metric::Infinite),
                     _ => Err(serde::de::Error::invalid_value(
                         serde::de::Unexpected::Str(value),
-                        &"expected 'infinite'",
+                        &format!("expected '{}'", INFINITE_STR).as_str(),
                     )),
                 }
             }
@@ -326,7 +328,7 @@ impl fmt::Display for Metric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Value(val) => write!(f, "{}", val),
-            Self::Infinite => write!(f, "Infinite"),
+            Self::Infinite => write!(f, "{}", INFINITE_STR),
         }
     }
 }
@@ -349,7 +351,7 @@ mod tests {
         let metric = super::Metric::Infinite;
         let s = serde_json::to_string(&metric).expect("can encode infinite metric");
 
-        assert_eq!("\"infinite\"", s);
+        assert_eq!(format!("\"{}\"", INFINITE_STR), s);
     }
 
     #[test]
@@ -360,7 +362,7 @@ mod tests {
         assert_eq!(metric, Metric::Value(20));
 
         // Test deserialization of a Metric::Infinite
-        let json_infinite = json!("infinite");
+        let json_infinite = json!(INFINITE_STR);
         let metric: Metric = serde_json::from_value(json_infinite).unwrap();
         assert_eq!(metric, Metric::Infinite);
 
