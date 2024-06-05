@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
 use tokio::sync::Mutex;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 use mycelium::{
     crypto::PublicKey,
