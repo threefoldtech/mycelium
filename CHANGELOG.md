@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added myceliumd-private binary, which contains private network functionality.
 - Added API endpoint to retrieve the public key associated with an IP. 
 - The CLI can now be used to list, remove or add peers (see `mycelium peers --help`)
+- The CLI can now be used to list selected and fallback routes (see `mycelium routes --help`)
 
 ### Changed
 
