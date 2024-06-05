@@ -137,7 +137,11 @@ pub enum MessageCommand {
 #[derive(Debug, Subcommand)]
 pub enum PeersCommand {
     /// List the connected peers
-    List,
+    List {
+        /// Print the peers list in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
     /// Add peer(s)
     Add { peers: Vec<String> },
     /// Remove peer(s)
@@ -298,8 +302,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             },
             Command::Peers { command } => match command {
-                PeersCommand::List {} => {
-                    return cli::list_peers(cli.node_args.api_addr).await;
+                PeersCommand::List { json } => {
+                    return cli::list_peers(cli.node_args.api_addr, json).await;
                 }
                 PeersCommand::Add { peers } => {
                     return cli::add_peers(cli.node_args.api_addr, peers).await;
