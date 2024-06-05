@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{net::IpAddr, net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
@@ -6,7 +7,7 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use tokio::sync::Mutex;
 use tracing::{debug, error};
 
@@ -16,6 +17,8 @@ use mycelium::{
     metrics::Metrics,
     peer_manager::{PeerExists, PeerNotFound, PeerStats},
 };
+
+const INFINITE_STR: &str = "infinite";
 
 #[cfg(feature = "message")]
 mod message;
@@ -146,6 +149,7 @@ where
 }
 
 /// Alias to a [`Metric`](crate::metric::Metric) for serialization in the API.
+#[derive(Debug, PartialEq)]
 pub enum Metric {
     /// Finite metric
     Value(u16),
@@ -155,7 +159,7 @@ pub enum Metric {
 
 /// Info about a route. This uses base types only to avoid having to introduce too many Serialize
 /// bounds in the core types.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Route {
     /// We convert the [`subnet`](Subnet) to a string to avoid introducing a bound on the actual
@@ -269,14 +273,71 @@ impl Serialize for Metric {
         S: serde::Serializer,
     {
         match self {
-            Self::Infinite => serializer.serialize_str("infinite"),
+            Self::Infinite => serializer.serialize_str(INFINITE_STR),
             Self::Value(v) => serializer.serialize_u16(*v),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Metric {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MetricVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for MetricVisitor {
+            type Value = Metric;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or a u16")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    INFINITE_STR => Ok(Metric::Infinite),
+                    _ => Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(value),
+                        &format!("expected '{}'", INFINITE_STR).as_str(),
+                    )),
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if value <= u16::MAX as u64 {
+                    Ok(Metric::Value(value as u16))
+                } else {
+                    Err(E::invalid_value(
+                        de::Unexpected::Unsigned(value),
+                        &"expected a non-negative integer within the range of u16",
+                    ))
+                }
+            }
+        }
+        deserializer.deserialize_any(MetricVisitor)
+    }
+}
+
+impl fmt::Display for Metric {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(val) => write!(f, "{}", val),
+            Self::Infinite => write!(f, "{}", INFINITE_STR),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use serde_json::json;
+
     #[test]
     fn finite_metric_serialization() {
         let metric = super::Metric::Value(10);
@@ -290,6 +351,58 @@ mod tests {
         let metric = super::Metric::Infinite;
         let s = serde_json::to_string(&metric).expect("can encode infinite metric");
 
-        assert_eq!("\"infinite\"", s);
+        assert_eq!(format!("\"{}\"", INFINITE_STR), s);
+    }
+
+    #[test]
+    fn test_deserialize_metric() {
+        // Test deserialization of a Metric::Value
+        let json_value = json!(20);
+        let metric: Metric = serde_json::from_value(json_value).unwrap();
+        assert_eq!(metric, Metric::Value(20));
+
+        // Test deserialization of a Metric::Infinite
+        let json_infinite = json!(INFINITE_STR);
+        let metric: Metric = serde_json::from_value(json_infinite).unwrap();
+        assert_eq!(metric, Metric::Infinite);
+
+        // Test deserialization of an invalid metric
+        let json_invalid = json!("invalid");
+        let result: Result<Metric, _> = serde_json::from_value(json_invalid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_route() {
+        let json_data = r#"
+        [
+            {"subnet":"406:1d77:2438:aa7c::/64","nextHop":"TCP [2a02:1811:d584:7400:c503:ff39:de03:9e44]:45694 <-> [2a01:4f8:212:fa6::2]:9651","metric":20,"seqno":0},
+            {"subnet":"407:8458:dbf5:4ed7::/64","nextHop":"TCP [2a02:1811:d584:7400:c503:ff39:de03:9e44]:45694 <-> [2a01:4f8:212:fa6::2]:9651","metric":174,"seqno":0},
+            {"subnet":"408:7ba3:3a4d:808a::/64","nextHop":"TCP [2a02:1811:d584:7400:c503:ff39:de03:9e44]:45694 <-> [2a01:4f8:212:fa6::2]:9651","metric":"infinite","seqno":0}
+        ]
+        "#;
+
+        let routes: Vec<Route> = serde_json::from_str(json_data).unwrap();
+
+        assert_eq!(routes[0], Route {
+            subnet: "406:1d77:2438:aa7c::/64".to_string(),
+            next_hop: "TCP [2a02:1811:d584:7400:c503:ff39:de03:9e44]:45694 <-> [2a01:4f8:212:fa6::2]:9651".to_string(),
+            metric: Metric::Value(20),
+            seqno: 0
+        });
+
+        assert_eq!(routes[1], Route {
+            subnet: "407:8458:dbf5:4ed7::/64".to_string(),
+            next_hop: "TCP [2a02:1811:d584:7400:c503:ff39:de03:9e44]:45694 <-> [2a01:4f8:212:fa6::2]:9651".to_string(),
+            metric: Metric::Value(174),
+            seqno: 0
+        });
+
+        assert_eq!(routes[2], Route {
+            subnet: "408:7ba3:3a4d:808a::/64".to_string(),
+            next_hop: "TCP [2a02:1811:d584:7400:c503:ff39:de03:9e44]:45694 <-> [2a01:4f8:212:fa6::2]:9651".to_string(),
+            metric: Metric::Infinite,
+            seqno: 0
+        });
     }
 }

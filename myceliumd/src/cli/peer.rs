@@ -5,7 +5,10 @@ use std::net::SocketAddr;
 use tracing::{debug, error};
 
 /// List the peers the current node is connected to
-pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn list_peers(
+    server_addr: SocketAddr,
+    json_print: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Make API call
     let request_url = format!("http://{server_addr}/api/v1/admin/peers");
     match reqwest::get(&request_url).await {
@@ -21,26 +24,33 @@ pub async fn list_peers(server_addr: SocketAddr) -> Result<(), Box<dyn std::erro
                     return Err(e.into());
                 }
                 Ok(peers) => {
-                    let mut table = Table::new();
-                    table.add_row(row![
-                        "Protocol",
-                        "Socket",
-                        "Type",
-                        "Connection",
-                        "Rx total",
-                        "Tx total"
-                    ]);
-                    for peer in peers.iter() {
+                    if json_print {
+                        // Print peers in JSON format
+                        let json_output = serde_json::to_string_pretty(&peers)?;
+                        println!("{json_output}");
+                    } else {
+                        // Print peers in table format
+                        let mut table = Table::new();
                         table.add_row(row![
-                            peer.endpoint.proto(),
-                            peer.endpoint.address(),
-                            peer.pt,
-                            peer.connection_state,
-                            format_bytes(peer.rx_bytes),
-                            format_bytes(peer.tx_bytes),
+                            "Protocol",
+                            "Socket",
+                            "Type",
+                            "Connection",
+                            "Rx total",
+                            "Tx total"
                         ]);
+                        for peer in peers.iter() {
+                            table.add_row(row![
+                                peer.endpoint.proto(),
+                                peer.endpoint.address(),
+                                peer.pt,
+                                peer.connection_state,
+                                format_bytes(peer.rx_bytes),
+                                format_bytes(peer.tx_bytes),
+                            ]);
+                        }
+                        table.printstd();
                     }
-                    table.printstd();
                 }
             }
         }
