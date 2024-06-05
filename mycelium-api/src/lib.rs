@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{net::IpAddr, net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
@@ -6,9 +7,9 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use tokio::sync::Mutex;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use mycelium::{
     crypto::PublicKey,
@@ -155,7 +156,7 @@ pub enum Metric {
 
 /// Info about a route. This uses base types only to avoid having to introduce too many Serialize
 /// bounds in the core types.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Route {
     /// We convert the [`subnet`](Subnet) to a string to avoid introducing a bound on the actual
@@ -271,6 +272,60 @@ impl Serialize for Metric {
         match self {
             Self::Infinite => serializer.serialize_str("infinite"),
             Self::Value(v) => serializer.serialize_u16(*v),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Metric {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MetricVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for MetricVisitor {
+            type Value = Metric;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or a u16")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "infinite" => Ok(Metric::Infinite),
+                    _ => Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(value),
+                        &"expected 'infinite'",
+                    )),
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if value <= u16::MAX as u64 {
+                    Ok(Metric::Value(value as u16))
+                } else {
+                    Err(E::invalid_value(
+                        de::Unexpected::Unsigned(value),
+                        &"expected a non-negative integer within the range of u16",
+                    ))
+                }
+            }
+        }
+        deserializer.deserialize_any(MetricVisitor)
+    }
+}
+
+impl fmt::Display for Metric {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(val) => write!(f, "{}", val),
+            Self::Infinite => write!(f, "Infinite"),
         }
     }
 }

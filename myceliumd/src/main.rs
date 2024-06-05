@@ -89,6 +89,12 @@ pub enum Command {
         #[command(subcommand)]
         command: PeersCommand,
     },
+
+    /// Actions related to routes (selected, fallback)
+    Routes {
+        #[command(subcommand)]
+        command: RoutesCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -146,6 +152,22 @@ pub enum PeersCommand {
     Add { peers: Vec<String> },
     /// Remove peer(s)
     Remove { peers: Vec<String> },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RoutesCommand {
+    /// Print all selected routes
+    Selected {
+        /// Print selected routes in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Print all fallback routes
+    Fallback {
+        /// Print fallback routes in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -310,6 +332,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 PeersCommand::Remove { peers } => {
                     return cli::remove_peers(cli.node_args.api_addr, peers).await;
+                }
+            },
+            Command::Routes { command } => match command {
+                RoutesCommand::Selected { json } => {
+                    return cli::list_selected_routes(cli.node_args.api_addr, json).await;
+                }
+                RoutesCommand::Fallback { json } => {
+                    return cli::list_fallback_routes(cli.node_args.api_addr, json).await;
                 }
             },
         }
