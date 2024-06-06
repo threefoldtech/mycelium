@@ -21,8 +21,6 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-mod cli;
-
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
 /// The default port on the underlay to listen on for incoming Quic connections.
@@ -287,7 +285,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     )
                     .into());
                 };
-                cli::inspect(key, json)?;
+                mycelium_cli::inspect(key, json)?;
 
                 return Ok(());
             }
@@ -301,7 +299,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     destination,
                     message,
                 } => {
-                    return cli::send_msg(
+                    return mycelium_cli::send_msg(
                         destination,
                         message,
                         wait,
@@ -319,27 +317,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     msg_path,
                     raw,
                 } => {
-                    return cli::recv_msg(timeout, topic, msg_path, raw, cli.node_args.api_addr)
-                        .await
+                    return mycelium_cli::recv_msg(
+                        timeout,
+                        topic,
+                        msg_path,
+                        raw,
+                        cli.node_args.api_addr,
+                    )
+                    .await
                 }
             },
             Command::Peers { command } => match command {
                 PeersCommand::List { json } => {
-                    return cli::list_peers(cli.node_args.api_addr, json).await;
+                    return mycelium_cli::list_peers(cli.node_args.api_addr, json).await;
                 }
                 PeersCommand::Add { peers } => {
-                    return cli::add_peers(cli.node_args.api_addr, peers).await;
+                    return mycelium_cli::add_peers(cli.node_args.api_addr, peers).await;
                 }
                 PeersCommand::Remove { peers } => {
-                    return cli::remove_peers(cli.node_args.api_addr, peers).await;
+                    return mycelium_cli::remove_peers(cli.node_args.api_addr, peers).await;
                 }
             },
             Command::Routes { command } => match command {
                 RoutesCommand::Selected { json } => {
-                    return cli::list_selected_routes(cli.node_args.api_addr, json).await;
+                    return mycelium_cli::list_selected_routes(cli.node_args.api_addr, json).await;
                 }
                 RoutesCommand::Fallback { json } => {
-                    return cli::list_fallback_routes(cli.node_args.api_addr, json).await;
+                    return mycelium_cli::list_fallback_routes(cli.node_args.api_addr, json).await;
                 }
             },
         }
