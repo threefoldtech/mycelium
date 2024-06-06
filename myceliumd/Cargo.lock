@@ -1199,6 +1199,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-cli"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "byte-unit",
+ "mycelium",
+ "mycelium-api",
+ "prettytable-rs",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
 name = "mycelium-metrics"
 version = "0.5.2"
 dependencies = [
@@ -1218,6 +1235,7 @@ dependencies = [
  "clap",
  "mycelium",
  "mycelium-api",
+ "mycelium-cli",
  "mycelium-metrics",
  "prettytable-rs",
  "reqwest",
