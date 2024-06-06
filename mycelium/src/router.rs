@@ -1301,8 +1301,9 @@ where
                 .routing_table
                 .entries(source.subnet());
 
-            if known_routes.is_empty() {
-                // If we don't know the route just ask all our peers
+            // Make sure a broadcast only happens in case the local node originated the request.
+            if known_routes.is_empty() && request_origin.is_none() {
+                // If we don't know the route just ask all our peers.
                 self.peer_interfaces
                     .read()
                     .unwrap()
