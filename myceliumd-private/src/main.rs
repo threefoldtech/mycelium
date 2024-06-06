@@ -21,8 +21,6 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-mod cli;
-
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
 /// The default port on the underlay to listen on for incoming Quic connections.
@@ -262,7 +260,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     )
                     .into());
                 };
-                cli::inspect(key, json)?;
+                mycelium_cli::inspect(key, json)?;
 
                 return Ok(());
             }
@@ -276,7 +274,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     destination,
                     message,
                 } => {
-                    return cli::send_msg(
+                    return mycelium_cli::send_msg(
                         destination,
                         message,
                         wait,
@@ -294,8 +292,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     msg_path,
                     raw,
                 } => {
-                    return cli::recv_msg(timeout, topic, msg_path, raw, cli.node_args.api_addr)
-                        .await
+                    return mycelium_cli::recv_msg(
+                        timeout,
+                        topic,
+                        msg_path,
+                        raw,
+                        cli.node_args.api_addr,
+                    )
+                    .await
                 }
             },
         }

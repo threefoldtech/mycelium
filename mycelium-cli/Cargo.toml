@@ -2,6 +2,8 @@
 name = "mycelium-cli"
 version = "0.1.0"
 edition = "2021"
+license-file = "../LICENSE"
+readme = "./README.md"
 
 [features]
 message = ["mycelium/message", "mycelium-api/message"]
