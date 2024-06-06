@@ -81,6 +81,18 @@ pub enum Command {
         #[command(subcommand)]
         command: MessageCommand,
     },
+
+    /// Actions related to peers (list, remove, add)
+    Peers {
+        #[command(subcommand)]
+        command: PeersCommand,
+    },
+
+    /// Actions related to routes (selected, fallback)
+    Routes {
+        #[command(subcommand)]
+        command: RoutesCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -123,6 +135,36 @@ pub enum MessageCommand {
         /// Don't print the metadata
         #[arg(long = "raw")]
         raw: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PeersCommand {
+    /// List the connected peers
+    List {
+        /// Print the peers list in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Add peer(s)
+    Add { peers: Vec<String> },
+    /// Remove peer(s)
+    Remove { peers: Vec<String> },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RoutesCommand {
+    /// Print all selected routes
+    Selected {
+        /// Print selected routes in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Print all fallback routes
+    Fallback {
+        /// Print fallback routes in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
     },
 }
 
@@ -300,6 +342,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         cli.node_args.api_addr,
                     )
                     .await
+                }
+            },
+            Command::Peers { command } => match command {
+                PeersCommand::List { json } => {
+                    return mycelium_cli::list_peers(cli.node_args.api_addr, json).await;
+                }
+                PeersCommand::Add { peers } => {
+                    return mycelium_cli::add_peers(cli.node_args.api_addr, peers).await;
+                }
+                PeersCommand::Remove { peers } => {
+                    return mycelium_cli::remove_peers(cli.node_args.api_addr, peers).await;
+                }
+            },
+            Command::Routes { command } => match command {
+                RoutesCommand::Selected { json } => {
+                    return mycelium_cli::list_selected_routes(cli.node_args.api_addr, json).await;
+                }
+                RoutesCommand::Fallback { json } => {
+                    return mycelium_cli::list_fallback_routes(cli.node_args.api_addr, json).await;
                 }
             },
         }
