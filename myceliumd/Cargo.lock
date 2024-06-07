@@ -1166,7 +1166,6 @@ dependencies = [
  "left-right",
  "libc",
  "netdev",
- "nix 0.28.0",
  "nix 0.29.0",
  "quinn",
  "rand",
@@ -1364,7 +1363,6 @@ dependencies = [
  "cfg-if",
  "cfg_aliases 0.1.1",
  "libc",
- "memoffset",
 ]
 
 [[package]]
