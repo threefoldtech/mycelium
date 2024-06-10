@@ -26,9 +26,9 @@
         {
           myceliumd =
             let
-              manifest = builtins.fromTOML (lib.readFile ./myceliumd/Cargo.toml);
-
-              sourceRoot = "./myceliumd";
+              cargoToml = ./myceliumd/Cargo.toml;
+              cargoLock = ./myceliumd/Cargo.lock;
+              manifest = craneLib.crateNameFromCargoToml { inherit cargoToml; };
             in
             lib.makeOverridable craneLib.buildPackage {
               src = nix-filter {
@@ -39,13 +39,18 @@
                   ./Cargo.toml
                   ./Cargo.lock
                   ./mycelium
+                  ./mycelium-api
+                  ./mycelium-cli
+                  ./mycelium-metrics
                   ./myceliumd
                   ./myceliumd-private
                   ./mobile
                 ];
               };
-              pname = manifest.package.name;
-              inherit (manifest.package) version;
+
+              inherit (manifest) pname version;
+              inherit cargoToml cargoLock;
+              sourceRoot = "source/myceliumd";
 
               doCheck = false;
 
@@ -67,11 +72,11 @@
                 mainProgram = "mycelium";
               };
             };
-          mycelium-private =
+          myceliumd-private =
             let
-              manifest = builtins.fromTOML (lib.readFile ./myceliumd-private/Cargo.toml);
-
-              sourceRoot = "./myceliumd-private";
+              cargoToml = ./myceliumd-private/Cargo.toml;
+              cargoLock = ./myceliumd-private/Cargo.lock;
+              manifest = craneLib.crateNameFromCargoToml { inherit cargoToml; };
             in
             lib.makeOverridable craneLib.buildPackage {
               src = nix-filter {
@@ -81,13 +86,18 @@
                   ./Cargo.toml
                   ./Cargo.lock
                   ./mycelium
+                  ./mycelium-api
+                  ./mycelium-cli
+                  ./mycelium-metrics
                   ./myceliumd
                   ./myceliumd-private
                   ./mobile
                 ];
               };
-              pname = manifest.package.name;
-              inherit (manifest.package) version;
+
+              inherit (manifest) pname version;
+              inherit cargoToml cargoLock;
+              sourceRoot = "source/myceliumd-private";
 
               doCheck = false;
 
@@ -137,9 +147,9 @@
         };
 
         packages = {
-          default = self.packages.${system}.mycelium;
+          default = self.packages.${system}.myceliumd;
 
-          inherit (pkgs) mycelium;
+          inherit (pkgs) myceliumd myceliumd-private;
         };
       });
 }
