@@ -18,101 +18,98 @@
     , ...
     }@inputs:
     {
-      overlays.default = final: prev: {
-        myceliumd =
-          let
-            craneLib = crane.lib.${final.system};
+      overlays.default = final: prev:
+        let
+          inherit (final) lib stdenv darwin;
+          craneLib = crane.mkLib final;
+        in
+        {
+          myceliumd =
+            let
+              manifest = builtins.fromTOML (lib.readFile ./myceliumd/Cargo.toml);
 
-            inherit (final) lib stdenv darwin;
+              sourceRoot = "./myceliumd";
+            in
+            lib.makeOverridable craneLib.buildPackage {
+              src = nix-filter {
+                root = ./.;
 
-            manifest = builtins.fromTOML (lib.readFile ./myceliumd/Cargo.toml);
+                # If no include is passed, it will include all the paths.
+                include = [
+                  ./Cargo.toml
+                  ./Cargo.lock
+                  ./mycelium
+                  ./myceliumd
+                  ./myceliumd-private
+                  ./mobile
+                ];
+              };
+              pname = manifest.package.name;
+              inherit (manifest.package) version;
 
-            sourceRoot = "./myceliumd";
-          in
-          lib.makeOverridable craneLib.buildPackage {
-            src = nix-filter {
-              root = ./.;
+              doCheck = false;
 
-              # If no include is passed, it will include all the paths.
-              include = [
-                ./Cargo.toml
-                ./Cargo.lock
-                ./mycelium
-                ./myceliumd
-                ./myceliumd-private
-                ./mobile
+              nativeBuildInputs = [
+                final.pkg-config
+                # openssl base library
+                final.openssl
+                # required by openssl-sys
+                final.perl
               ];
-            };
-            pname = manifest.package.name;
-            inherit (manifest.package) version;
 
-            doCheck = false;
-
-            nativeBuildInputs = [
-              final.pkg-config
-              # openssl base library
-              final.openssl
-              # required by openssl-sys
-              final.perl
-            ];
-
-            buildInputs = lib.optionals stdenv.isDarwin [
-              darwin.apple_sdk.frameworks.Security
-              darwin.apple_sdk.frameworks.SystemConfiguration
-              final.libiconv
-            ];
-
-            meta = {
-              mainProgram = "mycelium";
-            };
-          };
-        mycelium-private =
-          let
-            craneLib = crane.lib.${final.system};
-
-            inherit (final) lib stdenv darwin;
-
-            manifest = builtins.fromTOML (lib.readFile ./myceliumd-private/Cargo.toml);
-
-            sourceRoot = "./myceliumd-private";
-          in
-          lib.makeOverridable craneLib.buildPackage {
-            src = nix-filter {
-              root = ./.;
-
-              include = [
-                ./Cargo.toml
-                ./Cargo.lock
-                ./mycelium
-                ./myceliumd
-                ./myceliumd-private
-                ./mobile
+              buildInputs = lib.optionals stdenv.isDarwin [
+                darwin.apple_sdk.frameworks.Security
+                darwin.apple_sdk.frameworks.SystemConfiguration
+                final.libiconv
               ];
+
+              meta = {
+                mainProgram = "mycelium";
+              };
             };
-            pname = manifest.package.name;
-            inherit (manifest.package) version;
+          mycelium-private =
+            let
+              manifest = builtins.fromTOML (lib.readFile ./myceliumd-private/Cargo.toml);
 
-            doCheck = false;
+              sourceRoot = "./myceliumd-private";
+            in
+            lib.makeOverridable craneLib.buildPackage {
+              src = nix-filter {
+                root = ./.;
 
-            nativeBuildInputs = [
-              final.pkg-config
-              # openssl base library
-              final.openssl
-              # required by openssl-sys
-              final.perl
-            ];
+                include = [
+                  ./Cargo.toml
+                  ./Cargo.lock
+                  ./mycelium
+                  ./myceliumd
+                  ./myceliumd-private
+                  ./mobile
+                ];
+              };
+              pname = manifest.package.name;
+              inherit (manifest.package) version;
 
-            buildInputs = lib.optionals stdenv.isDarwin [
-              darwin.apple_sdk.frameworks.Security
-              darwin.apple_sdk.frameworks.SystemConfiguration
-              final.libiconv
-            ];
+              doCheck = false;
 
-            meta = {
-              mainProgram = "mycelium-private";
+              nativeBuildInputs = [
+                final.pkg-config
+                # openssl base library
+                final.openssl
+                # required by openssl-sys
+                final.perl
+              ];
+
+              buildInputs = lib.optionals stdenv.isDarwin [
+                darwin.apple_sdk.frameworks.Security
+                darwin.apple_sdk.frameworks.SystemConfiguration
+                final.libiconv
+              ];
+
+              meta = {
+                mainProgram = "mycelium-private";
+              };
             };
-          };
-      };
+        };
     } //
     flake-utils.lib.eachSystem
       [
