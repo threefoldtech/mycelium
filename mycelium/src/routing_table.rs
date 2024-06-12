@@ -107,6 +107,11 @@ impl RouteEntry {
         self.source = source;
     }
 
+    /// Set the [`RouterId`] for this `RouteEntry`.
+    pub fn set_router_id(&mut self, router_id: RouterId) {
+        self.source.set_router_id(router_id)
+    }
+
     /// Sets the [`neighbour`](Peer) for this `RouteEntry`.
     pub fn set_neighbour(&mut self, neighbour: Peer) {
         self.neighbour = neighbour;
