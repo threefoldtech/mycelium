@@ -2,7 +2,7 @@
 
 use std::{
     net::{IpAddr, Ipv6Addr},
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -187,6 +187,20 @@ impl RouteList {
     /// The iterator yields all [`route entries`](RouteEntry) in the list.
     pub fn iter(&self) -> RouteListIter {
         RouteListIter::new(self)
+    }
+}
+
+impl Index<usize> for RouteList {
+    type Output = RouteEntry;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.list[index].1
+    }
+}
+
+impl IndexMut<usize> for RouteList {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.list[index].1
     }
 }
 
