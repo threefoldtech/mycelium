@@ -9,10 +9,11 @@ use std::{
 use ip_network_table_deps_treebitmap::IpLookupTable;
 use tokio::{sync::mpsc, task::AbortHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, field::Iter, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
-    metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
+    metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
+    source_table::SourceKey, subnet::Subnet,
 };
 
 /// RouteKey uniquely defines a route via a peer.
