@@ -9,7 +9,7 @@ use std::{
 use ip_network_table_deps_treebitmap::IpLookupTable;
 use tokio::{sync::mpsc, task::AbortHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, field::Iter, trace};
 
 use crate::{
     metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
@@ -180,6 +180,34 @@ impl RouteList {
             .get(0)
             .map(|(_, re)| re)
             .and_then(|re| if re.selected { Some(re) } else { None })
+    }
+
+    /// Returns an iterator over the `RouteList`.
+    ///
+    /// The iterator yields all [`route entries`](RouteEntry) in the list.
+    pub fn iter(&self) -> RouteListIter {
+        RouteListIter::new(self)
+    }
+}
+
+pub struct RouteListIter<'a> {
+    route_list: &'a RouteList,
+    idx: usize,
+}
+
+impl<'a> RouteListIter<'a> {
+    /// Create a new `RouteListIter` which will iterate over the given [`RouteList`].
+    fn new(route_list: &'a RouteList) -> Self {
+        Self { route_list, idx: 0 }
+    }
+}
+
+impl<'a> Iterator for RouteListIter<'a> {
+    type Item = &'a RouteEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.idx += 1;
+        self.route_list.list.get(self.idx - 1).map(|(_, re)| re)
     }
 }
 
