@@ -7,9 +7,9 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use tokio::{select, sync::mpsc, task::AbortHandle, time::Instant};
+use tokio::{sync::mpsc, task::AbortHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, trace};
 
 use crate::{
     metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
@@ -26,6 +26,16 @@ impl RouteKey {
     /// Creates a new `RouteKey` for the given [`Subnet`] and [`neighbour`](Peer).
     pub fn new(subnet: Subnet, neighbour: Peer) -> Self {
         Self { subnet, neighbour }
+    }
+
+    /// Get's the [`Subnet`] identified by this `RouteKey`.
+    pub fn subnet(&self) -> Subnet {
+        self.subnet
+    }
+
+    /// Gets the [`neighbour`](Peer) identified by this `RouteKey`.
+    pub fn neighbour(&self) -> &Peer {
+        &self.neighbour
     }
 }
 
@@ -537,7 +547,9 @@ mod tests {
 
         let source_key = SourceKey::new(sn, rid);
 
-        let rt = super::RoutingTable::new();
+        let (erk_sink, _erk_stream) = mpsc::channel(1);
+
+        let rt = super::RoutingTable::new(erk_sink);
 
         let rk = super::RouteKey::new(sn, neighbour.clone());
 
