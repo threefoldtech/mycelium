@@ -509,6 +509,16 @@ impl Drop for RoutingTable {
     }
 }
 
+impl std::fmt::Display for RouteKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{} via {}",
+            self.subnet,
+            self.neighbour.connection_identifier()
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
