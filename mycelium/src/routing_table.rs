@@ -1,545 +1,531 @@
-use ip_network_table_deps_treebitmap::IpLookupTable;
-use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{error, warn};
+#![allow(dead_code)]
 
-use crate::{
-    metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
-    source_table::SourceKey, subnet::Subnet,
-};
-use core::fmt;
 use std::{
     net::{IpAddr, Ipv6Addr},
-    time::{Duration, Instant},
+    ops::{Deref, DerefMut},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
-/// Information about a routes expiration.
-pub enum RouteExpirationType {
-    /// Route should be retracted.
-    Retract,
-    /// Route should be flushed from the table.
-    Remove,
-}
+use ip_network_table_deps_treebitmap::IpLookupTable;
+use tokio::{select, sync::mpsc, task::AbortHandle, time::Instant};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, trace, warn};
 
+use crate::{
+    metric::Metric, peer::Peer, sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
+};
+
+/// RouteKey uniquely defines a route via a peer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteKey {
     subnet: Subnet,
-    neighbor: Peer,
+    neighbour: Peer,
 }
 
-impl Eq for RouteKey {}
-
-impl fmt::Display for RouteKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "{} via {}",
-            self.subnet,
-            self.neighbor.connection_identifier()
-        ))
+impl RouteKey {
+    /// Creates a new `RouteKey` for the given [`Subnet`] and [`neighbour`](Peer).
+    pub fn new(subnet: Subnet, neighbour: Peer) -> Self {
+        Self { subnet, neighbour }
     }
 }
 
+/// RouteEntry holds all relevant information about a specific route. Since this includes the next
+/// hop, a single subnet can have multiple route entries.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteEntry {
     source: SourceKey,
-    neighbor: Peer,
+    neighbour: Peer,
     metric: Metric,
     seqno: SeqNo,
     selected: bool,
     expires: Instant,
 }
 
-impl RouteKey {
-    /// Create a new `RouteKey` with the given values.
-    #[inline]
-    pub const fn new(subnet: Subnet, neighbor: Peer) -> Self {
-        Self { subnet, neighbor }
-    }
-
-    /// Returns the [`Subnet`] associated with this `RouteKey`.
-    #[inline]
-    pub const fn subnet(&self) -> Subnet {
-        self.subnet
-    }
-
-    /// Returns the [`neighbour`](Peer) associated with this `RouteKey`.
-    #[inline]
-    pub fn neighbour(&self) -> &Peer {
-        &self.neighbor
-    }
-}
-
 impl RouteEntry {
-    /// Create a new `RouteEntry`.
+    /// Create a new `RouteEntry` with the provided values.
     pub fn new(
         source: SourceKey,
-        neighbor: Peer,
+        neighbour: Peer,
         metric: Metric,
         seqno: SeqNo,
         selected: bool,
-        expiration: Duration,
+        expires: Instant,
     ) -> Self {
         Self {
             source,
-            neighbor,
+            neighbour,
             metric,
             seqno,
             selected,
-            expires: Instant::now() + expiration,
+            expires,
         }
     }
 
-    /// Returns the [`SourceKey`] associated with this `RouteEntry`.
-    pub const fn source(&self) -> SourceKey {
+    /// Return the [`SourceKey`] for this `RouteEntry`.
+    pub fn source(&self) -> SourceKey {
         self.source
     }
 
-    /// Returns the [`SeqNo`] associated with this `RouteEntry`.
-    pub const fn seqno(&self) -> SeqNo {
-        self.seqno
+    /// Return the [`neighbour`](Peer) used as next hop for this `RouteEntry`.
+    pub fn neighbour(&self) -> &Peer {
+        &self.neighbour
     }
 
-    /// Returns the metric associated with this `RouteEntry`.
-    pub const fn metric(&self) -> Metric {
+    /// Return the [`Metric`] of this `RouteEntry`.
+    pub fn metric(&self) -> Metric {
         self.metric
     }
 
-    /// Return the (neighbour)[`Peer`] associated with this `RouteEntry`.
-    pub fn neighbour(&self) -> &Peer {
-        &self.neighbor
+    /// Return the [`sequence number`](SeqNo) for the `RouteEntry`.
+    pub fn seqno(&self) -> SeqNo {
+        self.seqno
     }
 
-    /// Indicates this `RouteEntry` is the selected route for the destination.
-    pub const fn selected(&self) -> bool {
+    /// Return if this [`RouteEntry`] is selected.
+    pub fn selected(&self) -> bool {
         self.selected
     }
 
-    /// Updates the metric of this `RouteEntry` to the given value.
-    pub fn update_metric(&mut self, metric: Metric) {
+    /// Return the [`Instant`] when this `RouteEntry` expires if it doesn't get updated before
+    /// then.
+    pub fn expires(&self) -> Instant {
+        self.expires
+    }
+
+    /// Set the [`SourceKey`] for this `RouteEntry`.
+    pub fn set_source(&mut self, source: SourceKey) {
+        self.source = source;
+    }
+
+    /// Sets the [`neighbour`](Peer) for this `RouteEntry`.
+    pub fn set_neighbour(&mut self, neighbour: Peer) {
+        self.neighbour = neighbour;
+    }
+
+    /// Sets the [`Metric`] for this `RouteEntry`.
+    pub fn set_metric(&mut self, metric: Metric) {
         self.metric = metric;
     }
 
-    /// Updates the seqno of this `RouteEntry` to the given value.
-    pub fn update_seqno(&mut self, seqno: SeqNo) {
+    /// Sets the [`sequence number`](SeqNo) for this `RouteEntry`.
+    pub fn set_seqno(&mut self, seqno: SeqNo) {
         self.seqno = seqno;
     }
 
-    /// Updates the source [`RouterId`] of this `RouteEntry` to the given value.
-    pub fn update_router_id(&mut self, router_id: RouterId) {
-        self.source.set_router_id(router_id);
-    }
-
-    /// Updates when this `RouteEntry` expires.
-    ///
-    /// This is only the marker for the entry itself, after calling this you also need to call
-    /// [`RoutingTable::reset_route_timer`].
-    pub fn update_expiration(&mut self, expiration: Duration) {
-        self.expires = Instant::now() + expiration;
-    }
-
-    /// Sets whether or not this `RouteEntry` is the selected route for the associated [`Peer`].
+    /// Sets if this `RouteEntry` is the selected route for the associated [`Subnet`].
     pub fn set_selected(&mut self, selected: bool) {
-        self.selected = selected
+        self.selected = selected;
     }
 
-    /// Get the remaining [`Duration`] until this `RouteEntry` expires, unles it is reset.
-    pub fn expires(&self) -> Duration {
-        // Explicitly use saturating_duration_since instead of a regular subtraction here, since
-        // this method could be called on an already expired `RouteEntry`.
-        self.expires.saturating_duration_since(Instant::now())
+    /// Sets the expiration time for this [`RouteEntry`].
+    pub fn set_expires(&mut self, expires: Instant) {
+        self.expires = expires;
     }
 }
 
-/// The `RoutingTable` contains all known subnets, and the associated [`RouteEntry`]'s.
-///
-/// Associated data can be saved on the `RoutingTable`. This is provided when the [`RouteKey`] is
-/// inserted for the first time. It is removed when there no longer are any
-/// [`RouteEntries`](RouteEntry) for the given [`RouteKey`].
-pub struct RoutingTable<T> {
-    table: IpLookupTable<Ipv6Addr, TableEntry<T>>,
+/// The routing table holds a list of route entries for every known subnet.
+pub struct RoutingTable {
+    writer: Arc<Mutex<left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
+    reader: left_right::ReadHandle<RoutingTableInner>,
+
+    expired_route_entry_sink: mpsc::Sender<RouteKey>,
+    cancel_token: CancellationToken,
 }
 
-/// An entry in the RoutingTable.
-///
-/// Contians all actual route entries and their associated expiration timer handles, as well as the
-/// extra data for the IP/subnet.
-struct TableEntry<T> {
-    /// Additional data saved for the RouteKey
-    extra_data: T,
-    /// Route entries saved for the route key
-    entries: Vec<(RouteEntry, JoinHandle<()>)>,
+#[derive(Default)]
+struct RoutingTableInner {
+    table: IpLookupTable<Ipv6Addr, Arc<RouteList>>,
 }
 
-impl<T> RoutingTable<T> {
-    /// Create a new, empty `RoutingTable`.
-    pub fn new() -> Self {
-        Self {
-            table: IpLookupTable::new(),
-        }
+/// The RouteList holds all routes for a specific subnet.
+// By convention, if a route is selected, it will always be at index 0 in the list.
+#[derive(Default, Clone)]
+pub struct RouteList {
+    list: Vec<(Arc<AbortHandle>, RouteEntry)>,
+}
+
+impl RouteList {
+    /// Create a new empty RouteList
+    fn new() -> Self {
+        Self::default()
     }
 
-    /// Get a  reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
-    /// present in the table.
-    pub fn get(&self, key: &RouteKey) -> Option<&RouteEntry> {
-        let addr = match key.subnet.address() {
-            IpAddr::V6(addr) => addr,
-            _ => return None,
-        };
+    /// Checks if there are any actual routes in the list.
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
 
-        self.table
-            .exact_match(addr, key.subnet.prefix_len() as u32)?
-            .entries
+    /// Get a reference to the [`RouteEntry`] specified by the [`RouteKey`] from the list.
+    pub fn entry(&self, route_key: &RouteKey) -> Option<&RouteEntry> {
+        self.list
             .iter()
-            .map(|(entry, _)| entry)
-            .find(|entry| entry.neighbor == key.neighbor)
+            .map(|(_, e)| e)
+            .find(|entry| entry.neighbour == route_key.neighbour)
     }
+}
 
-    /// Get a mutable reference to the [`RouteEntry`] associated with the [`RouteKey`] if one is
-    /// present in the table.
-    pub fn get_mut(&mut self, key: &RouteKey) -> Option<&mut RouteEntry> {
-        let addr = match key.subnet.address() {
-            IpAddr::V6(addr) => addr,
-            _ => return None,
+/// A guard which allows write access to a single [`RouteEntry`].
+#[repr(C)] // This is needed since we transmute between instances with different markers.
+pub struct RouteEntryGuard<'a, 'b, O> {
+    write_guard: &'b mut WriteGuard<'a>,
+    entry_identifier: EntryIdentifier,
+    _marker: std::marker::PhantomData<O>,
+}
+
+/// Marker to allow [`RouteEntryGuard::or_insert`] to be called once.
+pub struct PossiblyEmpty;
+/// Maker to clearify [`RouteEntryGuard::or_insert`] has been called, and we can always deref the
+/// pointer.
+pub struct Occupied;
+
+/// Specified how the entry we want from the list can be found.
+enum EntryIdentifier {
+    /// The given entry exists in the RouteList at the specified position.
+    Pos(usize),
+    /// A new Route Entry has been inserted which is not part of the RouteList yet.
+    New(RouteEntry),
+    /// No entry is found in the list, and we haven't been given one either.
+    None,
+}
+
+impl<'a, 'b> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
+    /// Inserts the given [`RouteEntry`] if it does not exist yet. If an entry already exists, this
+    /// does nothing.
+    pub fn or_insert(mut self, re: RouteEntry) -> RouteEntryGuard<'a, 'b, Occupied> {
+        if matches!(self.entry_identifier, EntryIdentifier::None) {
+            self.entry_identifier = EntryIdentifier::New(re)
         };
 
-        self.table
-            .exact_match_mut(addr, key.subnet.prefix_len() as u32)?
-            .entries
-            .iter_mut()
-            .map(|(entry, _)| entry)
-            .find(|entry| entry.neighbor == key.neighbor)
+        // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
+        unsafe { std::mem::transmute(self) }
     }
+}
 
-    /// Insert a new [`RouteEntry`] in the table. If there is already an entry for the
-    /// [`RouteKey`], the existing entry is removed.
-    ///
-    /// Currenly only IPv6 is supported, attempting to insert an IPv4 network does nothing.
-    pub fn insert(
-        &mut self,
-        key: RouteKey,
-        extra_data: T,
-        entry: RouteEntry,
-        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
-    ) {
-        // We make sure that the selected route has index 0 in the entry list (if there is one).
-        // This effectively makes the lookup of a selected route O(1), whereas a lookup of a non
-        // selected route is O(n), n being the amount of Peers (as this is the differentiating part
-        // in a key for a subnet).
-        let addr = match key.subnet.network() {
-            IpAddr::V6(addr) => addr,
-            _ => return,
-        };
-        let selected = entry.selected;
-        let expiration = tokio::spawn({
-            let key = key.clone();
-            let t = if entry.metric().is_infinite() {
-                RouteExpirationType::Remove
-            } else {
-                RouteExpirationType::Retract
-            };
-            let expires = entry.expires();
-            async move {
-                tokio::time::sleep(expires).await;
+impl Deref for RouteEntryGuard<'_, '_, Occupied> {
+    type Target = RouteEntry;
 
-                if let Err(e) = expired_route_entry_sink.send((key, t)).await {
-                    error!("Failed to notify router of expired key {e}");
-                }
+    fn deref(&self) -> &Self::Target {
+        match self.entry_identifier {
+            EntryIdentifier::Pos(pos) => &self.write_guard.list[pos].1,
+            EntryIdentifier::New(ref re) => re,
+            EntryIdentifier::None => {
+                unreachable!()
             }
-        });
-        match self
-            .table
-            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .map(|entry| &mut entry.entries)
-        {
-            Some(entries) => {
-                let new_elem_idx = if let Some(idx) = entries
-                    .iter()
-                    .map(|(entry, _)| entry)
-                    .position(|entry| entry.neighbor == key.neighbor)
-                {
-                    // Overwrite entry if one exists for the key but cancel the timer.
-                    entries[idx].1.abort();
-                    entries[idx] = (entry, expiration);
-                    idx
-                } else {
-                    entries.push((entry, expiration));
-                    entries.len() - 1
-                };
-                // In debug mode, verify that we only have 1 selected route at most. We do this by
-                // checking if entry 0 is not overwritten (the possibly selected route) and if
-                // that is selected.
-                debug_assert!(if new_elem_idx != 0 && selected {
-                    !entries[0].0.selected
-                } else {
-                    true
-                });
-                // If the inserted entry is selected, swap it to index 0 so it is at the start of
-                // the list.
-                if selected {
-                    entries.swap(0, new_elem_idx);
-                }
-            }
-            None => {
-                self.table.insert(
-                    addr,
-                    key.subnet.prefix_len() as u32,
-                    TableEntry {
-                        extra_data,
-                        entries: vec![(entry, expiration)],
-                    },
-                );
-            }
-        };
-    }
-
-    /// Make sure there is no [`RouteEntry`] in the table for a given [`RouteKey`]. If an entry
-    /// existed prior to calling this, it is returned.
-    ///
-    /// Currenly only IPv6 is supported, attempting to remove an IPv4 network does nothing.
-    pub fn remove(&mut self, key: &RouteKey) -> Option<RouteEntry> {
-        let addr = match key.subnet.network() {
-            IpAddr::V6(addr) => addr,
-            _ => return None,
-        };
-        match self
-            .table
-            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .map(|entry| &mut entry.entries)
-        {
-            Some(entries) => {
-                let elem = entries
-                    .iter()
-                    .position(|(entry, _)| entry.neighbor == key.neighbor)
-                    .map(|idx| entries.swap_remove(idx));
-                // Remove the table entry entirely if the vec is empty
-                // NOTE: we don't care if val is some, we only care that no empty set is left
-                // behind.
-                if entries.is_empty() {
-                    self.table.remove(addr, key.subnet.prefix_len() as u32);
-                } else if entries.len() + 2 < entries.capacity() {
-                    // Clean up some wasted space if a lot of routes get removed.
-                    entries.shrink_to(entries.len() + 2);
-                }
-
-                // Cancel timer for the entry
-                elem.map(|(entry, expiration)| {
-                    expiration.abort();
-                    entry
-                })
-            }
-            None => None,
         }
     }
+}
 
-    /// Create an iterator over all key value pairs in the table.
-    // TODO: remove this?
-    pub fn iter(&self) -> impl Iterator<Item = (RouteKey, &'_ T, &'_ RouteEntry)> {
-        self.table.iter().flat_map(|(addr, prefix, entry)| {
-            entry.entries.iter().map(move |(value, _)| {
-                (
-                    RouteKey::new(
-                        Subnet::new(addr.into(), prefix as u8)
-                            .expect("Only proper subnets are inserted in the table; qed"),
-                        value.neighbor.clone(),
-                    ),
-                    &entry.extra_data,
-                    value,
-                )
-            })
-        })
-    }
-
-    /// Look up a selected route for an [`IpAddr`] in the `RoutingTable`.
-    ///
-    /// Currently only IPv6 is supported, looking up an IPv4 address always returns [`Option::None`].
-    /// In the event where 2 distinct routes are inserted with selected set to true, the entry with
-    /// the minimum `Metric` is selected. Note that it is an error to have 2 such entries, and this
-    /// might result in a panic later.
-    pub fn lookup_selected(&self, ip: IpAddr) -> Option<&RouteEntry> {
-        let addr = match ip {
-            IpAddr::V6(addr) => addr,
-            _ => return None,
-        };
-        let entries = &self.table.longest_match(addr)?.2.entries;
-        if entries.is_empty() {
-            // This is a logic error in our code, but don't crash as it is recoverable.
-            warn!("Empty route entry list for {ip}, this is a bug");
-            return None;
-        }
-        if entries[0].0.selected {
-            Some(&entries[0].0)
-        } else {
-            None
+impl DerefMut for RouteEntryGuard<'_, '_, Occupied> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self.entry_identifier {
+            EntryIdentifier::Pos(pos) => &mut self.write_guard.list[pos].1,
+            EntryIdentifier::New(ref mut re) => re,
+            EntryIdentifier::None => {
+                unreachable!()
+            }
         }
     }
+}
 
-    /// Look up extra data for an [`IpAddr`] in the `RoutingTable`.
-    ///
-    /// Currently only IPv6 is supported, looking up an IPv4 address always returns [`Option::None`].
-    /// Extra data is set when the route is inserted and no [`RouteKey`] is present in the table.
-    /// It remains valid until all present [`RouteEntries`](RouteEntry) have been removed.
-    pub fn lookup_extra_data(&self, ip: IpAddr) -> Option<&T> {
-        let addr = match ip {
-            IpAddr::V6(addr) => addr,
-            _ => return None,
-        };
+impl<O> Drop for RouteEntryGuard<'_, '_, O> {
+    fn drop(&mut self) {
+        let expired_route_entry_sink = self.write_guard.expired_route_entry_sink.clone();
+        let cancellation_token = self.write_guard.cancellation_token.clone();
 
-        Some(&self.table.longest_match(addr)?.2.extra_data)
-    }
-
-    /// Unselects a route defined by the [`RouteKey`]. This means there will no longer be a
-    /// selected route for the subnet defined by the [`RouteKey`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the [`RouteKey`] does not exist, or the associated [`RouteEntry`]
-    /// is not selected.
-    pub fn unselect_route(&mut self, key: &RouteKey) {
-        let addr = match key.subnet.network() {
-            IpAddr::V6(addr) => addr,
-            // Panic is fine here as we documented that the RouteKey must exist and that is
-            // obviously not the case.
-            _ => panic!("RouteKey must exist, so it can't be IPv4"),
-        };
-        let entries = &mut self
-            .table
-            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .expect("There is an entry for the provided RouteKey")
-            .entries;
-        // No need for bounds check, RouteKey must exist so there must be at least 1 element.
-        // The message on this assert assumes the invariant that the selected route is the first
-        // element holds
-        assert!(
-            entries[0].0.neighbor == key.neighbor,
-            "Attempted to unselect route which has a different RouteKey"
-        );
-        assert!(
-            entries[0].0.selected,
-            "Attempted to unselected a route which isn't selected"
-        );
-        entries[0].0.selected = false;
-    }
-
-    /// Selects a route defined by the [`RouteKey`]. This means the route defined by the [`RouteKey`]
-    /// will become the selected route for the subnet defined by the [`RouteKey`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the [`RouteKey`] does not exist.
-    pub fn select_route(&mut self, key: &RouteKey) {
-        let addr = match key.subnet.network() {
-            IpAddr::V6(addr) => addr,
-            // Panic is fine here as we documented that the RouteKey must exist and that is
-            // obviously not the case.
-            _ => panic!("RouteKey must exist, so it can't be IPv4"),
-        };
-        let entries = &mut self
-            .table
-            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .expect("There is an entry for the provided RouteKey")
-            .entries;
-        // No need for bounds check, RouteKey must exist so there must be at least 1 element.
-        // The message on this assert assumes the invariant that the selected route is the first
-        // element holds
-        // Unconditionally set the selected flag on the first element to false. If there is no
-        // selected route, this is a no-op, otherwise it makes sure there is only 1 selected route
-        // when we toggle the potentially new route.
-        entries[0].0.selected = false;
-        let entry_idx = entries
-            .iter()
-            .position(|(entry, _)| entry.neighbor == key.neighbor)
-            .expect("Route entry must be present in route table to select it");
-        entries[entry_idx].0.selected = true;
-        // Maintain invariant that selected route comes first.
-        entries.swap(0, entry_idx);
-    }
-
-    /// Get all entries associated with a [`Subnet`]. If a route is selected, it will be the first
-    /// entry in the list.
-    pub fn entries(&self, subnet: Subnet) -> Vec<RouteEntry> {
-        let addr = match subnet.network() {
-            IpAddr::V6(addr) => addr,
-            // Panic is fine here as we documented that the RouteKey must exist and that is
-            // obviously not the case.
-            _ => panic!("RouteKey must exist, so it can't be IPv4"),
-        };
-        self.table
-            .exact_match(addr, subnet.prefix_len() as u32)
-            .map(|entry| entry.entries.as_slice())
-            .unwrap_or(&[])
-            .iter()
-            .map(|(entry, _)| entry)
-            .cloned()
-            .collect()
-    }
-
-    /// Resets the timer associated with a route.
-    pub fn reset_route_timer(
-        &mut self,
-        key: &RouteKey,
-        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
-    ) {
-        let addr = match key.subnet.network() {
-            IpAddr::V6(addr) => addr,
-            _ => return,
-        };
-
-        if let Some(entries) = self
-            .table
-            .exact_match_mut(addr, key.subnet.prefix_len() as u32)
-            .map(|entry| &mut entry.entries)
-        {
-            if let Some(idx) = entries
-                .iter()
-                .map(|(entry, _)| entry)
-                .position(|entry| entry.neighbor == key.neighbor)
-            {
-                // Cancel old entry timer and keep track of the new one.
-                entries[idx].1.abort();
-                let t = if entries[idx].0.metric().is_infinite() {
-                    RouteExpirationType::Remove
-                } else {
-                    RouteExpirationType::Retract
-                };
-                let expiration = tokio::spawn({
-                    let key = key.clone();
-                    let expires = entries[idx].0.expires();
-                    async move {
-                        tokio::time::sleep(expires).await;
-
-                        if let Err(e) = expired_route_entry_sink.send((key, t)).await {
-                            error!("Failed to notify router of expired key {e}");
+        let spawn_timer = |re: &RouteEntry| {
+            let expiration = re.expires;
+            let rk = RouteKey::new(re.source.subnet(), re.neighbour.clone());
+            Arc::new(
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {}
+                        _ = tokio::time::sleep_until(expiration) => {
+                            debug!(route_key = ?rk, "Expired route entry for route key");
+                            if let Err(e) =  expired_route_entry_sink.send(rk).await {
+                                error!(route_key = ?e.0, "Failed to send expired route key on cleanup channel");
+                            }
                         }
                     }
-                });
-                entries[idx].1 = expiration;
-            };
+                })
+                .abort_handle(),
+            )
         };
+
+        let value = std::mem::replace(&mut self.entry_identifier, EntryIdentifier::None);
+        match value {
+            EntryIdentifier::Pos(pos) => {
+                let v = &mut self.write_guard.list[pos];
+                let handle = spawn_timer(&v.1);
+                v.0.abort();
+                v.0 = handle;
+            }
+            EntryIdentifier::New(re) => {
+                let handle = spawn_timer(&re);
+                self.write_guard.list.push((handle, re));
+            }
+            EntryIdentifier::None => {}
+        }
+
+        // TODO: manage route entry based on selected flag
+    }
+}
+
+/// Hold an exclusive write lock over the routing table. While this item is in scope, no other
+/// calls can get a mutable refernce to the content of a routing table. Once this guard goes out of
+/// scope, changes to the contained RouteList will be applied.
+pub struct WriteGuard<'a> {
+    writer: MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
+    /// Owned copy of the RouteList, this is populated once mutable access the the RouteList has
+    /// been requested.
+    //owned: Option<Arc<RouteList>>,
+    value: Arc<RouteList>,
+    owned: bool,
+    /// Did the RouteList exist initially?
+    exists: bool,
+    /// The subnet we are writing to.
+    subnet: Subnet,
+    expired_route_entry_sink: mpsc::Sender<RouteKey>,
+    cancellation_token: CancellationToken,
+}
+
+impl RoutingTable {
+    /// Create a new empty RoutingTable. The passed channel is used to notify an external observer
+    /// of route entry expiration events. It is the callers responsibility to ensure these events
+    /// are properly handled.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if not executed in the context of a tokio runtime.
+    pub fn new(expired_route_entry_sink: mpsc::Sender<RouteKey>) -> Self {
+        let (writer, reader) = left_right::new();
+        let writer = Arc::new(Mutex::new(writer));
+
+        let cancel_token = CancellationToken::new();
+
+        RoutingTable {
+            writer,
+            reader,
+            expired_route_entry_sink,
+            cancel_token,
+        }
+    }
+
+    /// Get a list of all routes for the given subnet. Changes to the RoutingTable after this
+    /// method returns will not be visible and require this method to be called again to be
+    /// observed.
+    pub fn routes(&self, subnet: Subnet) -> Option<Arc<RouteList>> {
+        let subnet_ip = if let IpAddr::V6(ip) = subnet.address() {
+            ip
+        } else {
+            return None;
+        };
+
+        self.reader
+            .enter()
+            .expect("Write handle is saved on the router so it is not dropped yet.")
+            .table
+            .exact_match(subnet_ip, subnet.prefix_len().into())
+            .cloned()
+    }
+
+    /// Get mutable access to the list of routes for the given [`Subnet`].
+    pub fn routes_mut(&self, subnet: Subnet) -> WriteGuard {
+        let subnet_address = if let IpAddr::V6(ip) = subnet.address() {
+            ip
+        } else {
+            panic!("IP v4 addresses are not supported")
+        };
+
+        let writer = self.writer.lock().unwrap();
+        let value = writer
+            .enter()
+            .expect("Enter through write handle is always valid")
+            .table
+            .exact_match(subnet_address, subnet.prefix_len().into())
+            .cloned();
+        let exists = value.is_some();
+
+        WriteGuard {
+            writer,
+            // If we didn't find a route list in the route table we create a new empty list,
+            // therefore we immediately own it.
+            owned: value.is_none(),
+            value: if let Some(value) = value {
+                value
+            } else {
+                Arc::new(RouteList::new())
+            },
+            exists,
+            subnet,
+            expired_route_entry_sink: self.expired_route_entry_sink.clone(),
+            cancellation_token: self.cancel_token.clone(),
+        }
+    }
+}
+
+impl<'a> WriteGuard<'a> {
+    /// Get [`RouteEntryGuard`] containing a [`RouteEntry`] for the given [`RouteKey`].
+    pub fn entry_mut<'b>(
+        &'b mut self,
+        route_key: &RouteKey,
+    ) -> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
+        let entry_identifier = if let Some(pos) = self
+            .list
+            .iter_mut()
+            .map(|(_, e)| e)
+            .position(|entry| entry.neighbour == route_key.neighbour)
+        {
+            EntryIdentifier::Pos(pos)
+        } else {
+            EntryIdentifier::None
+        };
+
+        RouteEntryGuard {
+            write_guard: self,
+            entry_identifier,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Deref for WriteGuard<'_> {
+    type Target = RouteList;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl DerefMut for WriteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.owned = true;
+        Arc::make_mut(&mut self.value)
+    }
+}
+
+impl Drop for WriteGuard<'_> {
+    fn drop(&mut self) {
+        // If owned is false, we never got a mutable reference, and the existing value is a
+        // reference to the already existing value in the route table. So we don't have to do
+        // anything here.
+        if !self.owned {
+            return;
+        }
+
+        // FIXME: try to get rid of clones on the Arc here
+        match self.exists {
+            // The route list did not exist, and now it is not empty, so an entry was added. We
+            // need to add the route list to the routing table.
+            false if !self.value.is_empty() => {
+                trace!(subnet = ?self.subnet, "Inserting new route list for subnet");
+                self.writer.append(RoutingTableOplogEntry::Upsert(
+                    self.subnet,
+                    Arc::clone(&self.value),
+                ));
+            }
+            // There was an existing route list which is now empty, so the entry for this subnet
+            // needs to be deleted in the routing table.
+            true if self.value.is_empty() => {
+                trace!(subnet = ?self.subnet, "Removing route list for subnet");
+                self.writer
+                    .append(RoutingTableOplogEntry::Delete(self.subnet));
+            }
+            // The value already existed, and was mutably accessed, so it was dissociated. Update
+            // the routing table to point to the new value.
+            true => {
+                trace!(subnet = ?self.subnet, "Updating route list for subnet");
+                self.writer.append(RoutingTableOplogEntry::Upsert(
+                    self.subnet,
+                    Arc::clone(&self.value),
+                ));
+            }
+            // The value did not exist and is still empty, so nothing was added. Nothing to do
+            // here.
+            false => {
+                trace!(subnet = ?self.subnet, "Unknown subnet had no routes and still doesn't have any");
+            }
+        }
+
+        self.writer.publish();
+    }
+}
+
+/// Operations allowed on the left_right for the routing table.
+enum RoutingTableOplogEntry {
+    /// Insert or Update the value for the given subnet.
+    Upsert(Subnet, Arc<RouteList>),
+    /// Delete the entry for the given subnet.
+    Delete(Subnet),
+}
+
+/// Convert an [`IpAddr`] into an [`Ipv6Addr`]. Panics if the contained addrss is not an IPv6
+/// address.
+fn expect_ipv6(ip: IpAddr) -> Ipv6Addr {
+    let IpAddr::V6(ip) = ip else {
+        panic!("Expected ipv6 address")
+    };
+
+    ip
+}
+
+impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
+    fn absorb_first(&mut self, operation: &mut RoutingTableOplogEntry, _other: &Self) {
+        match operation {
+            RoutingTableOplogEntry::Upsert(subnet, list) => {
+                self.table.insert(
+                    expect_ipv6(subnet.address()),
+                    subnet.prefix_len().into(),
+                    Arc::clone(list),
+                );
+            }
+            RoutingTableOplogEntry::Delete(subnet) => {
+                self.table
+                    .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
+            }
+        }
+    }
+
+    fn sync_with(&mut self, first: &Self) {
+        for (k, ss, v) in first.table.iter() {
+            self.table.insert(k, ss, v.clone());
+        }
+    }
+}
+
+impl Drop for RoutingTable {
+    fn drop(&mut self) {
+        self.cancel_token.cancel();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
-        net::{IpAddr, Ipv6Addr},
+        net::Ipv6Addr,
         sync::{atomic::AtomicU64, Arc},
-        time::Duration,
     };
 
     use tokio::sync::mpsc;
 
     use crate::{
-        crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
+        crypto::SecretKey, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
         source_table::SourceKey, subnet::Subnet,
     };
 
     #[tokio::test]
-    async fn route_expiration() {
-        // Set up a dummy peer since that is needed to create a `RouteEntry`
+    async fn routing_table_base_flow() {
+        let sk = SecretKey::new();
+        let pk = (&sk).into();
+        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
+            .expect("Valid subnet in test case");
+        let rid = RouterId::new(pk);
+
         let (router_data_tx, _router_data_rx) = mpsc::channel(1);
         let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
         let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
         let (con1, _con2) = tokio::io::duplex(1500);
-        let neighbor = Peer::new(
+        let neighbour = Peer::new(
             router_data_tx,
             router_control_tx,
             con1,
@@ -548,29 +534,29 @@ mod tests {
             Arc::new(AtomicU64::new(0)),
         )
         .expect("Can create a dummy peer");
-        let subnet = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0)), 64)
-            .expect("Valid subnet definition");
-        let router_id = RouterId::new(PublicKey::from([0; 32]));
-        let source = SourceKey::new(subnet, router_id);
-        let metric = Metric::new(0);
-        let seqno = SeqNo::new();
-        let selected = true;
 
-        let expiration = Duration::from_secs(5);
-        let re = super::RouteEntry::new(
-            source,
-            neighbor.clone(),
-            metric,
-            seqno,
-            selected,
-            expiration,
-        );
-        assert!(re.expires().as_nanos() > 0);
+        let source_key = SourceKey::new(sn, rid);
 
-        // 0 Second duration, since creating a route entry with a duration is not actually instant,
-        //   this tests if calling `expires` on an expired RouteEntry does not panic
-        let expiration = Duration::from_secs(0);
-        let re = super::RouteEntry::new(source, neighbor, metric, seqno, selected, expiration);
-        assert!(re.expires().as_nanos() == 0);
+        let rt = super::RoutingTable::new();
+
+        let rk = super::RouteKey::new(sn, neighbour.clone());
+
+        let mut route_list = rt.routes_mut(sn);
+
+        assert!(route_list.is_empty());
+
+        let entry = route_list.entry_mut(&rk);
+
+        let entry = entry.or_insert(super::RouteEntry::new(
+            source_key,
+            neighbour,
+            Metric::new(0),
+            SeqNo::new(),
+            false,
+            tokio::time::Instant::now() + tokio::time::Duration::from_secs(600),
+        ));
+        drop(entry);
+
+        assert!(!route_list.is_empty());
     }
 }
