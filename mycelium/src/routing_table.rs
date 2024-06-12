@@ -173,6 +173,14 @@ impl RouteList {
             .map(|(_, e)| e)
             .find(|entry| entry.neighbour == route_key.neighbour)
     }
+
+    /// Returns the selected route for the [`Subnet`] this is the `RouteList` for, if one exists.
+    pub fn selected(&self) -> Option<&RouteEntry> {
+        self.list
+            .get(0)
+            .map(|(_, re)| re)
+            .and_then(|re| if re.selected { Some(re) } else { None })
+    }
 }
 
 /// A guard which allows write access to a single [`RouteEntry`].
