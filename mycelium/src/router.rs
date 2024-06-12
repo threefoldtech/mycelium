@@ -7,7 +7,7 @@ use crate::{
     packet::{ControlPacket, DataPacket},
     peer::Peer,
     router_id::RouterId,
-    routing_table::{RouteEntry, RouteExpirationType, RouteKey, RoutingTable},
+    routing_table::{RouteEntry, RouteKey, RouteList, RoutingTable},
     seqno_cache::{SeqnoCache, SeqnoRequestCacheKey},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
@@ -62,8 +62,7 @@ const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(60);
 const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(0);
 
 pub struct Router<M> {
-    inner_w: Arc<Mutex<WriteHandle<RouterInner, RouterOpLogEntry>>>,
-    inner_r: ReadHandle<RouterInner>,
+    routing_table: RoutingTable,
     peer_interfaces: Arc<RwLock<Vec<Peer>>>,
     source_table: Arc<RwLock<SourceTable>>,
     // Router SeqNo and last time it was bumped
@@ -104,16 +103,14 @@ where
         let (expired_route_entry_sink, expired_route_entry_stream) = mpsc::channel(1);
         let (dead_peer_sink, dead_peer_stream) = mpsc::channel(1);
 
-        let router_inner = RouterInner::new(expired_route_entry_sink)?;
-        let (inner_w, inner_r) = left_right::new_from_empty(router_inner);
+        let routing_table = RoutingTable::new(expired_route_entry_sink);
 
         let router_id = RouterId::new(node_keypair.1);
 
         let seqno_cache = SeqnoCache::new();
 
         let router = Router {
-            inner_w: Arc::new(Mutex::new(inner_w)),
-            inner_r,
+            routing_table,
             peer_interfaces: Arc::new(RwLock::new(Vec::new())),
             source_table: Arc::new(RwLock::new(SourceTable::new())),
             router_seqno: Arc::new(RwLock::new((SeqNo::new(), Instant::now()))),
@@ -447,9 +444,9 @@ where
     /// Remove expired route keys from the router state.
     async fn process_expired_route_keys(
         self,
-        mut expired_route_key_stream: mpsc::Receiver<(RouteKey, RouteExpirationType)>,
+        mut expired_route_key_stream: mpsc::Receiver<RouteKey>,
     ) {
-        while let Some((rk, expiration_type)) = expired_route_key_stream.recv().await {
+        while let Some(rk) = expired_route_key_stream.recv().await {
             self.metrics
                 .router_route_key_expired(matches!(expiration_type, RouteExpirationType::Remove));
             debug!("Got expiration event for route {rk}");
@@ -718,11 +715,10 @@ where
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
             let update = if let Some(sre) = self
-                .inner_r
-                .enter()
-                .expect("We deref through a write handle so this is always Some; qed")
                 .routing_table
-                .lookup_selected(subnet.address())
+                .routes(subnet)
+                .as_ref()
+                .and_then(|rl| rl.selected())
             {
                 trace!("Advertising selected route for {subnet} after route request");
                 // Optimization: Don't send an update if the selected route next-hop is the peer
@@ -787,18 +783,15 @@ where
         // periodically retry requests without reply. We will however not do this for now and rely
         // on the fact that we have stable links in general.
 
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
         // If we have a selected route for the prefix, and its router id is different from the
         // requested router id, or the router id is the same and the entries sequence number is
         // not smaller than the requested sequence number, send an update for the route
         // to the peer (triggered update).
-        if let Some(route_entry) = inner
+        if let Some(route_entry) = self
             .routing_table
-            .lookup_selected(seqno_request.prefix().address())
+            .routes(seqno_request.prefix())
+            .as_ref()
+            .and_then(|rl| rl.selected())
         {
             if !route_entry.metric().is_infinite()
                 && (seqno_request.router_id() != route_entry.source().router_id()
@@ -820,7 +813,6 @@ where
                     // if the router_id is not in the map, then the route came from the node itself
                     route_entry.source().router_id(),
                 );
-                drop(inner);
 
                 self.send_update(&source_peer, update);
 
@@ -853,7 +845,6 @@ where
             // Bump router seqno
             // TODO: should we only send an update to the peer who sent the seqno request
             // instad of updating all our peers?
-            drop(inner);
             debug!("Bumping local router sequence number");
             // Scope the write lock on seqno
             {
@@ -903,14 +894,47 @@ where
                 }
             }
 
-            let possible_routes = inner.routing_table.entries(seqno_request.prefix());
+            if let Some(possible_routes) = self.routing_table.routes(seqno_request.prefix()) {
+                {
+                    let source_table = self.source_table.read().unwrap();
+                    // First only consider feasible routes.
+                    for re in possible_routes.iter().filter(|re| {
+                        !visited_peers.contains(re.neighbour())
+                            && source_table.route_feasible(re)
+                            && re.neighbour() != &source_peer
+                            && re.neighbour().alive()
+                            && !re.metric().is_infinite()
+                    }) {
+                        debug!(
+                            "Forwarding seqno request {} for {} to {}",
+                            seqno_request.seqno(),
+                            seqno_request.prefix(),
+                            re.neighbour().connection_identifier()
+                        );
+                        if re
+                            .neighbour()
+                            .send_control_packet(seqno_request.clone().into())
+                            .is_err()
+                        {
+                            trace!(
+                                "Failed to foward seqno request to {}",
+                                re.neighbour().connection_identifier(),
+                            );
+                            continue;
+                        }
 
-            {
-                let source_table = self.source_table.read().unwrap();
-                // First only consider feasible routes.
+                        self.seqno_cache
+                            .forward(srck, re.neighbour().clone(), Some(source_peer));
+
+                        self.metrics.router_seqno_request_forward_feasible();
+
+                        return;
+                    }
+                }
+
+                // Finally consider infeasible routes as well.
                 for re in possible_routes.iter().filter(|re| {
                     !visited_peers.contains(re.neighbour())
-                        && source_table.route_feasible(re)
                         && re.neighbour() != &source_peer
                         && re.neighbour().alive()
                         && !re.metric().is_infinite()
@@ -927,7 +951,7 @@ where
                         .is_err()
                     {
                         trace!(
-                            "Failed to foward seqno request to {}",
+                            "Failed to foward seqno request to infeasible peer {}",
                             re.neighbour().connection_identifier(),
                         );
                         continue;
@@ -936,43 +960,10 @@ where
                     self.seqno_cache
                         .forward(srck, re.neighbour().clone(), Some(source_peer));
 
-                    self.metrics.router_seqno_request_forward_feasible();
+                    self.metrics.router_seqno_request_forward_unfeasible();
 
                     return;
                 }
-            }
-
-            // Finally consider infeasible routes as well.
-            for re in possible_routes.iter().filter(|re| {
-                !visited_peers.contains(re.neighbour())
-                    && re.neighbour() != &source_peer
-                    && re.neighbour().alive()
-                    && !re.metric().is_infinite()
-            }) {
-                debug!(
-                    "Forwarding seqno request {} for {} to {}",
-                    seqno_request.seqno(),
-                    seqno_request.prefix(),
-                    re.neighbour().connection_identifier()
-                );
-                if re
-                    .neighbour()
-                    .send_control_packet(seqno_request.clone().into())
-                    .is_err()
-                {
-                    trace!(
-                        "Failed to foward seqno request to infeasible peer {}",
-                        re.neighbour().connection_identifier(),
-                    );
-                    continue;
-                }
-
-                self.seqno_cache
-                    .forward(srck, re.neighbour().clone(), Some(source_peer));
-
-                self.metrics.router_seqno_request_forward_unfeasible();
-
-                return;
             }
         }
 
@@ -987,14 +978,14 @@ where
     /// the current route.
     fn find_best_route<'a>(
         &self,
-        routes: &'a [RouteEntry],
+        routes: &'a mut RouteList,
         current: Option<&'a RouteEntry>,
-    ) -> Option<&'a RouteEntry> {
+    ) -> Option<&'a mut RouteEntry> {
         // Since retracted routes have the highest possible metrics, this will only select one if
         // no non-retracted routes are feasible.
         let source_table = self.source_table.read().unwrap();
         let best = routes
-            .iter()
+            .iter_mut()
             // Infinite metrics are technically feasible, but for route selection we explicitly
             // don't want infinite metrics as those routes are unreachable.
             .filter(|re| !re.metric().is_infinite() && source_table.route_feasible(re))
@@ -1047,19 +1038,14 @@ where
             seqno,
         });
 
-        let mut inner_w = self.inner_w.lock().expect("Mutex isn't poisoned");
-
         // We load all routes here from the routing table in memory. Because we hold the mutex for the
         // writer, this view is accurate and we can't diverge until the mutex is released. We will
         // then apply every action on the list of route entries both to the local list, and as a
         // RouterOpLogEntry. This is needed because publishing intermediate results might cause
         // readers to observe intermediate state, which could lead to problems.
         let (mut routing_table_entries, update_feasible) = {
-            let inner = inner_w
-                .enter()
-                .expect("We deref through a write handle so this enter never fails");
             (
-                inner.routing_table.entries(subnet),
+                self.routing_table.routes_mut(subnet),
                 self.source_table
                     .read()
                     .unwrap()
@@ -1107,22 +1093,14 @@ where
                 // for this route.
                 return;
             }
-            existing_entry.update_seqno(seqno);
-            existing_entry.update_metric(metric);
-            existing_entry.update_router_id(router_id);
-            let rk = RouteKey::new(subnet, source_peer);
-            inner_w.append(RouterOpLogEntry::UpdateRouteEntry(
-                rk.clone(),
-                seqno,
-                metric,
-                router_id,
-                route_hold_time(&update),
-            ));
+            existing_entry.set_seqno(seqno);
+            existing_entry.set_metric(metric);
+            existing_entry.set_router_id(router_id);
+            existing_entry.set_expires(tokio::time::Instant::now() + route_hold_time(&update));
             // If the update is unfeasible the route must be unselected.
             if existing_entry.selected() && !update_feasible {
                 existing_route_unselected = true;
                 existing_entry.set_selected(false);
-                inner_w.append(RouterOpLogEntry::UnselectRoute(rk));
             }
         } else {
             // If there is no entry yet ignore unfeasible updates and retractions.
@@ -1132,35 +1110,33 @@ where
             }
 
             // Create new entry in the route table
-            let re = RouteEntry::new(
-                SourceKey::new(subnet, router_id),
-                source_peer.clone(),
-                metric,
-                seqno,
-                false,
-                route_hold_time(&update),
-            );
-            routing_table_entries.push(re.clone());
+            routing_table_entries
+                .entry_mut(&update_route_key)
+                .or_insert(RouteEntry::new(
+                    SourceKey::new(subnet, router_id),
+                    source_peer.clone(),
+                    metric,
+                    seqno,
+                    false,
+                    tokio::time::Instant::now() + route_hold_time(&update),
+                ));
 
-            let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
-            inner_w.append(RouterOpLogEntry::InsertRoute(
-                RouteKey::new(subnet, source_peer),
-                re,
-                router_id.to_pubkey(),
-                ss,
-            ));
+            // TODO:
+            // let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
+            // inner_w.append(RouterOpLogEntry::InsertRoute(
+            //     RouteKey::new(subnet, source_peer),
+            //     re,
+            //     router_id.to_pubkey(),
+            //     ss,
+            // ));
         }
 
         // Now that we applied the update, run route selection.
-        let new_selected_route =
-            self.find_best_route(&routing_table_entries, old_selected_route.as_ref());
-        if let Some(nbr) = new_selected_route {
-            // Install this route in the routing table. We don't update the local copy anymore as
-            // we don't use it afterwards.
-            inner_w.append(RouterOpLogEntry::SelectRoute(RouteKey::new(
-                subnet,
-                nbr.neighbour().clone(),
-            )));
+        let mut new_selected_route =
+            self.find_best_route(&mut routing_table_entries, old_selected_route.as_ref());
+        if let Some(ref mut nbr) = new_selected_route {
+            nbr.set_selected(true);
+            // Install this route in the routing table.
         } else if let Some(osr) = old_selected_route.as_ref() {
             // If there is no new selected route, but there was one previously, update the routing
             // table. This is not covered above, as there only unfeasible updates cause a selected
@@ -1171,16 +1147,15 @@ where
             // subnet, so we try to refresh the route by sending out a seqno request to all
             // neigbours who advertised the route at some point.
             self.send_seqno_request(osr.source(), None, None);
+
             if !existing_route_unselected {
-                inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
-                    subnet,
-                    osr.neighbour().clone(),
-                )));
+                // Since we know for sure a selected route existed we could technically unwrap
+                // here.
+                if let Some(mut selected_route) = routing_table_entries.selected_mut() {
+                    selected_route.set_selected(false);
+                }
             }
         };
-
-        // Already publish here, we won't make any other adjustments to the routing table.
-        inner_w.publish();
 
         // At this point we are done, though we would like to understand if we need to send a
         // triggered update to our peers. This is done if there is a sufficiently large change. We
@@ -1765,93 +1740,6 @@ where
             expired_source_key_sink: self.expired_source_key_sink.clone(),
             seqno_cache: self.seqno_cache.clone(),
             metrics: self.metrics.clone(),
-        }
-    }
-}
-
-pub struct RouterInner {
-    routing_table: RoutingTable<(PublicKey, SharedSecret)>,
-    expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
-}
-
-impl RouterInner {
-    pub fn new(
-        expired_route_entry_sink: mpsc::Sender<(RouteKey, RouteExpirationType)>,
-    ) -> Result<Self, Box<dyn Error>> {
-        let router_inner = RouterInner {
-            routing_table: RoutingTable::new(),
-            expired_route_entry_sink,
-        };
-
-        Ok(router_inner)
-    }
-}
-
-enum RouterOpLogEntry {
-    /// Insert a new entry in the routing table.
-    InsertRoute(RouteKey, RouteEntry, PublicKey, SharedSecret),
-    /// Removes a route with the given route key.
-    RemoveRoute(RouteKey),
-    /// Unselect the route defined by the route key.
-    UnselectRoute(RouteKey),
-    /// Select the route defined by the route key.
-    SelectRoute(RouteKey),
-    /// Update the route entry associated to the given route key in the fallback route table, if
-    /// one exists
-    UpdateRouteEntry(RouteKey, SeqNo, Metric, RouterId, Duration),
-}
-
-impl left_right::Absorb<RouterOpLogEntry> for RouterInner {
-    fn absorb_first(&mut self, operation: &mut RouterOpLogEntry, _: &Self) {
-        match operation {
-            RouterOpLogEntry::InsertRoute(rk, re, pk, ss) => {
-                self.routing_table.insert(
-                    rk.clone(),
-                    (*pk, ss.clone()),
-                    re.clone(),
-                    self.expired_route_entry_sink.clone(),
-                );
-            }
-            RouterOpLogEntry::RemoveRoute(rk) => {
-                self.routing_table.remove(rk);
-            }
-            RouterOpLogEntry::UnselectRoute(rk) => {
-                self.routing_table.unselect_route(rk);
-            }
-            RouterOpLogEntry::SelectRoute(rk) => {
-                self.routing_table.select_route(rk);
-            }
-            RouterOpLogEntry::UpdateRouteEntry(rk, seqno, metric, pk, expiration) => {
-                if let Some(re) = self.routing_table.get_mut(rk) {
-                    re.update_seqno(*seqno);
-                    re.update_metric(*metric);
-                    re.update_router_id(*pk);
-                    re.update_expiration(*expiration);
-                    self.routing_table
-                        .reset_route_timer(rk, self.expired_route_entry_sink.clone());
-                }
-            }
-        }
-    }
-
-    fn sync_with(&mut self, first: &Self) {
-        *self = first.clone()
-    }
-}
-
-impl Clone for RouterInner {
-    fn clone(&self) -> Self {
-        let RouterInner {
-            routing_table,
-            expired_route_entry_sink,
-        } = self;
-        let mut new_routing_table = RoutingTable::new();
-        for (k, e, v) in routing_table.iter() {
-            new_routing_table.insert(k, e.clone(), v.clone(), expired_route_entry_sink.clone());
-        }
-        RouterInner {
-            routing_table: new_routing_table,
-            expired_route_entry_sink: expired_route_entry_sink.clone(),
         }
     }
 }
