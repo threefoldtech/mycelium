@@ -8,6 +8,10 @@ use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, metrics, Config, Node};
 use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, Mutex};
+use tokio::time::{sleep, timeout, Duration};
+
+const CHANNEL_MSG_OK: &str = "ok";
+const CHANNEL_TIMEOUT: u64 = 2;
 
 #[cfg(target_os = "android")]
 fn setup_logging() {
@@ -52,10 +56,19 @@ fn setup_logging_once() {
 }
 
 // Declare the channel globally so we can use it on the start & stop mycelium functions
-#[allow(clippy::type_complexity)]
-static CHANNEL: Lazy<(Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>)> = Lazy::new(|| {
-    let (tx, rx) = mpsc::channel::<()>(1);
-    (Mutex::new(tx), Mutex::new(rx))
+type CommandChannelType = (Mutex<mpsc::Sender<Cmd>>, Mutex<mpsc::Receiver<Cmd>>);
+static COMMAND_CHANNEL: Lazy<CommandChannelType> = Lazy::new(|| {
+    let (tx_cmd, rx_cmd) = mpsc::channel::<Cmd>(1);
+    (Mutex::new(tx_cmd), Mutex::new(rx_cmd))
+});
+
+type ResponseChannelType = (
+    Mutex<mpsc::Sender<Response>>,
+    Mutex<mpsc::Receiver<Response>>,
+);
+static RESPONSE_CHANNEL: Lazy<ResponseChannelType> = Lazy::new(|| {
+    let (tx_resp, rx_resp) = mpsc::channel::<Response>(1);
+    (Mutex::new(tx_resp), Mutex::new(rx_resp))
 });
 
 #[tokio::main]
@@ -88,33 +101,145 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         #[cfg(any(target_os = "android", target_os = "ios"))]
         tun_fd: Some(tun_fd),
     };
-    let _node = Node::new(config).await;
-
-    match _node {
-        Ok(_) => info!("node successfully created"),
-        Err(err) => error!("failed to create mycelium node: {err}"),
+    let _node = match Node::new(config).await {
+        Ok(node) => {
+            info!("node successfully created");
+            node
+        }
+        Err(err) => {
+            error!("failed to create mycelium node: {err}");
+            return;
+        }
     };
 
-    let mut rx = CHANNEL.1.lock().await;
-    tokio::select! {
-        _ = tokio::signal::ctrl_c()  => {
-            info!("Received SIGINT, stopping mycelium node");
-        }
-       _ = rx.recv() => {
-            info!("Received stop channel, stopping mycelium node");
+    let mut rx = COMMAND_CHANNEL.1.lock().await;
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c()  => {
+                info!("Received SIGINT, stopping mycelium node");
+                break;
+            }
+           cmd = rx.recv() => {
+                match cmd.unwrap().cmd {
+                    CmdType::Stop => {
+                        info!("Received stop command, stopping mycelium node");
+                        send_response(vec![CHANNEL_MSG_OK.to_string()]).await;
+                        break;
+                    }
+                    CmdType::Status => {
+                        let mut vec: Vec<String> = Vec::new();
+                        for info in _node.peer_info() {
+                            vec.push(info.endpoint.proto().to_string() + ","+ info.endpoint.address().to_string().as_str()+","+ &info.connection_state.to_string());
+                        }
+                        send_response(vec).await;
+                    }
+                }
+            }
         }
     }
     info!("mycelium stopped");
 }
 
+struct Cmd {
+    cmd: CmdType,
+}
+
+enum CmdType {
+    Stop,
+    Status,
+}
+
+struct Response {
+    response: Vec<String>,
+}
+
+// stop_mycelium returns string with the status of the command
 #[tokio::main]
-pub async fn stop_mycelium() {
-    info!("stopping mycelium by sending stop channel");
-    // TODO: check what happens if we send multiple times?
-    // it is currently OK to have this implementation because
-    // we prevent multiple calls to stop_mycelium from the UI side.
-    let tx = CHANNEL.0.lock().await;
-    tx.send(()).await.unwrap();
+pub async fn stop_mycelium() -> String {
+    if let Err(e) = send_command(CmdType::Stop).await {
+        return e.to_string();
+    }
+
+    match recv_response().await {
+        Ok(_) => CHANNEL_MSG_OK.to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+// get_peer_status returns vector of string
+// first element is always the status of the command (ok or error)
+// next elements are the peer status
+#[tokio::main]
+pub async fn get_peer_status() -> Vec<String> {
+    if let Err(e) = send_command(CmdType::Status).await {
+        return vec![e.to_string()];
+    }
+
+    match recv_response().await {
+        Ok(mut resp) => {
+            resp.insert(0, CHANNEL_MSG_OK.to_string());
+            resp
+        }
+        Err(e) => vec![e.to_string()],
+    }
+}
+
+#[tokio::main]
+pub async fn get_status() -> Result<String, NodeError> {
+    Err(NodeError::NodeDead)
+}
+
+use thiserror::Error;
+#[derive(Error, Debug)]
+pub enum NodeError {
+    #[error("err_node_dead")]
+    NodeDead,
+
+    #[error("err_node_timeout")]
+    NodeTimeout,
+}
+
+async fn send_command(cmd_type: CmdType) -> Result<(), NodeError> {
+    let tx = COMMAND_CHANNEL.0.lock().await;
+    tokio::select! {
+        _ = sleep(Duration::from_secs(CHANNEL_TIMEOUT)) => {
+            Err(NodeError::NodeTimeout)
+        }
+        result = tx.send(Cmd { cmd: cmd_type }) => {
+            match result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(NodeError::NodeDead)
+            }
+        }
+    }
+}
+
+async fn send_response(resp: Vec<String>) {
+    let tx = RESPONSE_CHANNEL.0.lock().await;
+
+    tokio::select! {
+        _ = sleep(Duration::from_secs(CHANNEL_TIMEOUT)) => {
+            error!("send_response timeout");
+        }
+        result = tx.send(Response { response: resp }) => {
+            match result {
+                Ok(_) => {},
+                Err(_) =>{error!("send_response failed");},
+            }
+        }
+    }
+}
+
+async fn recv_response() -> Result<Vec<String>, NodeError> {
+    let mut rx = RESPONSE_CHANNEL.1.lock().await;
+    let duration = Duration::from_secs(CHANNEL_TIMEOUT);
+    match timeout(duration, rx.recv()).await {
+        Ok(result) => match result {
+            Some(resp) => Ok(resp.response),
+            None => Err(NodeError::NodeDead),
+        },
+        Err(_) => Err(NodeError::NodeTimeout),
+    }
 }
 
 #[derive(Clone)]

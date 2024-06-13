@@ -90,7 +90,7 @@ struct ConnectionTraffic {
 }
 
 /// General state about a connection to a [`Peer`].
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectionState {
     /// There is a working connection to the [`Peer`].
