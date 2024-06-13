@@ -7,6 +7,7 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
+use left_right::ReadHandle;
 use tokio::{sync::mpsc, task::AbortHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace};
@@ -395,6 +396,15 @@ impl RoutingTable {
             .cloned()
     }
 
+    pub fn read(&self) -> RoutingTableReadGuard {
+        RoutingTableReadGuard {
+            guard: self
+                .reader
+                .enter()
+                .expect("Write handle is saved on RoutingTable, so this is always Some; qed"),
+        }
+    }
+
     /// Get mutable access to the list of routes for the given [`Subnet`].
     pub fn routes_mut(&self, subnet: Subnet) -> WriteGuard {
         let subnet_address = if let IpAddr::V6(ip) = subnet.address() {
@@ -427,6 +437,43 @@ impl RoutingTable {
             expired_route_entry_sink: self.expired_route_entry_sink.clone(),
             cancellation_token: self.cancel_token.clone(),
         }
+    }
+}
+
+/// A read guard over the [`RoutingTable`]. While this guard is held, updates won't be able to
+/// complete.
+pub struct RoutingTableReadGuard<'a> {
+    guard: left_right::ReadGuard<'a, RoutingTableInner>,
+}
+
+impl<'a> RoutingTableReadGuard<'a> {
+    pub fn iter(&self) -> RoutingTableIter {
+        RoutingTableIter::new(self.guard.table.iter())
+    }
+}
+
+pub struct RoutingTableIter<'a>(
+    ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<RouteList>>,
+);
+
+impl<'a> RoutingTableIter<'a> {
+    /// Create a new `RoutingTableIter` which will iterate over all entries in a [`RoutingTable`].
+    fn new(inner: ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<RouteList>>) -> Self {
+        Self(inner)
+    }
+}
+
+impl<'a> Iterator for RoutingTableIter<'a> {
+    type Item = (Subnet, &'a Arc<RouteList>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(ip, prefix_size, rl)| {
+            (
+                Subnet::new(ip.into(), prefix_size as u8)
+                    .expect("Routing table contains valid subnets"),
+                rl,
+            )
+        })
     }
 }
 
