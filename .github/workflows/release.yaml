@@ -79,3 +79,42 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           # Specify manifest since we are in a subdirectory
           manifest-path: myceliumd-private/Cargo.toml
+
+  build-msi:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create .exe file
+        run: cd myceliumd && cargo build --release && cd ..
+
+      - name: Setup .NET Core SDK
+        uses: actions/setup-dotnet@v4.0.0
+
+      - name: Install WiX Toolset
+        run: dotnet tool install --global wix
+
+      - name: Add WixToolset.UI.wixext extension
+        run: wix extension add WixToolset.UI.wixext
+
+      - name: Download Wintun zip file
+        run: curl -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
+
+      - name: Unzip Wintun
+        run: tar -xf wintun.zip
+
+      - name: Move .dll file to myceliumd directory
+        run: move wintun\bin\amd64\wintun.dll myceliumd
+
+      - name: Build MSI package
+        run: wix build -loc installers\windows\wix\mycelium.en-us.wxl installers\windows\wix\mycelium.wxs -ext WixToolset.UI.wixext -arch x64 -dcl high -out mycelium_installer.msi
+
+      - name: Upload MSI artifact
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["mycelium_installer.msi"]'

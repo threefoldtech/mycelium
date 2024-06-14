@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+    <Package 
+        Name="Mycelium" 
+        Version="0.5.3" 
+        Language="1033"
+        Manufacturer="ThreeFold Tech"
+        Scope="perMachine"
+        UpgradeCode="BAF27FEF-C391-4F8C-9CF3-2C4C4DBC7B57" >
+
+        <!--Embed the cabinet file into the installer-->
+        <Media Id="1" Cabinet="MyceliumCabinet" EmbedCab="yes" />
+        <!--Do not install when having more recent version installed already-->
+        <MajorUpgrade DowngradeErrorMessage="!(loc.DowngradeError)" />
+
+        <Feature Id="Main">
+            <ComponentGroupRef Id="MyceliumComponentGroup" />
+        </Feature>            
+
+        <UI>
+            <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALL_LOC"/>
+        </UI>            
+
+        <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf"/>
+    </Package>
+
+    <Fragment>
+
+        <!-- We use our own install location instead of the default INSTALLFOLDER, 
+            as this would result in C:\Program Files\ThreeFold Tech Mycelium instead of just C:\Program Files\Mycelium -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALL_LOC" Name="Mycelium"/>
+        </StandardDirectory>
+
+        <ComponentGroup Id="MyceliumComponentGroup" Directory="INSTALL_LOC">
+            <Component 
+                Id="MainExecutable"
+                Guid="7A0BF6C6-3DD6-4A10-9DAC-F36A276856EF"
+                Bitness="always64" 
+                > 
+                <File 
+                    Id="mycelium_exe" 
+                    Source="myceliumd\target\release\mycelium.exe" 
+                    KeyPath="yes" 
+                    Vital="yes" />
+                <ServiceInstall 
+                    Name="mycelium"
+                    Description="Mycelium IPv6 overlay network service"
+                    ErrorControl="normal"
+                    Interactive="no"
+                    Vital="yes"
+                />
+                <!--Adds the INSTALLFOLDER to the PATH environment variable-->
+                <Environment
+                    Id="MyceliumPath"
+                    Name="PATH"
+                    Value="[INSTALL_LOC]"
+                    Permanent="no"
+                    Part="last"
+                    Action="set"
+                    System="yes"
+                />
+            </Component>
+            <Component 
+                Id="WintunLibrary"
+                Guid="5DA22A56-9C44-4A1E-89CC-19E7A52F5E8B"
+                Bitness="always64" 
+                Directory="System64Folder"
+                > 
+                <File 
+                    Id="wintun_dll" 
+                    Source="myceliumd\wintun.dll" 
+                    KeyPath="yes" 
+                    Vital="yes" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+</Wix>
