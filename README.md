@@ -22,11 +22,16 @@ Mycelium is an IPv6 overlay network written in Rust. Each node that joins the ov
 
 > Currently, Linux, macOS and Windows are supported.
 
-First, get an useable binary, either by downloading [an artifact from a release](https://github.com/threefoldtech/mycelium/releases),
+### Linux and macOS
+
+Get an useable binary, either by downloading [an artifact from a release](https://github.com/threefoldtech/mycelium/releases),
 or by [checking out and building the code yourself](#developing).
 
-> On Windows, you must have `wintun.dll` in the same directory you are executing
-> the binary from.
+### Windows
+
+Download the [mycelium_installer.msi](https://github.com/threefoldtech/mycelium/releases/latest/download/mycelium_installer.msi) and run the installer.
+
+### Run Mycelium
 
 Once you have an useable binary, simply start it. If you want to connect to other
 nodes, you can specify their listening address as part of the command (combined
