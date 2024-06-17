@@ -32,7 +32,7 @@ const PACKET_COALESCE_WINDOW: usize = 50;
 /// In theory, the best value would be U16::MAX - 1, however this value would take too long to be
 /// flushed out of the smoothed metric. A default of a 50 (50 ms) is still large enough, and
 /// also has a lower impact on the initial link cost when a peer connects for the route metrics.
-const DEFAULT_LINK_COST: u16 = 50;
+const DEFAULT_LINK_COST: u16 = 1000;
 
 /// Multiplier for smoothed metric calculation of the existing smoothed metric.
 const EXISTING_METRIC_FACTOR: u32 = 9;
