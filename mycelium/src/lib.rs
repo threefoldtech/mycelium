@@ -158,11 +158,7 @@ where
             config.peers,
             config.tcp_listen_port,
             config.quic_listen_port,
-            if let Some(port) = config.peer_discovery_port {
-                port
-            } else {
-                0
-            },
+            config.peer_discovery_port.unwrap_or_default(),
             config.peer_discovery_port.is_none(),
             config.private_network_config,
             config.metrics,
@@ -323,11 +319,7 @@ where
         self.message_stack.new_message(
             dst,
             data,
-            if let Some(topic) = topic {
-                topic
-            } else {
-                vec![]
-            },
+            topic.unwrap_or_default(),
             try_duration,
             subscribe_reply,
         )
