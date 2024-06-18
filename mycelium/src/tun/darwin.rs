@@ -209,7 +209,7 @@ impl FromStr for IfaceName {
         let name_bytes = raw_name.to_bytes_with_nul();
         backing[..name_bytes.len()].copy_from_slice(name_bytes);
         // SAFETY: This doesn't do any weird things with the bits when converting from u8 to i8
-        let backing = unsafe { std::mem::transmute(backing) };
+        let backing = unsafe { std::mem::transmute::<[u8; 16], [i8; 16]>(backing) };
         Ok(Self(backing))
     }
 }
