@@ -391,7 +391,7 @@ mod tests {
             Metric::new(9),
             SeqNo::from(1),
             true,
-            Duration::from_secs(60),
+            tokio::time::Instant::now() + Duration::from_secs(60),
         );
 
         assert!(st.route_feasible(&re));
@@ -436,7 +436,7 @@ mod tests {
             Metric::new(10),
             SeqNo::from(1),
             true,
-            Duration::from_secs(60),
+            tokio::time::Instant::now() + Duration::from_secs(60),
         );
 
         assert!(!st.route_feasible(&re));
@@ -481,7 +481,7 @@ mod tests {
             Metric::new(11),
             SeqNo::from(1),
             true,
-            Duration::from_secs(60),
+            tokio::time::Instant::now() + Duration::from_secs(60),
         );
 
         assert!(!st.route_feasible(&re));

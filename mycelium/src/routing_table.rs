@@ -7,7 +7,6 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use left_right::ReadHandle;
 use tokio::{sync::mpsc, task::AbortHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace};
@@ -141,6 +140,7 @@ impl RouteEntry {
 }
 
 /// The routing table holds a list of route entries for every known subnet.
+#[derive(Clone)]
 pub struct RoutingTable {
     writer: Arc<Mutex<left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
     reader: left_right::ReadHandle<RoutingTableInner>,
@@ -169,7 +169,7 @@ impl RouteList {
 
     /// Checks if there are any actual routes in the list.
     #[inline]
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.list.is_empty()
     }
 
@@ -184,7 +184,7 @@ impl RouteList {
     /// Returns the selected route for the [`Subnet`] this is the `RouteList` for, if one exists.
     pub fn selected(&self) -> Option<&RouteEntry> {
         self.list
-            .get(0)
+            .first()
             .map(|(_, re)| re)
             .and_then(|re| if re.selected { Some(re) } else { None })
     }
@@ -194,6 +194,23 @@ impl RouteList {
     /// The iterator yields all [`route entries`](RouteEntry) in the list.
     pub fn iter(&self) -> RouteListIter {
         RouteListIter::new(self)
+    }
+
+    /// Selects the [`RouteEntry`] which matches the [`RouteKey`] for the associated subnet.
+    pub fn set_selected(&mut self, neighbour: &Peer) {
+        let Some(pos) = self.list.iter().position(|re| &re.1.neighbour == neighbour) else {
+            error!(
+                neighbour = neighbour.connection_identifier(),
+                "Failed to select route entry with given route key, no such entry"
+            );
+            return;
+        };
+
+        // We don't need a check for an empty list here, since we found a selected route there
+        // _MUST_ be at least 1 entry
+        self.list[0].1.set_selected(false);
+        self.list[pos].1.set_selected(false);
+        self.list.swap(0, pos);
     }
 }
 
@@ -236,7 +253,10 @@ impl<'a> Iterator for RouteListIter<'a> {
 #[repr(C)] // This is needed since we transmute between instances with different markers.
 pub struct RouteEntryGuard<'a, 'b, O> {
     write_guard: &'b mut WriteGuard<'a>,
+    /// A way to identify the actual [`RouteEntry`].
     entry_identifier: EntryIdentifier,
+    /// Keep track whether we need to delete this entry or not.
+    delete: bool,
     _marker: std::marker::PhantomData<O>,
 }
 
@@ -256,6 +276,13 @@ enum EntryIdentifier {
     None,
 }
 
+impl<'a, 'b, O> RouteEntryGuard<'a, 'b, O> {
+    /// Mark the [`RouteEntry`] contained in this `RouteEntryGuard` to be deleted.
+    pub fn delete(mut self) {
+        self.delete = true
+    }
+}
+
 impl<'a, 'b> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
     /// Inserts the given [`RouteEntry`] if it does not exist yet. If an entry already exists, this
     /// does nothing.
@@ -265,7 +292,25 @@ impl<'a, 'b> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
         };
 
         // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
-        unsafe { std::mem::transmute(self) }
+        unsafe { std::mem::transmute::<Self, RouteEntryGuard<'a, 'b, Occupied>>(self) }
+    }
+
+    /// Returns `true` if the `RouteEntryGuard` does not point to an existing value, or is not a
+    /// new value.
+    pub fn is_none(&self) -> bool {
+        matches!(self.entry_identifier, EntryIdentifier::None)
+    }
+
+    /// Convert this `RouteEntryGuard` to an `Occupied` variant, panicking if the contained entry
+    /// is none.
+    pub fn unwrap(self) -> RouteEntryGuard<'a, 'b, Occupied> {
+        assert!(
+            !matches!(self.entry_identifier, EntryIdentifier::None),
+            "Called RouteEntryGuard::unwrap on an emtpy entry guard"
+        );
+
+        // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
+        unsafe { std::mem::transmute::<Self, RouteEntryGuard<'a, 'b, Occupied>>(self) }
     }
 }
 
@@ -297,6 +342,17 @@ impl DerefMut for RouteEntryGuard<'_, '_, Occupied> {
 
 impl<O> Drop for RouteEntryGuard<'_, '_, O> {
     fn drop(&mut self) {
+        if self.delete {
+            // If we refer to an existing entry, cancel the hold timer
+            if let EntryIdentifier::Pos(idx) = self.entry_identifier {
+                // Important: swap remove reorders the vector, but this is not an issue as it moves
+                // the _last_ element, and we only need the first element to be stable.
+                let old = self.write_guard.list.swap_remove(idx);
+                old.0.abort();
+            }
+            return;
+        }
+
         let expired_route_entry_sink = self.write_guard.expired_route_entry_sink.clone();
         let cancellation_token = self.write_guard.cancellation_token.clone();
 
@@ -345,7 +401,6 @@ pub struct WriteGuard<'a> {
     writer: MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
     /// Owned copy of the RouteList, this is populated once mutable access the the RouteList has
     /// been requested.
-    //owned: Option<Arc<RouteList>>,
     value: Arc<RouteList>,
     owned: bool,
     /// Did the RouteList exist initially?
@@ -396,6 +451,8 @@ impl RoutingTable {
             .cloned()
     }
 
+    /// Gets continued read access to the `RoutingTable`. While the returned
+    /// [`guard`](RoutingTableReadGuard) is held, updates to the `RoutingTable` will be blocked.
     pub fn read(&self) -> RoutingTableReadGuard {
         RoutingTableReadGuard {
             guard: self
@@ -437,6 +494,29 @@ impl RoutingTable {
             expired_route_entry_sink: self.expired_route_entry_sink.clone(),
             cancellation_token: self.cancel_token.clone(),
         }
+    }
+
+    /// Gets the selected route for an IpAddr if one exists.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the IP address is not an IPV6 address.
+    pub fn selected_route(&self, address: IpAddr) -> Option<RouteEntry> {
+        let IpAddr::V6(ip) = address else {
+            panic!("IP v4 addresses are not supported")
+        };
+        self.reader
+            .enter()
+            .expect("Write handle is saved on RoutingTable, so this is always Some; qed")
+            .table
+            .longest_match(ip)
+            .and_then(|(_, _, rl)| {
+                if rl.is_empty() || !rl[0].selected {
+                    None
+                } else {
+                    Some(rl[0].clone())
+                }
+            })
     }
 }
 
@@ -496,6 +576,7 @@ impl<'a> WriteGuard<'a> {
 
         RouteEntryGuard {
             write_guard: self,
+            delete: false,
             entry_identifier,
             _marker: std::marker::PhantomData,
         }
@@ -510,6 +591,7 @@ impl<'a> WriteGuard<'a> {
                 return Some(RouteEntryGuard {
                     write_guard: self,
                     entry_identifier: EntryIdentifier::Pos(0),
+                    delete: false,
                     _marker: std::marker::PhantomData,
                 });
             }

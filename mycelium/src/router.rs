@@ -17,11 +17,10 @@ use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
     Icmpv6Type,
 };
-use left_right::{ReadHandle, WriteHandle};
 use std::{
     error::Error,
     net::IpAddr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
@@ -209,33 +208,36 @@ where
 
     /// Get the [`PublicKey`] for an [`IpAddr`] if a route exists to the IP.
     pub fn get_pubkey(&self, ip: IpAddr) -> Option<PublicKey> {
-        self.inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .routing_table
-            .lookup_extra_data(ip)
-            .map(|(pk, _)| pk)
-            .copied()
+        // self.inner_r
+        //     .enter()
+        //     .expect("Write handle is saved on router so it is not dropped before the read handles")
+        //     .routing_table
+        //     .lookup_extra_data(ip)
+        //     .map(|(pk, _)| pk)
+        //     .copied()
+        todo!();
     }
 
     /// Gets the cached [`SharedSecret`] for the remote.
     pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
-        self.inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .routing_table
-            .lookup_extra_data(dest)
-            .map(|(_, ss)| ss.clone())
+        // self.inner_r
+        //     .enter()
+        //     .expect("Write handle is saved on router so it is not dropped before the read handles")
+        //     .routing_table
+        //     .lookup_extra_data(dest)
+        //     .map(|(_, ss)| ss.clone())
+        todo!();
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
     pub fn get_shared_secret_by_pubkey(&self, dest: &PublicKey) -> Option<SharedSecret> {
-        self.inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles")
-            .routing_table
-            .lookup_extra_data(dest.address().into())
-            .map(|(_, ss)| ss.clone())
+        // self.inner_r
+        //     .enter()
+        //     .expect("Write handle is saved on router so it is not dropped before the read handles")
+        //     .routing_table
+        //     .lookup_extra_data(dest.address().into())
+        //     .map(|(_, ss)| ss.clone())
+        todo!();
     }
 
     /// Get a reference to this `Router`s' dead peer sink.
@@ -255,31 +257,22 @@ where
 
     /// Get a list of all selected route entries.
     pub fn load_selected_routes(&self) -> Vec<RouteEntry> {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
-        inner
-            .routing_table
+        self.routing_table
+            .read()
             .iter()
-            .filter(|(_, _, re)| re.selected())
-            .map(|(_, _, re)| re.clone())
+            .filter_map(|(_, rl)| rl.selected())
+            .cloned()
             .collect()
     }
 
     /// Get a list of all fallback route entries.
     pub fn load_fallback_routes(&self) -> Vec<RouteEntry> {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-
-        inner
-            .routing_table
+        self.routing_table
+            .read()
             .iter()
-            .filter(|(_, _, re)| !re.selected())
-            .map(|(_, _, re)| re.clone())
+            .flat_map(|(_, rl)| rl.iter())
+            .filter(|re| !re.selected())
+            .cloned()
             .collect()
     }
 
@@ -323,34 +316,37 @@ where
 
         // Scope for the mutex lock
         let subnets_to_select = {
-            let mut inner_w = self.inner_w.lock().unwrap();
-
-            let inner = self.inner_r.enter().expect(
-                "Write handle is saved on the router so it is not dropped before the read handles",
-            );
-
             let mut subnets_to_select = Vec::new();
 
-            for (rk, _, re) in inner.routing_table.iter() {
-                if rk.neighbour() == &dead_peer {
-                    if re.selected() {
-                        subnets_to_select.push(rk.subnet());
-                        inner_w.append(RouterOpLogEntry::UpdateRouteEntry(
-                            rk,
-                            re.seqno(),
-                            Metric::infinite(),
-                            re.source().router_id(),
-                            RETRACTED_ROUTE_HOLD_TIME,
-                        ));
-                    } else {
-                        inner_w.append(RouterOpLogEntry::RemoveRoute(rk));
+            for (subnet, re) in self
+                .routing_table
+                .read()
+                .iter()
+                .flat_map(|(subnet, rl)| rl.iter().map(move |re| (subnet, re)))
+                .filter(|(_, re)| re.neighbour() == &dead_peer)
+            {
+                if re.selected() {
+                    subnets_to_select.push(subnet);
+                    let mut routes = self.routing_table.routes_mut(subnet);
+                    let entry = routes.entry_mut(&RouteKey::new(subnet, re.neighbour().clone()));
+                    if entry.is_none() {
+                        continue;
                     }
+
+                    let mut entry = entry.unwrap();
+                    // Don't clear selected flag yet, running route selection does that for us.
+                    entry.set_metric(Metric::infinite());
+                    entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                } else {
+                    self.routing_table
+                        .routes_mut(subnet)
+                        .entry_mut(&RouteKey::new(subnet, re.neighbour().clone()))
+                        .delete();
                 }
             }
+
             // Make sure we release the read handle, so a publish on the write handle eventually
             // succeeds.
-            drop(inner);
-            inner_w.publish();
             self.remove_peer_interface(&dead_peer);
 
             subnets_to_select
@@ -368,13 +364,8 @@ where
     fn route_selection(&self, subnet: Subnet) {
         self.metrics.router_route_selection_ran();
         debug!("Running route selection for {subnet}");
-        let mut inner_w = self.inner_w.lock().unwrap();
 
-        let routes = inner_w
-            .enter()
-            .expect("Deref through write handle so there always is a write handle in scope here")
-            .routing_table
-            .entries(subnet);
+        let mut routes = self.routing_table.routes_mut(subnet);
 
         // No routes for subnet, nothing to do here.
         if routes.is_empty() {
@@ -383,14 +374,7 @@ where
 
         // If there is no selected route there is nothing to do here. We keep expired routes in the
         // table for a while so updates of those should already have propagated to peers.
-        if let Some(new_selected) = self.find_best_route(
-            &routes,
-            if routes[0].selected() {
-                Some(&routes[0])
-            } else {
-                None
-            },
-        ) {
+        if let Some(new_selected) = self.find_best_route(&routes).cloned() {
             if new_selected.neighbour() == routes[0].neighbour() && routes[0].selected() {
                 debug!(
                     "New selected route for {subnet} is the same as the route alreayd installed"
@@ -406,10 +390,7 @@ where
                 return;
             }
 
-            inner_w.append(RouterOpLogEntry::SelectRoute(RouteKey::new(
-                subnet,
-                new_selected.neighbour().clone(),
-            )));
+            routes.set_selected(new_selected.neighbour());
         } else if routes[0].selected() {
             // This means we went from a selected route to a non-selected route. Unselect route and
             // trigger update.
@@ -417,13 +398,8 @@ where
             // to us, to try and get an updated entry. This uses the source key of the unselected
             // entry.
             self.send_seqno_request(routes[0].source(), None, None);
-            inner_w.append(RouterOpLogEntry::UnselectRoute(RouteKey::new(
-                subnet,
-                routes[0].neighbour().clone(),
-            )));
+            routes[0].set_selected(false);
         }
-
-        inner_w.publish();
 
         self.trigger_update(subnet, None);
     }
@@ -447,72 +423,47 @@ where
         mut expired_route_key_stream: mpsc::Receiver<RouteKey>,
     ) {
         while let Some(rk) = expired_route_key_stream.recv().await {
-            self.metrics
-                .router_route_key_expired(matches!(expiration_type, RouteExpirationType::Remove));
             debug!("Got expiration event for route {rk}");
             let subnet = rk.subnet();
-            let mut inner = self.inner_w.lock().unwrap();
             // Load current key
-            let entry = inner
-                .enter()
-                .expect("We enter through a write handle so this can never be None")
-                .routing_table
-                .get(&rk)
-                .cloned();
-            if entry.is_none() {
-                continue;
-            }
-            let entry = entry.unwrap();
-            if !entry.metric().is_infinite()
-                && matches!(expiration_type, RouteExpirationType::Retract)
-            {
-                debug!("Route {rk} expired, increasing metric to infinity");
-                inner.append(RouterOpLogEntry::UpdateRouteEntry(
-                    rk,
-                    entry.seqno(),
-                    Metric::infinite(),
-                    entry.source().router_id(),
-                    RETRACTED_ROUTE_HOLD_TIME,
-                ));
-            } else if entry.metric().is_infinite()
-                && matches!(expiration_type, RouteExpirationType::Remove)
-            {
-                debug!("Route {rk} expired, removing retracted route");
-                inner.append(RouterOpLogEntry::RemoveRoute(rk));
-            } else {
-                continue;
-            }
-            inner.publish();
+            let mut routes = self.routing_table.routes_mut(rk.subnet());
+            // Bit of weird scoping for the mutable reference to entries.
+            let was_selected = {
+                let entry = routes.entry_mut(&rk);
+                if entry.is_none() {
+                    continue;
+                }
+                let mut entry = entry.unwrap();
+                self.metrics.router_route_key_expired(!entry.selected());
+                if !entry.metric().is_infinite() {
+                    debug!("Route {rk} expired, increasing metric to infinity");
+                    entry.set_metric(Metric::infinite());
+                    entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                    entry.selected()
+                } else if entry.metric().is_infinite() {
+                    debug!("Route {rk} expired, removing retracted route");
+                    let selected = entry.selected();
+                    entry.delete();
+                    selected
+                } else {
+                    unreachable!();
+                }
+            };
+
             // Re run route selection if this was the selected route. We should do this before
             // publishing to potentially select a new route, however a time based expiraton of a
             // selected route generally means no other routes are viable anyway, so the short lived
             // black hole this could create is not really a concern.
-            if entry.selected() {
+            if was_selected {
                 self.metrics.router_selected_route_expired();
-                let routes = inner
-                    .enter()
-                    .expect("We enter through a write handle so this can never be None")
-                    .routing_table
-                    .entries(subnet);
                 // Only inject selected route if we are simply retracting it, otherwise it is
                 // actually already removed.
-                if let Some(r) = self.find_best_route(
-                    &routes,
-                    if matches!(expiration_type, RouteExpirationType::Retract) {
-                        Some(&entry)
-                    } else {
-                        None
-                    },
-                ) {
-                    debug!("Rerun route selection after expiration event");
-                    inner
-                        .append(RouterOpLogEntry::SelectRoute(RouteKey::new(
-                            subnet,
-                            r.neighbour().clone(),
-                        )))
-                        .publish();
+                debug!("Rerun route selection after expiration event");
+                if let Some(r) = self.find_best_route(&routes).cloned() {
+                    routes.set_selected(r.neighbour());
+
                     // If the entry wasn't retracted yet, notify our peers.
-                    if !entry.metric().is_infinite() {
+                    if !r.metric().is_infinite() {
                         self.trigger_update(subnet, None);
                     }
                 }
@@ -976,16 +927,11 @@ where
     ///
     /// This method only selects a different best route if it is significantly better compared to
     /// the current route.
-    fn find_best_route<'a>(
-        &self,
-        routes: &'a mut RouteList,
-        current: Option<&'a RouteEntry>,
-    ) -> Option<&'a mut RouteEntry> {
-        // Since retracted routes have the highest possible metrics, this will only select one if
-        // no non-retracted routes are feasible.
+    fn find_best_route<'a>(&self, routes: &'a RouteList) -> Option<&'a RouteEntry> {
         let source_table = self.source_table.read().unwrap();
+        let current = routes.selected();
         let best = routes
-            .iter_mut()
+            .iter()
             // Infinite metrics are technically feasible, but for route selection we explicitly
             // don't want infinite metrics as those routes are unreachable.
             .filter(|re| !re.metric().is_infinite() && source_table.route_feasible(re))
@@ -1132,12 +1078,11 @@ where
         }
 
         // Now that we applied the update, run route selection.
-        let mut new_selected_route =
-            self.find_best_route(&mut routing_table_entries, old_selected_route.as_ref());
-        if let Some(ref mut nbr) = new_selected_route {
-            nbr.set_selected(true);
+        let new_selected_route = self.find_best_route(&routing_table_entries).cloned();
+        if let Some(ref nbr) = new_selected_route {
             // Install this route in the routing table.
-        } else if let Some(osr) = old_selected_route.as_ref() {
+            routing_table_entries.set_selected(nbr.neighbour());
+        } else if let Some(ref osr) = old_selected_route {
             // If there is no new selected route, but there was one previously, update the routing
             // table. This is not covered above, as there only unfeasible updates cause a selected
             // route to be unselected. However, this may also be the result of a feasible update
@@ -1270,11 +1215,9 @@ where
             };
 
             let known_routes = self
-                .inner_r
-                .enter()
-                .expect("Write handle is saved on router so this read always succeeds; qed")
                 .routing_table
-                .entries(source.subnet());
+                .routes(source.subnet())
+                .unwrap_or_default();
 
             // Make sure a broadcast only happens in case the local node originated the request.
             if known_routes.is_empty() && request_origin.is_none() {
@@ -1287,7 +1230,7 @@ where
                     .collect()
             } else {
                 known_routes
-                    .into_iter()
+                    .iter()
                     .filter_map(|re| {
                         if !peers_sent.contains(re.neighbour()) {
                             Some(re.neighbour().clone())
@@ -1458,21 +1401,9 @@ where
     }
 
     /// Get's the best route for a destination IP if one is present.
+    #[deprecated = "Use RoutingTable::selected_route instead"]
     pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
-        let inner = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so it is not dropped before the read handles");
-        inner
-            .routing_table
-            .lookup_selected(dest_ip)
-            .and_then(|entry| {
-                if entry.metric().is_infinite() {
-                    None
-                } else {
-                    Some(entry.clone())
-                }
-            })
+        self.routing_table.selected_route(dest_ip)
     }
 
     /// Task to propagate the static routes periodically
@@ -1553,34 +1484,29 @@ where
     /// Propagate a selected route. Unless peers are specified, all knwon peers in the router are
     /// used.
     fn propagate_selected_route(&self, subnet: Subnet, peers: Option<Vec<Peer>>) {
-        let (update, maybe_neigh) = if let Some(sre) = self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on the router so read handle is always available; qed")
-            .routing_table
-            .lookup_selected(subnet.address())
-        {
-            let update = babel::Update::new(
-                advertised_update_interval(sre),
-                sre.seqno(),
-                sre.metric() + Metric::from(sre.neighbour().link_cost()),
-                sre.source().subnet(),
-                sre.source().router_id(),
-            );
-            (update, Some(sre.neighbour().clone()))
-        } else {
-            // This can happen if the only feasible route gets an infinite metric, as those are
-            // never selected.
-            info!("Retracting route for {subnet}");
-            let update = babel::Update::new(
-                UPDATE_INTERVAL,
-                self.router_seqno.read().unwrap().0,
-                Metric::infinite(),
-                subnet,
-                self.router_id,
-            );
-            (update, None)
-        };
+        let (update, maybe_neigh) =
+            if let Some(sre) = self.routing_table.selected_route(subnet.address()) {
+                let update = babel::Update::new(
+                    advertised_update_interval(&sre),
+                    sre.seqno(),
+                    sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                    sre.source().subnet(),
+                    sre.source().router_id(),
+                );
+                (update, Some(sre.neighbour().clone()))
+            } else {
+                // This can happen if the only feasible route gets an infinite metric, as those are
+                // never selected.
+                info!("Retracting route for {subnet}");
+                let update = babel::Update::new(
+                    UPDATE_INTERVAL,
+                    self.router_seqno.read().unwrap().0,
+                    Metric::infinite(),
+                    subnet,
+                    self.router_id,
+                );
+                (update, None)
+            };
 
         let send_update = |peer: &Peer| {
             // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1612,13 +1538,11 @@ where
 
     /// Propagate all selected routes to all peers known in the router.
     fn propagate_selected_routes_to_peer(&self, peer: &Peer) {
-        for (srk, _, sre) in self
-            .inner_r
-            .enter()
-            .expect("Write handle is saved on router so read handle is always available; qed")
+        for (subnet, sre) in self
             .routing_table
+            .read()
             .iter()
-            .filter(|(_, _, sre)| sre.selected())
+            .filter_map(|(subnet, route_list)| route_list.selected().map(|sr| (subnet, sr)))
         {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1632,12 +1556,12 @@ where
                 sre.seqno(),
                 // the cost of the route is the cost of the route + the cost of the link to the next-hop
                 sre.metric() + neigh_link_cost,
-                srk.subnet(),
+                subnet,
                 sre.source().router_id(),
             );
             debug!(
                 "Propagating route update for {} to {} | D({}, {})",
-                srk.subnet(),
+                subnet,
                 peer.connection_identifier(),
                 sre.seqno(),
                 sre.metric() + neigh_link_cost,
@@ -1723,8 +1647,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            inner_w: self.inner_w.clone(),
-            inner_r: self.inner_r.clone(),
+            routing_table: self.routing_table.clone(),
             peer_interfaces: self.peer_interfaces.clone(),
             source_table: self.source_table.clone(),
             router_seqno: self.router_seqno.clone(),
@@ -1766,7 +1689,7 @@ fn advertised_update_interval(sre: &RouteEntry) -> Duration {
     // One caveat is an expired route. If an entry is expired, it means that it will change state
     // so: Infinite metric -> route entry will be removed. Finite metric -> route entry will be
     // retracted but will be announced again. In practice this shouldn't really happen anyway.
-    if sre.metric().is_infinite() && sre.expires().as_nanos() == 0 {
+    if sre.metric().is_infinite() && sre.expires().elapsed() != Duration::from_millis(0) {
         INTERVAL_NOT_REPEATING
     } else {
         UPDATE_INTERVAL
@@ -1856,7 +1779,7 @@ mod tests {
         let seqno = SeqNo::new();
         let selected = true;
 
-        let expiration = Duration::from_secs(15);
+        let expiration = tokio::time::Instant::now() + Duration::from_secs(15);
         let re = super::RouteEntry::new(
             source,
             neighbor.clone(),
@@ -1871,7 +1794,7 @@ mod tests {
         assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
 
         // Expired route with finite metric
-        let expiration = Duration::from_secs(0);
+        let expiration = tokio::time::Instant::now() + Duration::from_secs(0);
         let re = super::RouteEntry::new(
             source,
             neighbor.clone(),
@@ -1896,7 +1819,7 @@ mod tests {
         assert_eq!(advertised_interval, super::INTERVAL_NOT_REPEATING);
 
         // Check that the interval is properly capped
-        let expiration = Duration::from_secs(600);
+        let expiration = tokio::time::Instant::now() + Duration::from_secs(600);
         let re = super::RouteEntry::new(source, neighbor, metric, seqno, selected, expiration);
         // We can't match exactly here since everything takes a non instant amount of time to do,
         // but basically verify that the calculated interval is within expected parameters.
