@@ -271,11 +271,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .init();
 
-    let key_path = if let Some(path) = cli.key_file {
-        path
-    } else {
-        PathBuf::from(DEFAULT_KEY_FILE)
-    };
+    let key_path = cli
+        .key_file
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_KEY_FILE));
 
     // Load the keypair for this node, or generate a new one if the file does not exist.
     let node_keys = if key_path.exists() {
@@ -287,8 +285,90 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
-    if let Some(cmd) = cli.command {
-        match cmd {
+    match cli.command {
+        None => {
+            let private_network_config =
+                match (cli.node_args.network_name, cli.node_args.network_key_file) {
+                    (Some(network_name), Some(network_key_file)) => {
+                        let net_key = load_key_file(&network_key_file).await?;
+
+                        Some((network_name, net_key))
+                    }
+                    _ => None,
+                };
+
+            let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
+                node_secret_key
+            } else {
+                warn!("Node key file {key_path:?} not found, generating new keys");
+                let secret_key = crypto::SecretKey::new();
+                save_key_file(&secret_key, &key_path).await?;
+                secret_key
+            };
+
+            let _api = if let Some(metrics_api_addr) = cli.node_args.metrics_api_address {
+                let metrics = mycelium_metrics::PrometheusExporter::new();
+                let config = mycelium::Config {
+                    node_key: node_secret_key,
+                    peers: cli.node_args.static_peers,
+                    no_tun: cli.node_args.no_tun,
+                    tcp_listen_port: cli.node_args.tcp_listen_port,
+                    quic_listen_port: Some(cli.node_args.quic_listen_port),
+                    peer_discovery_port: if cli.node_args.disable_peer_discovery {
+                        None
+                    } else {
+                        Some(cli.node_args.peer_discovery_port)
+                    },
+                    tun_name: cli.node_args.tun_name,
+                    private_network_config,
+                    metrics: metrics.clone(),
+                    firewall_mark: cli.node_args.firewall_mark,
+                };
+                metrics.spawn(metrics_api_addr);
+                let node = Node::new(config).await?;
+                mycelium_api::Http::spawn(node, cli.node_args.api_addr)
+            } else {
+                let config = mycelium::Config {
+                    node_key: node_secret_key,
+                    peers: cli.node_args.static_peers,
+                    no_tun: cli.node_args.no_tun,
+                    tcp_listen_port: cli.node_args.tcp_listen_port,
+                    quic_listen_port: Some(cli.node_args.quic_listen_port),
+                    peer_discovery_port: if cli.node_args.disable_peer_discovery {
+                        None
+                    } else {
+                        Some(cli.node_args.peer_discovery_port)
+                    },
+                    tun_name: cli.node_args.tun_name,
+                    private_network_config,
+                    metrics: mycelium_metrics::NoMetrics,
+                    firewall_mark: cli.node_args.firewall_mark,
+                };
+                let node = Node::new(config).await?;
+                mycelium_api::Http::spawn(node, cli.node_args.api_addr)
+            };
+
+            // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
+            #[cfg(target_family = "unix")]
+            {
+                let mut sigint = signal::unix::signal(SignalKind::interrupt())
+                    .expect("Can install SIGINT handler");
+                let mut sigterm = signal::unix::signal(SignalKind::terminate())
+                    .expect("Can install SIGTERM handler");
+
+                tokio::select! {
+                    _ = sigint.recv() => { }
+                    _ = sigterm.recv() => { }
+                }
+            }
+            #[cfg(not(target_family = "unix"))]
+            {
+                if let Err(e) = tokio::signal::ctrl_c().await {
+                    error!("Failed to wait for SIGINT: {e}");
+                }
+            }
+        }
+        Some(cmd) => match cmd {
             Command::Inspect { json, key } => {
                 let key = if let Some(key) = key {
                     PublicKey::try_from(key.as_str())?
@@ -363,88 +443,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     return mycelium_cli::list_fallback_routes(cli.node_args.api_addr, json).await;
                 }
             },
-        }
-    }
-
-    let private_network_config = match (cli.node_args.network_name, cli.node_args.network_key_file)
-    {
-        (Some(network_name), Some(network_key_file)) => {
-            let net_key = load_key_file(&network_key_file).await?;
-
-            Some((network_name, net_key))
-        }
-        _ => None,
-    };
-
-    let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
-        node_secret_key
-    } else {
-        warn!("Node key file {key_path:?} not found, generating new keys");
-        let secret_key = crypto::SecretKey::new();
-        save_key_file(&secret_key, &key_path).await?;
-        secret_key
-    };
-
-    let _api = if let Some(metrics_api_addr) = cli.node_args.metrics_api_address {
-        let metrics = mycelium_metrics::PrometheusExporter::new();
-        let config = mycelium::Config {
-            node_key: node_secret_key,
-            peers: cli.node_args.static_peers,
-            no_tun: cli.node_args.no_tun,
-            tcp_listen_port: cli.node_args.tcp_listen_port,
-            quic_listen_port: Some(cli.node_args.quic_listen_port),
-            peer_discovery_port: if cli.node_args.disable_peer_discovery {
-                None
-            } else {
-                Some(cli.node_args.peer_discovery_port)
-            },
-            tun_name: cli.node_args.tun_name,
-            private_network_config,
-            metrics: metrics.clone(),
-            firewall_mark: cli.node_args.firewall_mark,
-        };
-        metrics.spawn(metrics_api_addr);
-        let node = Node::new(config).await?;
-        mycelium_api::Http::spawn(node, cli.node_args.api_addr)
-    } else {
-        let config = mycelium::Config {
-            node_key: node_secret_key,
-            peers: cli.node_args.static_peers,
-            no_tun: cli.node_args.no_tun,
-            tcp_listen_port: cli.node_args.tcp_listen_port,
-            quic_listen_port: Some(cli.node_args.quic_listen_port),
-            peer_discovery_port: if cli.node_args.disable_peer_discovery {
-                None
-            } else {
-                Some(cli.node_args.peer_discovery_port)
-            },
-            tun_name: cli.node_args.tun_name,
-            private_network_config,
-            metrics: mycelium_metrics::NoMetrics,
-            firewall_mark: cli.node_args.firewall_mark,
-        };
-        let node = Node::new(config).await?;
-        mycelium_api::Http::spawn(node, cli.node_args.api_addr)
-    };
-
-    // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
-    #[cfg(target_family = "unix")]
-    {
-        let mut sigint =
-            signal::unix::signal(SignalKind::interrupt()).expect("Can install SIGINT handler");
-        let mut sigterm =
-            signal::unix::signal(SignalKind::terminate()).expect("Can install SIGTERM handler");
-
-        tokio::select! {
-            _ = sigint.recv() => { }
-            _ = sigterm.recv() => { }
-        }
-    }
-    #[cfg(not(target_family = "unix"))]
-    {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            error!("Failed to wait for SIGINT: {e}");
-        }
+        },
     }
 
     Ok(())
