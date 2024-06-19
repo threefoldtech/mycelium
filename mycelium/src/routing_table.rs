@@ -16,29 +16,9 @@ use crate::{
     source_table::SourceKey, subnet::Subnet,
 };
 
-/// RouteKey uniquely defines a route via a peer.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RouteKey {
-    subnet: Subnet,
-    neighbour: Peer,
-}
+pub use route_key::RouteKey;
 
-impl RouteKey {
-    /// Creates a new `RouteKey` for the given [`Subnet`] and [`neighbour`](Peer).
-    pub fn new(subnet: Subnet, neighbour: Peer) -> Self {
-        Self { subnet, neighbour }
-    }
-
-    /// Get's the [`Subnet`] identified by this `RouteKey`.
-    pub fn subnet(&self) -> Subnet {
-        self.subnet
-    }
-
-    /// Gets the [`neighbour`](Peer) identified by this `RouteKey`.
-    pub fn neighbour(&self) -> &Peer {
-        &self.neighbour
-    }
-}
+mod route_key;
 
 /// RouteEntry holds all relevant information about a specific route. Since this includes the next
 /// hop, a single subnet can have multiple route entries.
@@ -199,7 +179,7 @@ impl RouteList {
         self.list
             .iter()
             .map(|(_, e)| e)
-            .find(|entry| entry.neighbour == route_key.neighbour)
+            .find(|entry| &entry.neighbour == route_key.neighbour())
     }
 
     /// Returns the selected route for the [`Subnet`] this is the `RouteList` for, if one exists.
@@ -605,7 +585,7 @@ impl<'a> WriteGuard<'a> {
             .list
             .iter_mut()
             .map(|(_, e)| e)
-            .position(|entry| entry.neighbour == route_key.neighbour)
+            .position(|entry| &entry.neighbour == route_key.neighbour())
         {
             EntryIdentifier::Pos(pos)
         } else {
@@ -746,15 +726,5 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
 impl Drop for RoutingTable {
     fn drop(&mut self) {
         self.cancel_token.cancel();
-    }
-}
-
-impl std::fmt::Display for RouteKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{} via {}",
-            self.subnet,
-            self.neighbour.connection_identifier()
-        ))
     }
 }
