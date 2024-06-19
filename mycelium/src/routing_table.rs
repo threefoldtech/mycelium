@@ -228,9 +228,11 @@ impl RouteList {
         };
 
         // We don't need a check for an empty list here, since we found a selected route there
-        // _MUST_ be at least 1 entry
+        // _MUST_ be at least 1 entry.
+        // Set the first element to unselected, then select the proper element so this also works
+        // in case the existing route is "reselected".
         self.list[0].1.set_selected(false);
-        self.list[pos].1.set_selected(false);
+        self.list[pos].1.set_selected(true);
         self.list.swap(0, pos);
     }
 }
