@@ -433,6 +433,21 @@ impl RoutingTable {
         }
     }
 
+    /// Get a list of the routes for the most precises [`Subnet`] known which contains the given
+    /// [`IpAddr`].
+    pub fn best_routes(&self, ip: IpAddr) -> Option<Arc<RouteList>> {
+        let IpAddr::V6(ip) = ip else {
+            panic!("Only IPv6 is supported currently");
+        };
+        self.reader
+            .enter()
+            .expect("Write handle is saved on the router so it is not dropped yet.")
+            .table
+            .longest_match(ip)
+            .map(|(_, _, rl)| rl)
+            .cloned()
+    }
+
     /// Get a list of all routes for the given subnet. Changes to the RoutingTable after this
     /// method returns will not be visible and require this method to be called again to be
     /// observed.
