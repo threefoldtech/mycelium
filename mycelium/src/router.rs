@@ -208,36 +208,26 @@ where
 
     /// Get the [`PublicKey`] for an [`IpAddr`] if a route exists to the IP.
     pub fn get_pubkey(&self, ip: IpAddr) -> Option<PublicKey> {
-        // self.inner_r
-        //     .enter()
-        //     .expect("Write handle is saved on router so it is not dropped before the read handles")
-        //     .routing_table
-        //     .lookup_extra_data(ip)
-        //     .map(|(pk, _)| pk)
-        //     .copied()
-        todo!();
+        self.routing_table
+            .best_routes(ip)
+            // We can index here safely since we always have at least 1 route if we get
+            // Option::Some.
+            .map(|rl| rl[0].source().router_id().to_pubkey())
     }
 
     /// Gets the cached [`SharedSecret`] for the remote.
     pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
-        // self.inner_r
-        //     .enter()
-        //     .expect("Write handle is saved on router so it is not dropped before the read handles")
-        //     .routing_table
-        //     .lookup_extra_data(dest)
-        //     .map(|(_, ss)| ss.clone())
-        todo!();
+        self.routing_table
+            .best_routes(dest)
+            // We can index here safely since we always have at least 1 route if we get
+            // Option::Some.
+            .map(|rl| rl[0].shared_secret().clone())
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
+    #[inline]
     pub fn get_shared_secret_by_pubkey(&self, dest: &PublicKey) -> Option<SharedSecret> {
-        // self.inner_r
-        //     .enter()
-        //     .expect("Write handle is saved on router so it is not dropped before the read handles")
-        //     .routing_table
-        //     .lookup_extra_data(dest.address().into())
-        //     .map(|(_, ss)| ss.clone())
-        todo!();
+        self.get_shared_secret_from_dest(dest.address().into())
     }
 
     /// Get a reference to this `Router`s' dead peer sink.
@@ -1056,6 +1046,7 @@ where
             }
 
             // Create new entry in the route table
+            let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
             routing_table_entries
                 .entry_mut(&update_route_key)
                 .or_insert(RouteEntry::new(
@@ -1065,16 +1056,8 @@ where
                     seqno,
                     false,
                     tokio::time::Instant::now() + route_hold_time(&update),
+                    ss,
                 ));
-
-            // TODO:
-            // let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
-            // inner_w.append(RouterOpLogEntry::InsertRoute(
-            //     RouteKey::new(subnet, source_peer),
-            //     re,
-            //     router_id.to_pubkey(),
-            //     ss,
-            // ));
         }
 
         // Now that we applied the update, run route selection.
@@ -1707,8 +1690,14 @@ mod tests {
     use tokio::sync::mpsc;
 
     use crate::{
-        babel::Update, crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId,
-        sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
+        babel::Update,
+        crypto::{PublicKey, SecretKey},
+        metric::Metric,
+        peer::Peer,
+        router_id::RouterId,
+        sequence_number::SeqNo,
+        source_table::SourceKey,
+        subnet::Subnet,
     };
 
     #[test]
@@ -1774,6 +1763,7 @@ mod tests {
         let subnet = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0)), 64)
             .expect("Valid subnet definition");
         let router_id = RouterId::new(PublicKey::from([0; 32]));
+        let secret_key = SecretKey::new();
         let source = SourceKey::new(subnet, router_id);
         let metric = Metric::new(0);
         let seqno = SeqNo::new();
@@ -1787,6 +1777,7 @@ mod tests {
             seqno,
             selected,
             expiration,
+            secret_key.shared_secret(&router_id.to_pubkey()),
         );
         // We can't match exactly here since everything takes a non instant amount of time to do,
         // but basically verify that the calculated interval is within expected parameters.
@@ -1802,6 +1793,7 @@ mod tests {
             seqno,
             selected,
             expiration,
+            secret_key.shared_secret(&router_id.to_pubkey()),
         );
         let advertised_interval = super::advertised_update_interval(&re);
         assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
@@ -1814,13 +1806,22 @@ mod tests {
             seqno,
             selected,
             expiration,
+            secret_key.shared_secret(&router_id.to_pubkey()),
         );
         let advertised_interval = super::advertised_update_interval(&re);
         assert_eq!(advertised_interval, super::INTERVAL_NOT_REPEATING);
 
         // Check that the interval is properly capped
         let expiration = tokio::time::Instant::now() + Duration::from_secs(600);
-        let re = super::RouteEntry::new(source, neighbor, metric, seqno, selected, expiration);
+        let re = super::RouteEntry::new(
+            source,
+            neighbor,
+            metric,
+            seqno,
+            selected,
+            expiration,
+            secret_key.shared_secret(&router_id.to_pubkey()),
+        );
         // We can't match exactly here since everything takes a non instant amount of time to do,
         // but basically verify that the calculated interval is within expected parameters.
         let advertised_interval = super::advertised_update_interval(&re);
