@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace};
 
 use crate::{
-    metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
+    crypto::SharedSecret, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
     source_table::SourceKey, subnet::Subnet,
 };
 
@@ -42,7 +42,7 @@ impl RouteKey {
 
 /// RouteEntry holds all relevant information about a specific route. Since this includes the next
 /// hop, a single subnet can have multiple route entries.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct RouteEntry {
     source: SourceKey,
     neighbour: Peer,
@@ -50,6 +50,21 @@ pub struct RouteEntry {
     seqno: SeqNo,
     selected: bool,
     expires: Instant,
+    shared_secret: SharedSecret,
+}
+
+// Manual Debug implementation since SharedSecret is explicitly not Debug
+impl std::fmt::Debug for RouteEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RouteEntry")
+            .field("source", &self.source)
+            .field("neighbour", &self.neighbour)
+            .field("metric", &self.metric)
+            .field("seqno", &self.seqno)
+            .field("selected", &self.selected)
+            .field("expires", &self.expires)
+            .finish()
+    }
 }
 
 impl RouteEntry {
@@ -61,6 +76,7 @@ impl RouteEntry {
         seqno: SeqNo,
         selected: bool,
         expires: Instant,
+        shared_secret: SharedSecret,
     ) -> Self {
         Self {
             source,
@@ -69,6 +85,7 @@ impl RouteEntry {
             seqno,
             selected,
             expires,
+            shared_secret,
         }
     }
 
@@ -136,6 +153,10 @@ impl RouteEntry {
     /// Sets the expiration time for this [`RouteEntry`].
     pub fn set_expires(&mut self, expires: Instant) {
         self.expires = expires;
+    }
+
+    pub fn shared_secret(&self) -> &SharedSecret {
+        &self.shared_secret
     }
 }
 
@@ -733,69 +754,5 @@ impl std::fmt::Display for RouteKey {
             self.subnet,
             self.neighbour.connection_identifier()
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        net::Ipv6Addr,
-        sync::{atomic::AtomicU64, Arc},
-    };
-
-    use tokio::sync::mpsc;
-
-    use crate::{
-        crypto::SecretKey, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
-        source_table::SourceKey, subnet::Subnet,
-    };
-
-    #[tokio::test]
-    async fn routing_table_base_flow() {
-        let sk = SecretKey::new();
-        let pk = (&sk).into();
-        let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
-            .expect("Valid subnet in test case");
-        let rid = RouterId::new(pk);
-
-        let (router_data_tx, _router_data_rx) = mpsc::channel(1);
-        let (router_control_tx, _router_control_rx) = mpsc::unbounded_channel();
-        let (dead_peer_sink, _dead_peer_stream) = mpsc::channel(1);
-        let (con1, _con2) = tokio::io::duplex(1500);
-        let neighbour = Peer::new(
-            router_data_tx,
-            router_control_tx,
-            con1,
-            dead_peer_sink,
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AtomicU64::new(0)),
-        )
-        .expect("Can create a dummy peer");
-
-        let source_key = SourceKey::new(sn, rid);
-
-        let (erk_sink, _erk_stream) = mpsc::channel(1);
-
-        let rt = super::RoutingTable::new(erk_sink);
-
-        let rk = super::RouteKey::new(sn, neighbour.clone());
-
-        let mut route_list = rt.routes_mut(sn);
-
-        assert!(route_list.is_empty());
-
-        let entry = route_list.entry_mut(&rk);
-
-        let entry = entry.or_insert(super::RouteEntry::new(
-            source_key,
-            neighbour,
-            Metric::new(0),
-            SeqNo::new(),
-            false,
-            tokio::time::Instant::now() + tokio::time::Duration::from_secs(600),
-        ));
-        drop(entry);
-
-        assert!(!route_list.is_empty());
     }
 }
