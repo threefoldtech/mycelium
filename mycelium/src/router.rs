@@ -1085,6 +1085,10 @@ where
             }
         };
 
+        // Drop these here so the update gets reflected in the routing table, which is needed for a
+        // possible triggered update later on.
+        drop(routing_table_entries);
+
         // At this point we are done, though we would like to understand if we need to send a
         // triggered update to our peers. This is done if there is a sufficiently large change. We
         // consider a sufficiently large change to be:
