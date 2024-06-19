@@ -391,6 +391,8 @@ where
             routes[0].set_selected(false);
         }
 
+        drop(routes);
+
         self.trigger_update(subnet, None);
     }
 
@@ -451,6 +453,8 @@ where
                 debug!("Rerun route selection after expiration event");
                 if let Some(r) = self.find_best_route(&routes).cloned() {
                     routes.set_selected(r.neighbour());
+
+                    drop(routes);
 
                     // If the entry wasn't retracted yet, notify our peers.
                     if !r.metric().is_infinite() {
