@@ -1277,7 +1277,7 @@ where
                 error!("Error sending data packet to TUN interface: {:?}", e);
             }
         } else {
-            match self.select_best_route(IpAddr::V6(data_packet.dst_ip)) {
+            match self.routing_table.selected_route(data_packet.dst_ip.into()) {
                 Some(route_entry) => {
                     self.metrics.router_route_packet_forward();
                     if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
@@ -1381,12 +1381,6 @@ where
             hop_limit: 64,
             raw_data: enc,
         });
-    }
-
-    /// Get's the best route for a destination IP if one is present.
-    #[deprecated = "Use RoutingTable::selected_route instead"]
-    pub fn select_best_route(&self, dest_ip: IpAddr) -> Option<RouteEntry> {
-        self.routing_table.selected_route(dest_ip)
     }
 
     /// Task to propagate the static routes periodically
