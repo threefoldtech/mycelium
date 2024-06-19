@@ -7,138 +7,17 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use tokio::{sync::mpsc, task::AbortHandle, time::Instant};
+use tokio::{sync::mpsc, task::AbortHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace};
 
-use crate::{
-    crypto::SharedSecret, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
-    source_table::SourceKey, subnet::Subnet,
-};
+use crate::{peer::Peer, subnet::Subnet};
 
+pub use route_entry::RouteEntry;
 pub use route_key::RouteKey;
 
+mod route_entry;
 mod route_key;
-
-/// RouteEntry holds all relevant information about a specific route. Since this includes the next
-/// hop, a single subnet can have multiple route entries.
-#[derive(Clone)]
-pub struct RouteEntry {
-    source: SourceKey,
-    neighbour: Peer,
-    metric: Metric,
-    seqno: SeqNo,
-    selected: bool,
-    expires: Instant,
-    shared_secret: SharedSecret,
-}
-
-// Manual Debug implementation since SharedSecret is explicitly not Debug
-impl std::fmt::Debug for RouteEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RouteEntry")
-            .field("source", &self.source)
-            .field("neighbour", &self.neighbour)
-            .field("metric", &self.metric)
-            .field("seqno", &self.seqno)
-            .field("selected", &self.selected)
-            .field("expires", &self.expires)
-            .finish()
-    }
-}
-
-impl RouteEntry {
-    /// Create a new `RouteEntry` with the provided values.
-    pub fn new(
-        source: SourceKey,
-        neighbour: Peer,
-        metric: Metric,
-        seqno: SeqNo,
-        selected: bool,
-        expires: Instant,
-        shared_secret: SharedSecret,
-    ) -> Self {
-        Self {
-            source,
-            neighbour,
-            metric,
-            seqno,
-            selected,
-            expires,
-            shared_secret,
-        }
-    }
-
-    /// Return the [`SourceKey`] for this `RouteEntry`.
-    pub fn source(&self) -> SourceKey {
-        self.source
-    }
-
-    /// Return the [`neighbour`](Peer) used as next hop for this `RouteEntry`.
-    pub fn neighbour(&self) -> &Peer {
-        &self.neighbour
-    }
-
-    /// Return the [`Metric`] of this `RouteEntry`.
-    pub fn metric(&self) -> Metric {
-        self.metric
-    }
-
-    /// Return the [`sequence number`](SeqNo) for the `RouteEntry`.
-    pub fn seqno(&self) -> SeqNo {
-        self.seqno
-    }
-
-    /// Return if this [`RouteEntry`] is selected.
-    pub fn selected(&self) -> bool {
-        self.selected
-    }
-
-    /// Return the [`Instant`] when this `RouteEntry` expires if it doesn't get updated before
-    /// then.
-    pub fn expires(&self) -> Instant {
-        self.expires
-    }
-
-    /// Set the [`SourceKey`] for this `RouteEntry`.
-    pub fn set_source(&mut self, source: SourceKey) {
-        self.source = source;
-    }
-
-    /// Set the [`RouterId`] for this `RouteEntry`.
-    pub fn set_router_id(&mut self, router_id: RouterId) {
-        self.source.set_router_id(router_id)
-    }
-
-    /// Sets the [`neighbour`](Peer) for this `RouteEntry`.
-    pub fn set_neighbour(&mut self, neighbour: Peer) {
-        self.neighbour = neighbour;
-    }
-
-    /// Sets the [`Metric`] for this `RouteEntry`.
-    pub fn set_metric(&mut self, metric: Metric) {
-        self.metric = metric;
-    }
-
-    /// Sets the [`sequence number`](SeqNo) for this `RouteEntry`.
-    pub fn set_seqno(&mut self, seqno: SeqNo) {
-        self.seqno = seqno;
-    }
-
-    /// Sets if this `RouteEntry` is the selected route for the associated [`Subnet`].
-    pub fn set_selected(&mut self, selected: bool) {
-        self.selected = selected;
-    }
-
-    /// Sets the expiration time for this [`RouteEntry`].
-    pub fn set_expires(&mut self, expires: Instant) {
-        self.expires = expires;
-    }
-
-    pub fn shared_secret(&self) -> &SharedSecret {
-        &self.shared_secret
-    }
-}
 
 /// The routing table holds a list of route entries for every known subnet.
 #[derive(Clone)]
@@ -179,7 +58,7 @@ impl RouteList {
         self.list
             .iter()
             .map(|(_, e)| e)
-            .find(|entry| &entry.neighbour == route_key.neighbour())
+            .find(|entry| entry.neighbour() == route_key.neighbour())
     }
 
     /// Returns the selected route for the [`Subnet`] this is the `RouteList` for, if one exists.
@@ -187,7 +66,7 @@ impl RouteList {
         self.list
             .first()
             .map(|(_, re)| re)
-            .and_then(|re| if re.selected { Some(re) } else { None })
+            .and_then(|re| if re.selected() { Some(re) } else { None })
     }
 
     /// Returns an iterator over the `RouteList`.
@@ -199,7 +78,11 @@ impl RouteList {
 
     /// Selects the [`RouteEntry`] which matches the [`RouteKey`] for the associated subnet.
     pub fn set_selected(&mut self, neighbour: &Peer) {
-        let Some(pos) = self.list.iter().position(|re| &re.1.neighbour == neighbour) else {
+        let Some(pos) = self
+            .list
+            .iter()
+            .position(|re| re.1.neighbour() == neighbour)
+        else {
             error!(
                 neighbour = neighbour.connection_identifier(),
                 "Failed to select route entry with given route key, no such entry"
@@ -360,8 +243,8 @@ impl<O> Drop for RouteEntryGuard<'_, '_, O> {
         let cancellation_token = self.write_guard.cancellation_token.clone();
 
         let spawn_timer = |re: &RouteEntry| {
-            let expiration = re.expires;
-            let rk = RouteKey::new(re.source.subnet(), re.neighbour.clone());
+            let expiration = re.expires();
+            let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
             Arc::new(
                 tokio::spawn(async move {
                     tokio::select! {
@@ -529,7 +412,7 @@ impl RoutingTable {
             .table
             .longest_match(ip)
             .and_then(|(_, _, rl)| {
-                if rl.is_empty() || !rl[0].selected {
+                if rl.is_empty() || !rl[0].selected() {
                     None
                 } else {
                     Some(rl[0].clone())
@@ -585,7 +468,7 @@ impl<'a> WriteGuard<'a> {
             .list
             .iter_mut()
             .map(|(_, e)| e)
-            .position(|entry| &entry.neighbour == route_key.neighbour())
+            .position(|entry| entry.neighbour() == route_key.neighbour())
         {
             EntryIdentifier::Pos(pos)
         } else {
