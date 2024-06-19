@@ -364,6 +364,9 @@ mod tests {
 
         let source_key = SourceKey::new(sn, rid);
 
+        let secret_key_2 = SecretKey::new();
+        let ss = secret_key_2.shared_secret(&pk);
+
         let mut st = SourceTable::new();
         st.insert(
             source_key,
@@ -392,6 +395,7 @@ mod tests {
             SeqNo::from(1),
             true,
             tokio::time::Instant::now() + Duration::from_secs(60),
+            ss,
         );
 
         assert!(st.route_feasible(&re));
@@ -406,6 +410,9 @@ mod tests {
         let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
             .expect("Valid subnet in test case");
         let rid = RouterId::new(pk);
+
+        let secret_key_2 = SecretKey::new();
+        let ss = secret_key_2.shared_secret(&pk);
 
         let source_key = SourceKey::new(sn, rid);
 
@@ -437,6 +444,7 @@ mod tests {
             SeqNo::from(1),
             true,
             tokio::time::Instant::now() + Duration::from_secs(60),
+            ss,
         );
 
         assert!(!st.route_feasible(&re));
@@ -451,6 +459,9 @@ mod tests {
         let sn = Subnet::new(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1).into(), 64)
             .expect("Valid subnet in test case");
         let rid = RouterId::new(pk);
+
+        let secret_key_2 = SecretKey::new();
+        let ss = secret_key_2.shared_secret(&pk);
 
         let source_key = SourceKey::new(sn, rid);
 
@@ -482,6 +493,7 @@ mod tests {
             SeqNo::from(1),
             true,
             tokio::time::Instant::now() + Duration::from_secs(60),
+            ss,
         );
 
         assert!(!st.route_feasible(&re));
