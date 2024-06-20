@@ -275,16 +275,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .key_file
         .unwrap_or_else(|| PathBuf::from(DEFAULT_KEY_FILE));
 
-    // Load the keypair for this node, or generate a new one if the file does not exist.
-    // let node_keys = if key_path.exists() {
-    //     let sk = load_key_file(&key_path).await?;
-    //     let pk = crypto::PublicKey::from(&sk);
-    //     debug!("Loaded key file at {key_path:?}");
-    //     Some((sk, pk))
-    // } else {
-    //     None
-    // };
-
     match cli.command {
         None => {
             let private_network_config =
