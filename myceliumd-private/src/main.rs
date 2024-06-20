@@ -276,14 +276,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|| PathBuf::from(DEFAULT_KEY_FILE));
 
     // Load the keypair for this node, or generate a new one if the file does not exist.
-    let node_keys = if key_path.exists() {
-        let sk = load_key_file(&key_path).await?;
-        let pk = crypto::PublicKey::from(&sk);
-        debug!("Loaded key file at {key_path:?}");
-        Some((sk, pk))
-    } else {
-        None
-    };
+    // let node_keys = if key_path.exists() {
+    //     let sk = load_key_file(&key_path).await?;
+    //     let pk = crypto::PublicKey::from(&sk);
+    //     debug!("Loaded key file at {key_path:?}");
+    //     Some((sk, pk))
+    // } else {
+    //     None
+    // };
 
     match cli.command {
         None => {
@@ -297,6 +297,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     _ => None,
                 };
 
+            let node_keys = get_node_keys(&key_path).await?;
             let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
                 node_secret_key
             } else {
@@ -370,6 +371,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(cmd) => match cmd {
             Command::Inspect { json, key } => {
+                let node_keys = get_node_keys(&key_path).await?;
                 let key = if let Some(key) = key {
                     PublicKey::try_from(key.as_str())?
                 } else if let Some((_, node_pub_key)) = node_keys {
@@ -447,6 +449,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+async fn get_node_keys(
+    key_path: &PathBuf,
+) -> Result<Option<(crypto::SecretKey, crypto::PublicKey)>, io::Error> {
+    if key_path.exists() {
+        let sk = load_key_file(key_path).await?;
+        let pk = crypto::PublicKey::from(&sk);
+        debug!("Loaded key file at {key_path:?}");
+        Ok(Some((sk, pk)))
+    } else {
+        Ok(None)
+    }
 }
 
 async fn load_key_file<T>(path: &Path) -> Result<T, io::Error>
