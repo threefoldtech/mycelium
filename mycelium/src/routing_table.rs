@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
 use std::{
+    cell::RefCell,
     net::{IpAddr, Ipv6Addr},
     ops::{Deref, DerefMut, Index, IndexMut},
+    rc::Rc,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -13,9 +15,13 @@ use tracing::{debug, error, trace};
 
 use crate::{peer::Peer, subnet::Subnet};
 
+pub use iter::RoutingTableIter;
+pub use iter_mut::RoutingTableIterMut;
 pub use route_entry::RouteEntry;
 pub use route_key::RouteKey;
 
+mod iter;
+mod iter_mut;
 mod route_entry;
 mod route_key;
 
@@ -363,6 +369,22 @@ impl RoutingTable {
         }
     }
 
+    /// Locks the `RoutingTable` for continued write access. While the returned
+    /// [`guard`](RoutingTableWriteGuard) is held, methods trying to mutate the `RoutingTable`, or
+    /// get mutable access otherwise, will be blocked. When the [`guard`](`RoutingTableWriteGuard`)
+    /// is dropped, all queued changes will be applied.
+    pub fn write(&self) -> RoutingTableWriteGuard {
+        RoutingTableWriteGuard {
+            write_guard: Rc::new(RefCell::new(self.writer.lock().unwrap())),
+            read_guard: self
+                .reader
+                .enter()
+                .expect("Write handle is saved on RoutingTable, so this is always Some; qed"),
+            expired_route_entry_sink: self.expired_route_entry_sink.clone(),
+            cancel_token: self.cancel_token.clone(),
+        }
+    }
+
     /// Get mutable access to the list of routes for the given [`Subnet`].
     pub fn routes_mut(&self, subnet: Subnet) -> WriteGuard {
         let subnet_address = if let IpAddr::V6(ip) = subnet.address() {
@@ -421,6 +443,61 @@ impl RoutingTable {
     }
 }
 
+/// A write guard over the [`RoutingTable`]. While this guard is held, updates won't be able to
+/// complete.
+pub struct RoutingTableWriteGuard<'a> {
+    // NOTE: Wrapping this in an Rc<RefCell<...>> might seem odd at first. The reason this is done
+    // is as follows: this type is an intermediate type to allow a mutable iterator over the
+    // routing table entries to exist. However, for such a mutable iterator, we need to share a
+    // mutable reference to the MutexGuard. The internal left_right data structure does not allow
+    // publishing of changes while we are holding a read handle at the same time (deadlock). But
+    // the standard `Iterator` trait does not allow us to hand out items which reference the
+    // iterator itself. So we can't lock the guard, and hand a reference to some smart pointer to
+    // properly queue changes. We could _not_ lock the guard here, and do so on every call to
+    // Iterator::next, locking only for the lifetime of the item. But that also has deadlock
+    // problems: if the item returned is moved outside of the iterator loop (e.g. pushed to a vec),
+    // the iterator will deadlock (we still need to keep the read handle as well for the iterator).
+    // And even if this does not happen, we would need to queue the changes on the writehandle,
+    // which means that any concurrent update from a different tread which publishes would lead to
+    // a deadlock. We could work around this by using raw pointers, and a pin, and creating a
+    // contract that the returned value is not kept around. This does require unsafe code. As an
+    // alternative, for now we will keep an Rc, which we can clone so there is no reference as far
+    // as the compiler is concerned, and a refcell. We then queue changes done during iteration.
+    // Additionally, we will warn a potential user not to keep the values around, and in the drop
+    // implementation of this type we will try to make sure there are no other Rc's pointing to the
+    // same value.
+    // TODO: This might be better by implementing some kind of `LendingIterator`.
+    write_guard: Rc<
+        RefCell<MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
+    >,
+    read_guard: left_right::ReadGuard<'a, RoutingTableInner>,
+    expired_route_entry_sink: mpsc::Sender<RouteKey>,
+    cancel_token: CancellationToken,
+}
+
+impl<'a, 'b> RoutingTableWriteGuard<'a> {
+    pub fn iter_mut(&'b mut self) -> RoutingTableIterMut<'a, 'b> {
+        RoutingTableIterMut::new(
+            Rc::clone(&self.write_guard),
+            self.read_guard.table.iter(),
+            self.expired_route_entry_sink.clone(),
+            self.cancel_token.clone(),
+        )
+    }
+}
+
+impl Drop for RoutingTableWriteGuard<'_> {
+    fn drop(&mut self) {
+        // Since we have a mutable reference here instead of ownership of self we can't consume the
+        // Rc. So manually check reference count.
+        if Rc::strong_count(&self.write_guard) != 1 {
+            panic!("Dropping RoutingTableWriteGuard while there are outstanding references to the write guard lock");
+        }
+
+        self.write_guard.borrow_mut().publish();
+    }
+}
+
 /// A read guard over the [`RoutingTable`]. While this guard is held, updates won't be able to
 /// complete.
 pub struct RoutingTableReadGuard<'a> {
@@ -430,31 +507,6 @@ pub struct RoutingTableReadGuard<'a> {
 impl<'a> RoutingTableReadGuard<'a> {
     pub fn iter(&self) -> RoutingTableIter {
         RoutingTableIter::new(self.guard.table.iter())
-    }
-}
-
-pub struct RoutingTableIter<'a>(
-    ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<RouteList>>,
-);
-
-impl<'a> RoutingTableIter<'a> {
-    /// Create a new `RoutingTableIter` which will iterate over all entries in a [`RoutingTable`].
-    fn new(inner: ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<RouteList>>) -> Self {
-        Self(inner)
-    }
-}
-
-impl<'a> Iterator for RoutingTableIter<'a> {
-    type Item = (Subnet, &'a Arc<RouteList>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(ip, prefix_size, rl)| {
-            (
-                Subnet::new(ip.into(), prefix_size as u8)
-                    .expect("Routing table contains valid subnets"),
-                rl,
-            )
-        })
     }
 }
 
