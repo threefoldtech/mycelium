@@ -304,34 +304,27 @@ where
             dead_peer.connection_identifier()
         );
 
+        let mut rt_write = self.routing_table.write();
+
         // Scope for the mutex lock
         let subnets_to_select = {
             let mut subnets_to_select = Vec::new();
 
-            for (subnet, re) in self
-                .routing_table
-                .read()
-                .iter()
-                .flat_map(|(subnet, rl)| rl.iter().map(move |re| (subnet, re)))
-                .filter(|(_, re)| re.neighbour() == &dead_peer)
-            {
+            for (subnet, mut rl) in rt_write.iter_mut() {
+                let entry = rl.entry_mut(&dead_peer);
+                if entry.is_none() {
+                    continue;
+                }
+                let mut re = entry.unwrap();
+
                 if re.selected() {
                     subnets_to_select.push(subnet);
-                    let mut routes = self.routing_table.routes_mut(subnet);
-                    let entry = routes.entry_mut(&RouteKey::new(subnet, re.neighbour().clone()));
-                    if entry.is_none() {
-                        continue;
-                    }
 
-                    let mut entry = entry.unwrap();
                     // Don't clear selected flag yet, running route selection does that for us.
-                    entry.set_metric(Metric::infinite());
-                    entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                    re.set_metric(Metric::infinite());
+                    re.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
                 } else {
-                    self.routing_table
-                        .routes_mut(subnet)
-                        .entry_mut(&RouteKey::new(subnet, re.neighbour().clone()))
-                        .delete();
+                    re.delete();
                 }
             }
 
