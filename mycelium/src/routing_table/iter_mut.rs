@@ -5,8 +5,8 @@ use tracing::{debug, error, trace};
 use crate::{peer::Peer, subnet::Subnet};
 
 use super::{
-    EntryIdentifier, Occupied, PossiblyEmpty, RouteEntry, RouteEntryGuard, RouteKey, RouteList,
-    RoutingTableInner, RoutingTableOplogEntry,
+    EntryIdentifier, Occupied, PossiblyEmpty, RouteEntry, RouteKey, RouteList, RoutingTableInner,
+    RoutingTableOplogEntry,
 };
 use std::{
     cell::RefCell,
@@ -197,14 +197,14 @@ impl<'a, 'b> IterRouteEntryGuard<'a, 'b, PossiblyEmpty> {
 
     /// Convert this `RouteEntryGuard` to an `Occupied` variant, panicking if the contained entry
     /// is none.
-    pub fn unwrap(self) -> RouteEntryGuard<'a, 'b, Occupied> {
+    pub fn unwrap(self) -> IterRouteEntryGuard<'a, 'b, Occupied> {
         assert!(
             !matches!(self.entry_identifier, EntryIdentifier::None),
             "Called RouteEntryGuard::unwrap on an emtpy entry guard"
         );
 
         // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
-        unsafe { std::mem::transmute::<Self, RouteEntryGuard<'a, 'b, Occupied>>(self) }
+        unsafe { std::mem::transmute::<Self, IterRouteEntryGuard<'a, 'b, Occupied>>(self) }
     }
 }
 
