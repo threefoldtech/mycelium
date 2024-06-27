@@ -304,10 +304,9 @@ where
             dead_peer.connection_identifier()
         );
 
-        let mut rt_write = self.routing_table.write();
-
         // Scope for the mutex lock
         let subnets_to_select = {
+            let mut rt_write = self.routing_table.write();
             let mut subnets_to_select = Vec::new();
 
             for (subnet, mut rl) in rt_write.iter_mut() {
