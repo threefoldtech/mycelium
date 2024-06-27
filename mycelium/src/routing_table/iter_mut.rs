@@ -17,6 +17,8 @@ use std::{
     sync::{Arc, MutexGuard},
 };
 
+/// An iterator over a [`routing table`](super::RoutingTable), yielding mutable access to the
+/// entries in the table.
 pub struct RoutingTableIterMut<'a, 'b> {
     write_guard: Rc<
         RefCell<MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
@@ -71,6 +73,7 @@ impl<'a, 'b> Iterator for RoutingTableIterMut<'a, 'b> {
     }
 }
 
+/// A smart pointer giving mutable access to a [`RouteList`].
 pub struct RoutingTableIterMutEntry<'a> {
     writer: Rc<
         RefCell<MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
