@@ -304,7 +304,7 @@ where
             dead_peer.connection_identifier()
         );
 
-        // Scope for the mutex lock
+        // Scope for routing table write access.
         let subnets_to_select = {
             let mut rt_write = self.routing_table.write();
             let mut subnets_to_select = Vec::new();
@@ -327,8 +327,6 @@ where
                 }
             }
 
-            // Make sure we release the read handle, so a publish on the write handle eventually
-            // succeeds.
             self.remove_peer_interface(&dead_peer);
 
             subnets_to_select
