@@ -30,8 +30,16 @@ const PACKET_COALESCE_WINDOW: usize = 50;
 /// The default link cost assigned to new peers before their actual cost is known.
 ///
 /// In theory, the best value would be U16::MAX - 1, however this value would take too long to be
-/// flushed out of the smoothed metric. A default of a 50 (50 ms) is still large enough, and
-/// also has a lower impact on the initial link cost when a peer connects for the route metrics.
+/// flushed out of the smoothed metric. A default of a 1000 (1 second) should be sufficiently large
+/// to cover very bad connections, so they also converge to a smaller value. While there is no
+/// issue with converging to a higher value (in other words, underestimating the latency to a
+/// peer), this means that bad peers would briefly be more likely to be selected. Additionally,
+/// since the latency increases, downstream peers would eventually find that the announced route
+/// would become unfeasible, and send a seqno request (which should solve this efficiently). As a
+/// tradeoff, it  means it takes longer for new peers in the network to decrease to their actual
+/// metric (in comparisson with a lower starting metric), though this is in itself a usefull thing
+/// to have as it means peers joining the network would need to have some stability before being
+/// selected as hop.
 const DEFAULT_LINK_COST: u16 = 1000;
 
 /// Multiplier for smoothed metric calculation of the existing smoothed metric.
