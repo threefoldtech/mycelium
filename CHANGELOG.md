@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Increased the starting metric of a peer from 50 to 1000.
+- Reworked the internals of the routing table, which should reduce memory consumption
 
 ### Fixed
 
-- When running `mycelium` with a command, a keyfile was loaded (or created, if not yet present). This was not necessary in that context.
+- When running `mycelium` with a command, a keyfile was loaded (or created, if not
+  yet present). This was not necessary in that context.
 
 ## [0.5.3] - 2024-06-07
 
