@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Windows installer for Mycelium. The `.msi` file can be downloaded from the release
+  assets.
+
 ### Changed
 
 - Increased the starting metric of a peer from 50 to 1000.
