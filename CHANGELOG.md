@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Increased the starting metric of a peer from 50 to 1000.
 - Reworked the internals of the routing table, which should reduce memory consumption
+- Periodically reduce the allocated size of the seqno cache to avoid wasting some
+  memory which is not currently used by the cache but still allocated.
 
 ### Fixed
 

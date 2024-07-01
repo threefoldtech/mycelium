@@ -134,10 +134,13 @@ impl SeqnoCacheInner {
 
             let mut cache = self.cache.write().unwrap();
             let prev_entries = cache.len();
+            let prev_cap = cache.capacity();
             cache.retain(|_, info| info.first_sent.elapsed() <= SEQNO_DEDUP_TTL);
+            cache.shrink_to_fit();
 
             debug!(
                 cleaned_entries = prev_entries - cache.len(),
+                removed_capacity = prev_cap - cache.capacity(),
                 "Cleaned up stale seqno request cache entries"
             );
         }
