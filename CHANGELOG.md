@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - When running `mycelium` with a command, a keyfile was loaded (or created, if not
   yet present). This was not necessary in that context.
+- Limit the amount of time allowed for inbound quic connections to be set up, and
+  process multiple of them in parallel. This fixes a DOS vector against the quic
+  listener.
 
 ## [0.5.3] - 2024-06-07
 
