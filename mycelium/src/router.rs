@@ -982,11 +982,8 @@ where
         };
 
         // Take a deep copy of the old selected route if there is one, deep copy since we will
-        // potentially mutate it.
-        let old_selected_route = routing_table_entries
-            .iter()
-            .find(|entry| entry.selected())
-            .cloned();
+        // potentially mutate the route list so we can't keep a reference to it.
+        let old_selected_route = routing_table_entries.selected().cloned();
 
         let maybe_existing_entry_idx = routing_table_entries
             .iter()
