@@ -63,7 +63,6 @@ impl<'a, 'b> Iterator for RoutingTableIterMut<'a, 'b> {
                     writer: Rc::clone(&self.write_guard),
                     value: Arc::clone(rl),
                     owned: false,
-                    exists: true,
                     subnet,
                     expired_route_entry_sink: self.expired_route_entry_sink.clone(),
                     cancellation_token: self.cancel_token.clone(),
@@ -82,8 +81,6 @@ pub struct RoutingTableIterMutEntry<'a> {
     /// been requested.
     value: Arc<RouteList>,
     owned: bool,
-    /// Did the RouteList exist initially?
-    exists: bool,
     /// The subnet we are writing to.
     subnet: Subnet,
     expired_route_entry_sink: mpsc::Sender<RouteKey>,
@@ -139,36 +136,20 @@ impl Drop for RoutingTableIterMutEntry<'_> {
         let mut writer = self.writer.borrow_mut();
 
         // FIXME: try to get rid of clones on the Arc here
-        match self.exists {
-            // The route list did not exist, and now it is not empty, so an entry was added. We
-            // need to add the route list to the routing table.
-            false if !self.value.is_empty() => {
-                trace!(subnet = ?self.subnet, "Inserting new route list for subnet");
-                writer.append(RoutingTableOplogEntry::Upsert(
-                    self.subnet,
-                    Arc::clone(&self.value),
-                ));
-            }
-            // There was an existing route list which is now empty, so the entry for this subnet
-            // needs to be deleted in the routing table.
-            true if self.value.is_empty() => {
-                trace!(subnet = ?self.subnet, "Removing route list for subnet");
-                writer.append(RoutingTableOplogEntry::Delete(self.subnet));
-            }
-            // The value already existed, and was mutably accessed, so it was dissociated. Update
-            // the routing table to point to the new value.
-            true => {
-                trace!(subnet = ?self.subnet, "Updating route list for subnet");
-                writer.append(RoutingTableOplogEntry::Upsert(
-                    self.subnet,
-                    Arc::clone(&self.value),
-                ));
-            }
-            // The value did not exist and is still empty, so nothing was added. Nothing to do
-            // here.
-            false => {
-                trace!(subnet = ?self.subnet, "Unknown subnet had no routes and still doesn't have any");
-            }
+        // There was an existing route list which is now empty, so the entry for this subnet
+        // needs to be deleted in the routing table.
+        if self.value.is_empty() {
+            trace!(subnet = ?self.subnet, "Removing route list for subnet");
+            writer.append(RoutingTableOplogEntry::Delete(self.subnet));
+        }
+        // The value already existed, and was mutably accessed, so it was dissociated. Update
+        // the routing table to point to the new value.
+        else {
+            trace!(subnet = ?self.subnet, "Updating route list for subnet");
+            writer.append(RoutingTableOplogEntry::Upsert(
+                self.subnet,
+                Arc::clone(&self.value),
+            ));
         }
     }
 }
