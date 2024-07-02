@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reworked the internals of the routing table, which should reduce memory consumption
 - Periodically reduce the allocated size of the seqno cache to avoid wasting some
   memory which is not currently used by the cache but still allocated.
+- Demote seqno cache warnings about duplicate seqno requests go debug lvl, as it
+  is valid to send duplicate requests if sufficient time passed.
 
 ### Fixed
 

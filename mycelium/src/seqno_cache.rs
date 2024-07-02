@@ -9,7 +9,7 @@ use std::{
 };
 
 use tokio::time::MissedTickBehavior;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 use crate::{peer::Peer, router_id::RouterId, sequence_number::SeqNo, subnet::Subnet};
 
@@ -76,7 +76,7 @@ impl SeqnoCache {
         if !info.targets.contains(&target) {
             info.targets.push(target);
         } else {
-            warn!(
+            debug!(
                 seqno_request = ?request,
                 "Already sent seqno request to target {}",
                 target.connection_identifier()
