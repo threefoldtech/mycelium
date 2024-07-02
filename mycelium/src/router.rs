@@ -422,13 +422,11 @@ where
                     entry.set_metric(Metric::infinite());
                     entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
                     entry.selected()
-                } else if entry.metric().is_infinite() {
+                } else {
                     debug!("Route {rk} expired, removing retracted route");
                     let selected = entry.selected();
                     entry.delete();
                     selected
-                } else {
-                    unreachable!();
                 }
             };
 
