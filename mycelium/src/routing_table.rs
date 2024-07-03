@@ -114,12 +114,6 @@ impl Index<usize> for RouteList {
     }
 }
 
-impl IndexMut<usize> for RouteList {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.list[index].1
-    }
-}
-
 pub struct RouteListIter<'a> {
     route_list: &'a RouteList,
     idx: usize,
