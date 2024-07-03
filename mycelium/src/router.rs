@@ -952,10 +952,8 @@ where
         let seqno = update.seqno();
         let subnet = update.subnet();
 
-        // create route key from incoming update control struct
-        let update_route_key = RouteKey::new(subnet, source_peer.clone());
-        // used later to filter out static route
-        if self.route_key_is_from_static_route(&update_route_key) {
+        // Make sure we don't process an update for one of our own subnets.
+        if self.is_static_subnet(subnet) {
             return;
         }
 
@@ -1244,13 +1242,9 @@ where
     }
 
     /// Checks if a route key is an exact match for a static route.
-    fn route_key_is_from_static_route(&self, route_key: &RouteKey) -> bool {
-        for sr in self.static_routes.iter() {
-            if sr == &route_key.subnet() {
-                return true;
-            }
-        }
-        false
+    #[inline]
+    fn is_static_subnet(&self, subnet: Subnet) -> bool {
+        self.static_routes.contains(&subnet)
     }
 
     pub fn route_packet(&self, mut data_packet: DataPacket) {
