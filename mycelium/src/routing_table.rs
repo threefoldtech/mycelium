@@ -187,6 +187,15 @@ impl<'a, 'b> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
         matches!(self.entry_identifier, EntryIdentifier::None)
     }
 
+    /// Returns `true` if the `RouteEntryGuard` points to either an existing value, or contains a
+    /// new value to be inserted.
+    pub fn is_some(&self) -> bool {
+        matches!(
+            self.entry_identifier,
+            EntryIdentifier::Pos(_) | EntryIdentifier::New(_)
+        )
+    }
+
     /// Convert this `RouteEntryGuard` to an `Occupied` variant, panicking if the contained entry
     /// is none.
     pub fn unwrap(self) -> RouteEntryGuard<'a, 'b, Occupied> {
