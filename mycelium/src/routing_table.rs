@@ -555,6 +555,16 @@ impl<'a> WriteGuard<'a> {
 
         None
     }
+
+    /// Ensures no [`route`] is selected for this [`Subnet`]. If no [`route`] was selected, this
+    /// does nothing.
+    ///
+    /// [`route`]: RouteEntry
+    pub fn unselect(&mut self) {
+        if let Some((_, entry)) = self.list.get_mut(0) {
+            entry.set_selected(false);
+        }
+    }
 }
 
 impl Deref for WriteGuard<'_> {
