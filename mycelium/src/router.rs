@@ -1472,7 +1472,7 @@ where
             } else {
                 // This can happen if the only feasible route gets an infinite metric, as those are
                 // never selected.
-                info!("Retracting route for {subnet}");
+                info!(subnet = %subnet, "Retracting route");
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
                     self.router_seqno.read().unwrap().0,
@@ -1493,9 +1493,9 @@ where
                 }
             }
             debug!(
-                "Propagating route update for {} to {}",
-                subnet,
-                peer.connection_identifier()
+                subnet = %subnet,
+                peer = peer.connection_identifier(),
+                "Propagating route update",
             );
             self.send_update(peer, update.clone());
         };
@@ -1535,11 +1535,12 @@ where
                 sre.source().router_id(),
             );
             debug!(
-                "Propagating route update for {} to {} | D({}, {})",
-                subnet,
-                peer.connection_identifier(),
-                sre.seqno(),
-                sre.metric() + neigh_link_cost,
+                subnet = %subnet,
+                metric = %sre.metric() + neigh_link_cost,
+                seqno = %sre.seqno(),
+                peer = peer.connection_identifier(),
+
+                "Propagating route update",
             );
             self.send_update(peer, update);
         }
