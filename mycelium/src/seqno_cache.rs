@@ -25,6 +25,16 @@ pub struct SeqnoRequestCacheKey {
     pub seqno: SeqNo,
 }
 
+impl std::fmt::Display for SeqnoRequestCacheKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "seqno {} for {} from {}",
+            self.seqno, self.subnet, self.router_id
+        )
+    }
+}
+
 /// Information retained for sequence number requests we've sent.
 struct SeqnoForwardInfo {
     /// Which peers have asked us to forward this seqno request.
