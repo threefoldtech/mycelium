@@ -3,7 +3,7 @@
 use std::{
     cell::RefCell,
     net::{IpAddr, Ipv6Addr},
-    ops::{Deref, DerefMut, Index, IndexMut},
+    ops::{Deref, DerefMut, Index},
     rc::Rc,
     sync::{Arc, Mutex, MutexGuard},
 };
