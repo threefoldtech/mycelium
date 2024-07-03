@@ -57,14 +57,6 @@ impl RouteList {
         self.list.is_empty()
     }
 
-    /// Get a reference to the [`RouteEntry`] specified by the [`RouteKey`] from the list.
-    pub fn entry(&self, route_key: &RouteKey) -> Option<&RouteEntry> {
-        self.list
-            .iter()
-            .map(|(_, e)| e)
-            .find(|entry| entry.neighbour() == route_key.neighbour())
-    }
-
     /// Returns the selected route for the [`Subnet`] this is the `RouteList` for, if one exists.
     pub fn selected(&self) -> Option<&RouteEntry> {
         self.list
