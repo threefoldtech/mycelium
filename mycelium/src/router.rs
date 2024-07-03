@@ -378,7 +378,7 @@ where
             // to us, to try and get an updated entry. This uses the source key of the unselected
             // entry.
             self.send_seqno_request(routes[0].source(), None, None);
-            routes[0].set_selected(false);
+            routes.unselect();
         }
 
         drop(routes);
