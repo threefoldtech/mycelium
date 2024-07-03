@@ -525,24 +525,6 @@ impl<'a> WriteGuard<'a> {
         }
     }
 
-    /// Get a [`RouteEntryGuard`] containing the selected [`RouteEntry`] for the subnet associated
-    /// with this `RouteList`. If a [`RouteEntryGuard`] is returned, it is guaranteeed to point to
-    /// a [`RouteEntry`]. If no selected route exists for the subnet, [`Option::None`] is returned.
-    pub fn selected_mut<'b>(&'b mut self) -> Option<RouteEntryGuard<'a, 'b, Occupied>> {
-        if let Some((_, entry)) = self.list.get_mut(0) {
-            if entry.selected() {
-                return Some(RouteEntryGuard {
-                    write_guard: self,
-                    entry_identifier: EntryIdentifier::Pos(0),
-                    delete: false,
-                    _marker: std::marker::PhantomData,
-                });
-            }
-        }
-
-        None
-    }
-
     /// Ensures no [`route`] is selected for this [`Subnet`]. If no [`route`] was selected, this
     /// does nothing.
     ///

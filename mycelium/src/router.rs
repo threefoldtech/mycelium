@@ -1529,7 +1529,6 @@ where
                 metric = %sre.metric() + neigh_link_cost,
                 seqno = %sre.seqno(),
                 peer = peer.connection_identifier(),
-
                 "Propagating route update",
             );
             self.send_update(peer, update);
