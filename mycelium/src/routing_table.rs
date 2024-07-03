@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     cell::RefCell,
     net::{IpAddr, Ipv6Addr},
