@@ -505,15 +505,12 @@ impl<'a> RoutingTableReadGuard<'a> {
 
 impl<'a> WriteGuard<'a> {
     /// Get [`RouteEntryGuard`] containing a [`RouteEntry`] for the given [`RouteKey`].
-    pub fn entry_mut<'b>(
-        &'b mut self,
-        route_key: &RouteKey,
-    ) -> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
+    pub fn entry_mut<'b>(&'b mut self, neighbour: &Peer) -> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
         let entry_identifier = if let Some(pos) = self
             .list
             .iter_mut()
             .map(|(_, e)| e)
-            .position(|entry| entry.neighbour() == route_key.neighbour())
+            .position(|entry| entry.neighbour() == neighbour)
         {
             EntryIdentifier::Pos(pos)
         } else {

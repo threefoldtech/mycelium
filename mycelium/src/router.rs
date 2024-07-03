@@ -411,7 +411,7 @@ where
             let mut routes = self.routing_table.routes_mut(rk.subnet());
             // Bit of weird scoping for the mutable reference to entries.
             let was_selected = {
-                let entry = routes.entry_mut(&rk);
+                let entry = routes.entry_mut(rk.neighbour());
                 if entry.is_none() {
                     continue;
                 }
@@ -985,7 +985,7 @@ where
         // potentially mutate the route list so we can't keep a reference to it.
         let old_selected_route = routing_table_entries.selected().cloned();
 
-        let maybe_existing_entry = routing_table_entries.entry_mut(&update_route_key);
+        let maybe_existing_entry = routing_table_entries.entry_mut(&source_peer);
 
         debug!(
            subnet = %subnet,
