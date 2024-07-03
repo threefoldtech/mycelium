@@ -988,10 +988,15 @@ where
         let maybe_existing_entry = routing_table_entries.entry_mut(&update_route_key);
 
         debug!(
-             "Got update packet from {} for subnet {subnet} with metric {metric} and seqno {seqno} and router-id {router_id}. Route entry exists: {} and update is feasible: {update_feasible}",
-             source_peer.connection_identifier(),
-             maybe_existing_entry.is_some(),
-         );
+           subnet = %subnet,
+           metric = %metric,
+           seqno = %seqno,
+           router_id = %router_id,
+           entry_exists = maybe_existing_entry.is_some(),
+           update_feasible = update_feasible,
+           peer = source_peer.connection_identifier(),
+            "Processing update packet",
+        );
 
         // Track if we unselected the current existing route. This is required to avoid an issue
         // where we try to unselect the selected route twice if it is lost.
@@ -1089,9 +1094,10 @@ where
             (Some(old_route), Some(new_route)) => {
                 if new_route.neighbour() != old_route.neighbour() {
                     info!(
-                        "Selected route for {subnet} changed next-hop from {} to {}",
-                        old_route.neighbour().connection_identifier(),
-                        new_route.neighbour().connection_identifier()
+                        subnet = %subnet,
+                        old_next_hop = old_route.neighbour().connection_identifier(),
+                        new_next_hop = new_route.neighbour().connection_identifier(),
+                        "Selected route changed next-hop",
                     );
                 }
                 // Router id changed.
@@ -1102,15 +1108,17 @@ where
             }
             (None, Some(new_route)) => {
                 info!(
-                    "Acquired route to {subnet} via {}",
-                    new_route.neighbour().connection_identifier()
+                    subnet = %subnet,
+                    peer = new_route.neighbour().connection_identifier(),
+                    "Acquired route",
                 );
                 true
             }
             (Some(old_route), None) => {
                 info!(
-                    "Lost route to {subnet} via {}",
-                    old_route.neighbour().connection_identifier()
+                    subnet = %subnet,
+                    peer = old_route.neighbour().connection_identifier(),
+                    "Lost route",
                 );
                 true
             }
@@ -1118,11 +1126,12 @@ where
         };
 
         if trigger_update {
-            debug!("Send triggered update for {subnet} in response to update");
+            debug!(subnet = %subnet, "Send triggered update in response to update");
             self.trigger_update(subnet, None);
         } else if interested_peers.is_some() {
             debug!(
-                "Send update to peers who registered interest through a seqno request for {subnet}"
+                subnet = %subnet,
+                "Send update to peers who registered interest through a seqno request"
             );
             self.trigger_update(subnet, interested_peers);
             // If we have some interest in an update because we forwarded a seqno request but we
