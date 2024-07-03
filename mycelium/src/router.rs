@@ -1065,11 +1065,7 @@ where
             self.send_seqno_request(osr.source(), None, None);
 
             if !existing_route_unselected {
-                // Since we know for sure a selected route existed we could technically unwrap
-                // here.
-                if let Some(mut selected_route) = routing_table_entries.selected_mut() {
-                    selected_route.set_selected(false);
-                }
+                routing_table_entries.unselect();
             }
         };
 
