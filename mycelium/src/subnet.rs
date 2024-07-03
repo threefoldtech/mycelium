@@ -148,14 +148,6 @@ impl fmt::Display for Subnet {
     }
 }
 
-impl fmt::Display for PrefixLenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Invalid prefix length for this address")
-    }
-}
-
-impl std::error::Error for PrefixLenError {}
-
 impl PartialEq for Subnet {
     fn eq(&self, other: &Self) -> bool {
         // Quic check, subnets of different sizes are never equal.
@@ -177,6 +169,14 @@ impl Hash for Subnet {
         self.network().hash(state)
     }
 }
+
+impl fmt::Display for PrefixLenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Invalid prefix length for this address")
+    }
+}
+
+impl std::error::Error for PrefixLenError {}
 
 #[cfg(test)]
 mod tests {

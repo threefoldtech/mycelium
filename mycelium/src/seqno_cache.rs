@@ -87,7 +87,7 @@ impl SeqnoCache {
             info.targets.push(target);
         } else {
             debug!(
-                seqno_request = ?request,
+                seqno_request = %request,
                 "Already sent seqno request to target {}",
                 target.connection_identifier()
             );
@@ -96,7 +96,7 @@ impl SeqnoCache {
             if !info.sources.contains(&source) {
                 info.sources.push(source);
             } else {
-                debug!(seqno_request = ?request, "Peer {} is requesting the same seqno again", source.connection_identifier());
+                debug!(seqno_request = %request, "Peer {} is requesting the same seqno again", source.connection_identifier());
             }
         }
     }

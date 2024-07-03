@@ -249,9 +249,9 @@ impl<O> Drop for RouteEntryGuard<'_, '_, O> {
                     tokio::select! {
                         _ = cancellation_token.cancelled() => {}
                         _ = tokio::time::sleep_until(expiration) => {
-                            debug!(route_key = ?rk, "Expired route entry for route key");
+                            debug!(route_key = %rk, "Expired route entry for route key");
                             if let Err(e) =  expired_route_entry_sink.send(rk).await {
-                                error!(route_key = ?e.0, "Failed to send expired route key on cleanup channel");
+                                error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
                             }
                         }
                     }
@@ -586,7 +586,7 @@ impl Drop for WriteGuard<'_> {
             // The route list did not exist, and now it is not empty, so an entry was added. We
             // need to add the route list to the routing table.
             false if !self.value.is_empty() => {
-                trace!(subnet = ?self.subnet, "Inserting new route list for subnet");
+                trace!(subnet = %self.subnet, "Inserting new route list for subnet");
                 self.writer.append(RoutingTableOplogEntry::Upsert(
                     self.subnet,
                     Arc::clone(&self.value),
@@ -595,14 +595,14 @@ impl Drop for WriteGuard<'_> {
             // There was an existing route list which is now empty, so the entry for this subnet
             // needs to be deleted in the routing table.
             true if self.value.is_empty() => {
-                trace!(subnet = ?self.subnet, "Removing route list for subnet");
+                trace!(subnet = %self.subnet, "Removing route list for subnet");
                 self.writer
                     .append(RoutingTableOplogEntry::Delete(self.subnet));
             }
             // The value already existed, and was mutably accessed, so it was dissociated. Update
             // the routing table to point to the new value.
             true => {
-                trace!(subnet = ?self.subnet, "Updating route list for subnet");
+                trace!(subnet = %self.subnet, "Updating route list for subnet");
                 self.writer.append(RoutingTableOplogEntry::Upsert(
                     self.subnet,
                     Arc::clone(&self.value),
@@ -611,7 +611,7 @@ impl Drop for WriteGuard<'_> {
             // The value did not exist and is still empty, so nothing was added. Nothing to do
             // here.
             false => {
-                trace!(subnet = ?self.subnet, "Unknown subnet had no routes and still doesn't have any");
+                trace!(subnet = %self.subnet, "Unknown subnet had no routes and still doesn't have any");
             }
         }
 

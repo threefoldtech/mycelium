@@ -139,13 +139,13 @@ impl Drop for RoutingTableIterMutEntry<'_> {
         // There was an existing route list which is now empty, so the entry for this subnet
         // needs to be deleted in the routing table.
         if self.value.is_empty() {
-            trace!(subnet = ?self.subnet, "Removing route list for subnet");
+            trace!(subnet = %self.subnet, "Removing route list for subnet");
             writer.append(RoutingTableOplogEntry::Delete(self.subnet));
         }
         // The value already existed, and was mutably accessed, so it was dissociated. Update
         // the routing table to point to the new value.
         else {
-            trace!(subnet = ?self.subnet, "Updating route list for subnet");
+            trace!(subnet = %self.subnet, "Updating route list for subnet");
             writer.append(RoutingTableOplogEntry::Upsert(
                 self.subnet,
                 Arc::clone(&self.value),
@@ -242,9 +242,9 @@ impl<O> Drop for IterRouteEntryGuard<'_, '_, O> {
                     tokio::select! {
                         _ = cancellation_token.cancelled() => {}
                         _ = tokio::time::sleep_until(expiration) => {
-                            debug!(route_key = ?rk, "Expired route entry for route key");
+                            debug!(route_key = %rk, "Expired route entry for route key");
                             if let Err(e) =  expired_route_entry_sink.send(rk).await {
-                                error!(route_key = ?e.0, "Failed to send expired route key on cleanup channel");
+                                error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
                             }
                         }
                     }
