@@ -985,22 +985,20 @@ where
         // potentially mutate the route list so we can't keep a reference to it.
         let old_selected_route = routing_table_entries.selected().cloned();
 
-        let maybe_existing_entry_idx = routing_table_entries
-            .iter()
-            .position(|entry| entry.neighbour() == &source_peer);
+        let maybe_existing_entry = routing_table_entries.entry_mut(&update_route_key);
 
         debug!(
              "Got update packet from {} for subnet {subnet} with metric {metric} and seqno {seqno} and router-id {router_id}. Route entry exists: {} and update is feasible: {update_feasible}",
              source_peer.connection_identifier(),
-             maybe_existing_entry_idx.is_some(),
+             maybe_existing_entry.is_some(),
          );
 
         // Track if we unselected the current existing route. This is required to avoid an issue
         // where we try to unselect the selected route twice if it is lost.
         let mut existing_route_unselected = false;
 
-        if let Some(existing_entry_idx) = maybe_existing_entry_idx {
-            let existing_entry = &mut routing_table_entries[existing_entry_idx];
+        if maybe_existing_entry.is_some() {
+            let mut existing_entry = maybe_existing_entry.unwrap();
             // Unfeasible updates to the selected route are not applied, but we do request a seqno
             // bump.
             if existing_entry.selected()
@@ -1036,17 +1034,15 @@ where
 
             // Create new entry in the route table
             let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
-            routing_table_entries
-                .entry_mut(&update_route_key)
-                .or_insert(RouteEntry::new(
-                    SourceKey::new(subnet, router_id),
-                    source_peer.clone(),
-                    metric,
-                    seqno,
-                    false,
-                    tokio::time::Instant::now() + route_hold_time(&update),
-                    ss,
-                ));
+            maybe_existing_entry.or_insert(RouteEntry::new(
+                SourceKey::new(subnet, router_id),
+                source_peer.clone(),
+                metric,
+                seqno,
+                false,
+                tokio::time::Instant::now() + route_hold_time(&update),
+                ss,
+            ));
         }
 
         // Now that we applied the update, run route selection.
