@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.5.8", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
+tracing-logfmt = "0.3.4"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 mycelium = { path = "../mycelium", features = ["private-network", "message"] }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }

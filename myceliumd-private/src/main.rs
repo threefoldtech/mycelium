@@ -6,6 +6,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
 };
+use std::{fmt::Display, str::FromStr};
 
 use clap::{Args, Parser, Subcommand};
 use tokio::fs::File;
@@ -19,7 +20,7 @@ use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, Node};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, Layer};
+use tracing_subscriber::EnvFilter;
 
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
@@ -40,6 +41,38 @@ const TUN_NAME: &str = "tun0";
 #[cfg(target_os = "macos")]
 const TUN_NAME: &str = "utun3";
 
+/// The logging formats that can be selected.
+#[derive(Clone, PartialEq, Eq)]
+enum LoggingFormat {
+    Compact,
+    Logfmt,
+}
+
+impl Display for LoggingFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LoggingFormat::Compact => "compact",
+                LoggingFormat::Logfmt => "logfmt",
+            }
+        )
+    }
+}
+
+impl FromStr for LoggingFormat {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "compact" => LoggingFormat::Compact,
+            "logfmt" => LoggingFormat::Logfmt,
+            _ => return Err("invalid logging format"),
+        })
+    }
+}
+
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
@@ -55,6 +88,10 @@ struct Cli {
     /// Disable all logs except error logs.
     #[arg(long = "silent", default_value_t = false)]
     silent: bool,
+
+    /// The logging format to use. `logfmt` and `compact` is supported.
+    #[arg(long = "log-format", default_value_t = LoggingFormat::Compact)]
+    logging_format: LoggingFormat,
 
     #[clap(flatten)]
     node_args: NodeArguments,
@@ -262,13 +299,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::fmt::Layer::new().compact().with_filter(
-                EnvFilter::builder()
-                    .with_default_directive(level.into())
-                    .from_env()
-                    .expect("invalid RUST_LOG"),
-            ),
+            EnvFilter::builder()
+                .with_default_directive(level.into())
+                .from_env()
+                .expect("invalid RUST_LOG"),
         )
+        .with(
+            (cli.logging_format == LoggingFormat::Compact)
+                .then(|| tracing_subscriber::fmt::Layer::new().compact()),
+        )
+        .with((cli.logging_format == LoggingFormat::Logfmt).then(|| tracing_logfmt::layer()))
         .init();
 
     let key_path = cli
