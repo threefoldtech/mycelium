@@ -109,7 +109,7 @@ out [the relevant docs](/docs/private_network.md).
 
 The node starts an HTTP API, which by default listens on `localhost:8989`. A different
 listening address can be specified on the CLI when starting the system through the
-`--api-server-addr` flag. The API allows access to [send and receive messages](#message-system),
+`--api-addr` flag. The API allows access to [send and receive messages](#message-system),
 and will later be expanded to allow admin functionality on the system. Note that
 message are sent using the identity of the node, and a future admin API can be
 used to change the system behavior. As such, care should be taken that this API
