@@ -9,6 +9,7 @@ use std::{
 use std::{fmt::Display, str::FromStr};
 
 use clap::{Args, Parser, Subcommand};
+use serde::{Deserialize, Deserializer};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
@@ -80,6 +81,10 @@ struct Cli {
     /// [priv_key.bin].
     #[arg(short = 'k', long = "key-file", global = true)]
     key_file: Option<PathBuf>,
+
+    // Configuration file
+    #[arg(short = 'c', long = "config-file", global = true)]
+    config_file: Option<PathBuf>,
 
     /// Enable debug logging. Does nothing if `--silent` is set.
     #[arg(short = 'd', long = "debug", default_value_t = false)]
@@ -268,9 +273,46 @@ pub struct NodeArguments {
     firewall_mark: Option<u32>,
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct MyceliumConfig {
+    #[serde(deserialize_with = "deserialize_optional_endpoint_str_from_toml")]
+    peers: Option<Vec<Endpoint>>,
+    tcp_listen_port: Option<u16>,
+    quic_listen_port: Option<u16>,
+    tun_name: Option<String>,
+    peer_discovery_port: Option<u16>,
+    api_addr: Option<SocketAddr>,
+    metrics_api_address: Option<SocketAddr>,
+    firewall_mark: Option<u32>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
+
+    // Init default configuration
+    let mut mycelium_config = MyceliumConfig::default();
+
+    // Load configuration file
+    if let Some(config_file_path) = &cli.config_file {
+        if Path::new(config_file_path).exists() {
+            let config = config::Config::builder()
+                .add_source(config::File::new(
+                    config_file_path.to_str().unwrap(),
+                    config::FileFormat::Toml,
+                ))
+                .build()?;
+
+            mycelium_config = config.try_deserialize()?;
+        } else {
+            warn!(
+                "Specified config file {:?} does not exist.",
+                config_file_path
+            );
+        }
+    } else {
+        // TODO: Try to use the default path (depends on OS)
+    }
 
     let level = if cli.silent {
         tracing::Level::ERROR
@@ -300,6 +342,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match cli.command {
         None => {
+            let merged_config = merge_config(cli.node_args, mycelium_config);
+
             let node_keys = get_node_keys(&key_path).await?;
             let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
                 node_secret_key
@@ -310,46 +354,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 secret_key
             };
 
-            let _api = if let Some(metrics_api_addr) = cli.node_args.metrics_api_address {
+            let _api = if let Some(metrics_api_addr) = merged_config.metrics_api_address {
                 let metrics = mycelium_metrics::PrometheusExporter::new();
                 let config = mycelium::Config {
                     node_key: node_secret_key,
-                    peers: cli.node_args.static_peers,
-                    no_tun: cli.node_args.no_tun,
-                    tcp_listen_port: cli.node_args.tcp_listen_port,
-                    quic_listen_port: Some(cli.node_args.quic_listen_port),
-                    peer_discovery_port: if cli.node_args.disable_peer_discovery {
+                    peers: merged_config.static_peers,
+                    no_tun: merged_config.no_tun,
+                    tcp_listen_port: merged_config.tcp_listen_port,
+                    quic_listen_port: Some(merged_config.quic_listen_port),
+                    peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
                     } else {
-                        Some(cli.node_args.peer_discovery_port)
+                        Some(merged_config.peer_discovery_port)
                     },
-                    tun_name: cli.node_args.tun_name,
+                    tun_name: merged_config.tun_name,
                     private_network_config: None,
                     metrics: metrics.clone(),
-                    firewall_mark: cli.node_args.firewall_mark,
+                    firewall_mark: merged_config.firewall_mark,
                 };
                 metrics.spawn(metrics_api_addr);
                 let node = Node::new(config).await?;
-                mycelium_api::Http::spawn(node, cli.node_args.api_addr)
+                mycelium_api::Http::spawn(node, merged_config.api_addr)
             } else {
                 let config = mycelium::Config {
                     node_key: node_secret_key,
-                    peers: cli.node_args.static_peers,
-                    no_tun: cli.node_args.no_tun,
-                    tcp_listen_port: cli.node_args.tcp_listen_port,
-                    quic_listen_port: Some(cli.node_args.quic_listen_port),
-                    peer_discovery_port: if cli.node_args.disable_peer_discovery {
+                    peers: merged_config.static_peers,
+                    no_tun: merged_config.no_tun,
+                    tcp_listen_port: merged_config.tcp_listen_port,
+                    quic_listen_port: Some(merged_config.quic_listen_port),
+                    peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
                     } else {
-                        Some(cli.node_args.peer_discovery_port)
+                        Some(merged_config.peer_discovery_port)
                     },
-                    tun_name: cli.node_args.tun_name,
+                    tun_name: merged_config.tun_name,
                     private_network_config: None,
                     metrics: mycelium_metrics::NoMetrics,
-                    firewall_mark: cli.node_args.firewall_mark,
+                    firewall_mark: merged_config.firewall_mark,
                 };
                 let node = Node::new(config).await?;
-                mycelium_api::Http::spawn(node, cli.node_args.api_addr)
+                mycelium_api::Http::spawn(node, merged_config.api_addr)
             };
 
             // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
@@ -499,4 +543,94 @@ async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArguments {
+    NodeArguments {
+        static_peers: if !cli_args.static_peers.is_empty() {
+            cli_args.static_peers
+        } else {
+            file_config.peers.unwrap_or_default()
+        },
+        tcp_listen_port: if cli_args.tcp_listen_port != DEFAULT_TCP_LISTEN_PORT {
+            cli_args.tcp_listen_port
+        } else {
+            file_config
+                .tcp_listen_port
+                .unwrap_or(DEFAULT_TCP_LISTEN_PORT)
+        },
+        quic_listen_port: if cli_args.quic_listen_port != DEFAULT_QUIC_LISTEN_PORT {
+            cli_args.quic_listen_port
+        } else {
+            file_config
+                .quic_listen_port
+                .unwrap_or(DEFAULT_QUIC_LISTEN_PORT)
+        },
+        peer_discovery_port: if cli_args.peer_discovery_port != DEFAULT_PEER_DISCOVERY_PORT {
+            cli_args.peer_discovery_port
+        } else {
+            file_config
+                .peer_discovery_port
+                .unwrap_or(DEFAULT_PEER_DISCOVERY_PORT)
+        },
+        disable_peer_discovery: cli_args.disable_peer_discovery,
+        api_addr: if cli_args.api_addr != DEFAULT_HTTP_API_SERVER_ADDRESS {
+            cli_args.api_addr
+        } else {
+            file_config
+                .api_addr
+                .unwrap_or(DEFAULT_HTTP_API_SERVER_ADDRESS)
+        },
+        no_tun: cli_args.no_tun,
+        tun_name: if cli_args.tun_name != *TUN_NAME {
+            cli_args.tun_name
+        } else {
+            file_config.tun_name.unwrap_or_else(|| TUN_NAME.to_string())
+        },
+        metrics_api_address: if cli_args.metrics_api_address.is_some() {
+            cli_args.metrics_api_address
+        } else if file_config.metrics_api_address.is_some() {
+            file_config.metrics_api_address
+        } else {
+            None
+        },
+        firewall_mark: if cli_args.firewall_mark.is_some() {
+            cli_args.firewall_mark
+        } else if file_config.firewall_mark.is_some() {
+            file_config.firewall_mark
+        } else {
+            None
+        },
+    }
+}
+
+/// Deserialize an optional list of endpoints from TOML format. The endpoints can be provided
+/// either as a list `[...]`, or in case there is only 1 endpoint, it can also be provided as a
+/// single string element. If no value is provided, it returns None.
+fn deserialize_optional_endpoint_str_from_toml<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<Endpoint>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    Ok(match Option::<StringOrVec>::deserialize(deserializer)? {
+        Some(StringOrVec::Vec(v)) => Some(
+            v.into_iter()
+                .map(|s| {
+                    <Endpoint as std::str::FromStr>::from_str(&s).map_err(serde::de::Error::custom)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Some(StringOrVec::String(s)) => Some(vec![
+            <Endpoint as std::str::FromStr>::from_str(&s).map_err(serde::de::Error::custom)?
+        ]),
+        None => None,
+    })
 }
