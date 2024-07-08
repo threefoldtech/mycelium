@@ -11,7 +11,7 @@ use tokio::{sync::mpsc, task::AbortHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace};
 
-use crate::{peer::Peer, subnet::Subnet};
+use crate::{crypto::SharedSecret, peer::Peer, subnet::Subnet};
 
 pub use iter::RoutingTableIter;
 pub use iter_mut::RoutingTableIterMut;
@@ -40,15 +40,26 @@ struct RoutingTableInner {
 
 /// The RouteList holds all routes for a specific subnet.
 // By convention, if a route is selected, it will always be at index 0 in the list.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct RouteList {
     list: Vec<(Arc<AbortHandle>, RouteEntry)>,
+    shared_secret: SharedSecret,
 }
 
 impl RouteList {
     /// Create a new empty RouteList
-    fn new() -> Self {
-        Self::default()
+    fn new(shared_secret: SharedSecret) -> Self {
+        Self {
+            list: Vec::new(),
+            shared_secret,
+        }
+    }
+
+    /// Returns the [`SharedSecret`] used for encryption of packets to and from the associated
+    /// [`Subnet`].
+    #[inline]
+    pub fn shared_secret(&self) -> &SharedSecret {
+        &self.shared_secret
     }
 
     /// Checks if there are any actual routes in the list.
@@ -379,7 +390,7 @@ impl RoutingTable {
     }
 
     /// Get mutable access to the list of routes for the given [`Subnet`].
-    pub fn routes_mut(&self, subnet: Subnet) -> WriteGuard {
+    pub fn routes_mut(&self, subnet: Subnet) -> Option<WriteGuard> {
         let subnet_address = if let IpAddr::V6(ip) = subnet.address() {
             ip
         } else {
@@ -391,21 +402,38 @@ impl RoutingTable {
             .enter()
             .expect("Enter through write handle is always valid")
             .table
-            .exact_match(subnet_address, subnet.prefix_len().into())
-            .cloned();
-        let exists = value.is_some();
+            .exact_match(subnet_address, subnet.prefix_len().into())?
+            .clone();
 
-        WriteGuard {
+        Some(WriteGuard {
             writer,
             // If we didn't find a route list in the route table we create a new empty list,
             // therefore we immediately own it.
-            owned: value.is_none(),
-            value: if let Some(value) = value {
-                value
-            } else {
-                Arc::new(RouteList::new())
-            },
-            exists,
+            owned: false,
+            value,
+            exists: true,
+            subnet,
+            expired_route_entry_sink: self.expired_route_entry_sink.clone(),
+            cancellation_token: self.cancel_token.clone(),
+        })
+    }
+
+    /// Adds a new [`Subnet`] to the `RoutingTable`. The returned [`WriteGuard`] can be used to
+    /// insert entries. If no entry is inserted before the guard is dropped, the [`Subnet`] won't
+    /// be added.
+    pub fn add_subnet(&self, subnet: Subnet, shared_secret: SharedSecret) -> WriteGuard {
+        if !matches!(subnet.address(), IpAddr::V6(_)) {
+            panic!("IP v4 addresses are not supported")
+        };
+
+        let writer = self.writer.lock().unwrap();
+        let value = Arc::new(RouteList::new(shared_secret));
+
+        WriteGuard {
+            writer,
+            value,
+            owned: true,
+            exists: false,
             subnet,
             expired_route_entry_sink: self.expired_route_entry_sink.clone(),
             cancellation_token: self.cancel_token.clone(),
@@ -427,7 +455,7 @@ impl RoutingTable {
             .table
             .longest_match(ip)
             .and_then(|(_, _, rl)| {
-                if rl.is_empty() || !rl[0].selected() {
+                if !rl[0].selected() {
                     None
                 } else {
                     Some(rl[0].clone())

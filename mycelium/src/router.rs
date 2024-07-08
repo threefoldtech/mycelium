@@ -221,7 +221,7 @@ where
             .best_routes(dest)
             // We can index here safely since we always have at least 1 route if we get
             // Option::Some.
-            .map(|rl| rl[0].shared_secret().clone())
+            .map(|rl| rl.shared_secret().clone())
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
@@ -345,12 +345,10 @@ where
         self.metrics.router_route_selection_ran();
         debug!("Running route selection for {subnet}");
 
-        let mut routes = self.routing_table.routes_mut(subnet);
-
-        // No routes for subnet, nothing to do here.
-        if routes.is_empty() {
+        let Some(mut routes) = self.routing_table.routes_mut(subnet) else {
+            // Subnet not known
             return;
-        }
+        };
 
         // If there is no selected route there is nothing to do here. We keep expired routes in the
         // table for a while so updates of those should already have propagated to peers.
@@ -405,10 +403,15 @@ where
         mut expired_route_key_stream: mpsc::Receiver<RouteKey>,
     ) {
         while let Some(rk) = expired_route_key_stream.recv().await {
-            debug!("Got expiration event for route {rk}");
             let subnet = rk.subnet();
+            debug!(route.subnet = %subnet, "Got expiration event for route");
             // Load current key
-            let mut routes = self.routing_table.routes_mut(rk.subnet());
+            let Some(mut routes) = self.routing_table.routes_mut(rk.subnet()) else {
+                // Subnet now known anymore. This means an expiration timer fired while the entry
+                // itself is gone already.
+                warn!(%subnet, "Route key expired for unknown subnet");
+                continue;
+            };
             // Bit of weird scoping for the mutable reference to entries.
             let was_selected = {
                 let entry = routes.entry_mut(rk.neighbour());
@@ -418,12 +421,12 @@ where
                 let mut entry = entry.unwrap();
                 self.metrics.router_route_key_expired(!entry.selected());
                 if !entry.metric().is_infinite() {
-                    debug!("Route {rk} expired, increasing metric to infinity");
+                    debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Route expired, increasing metric to infinity");
                     entry.set_metric(Metric::infinite());
                     entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
                     entry.selected()
                 } else {
-                    debug!("Route {rk} expired, removing retracted route");
+                    debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Route expired, removing retracted route");
                     let selected = entry.selected();
                     entry.delete();
                     selected
@@ -964,19 +967,25 @@ where
             seqno,
         });
 
-        // We load all routes here from the routing table in memory. Because we hold the mutex for the
-        // writer, this view is accurate and we can't diverge until the mutex is released. We will
-        // then apply every action on the list of route entries both to the local list, and as a
-        // RouterOpLogEntry. This is needed because publishing intermediate results might cause
-        // readers to observe intermediate state, which could lead to problems.
-        let (mut routing_table_entries, update_feasible) = {
-            (
-                self.routing_table.routes_mut(subnet),
-                self.source_table
-                    .read()
-                    .unwrap()
-                    .is_update_feasible(&update),
-            )
+        let update_feasible = self
+            .source_table
+            .read()
+            .unwrap()
+            .is_update_feasible(&update);
+        // We load all routes here for the subnet. Because we hold the mutex for the
+        // writer, this view is accurate and we can't diverge until the mutex is released.
+
+        let mut routing_table_entries = {
+            if let Some(rte) = self.routing_table.routes_mut(subnet) {
+                rte
+            } else {
+                if !update_feasible {
+                    debug!(%subnet, "Ignore unfeasible update for unknown subnet");
+                    return;
+                }
+                let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
+                self.routing_table.add_subnet(subnet, ss)
+            }
         };
 
         // Take a deep copy of the old selected route if there is one, deep copy since we will
@@ -1036,7 +1045,6 @@ where
             }
 
             // Create new entry in the route table
-            let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
             maybe_existing_entry.or_insert(RouteEntry::new(
                 SourceKey::new(subnet, router_id),
                 source_peer.clone(),
@@ -1044,7 +1052,6 @@ where
                 seqno,
                 false,
                 tokio::time::Instant::now() + route_hold_time(&update),
-                ss,
             ));
         }
 
@@ -1189,13 +1196,10 @@ where
                 }
             };
 
-            let known_routes = self
-                .routing_table
-                .routes(source.subnet())
-                .unwrap_or_default();
+            let known_routes = self.routing_table.routes(source.subnet());
 
             // Make sure a broadcast only happens in case the local node originated the request.
-            if known_routes.is_empty() && request_origin.is_none() {
+            if known_routes.is_none() && request_origin.is_none() {
                 // If we don't know the route just ask all our peers.
                 self.peer_interfaces
                     .read()
@@ -1203,7 +1207,7 @@ where
                     .iter()
                     .cloned()
                     .collect()
-            } else {
+            } else if let Some(known_routes) = known_routes {
                 known_routes
                     .iter()
                     .filter_map(|re| {
@@ -1214,6 +1218,8 @@ where
                         }
                     })
                     .collect()
+            } else {
+                vec![]
             }
         };
 
@@ -1672,14 +1678,8 @@ mod tests {
     use tokio::sync::mpsc;
 
     use crate::{
-        babel::Update,
-        crypto::{PublicKey, SecretKey},
-        metric::Metric,
-        peer::Peer,
-        router_id::RouterId,
-        sequence_number::SeqNo,
-        source_table::SourceKey,
-        subnet::Subnet,
+        babel::Update, crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId,
+        sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
     };
 
     #[test]
@@ -1745,7 +1745,6 @@ mod tests {
         let subnet = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0)), 64)
             .expect("Valid subnet definition");
         let router_id = RouterId::new(PublicKey::from([0; 32]));
-        let secret_key = SecretKey::new();
         let source = SourceKey::new(subnet, router_id);
         let metric = Metric::new(0);
         let seqno = SeqNo::new();
@@ -1759,7 +1758,6 @@ mod tests {
             seqno,
             selected,
             expiration,
-            secret_key.shared_secret(&router_id.to_pubkey()),
         );
         // We can't match exactly here since everything takes a non instant amount of time to do,
         // but basically verify that the calculated interval is within expected parameters.
@@ -1775,7 +1773,6 @@ mod tests {
             seqno,
             selected,
             expiration,
-            secret_key.shared_secret(&router_id.to_pubkey()),
         );
         let advertised_interval = super::advertised_update_interval(&re);
         assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
@@ -1788,22 +1785,13 @@ mod tests {
             seqno,
             selected,
             expiration,
-            secret_key.shared_secret(&router_id.to_pubkey()),
         );
         let advertised_interval = super::advertised_update_interval(&re);
         assert_eq!(advertised_interval, super::INTERVAL_NOT_REPEATING);
 
         // Check that the interval is properly capped
         let expiration = tokio::time::Instant::now() + Duration::from_secs(600);
-        let re = super::RouteEntry::new(
-            source,
-            neighbor,
-            metric,
-            seqno,
-            selected,
-            expiration,
-            secret_key.shared_secret(&router_id.to_pubkey()),
-        );
+        let re = super::RouteEntry::new(source, neighbor, metric, seqno, selected, expiration);
         // We can't match exactly here since everything takes a non instant amount of time to do,
         // but basically verify that the calculated interval is within expected parameters.
         let advertised_interval = super::advertised_update_interval(&re);

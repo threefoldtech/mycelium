@@ -1,7 +1,7 @@
 use tokio::time::Instant;
 
 use crate::{
-    crypto::SharedSecret, metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
+    metric::Metric, peer::Peer, router_id::RouterId, sequence_number::SeqNo,
     source_table::SourceKey,
 };
 
@@ -15,7 +15,6 @@ pub struct RouteEntry {
     seqno: SeqNo,
     selected: bool,
     expires: Instant,
-    shared_secret: SharedSecret,
 }
 
 impl RouteEntry {
@@ -27,7 +26,6 @@ impl RouteEntry {
         seqno: SeqNo,
         selected: bool,
         expires: Instant,
-        shared_secret: SharedSecret,
     ) -> Self {
         Self {
             source,
@@ -36,7 +34,6 @@ impl RouteEntry {
             seqno,
             selected,
             expires,
-            shared_secret,
         }
     }
 
@@ -105,12 +102,6 @@ impl RouteEntry {
     /// Sets the expiration time for this [`RouteEntry`].
     pub fn set_expires(&mut self, expires: Instant) {
         self.expires = expires;
-    }
-
-    /// Get the [`SharedSecret`] associated with this `RouteEntry`, used to encrypt/decrypt data
-    /// going to/from the [`Subnet`](crate::subnet::Subnet).
-    pub fn shared_secret(&self) -> &SharedSecret {
-        &self.shared_secret
     }
 }
 
