@@ -23,7 +23,7 @@
             <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALL_LOC"/>
         </UI>            
 
-        <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf"/>
+        <WixVariable Id="WixUILicenseRtf" Value="installers\windows\wix\LICENSE.rtf"/>
     </Package>
 
     <Fragment>
