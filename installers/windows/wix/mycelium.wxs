@@ -86,7 +86,7 @@
             <File 
                 Id="ConfigFile" 
                 Name="mycelium.toml" 
-                Source="myceliumd\config_example.toml" 
+                Source="config_example.toml" 
                 KeyPath="yes" />
         </Component>
     </Fragment>
