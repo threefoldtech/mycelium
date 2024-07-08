@@ -279,7 +279,9 @@ struct MyceliumConfig {
     peers: Option<Vec<Endpoint>>,
     tcp_listen_port: Option<u16>,
     quic_listen_port: Option<u16>,
+    no_tun: Option<bool>,
     tun_name: Option<String>,
+    disable_peer_discovery: Option<bool>,
     peer_discovery_port: Option<u16>,
     api_addr: Option<SocketAddr>,
     metrics_api_address: Option<SocketAddr>,
@@ -306,7 +308,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             mycelium_config = config.try_deserialize()?;
         } else {
             warn!(
-                "Specified config file {:?} does not exist.",
+                "Specified config file {:?} was not found.",
                 config_file_path
             );
         }
@@ -573,7 +575,8 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArg
                 .peer_discovery_port
                 .unwrap_or(DEFAULT_PEER_DISCOVERY_PORT)
         },
-        disable_peer_discovery: cli_args.disable_peer_discovery,
+        disable_peer_discovery: cli_args.disable_peer_discovery
+            || file_config.disable_peer_discovery.unwrap_or(false),
         api_addr: if cli_args.api_addr != DEFAULT_HTTP_API_SERVER_ADDRESS {
             cli_args.api_addr
         } else {
@@ -581,7 +584,7 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArg
                 .api_addr
                 .unwrap_or(DEFAULT_HTTP_API_SERVER_ADDRESS)
         },
-        no_tun: cli_args.no_tun,
+        no_tun: cli_args.no_tun || file_config.no_tun.unwrap_or(false),
         tun_name: if cli_args.tun_name != *TUN_NAME {
             cli_args.tun_name
         } else {
