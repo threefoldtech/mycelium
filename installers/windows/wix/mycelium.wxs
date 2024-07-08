@@ -16,6 +16,7 @@
 
         <Feature Id="Main">
             <ComponentGroupRef Id="MyceliumComponentGroup" />
+            <ComponentRef Id="ConfigFileComponent" />
         </Feature>            
 
         <UI>
@@ -26,6 +27,11 @@
     </Package>
 
     <Fragment>
+         <StandardDirectory Id="AppDataFolder">
+            <Directory Id="ThreeFoldAppDataFolder" Name="ThreeFold Tech" >
+                <Directory Id="MyceliumAppDataFolder" Name="Mycelium" />
+            </Directory>
+        </StandardDirectory>
 
         <!-- We use our own install location instead of the default INSTALLFOLDER, 
             as this would result in C:\Program Files\ThreeFold Tech Mycelium instead of just C:\Program Files\Mycelium -->
@@ -75,5 +81,13 @@
                     Vital="yes" />
             </Component>
         </ComponentGroup>
+
+        <Component Id="ConfigFileComponent" Guid="*" Directory="MyceliumAppDataFolder">
+            <File 
+                Id="ConfigFile" 
+                Name="mycelium.toml" 
+                Source="myceliumd\config_example.toml" 
+                KeyPath="yes" />
+        </Component>
     </Fragment>
 </Wix>
