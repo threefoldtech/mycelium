@@ -40,7 +40,7 @@ quinn = { version = "0.11.2", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
-rustls = { version = "0.23.10", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.11", default-features = false, features = ["ring"] }
 rcgen = "0.13.1"
 netdev = "0.29.0"
 openssl = { version = "0.10.64", optional = true }
