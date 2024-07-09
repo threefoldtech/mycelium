@@ -326,7 +326,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Linux: ~/.config/mycelium/mycelium.conf
             #[cfg(target_os = "linux")]
             {
-                println!("{:#?}", conf);
                 conf = conf.join("mycelium").join("mycelium.toml")
             };
             // MacOS: ~/Library/Application Support/ThreeFold Tech/Mycelium/mycelium.conf
