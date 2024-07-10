@@ -155,6 +155,10 @@ pub trait Metrics {
     ) {
     }
 
+    /// An update was processed and accepted by the router, but did not run route selection.
+    #[inline]
+    fn router_update_skipped_route_selection(&self) {}
+
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
     #[inline]

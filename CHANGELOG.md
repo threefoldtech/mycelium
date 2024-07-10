@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory which is not currently used by the cache but still allocated.
 - Demote seqno cache warnings about duplicate seqno requests go debug lvl, as it
   is valid to send duplicate requests if sufficient time passed.
+- Skip route selection after an unfeasible update to a fallback route, as the (now
+  unfeasible) route won't be selected anyway.
 
 ### Fixed
 
@@ -33,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Seqno request cache, to avoid spamming peers with duplicate seqno requests and
   to make sure seqno's are forwarded to different peers.
 - Added myceliumd-private binary, which contains private network functionality.
-- Added API endpoint to retrieve the public key associated with an IP. 
+- Added API endpoint to retrieve the public key associated with an IP.
 - The CLI can now be used to list, remove or add peers (see `mycelium peers --help`)
 - The CLI can now be used to list selected and fallback routes (see `mycelium routes --help`)
 

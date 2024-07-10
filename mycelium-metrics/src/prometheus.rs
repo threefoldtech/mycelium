@@ -27,6 +27,7 @@ pub struct PrometheusExporter {
     router_received_tlvs: IntCounter,
     router_tlv_source_died: IntCounter,
     router_propage_selected_peers_time_spent: IntCounter,
+    router_update_skipped_route_selection: IntCounter,
     peer_manager_peer_added: IntCounterVec,
     peer_manager_known_peers: IntGauge,
     peer_manager_connection_attemps: IntCounterVec,
@@ -123,6 +124,11 @@ impl PrometheusExporter {
             router_propage_selected_peers_time_spent: register_int_counter!(
                 "mycelium_router_propagate_selected_route_time",
                 "Time spent in the propagate_selected_route task, which periodically announces selected routes to peers. Measurement is in nanoseconds",
+            )
+            .expect("Can register an int counter in default registry"),
+            router_update_skipped_route_selection: register_int_counter!(
+                "mycelium_router_update_skipped_route_selection",
+                "Updates which were processed but did not run the route selection step, because the updated route could not be selected anyway",
             )
             .expect("Can register an int counter in default registry"),
             peer_manager_peer_added: register_int_counter_vec!(
@@ -361,6 +367,11 @@ impl Metrics for PrometheusExporter {
     ) {
         self.router_propage_selected_peers_time_spent
             .inc_by(duration.as_nanos() as u64)
+    }
+
+    #[inline]
+    fn router_update_skipped_route_selection(&self) {
+        self.router_update_skipped_route_selection.inc()
     }
 
     #[inline]

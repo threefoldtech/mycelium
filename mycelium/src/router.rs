@@ -972,9 +972,9 @@ where
             .read()
             .unwrap()
             .is_update_feasible(&update);
+
         // We load all routes here for the subnet. Because we hold the mutex for the
         // writer, this view is accurate and we can't diverge until the mutex is released.
-
         let mut routing_table_entries = {
             if let Some(rte) = self.routing_table.routes_mut(subnet) {
                 rte
@@ -1032,6 +1032,16 @@ where
             existing_entry.set_metric(metric);
             existing_entry.set_router_id(router_id);
             existing_entry.set_expires(tokio::time::Instant::now() + route_hold_time(&update));
+
+            // If the route is not selected, and the update is unfeasible, the route will not be
+            // selected by a subsequent route selection, so we can skip it and avoid wasting time
+            // here.
+            if !existing_entry.selected() && !update_feasible {
+                trace!("Ignoring route selection for unfeasible update to unselected route");
+                self.metrics.router_update_skipped_route_selection();
+                return;
+            }
+
             // If the update is unfeasible the route must be unselected.
             if existing_entry.selected() && !update_feasible {
                 existing_route_unselected = true;
@@ -1041,6 +1051,7 @@ where
             // If there is no entry yet ignore unfeasible updates and retractions.
             if metric.is_infinite() || !update_feasible {
                 debug!("Received unfeasible update | retraction for unknown route - neighbour");
+                self.metrics.router_update_skipped_route_selection();
                 return;
             }
 
