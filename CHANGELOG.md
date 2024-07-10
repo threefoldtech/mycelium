@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is valid to send duplicate requests if sufficient time passed.
 - Skip route selection after an unfeasible update to a fallback route, as the (now
   unfeasible) route won't be selected anyway.
+- No longer refresh route timer after an unfeasbile update. This allows routes
+  which have become unfeasible to gracefully be removed from the routing table
+  over time.
 
 ### Fixed
 

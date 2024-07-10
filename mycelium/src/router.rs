@@ -1031,7 +1031,12 @@ where
             existing_entry.set_seqno(seqno);
             existing_entry.set_metric(metric);
             existing_entry.set_router_id(router_id);
-            existing_entry.set_expires(tokio::time::Instant::now() + route_hold_time(&update));
+
+            // Only reset the timer if the update is feasible, this will allow unfeasible updates
+            // to be flushed out naturally. Note that a retraction is always feasbile.
+            if update_feasible {
+                existing_entry.set_expires(tokio::time::Instant::now() + route_hold_time(&update));
+            }
 
             // If the route is not selected, and the update is unfeasible, the route will not be
             // selected by a subsequent route selection, so we can skip it and avoid wasting time
