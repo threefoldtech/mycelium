@@ -9,18 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Mycelium can now be started with a configuration file using the `--config-file`
-  option, offering the same capabilities as the command line arguments. An example 
-  configuration file (`example_config.toml`) showcases all the arguments that can 
-  be set.
-
-  If no configuration file is specified with `--config-file`, Mycelium will search
-  for one in a default location based on the operation system:
-  - Linux: $HOME/.config/mycelium.toml
-  - Windows: %APPDATA%/ThreeFold Tech/Mycelium/mycelium.toml
-  - Mac OS: $HOME/Library/Application Support/ThreeFold Tech/Mycelium/mycelium.toml
-
-  Command line arguments will override any settings found in the configuration file.
+- Mycelium can now be started with a configuration file using `--config-file`.
+  If no configuration file is supplied, Mycelium will look in a default location
+  based on the OS. For more information see [README](README.md)
 
 ### Changed
 

@@ -72,6 +72,19 @@ intended for itself.
 
 The node also still allows access to the [message subsystem](#message-system).
 
+## Configuration
+
+Mycelium can be started with a configuration file using the `--config-file` option,
+which offers the same capabilities as the command line arguments.
+
+If no configuration file is specified with --config-file, Mycelium will search for one 
+in a default location based on the operating system:
+  - Linux: $HOME/.config/mycelium.toml
+  - Windows: %APPDATA%/ThreeFold Tech/Mycelium/mycelium.toml
+  - Mac OS: $HOME/Library/Application Support/ThreeFold Tech/Mycelium/mycelium.toml
+
+Command line arguments will override any settings found in the configuration file.
+
 ## Hosted public nodes
 
 A couple of public nodes are provided, which can be freely connected to. This allows
