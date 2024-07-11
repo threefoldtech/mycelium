@@ -84,6 +84,8 @@ impl RouteList {
     }
 
     /// Selects the [`RouteEntry`] which matches the [`RouteKey`] for the associated subnet.
+    ///
+    /// If a selected route already exists, it is unselected automatically.
     pub fn set_selected(&mut self, neighbour: &Peer) {
         let Some(pos) = self
             .list

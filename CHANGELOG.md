@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No longer refresh route timer after an unfeasbile update. This allows routes
   which have become unfeasible to gracefully be removed from the routing table
   over time.
+- Expired routes which aren't selected are now immediately removed from the routing
+  table.
 
 ### Fixed
 

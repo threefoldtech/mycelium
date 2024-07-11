@@ -405,54 +405,56 @@ where
         while let Some(rk) = expired_route_key_stream.recv().await {
             let subnet = rk.subnet();
             debug!(route.subnet = %subnet, "Got expiration event for route");
-            // Load current key
-            let Some(mut routes) = self.routing_table.routes_mut(rk.subnet()) else {
-                // Subnet now known anymore. This means an expiration timer fired while the entry
-                // itself is gone already.
-                warn!(%subnet, "Route key expired for unknown subnet");
-                continue;
-            };
-            // Bit of weird scoping for the mutable reference to entries.
-            let was_selected = {
-                let entry = routes.entry_mut(rk.neighbour());
-                if entry.is_none() {
+            // Scope mutable access to routes.
+            // TODO: Is this really needed?
+            {
+                // Load current key
+                let Some(mut routes) = self.routing_table.routes_mut(rk.subnet()) else {
+                    // Subnet now known anymore. This means an expiration timer fired while the entry
+                    // itself is gone already.
+                    warn!(%subnet, "Route key expired for unknown subnet");
                     continue;
-                }
-                let mut entry = entry.unwrap();
-                self.metrics.router_route_key_expired(!entry.selected());
-                if !entry.metric().is_infinite() {
-                    debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Route expired, increasing metric to infinity");
-                    entry.set_metric(Metric::infinite());
-                    entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
-                    entry.selected()
-                } else {
-                    debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Route expired, removing retracted route");
-                    let selected = entry.selected();
-                    entry.delete();
-                    selected
-                }
-            };
+                };
+                // Bit of weird scoping for the mutable reference to entries.
+                {
+                    let entry = routes.entry_mut(rk.neighbour());
+                    if entry.is_none() {
+                        continue;
+                    }
+                    let mut entry = entry.unwrap();
+                    self.metrics.router_route_key_expired(!entry.selected());
+                    if entry.selected() {
+                        debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Selected route expired, increasing metric to infinity");
+                        entry.set_metric(Metric::infinite());
+                        entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                    } else {
+                        debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Unselected route expired, removing fallback route");
+                        entry.delete();
+                        // Removing a fallback route does not require any further changes. It does
+                        // not affect the selected route and by extension does not require a
+                        // triggered udpate.
+                        return;
+                    }
+                };
 
-            // Re run route selection if this was the selected route. We should do this before
-            // publishing to potentially select a new route, however a time based expiraton of a
-            // selected route generally means no other routes are viable anyway, so the short lived
-            // black hole this could create is not really a concern.
-            if was_selected {
+                // Re run route selection if this was the selected route. We should do this before
+                // publishing to potentially select a new route, however a time based expiraton of a
+                // selected route generally means no other routes are viable anyway, so the short lived
+                // black hole this could create is not really a concern.
                 self.metrics.router_selected_route_expired();
                 // Only inject selected route if we are simply retracting it, otherwise it is
                 // actually already removed.
                 debug!("Rerun route selection after expiration event");
                 if let Some(r) = self.find_best_route(&routes).cloned() {
                     routes.set_selected(r.neighbour());
-
-                    drop(routes);
-
-                    // If the entry wasn't retracted yet, notify our peers.
-                    if !r.metric().is_infinite() {
-                        self.trigger_update(subnet, None);
-                    }
+                } else {
+                    debug!("Route selection did not find a viable route, unselect existing routes");
+                    routes.unselect();
                 }
             }
+
+            // TODO: Is this _always_ needed?
+            self.trigger_update(subnet, None);
         }
         warn!("Expired route key processing halted");
     }
