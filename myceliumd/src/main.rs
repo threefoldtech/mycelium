@@ -312,44 +312,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 config_file_path
             );
         }
-    } else {
-        // TODO: Try to use the default path (depends on OS)
-        if let Some(mut conf) = dirs::config_dir() {
-            // Windows: %APPDATA%/ThreeFold Tech/Mycelium/mycelium.conf
-            #[cfg(target_os = "windows")]
-            {
-                conf = conf
-                    .join("ThreeFold Tech")
-                    .join("Mycelium")
-                    .join("mycelium.toml")
-            };
-            // Linux: ~/.config/mycelium/mycelium.conf
-            #[cfg(target_os = "linux")]
-            {
-                conf = conf.join("mycelium").join("mycelium.toml")
-            };
-            // MacOS: ~/Library/Application Support/ThreeFold Tech/Mycelium/mycelium.conf
-            #[cfg(target_os = "macos")]
-            {
-                conf = conf
-                    .join("ThreeFold Tech")
-                    .join("Mycelium")
-                    .join("mycelium.conf")
-            };
+    } else if let Some(mut conf) = dirs::config_dir() {
+        // Windows: %APPDATA%/ThreeFold Tech/Mycelium/mycelium.conf
+        #[cfg(target_os = "windows")]
+        {
+            conf = conf
+                .join("ThreeFold Tech")
+                .join("Mycelium")
+                .join("mycelium.toml")
+        };
+        // Linux: $HOME/.config/mycelium/mycelium.conf
+        #[cfg(target_os = "linux")]
+        {
+            conf = conf.join("mycelium").join("mycelium.toml")
+        };
+        // MacOS: $HOME/Library/Application Support/ThreeFold Tech/Mycelium/mycelium.conf
+        #[cfg(target_os = "macos")]
+        {
+            conf = conf
+                .join("ThreeFold Tech")
+                .join("Mycelium")
+                .join("mycelium.toml")
+        };
 
-            if conf.exists() {
-                info!(
-                    conf_dir = conf.to_str().unwrap(),
-                    "Mycelium is starting with configuration file",
-                );
-                let config = config::Config::builder()
-                    .add_source(config::File::new(
-                        conf.to_str().unwrap(),
-                        config::FileFormat::Toml,
-                    ))
-                    .build()?;
-                mycelium_config = config.try_deserialize()?;
-            }
+        if conf.exists() {
+            info!(
+                conf_dir = conf.to_str().unwrap(),
+                "Mycelium is starting with configuration file",
+            );
+            let config = config::Config::builder()
+                .add_source(config::File::new(
+                    conf.to_str().unwrap(),
+                    config::FileFormat::Toml,
+                ))
+                .build()?;
+            mycelium_config = config.try_deserialize()?;
         }
     }
 

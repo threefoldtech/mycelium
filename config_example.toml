@@ -1,0 +1,11 @@
+# REMOVE/ADD COMMENT TO ENABLE/DISABLE LINE
+
+peers = ["tcp://180.40.132.242:9651", "quic://[2a01:4f8:212:fa6::2]:9651"]
+api_addr = "127.0.0.1:8989"
+tcp_listen_port = 9651
+quic_listen_port = 9651
+tun_name = "mycelium"
+disable_peer_discovery = false
+no_tun = false
+#metrics_api_address
+#firewall_mark
