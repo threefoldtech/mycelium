@@ -622,20 +622,10 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArg
         } else {
             file_config.tun_name.unwrap_or_else(|| TUN_NAME.to_string())
         },
-        metrics_api_address: if cli_args.metrics_api_address.is_some() {
-            cli_args.metrics_api_address
-        } else if file_config.metrics_api_address.is_some() {
-            file_config.metrics_api_address
-        } else {
-            None
-        },
-        firewall_mark: if cli_args.firewall_mark.is_some() {
-            cli_args.firewall_mark
-        } else if file_config.firewall_mark.is_some() {
-            file_config.firewall_mark
-        } else {
-            None
-        },
+        metrics_api_address: cli_args
+            .metrics_api_address
+            .or(file_config.metrics_api_address),
+        firewall_mark: cli_args.firewall_mark.or(file_config.firewall_mark),
     }
 }
 
