@@ -220,6 +220,10 @@ pub struct NodeArguments {
     #[arg(short = 't', long = "tcp-listen-port", default_value_t = DEFAULT_TCP_LISTEN_PORT)]
     tcp_listen_port: u16,
 
+    /// Disable quic protocol for connecting to peers
+    #[arg(long = "disable-quic", default_value_t = false)]
+    disable_quic: bool,
+
     /// Port to listen on for quic connections.
     #[arg(short = 'q', long = "quic-listen-port", default_value_t = DEFAULT_QUIC_LISTEN_PORT)]
     quic_listen_port: u16,
@@ -278,6 +282,7 @@ struct MyceliumConfig {
     #[serde(deserialize_with = "deserialize_optional_endpoint_str_from_toml")]
     peers: Option<Vec<Endpoint>>,
     tcp_listen_port: Option<u16>,
+    disable_quic: Option<bool>,
     quic_listen_port: Option<u16>,
     no_tun: Option<bool>,
     tun_name: Option<String>,
@@ -395,6 +400,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peers: merged_config.static_peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
+                    disable_quic: merged_config.disable_quic,
                     quic_listen_port: Some(merged_config.quic_listen_port),
                     peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
@@ -415,6 +421,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peers: merged_config.static_peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
+                    disable_quic: merged_config.disable_quic,
                     quic_listen_port: Some(merged_config.quic_listen_port),
                     peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
@@ -593,6 +600,7 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArg
                 .tcp_listen_port
                 .unwrap_or(DEFAULT_TCP_LISTEN_PORT)
         },
+        disable_quic: cli_args.disable_quic || file_config.disable_quic.unwrap_or(false),
         quic_listen_port: if cli_args.quic_listen_port != DEFAULT_QUIC_LISTEN_PORT {
             cli_args.quic_listen_port
         } else {
