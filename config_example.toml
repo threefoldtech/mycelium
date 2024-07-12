@@ -1,6 +1,13 @@
 # REMOVE/ADD COMMENT TO ENABLE/DISABLE LINE
 
-peers = ["tcp://180.40.132.242:9651", "quic://[2a01:4f8:212:fa6::2]:9651"]
+peers = [
+  "tcp://180.40.132.242:9651",
+  "quic://[2a01:4f8:212:fa6::2]:9651",
+  "quic://185.69.166.7:9651",
+  "tcp://[2a02:1802:5e:0:8c9e:7dff:fec9:f0d2]:9651",
+  "quic://65.21.231.58:9651",
+  "tcp://[2a01:4f9:5a:1042::2]:9651",
+]
 api_addr = "127.0.0.1:8989"
 tcp_listen_port = 9651
 quic_listen_port = 9651
