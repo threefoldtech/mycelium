@@ -307,10 +307,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             mycelium_config = config.try_deserialize()?;
         } else {
-            warn!(
-                "Specified config file {:?} was not found.",
-                config_file_path
-            );
+            let error_msg = format!("Config file {:?} not found", config_file_path);
+            return Err(io::Error::new(io::ErrorKind::NotFound, error_msg).into());
         }
     } else if let Some(mut conf) = dirs::config_dir() {
         // Windows: %APPDATA%/ThreeFold Tech/Mycelium/mycelium.conf
