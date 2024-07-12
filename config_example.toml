@@ -7,5 +7,5 @@ quic_listen_port = 9651
 tun_name = "mycelium"
 disable_peer_discovery = false
 no_tun = false
-#metrics_api_address
-#firewall_mark
+#metrics_api_address = 0.0.0.0:9999
+#firewall_mark = 30
