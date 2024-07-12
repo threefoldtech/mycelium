@@ -948,6 +948,7 @@ where
         for filter in &*self.update_filters {
             if !filter.allow(&update) {
                 debug!("Update denied by filter");
+                self.metrics.router_update_denied_by_filter();
                 return;
             }
         }

@@ -159,6 +159,10 @@ pub trait Metrics {
     #[inline]
     fn router_update_skipped_route_selection(&self) {}
 
+    /// An update was denied by a configured filter.
+    #[inline]
+    fn router_update_denied_by_filter(&self) {}
+
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
     #[inline]
