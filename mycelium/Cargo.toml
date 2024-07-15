@@ -23,7 +23,7 @@ tokio-util = { version = "0.7.11", features = ["codec"] }
 futures = "0.3.29"
 serde = { version = "1.0.203", features = ["derive"] }
 rand = "0.8.5"
-bytes = "1.6.0"
+bytes = "1.6.1"
 x25519-dalek = { version = "2.0.1", features = ["getrandom", "static_secrets"] }
 aes-gcm = "0.10.3"
 tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
