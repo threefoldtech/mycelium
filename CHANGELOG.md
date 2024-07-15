@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Quic protocol can now be disabled using the `--disable-quic` flag
 - Mycelium can now be started with a configuration file using `--config-file`.
   If no configuration file is supplied, Mycelium will look in a default location
   based on the OS. For more information see [README](/README.md#configuration)

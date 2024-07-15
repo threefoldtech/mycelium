@@ -159,8 +159,6 @@ struct Inner<M> {
     peers: Mutex<HashMap<Endpoint, PeerInfo>>,
     /// Listen port for new peer connections
     tcp_listen_port: u16,
-    /// Disable quic connections
-    disable_quic: bool,
     quic_socket: Option<quinn::Endpoint>,
     /// Identity and name of a private network, if one exists
     private_network_config: Option<(String, [u8; 32])>,
@@ -177,7 +175,6 @@ where
         router: Router<M>,
         static_peers_sockets: Vec<Endpoint>,
         tcp_listen_port: u16,
-        disable_quic: bool,
         quic_listen_port: Option<u16>,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
@@ -188,7 +185,7 @@ where
         let is_private_net = private_network_config.is_some();
 
         // Currently we don't support Quic when a private network is used.
-        let quic_socket = if !is_private_net || !disable_quic {
+        let quic_socket = if !is_private_net {
             if let Some(quic_listen_port) = quic_listen_port {
                 Some(make_quic_endpoint(
                     router.router_id(),
@@ -232,7 +229,6 @@ where
                         .collect(),
                 ),
                 tcp_listen_port,
-                disable_quic,
                 quic_socket,
                 private_network_config,
                 metrics,
@@ -248,7 +244,7 @@ where
         peer_manager.abort_handles.push(handle.abort_handle());
         if is_private_net {
             info!("Enabled private network mode");
-        } else {
+        } else if peer_manager.inner.quic_socket.is_some() {
             // Currently quic is not supported in private network mode.
             let handle = tokio::spawn(peer_manager.inner.clone().quic_listener());
             peer_manager.abort_handles.push(handle.abort_handle());
@@ -420,7 +416,7 @@ where
                             // Mark that we are connecting to the peer.
                             pi.connecting = true;
                             connection_futures.push(self.clone().connect_peer(*endpoint, pi.con_traffic.clone()));
-                            self.metrics.peer_manager_connection_attempted();
+                                self.metrics.peer_manager_connection_attempted();
                         }
                     }
                 }
