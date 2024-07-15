@@ -400,8 +400,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peers: merged_config.static_peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
-                    disable_quic: merged_config.disable_quic,
-                    quic_listen_port: Some(merged_config.quic_listen_port),
+                    quic_listen_port: if merged_config.disable_quic {
+                        None
+                    } else {
+                        Some(merged_config.quic_listen_port)
+                    },
                     peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
                     } else {
@@ -421,8 +424,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peers: merged_config.static_peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
-                    disable_quic: merged_config.disable_quic,
-                    quic_listen_port: Some(merged_config.quic_listen_port),
+                    quic_listen_port: if merged_config.disable_quic {
+                        None
+                    } else {
+                        Some(merged_config.quic_listen_port)
+                    },
                     peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
                     } else {

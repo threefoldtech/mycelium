@@ -54,8 +54,6 @@ pub struct Config<M> {
     pub no_tun: bool,
     /// Listen port for TCP connections.
     pub tcp_listen_port: u16,
-    /// Disable Quic connections
-    pub disable_quic: bool,
     /// Listen port for Quic connections.
     pub quic_listen_port: Option<u16>,
     /// Udp port for peer discovery.
@@ -159,7 +157,6 @@ where
             router.clone(),
             config.peers,
             config.tcp_listen_port,
-            config.disable_quic,
             config.quic_listen_port,
             config.peer_discovery_port.unwrap_or_default(),
             config.peer_discovery_port.is_none(),
