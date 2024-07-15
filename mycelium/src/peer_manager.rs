@@ -416,7 +416,7 @@ where
                             // Mark that we are connecting to the peer.
                             pi.connecting = true;
                             connection_futures.push(self.clone().connect_peer(*endpoint, pi.con_traffic.clone()));
-                                self.metrics.peer_manager_connection_attempted();
+                            self.metrics.peer_manager_connection_attempted();
                         }
                     }
                 }
