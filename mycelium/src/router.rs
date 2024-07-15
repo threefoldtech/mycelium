@@ -433,7 +433,7 @@ where
                         // Removing a fallback route does not require any further changes. It does
                         // not affect the selected route and by extension does not require a
                         // triggered udpate.
-                        return;
+                        continue;
                     }
                 };
 
