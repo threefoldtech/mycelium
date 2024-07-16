@@ -705,6 +705,7 @@ where
                 )
             };
 
+            self.update_source_table(&update);
             self.send_update(&source_peer, update);
         } else {
             // Requested a full route table dump
@@ -751,6 +752,8 @@ where
                     // if the router_id is not in the map, then the route came from the node itself
                     route_entry.source().router_id(),
                 );
+
+                self.update_source_table(&update);
 
                 self.send_update(&source_peer, update);
 
@@ -1424,10 +1427,98 @@ where
             trace!("Propagating selected routes");
 
             let start = Instant::now();
-            self.propagate_selected_routes_to_peers();
+
+            for (subnet, sre) in self
+                .routing_table
+                .read()
+                .iter()
+                .filter_map(|(subnet, route_list)| route_list.selected().map(|sr| (subnet, sr)))
+            {
+                let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
+
+                // the cost of the route is the cost of the route + the cost of the link to the next-hop
+                let metric = sre.metric() + neigh_link_cost;
+                let seqno = sre.seqno();
+                let router_id = sre.source().router_id();
+
+                let update = babel::Update::new(
+                    advertised_update_interval(sre),
+                    seqno,
+                    metric,
+                    subnet,
+                    router_id,
+                );
+
+                // Before sending an update, the source table might need to be updated
+                self.update_source_table(&update);
+
+                // send the update to the peer
+                for peer in self.peer_interfaces.read().unwrap().iter() {
+                    debug!(
+                        subnet = %subnet,
+                        metric = %metric,
+                        seqno = %seqno,
+                        peer = peer.connection_identifier(),
+                        "Propagating route update",
+                    );
+                    // Don't send updates for a route to the next hop of the route, as that peer will never
+                    // select the route through us (that would caus a routing loop). The protocol can
+                    // handle this just fine, leaving this out is essentially an easy optimization.
+                    if peer == sre.neighbour() {
+                        continue;
+                    }
+
+                    self.send_update(peer, update.clone());
+                }
+            }
+
             self.metrics
                 .router_time_spent_periodic_propagating_selected_routes(start.elapsed());
         }
+    }
+
+    /// Applies the effect of an [`Update`] to the [`SourceTable`].
+    fn update_source_table(&self, update: &Update) {
+        let metric = update.metric();
+        let seqno = update.seqno();
+
+        let source_key = SourceKey::new(update.subnet(), update.router_id());
+
+        let mut source_table = self.source_table.write().unwrap();
+
+        if let Some(source_entry) = source_table.get(&source_key) {
+            // if seqno of the update is greater than the seqno in the source table, update the source table
+            if seqno.gt(&source_entry.seqno()) {
+                source_table.insert(
+                    source_key,
+                    FeasibilityDistance::new(metric, seqno),
+                    self.expired_source_key_sink.clone(),
+                );
+            }
+            // if seqno of the update is equal to the seqno in the source table, update the source table if the metric (of the update) is lower
+            else if seqno == source_entry.seqno() && source_entry.metric() > metric {
+                source_table.insert(
+                    source_key,
+                    // Technically the seqno in the feasibility distance comes from the source
+                    // entry, but that gives a borrow conflict so we use seqno from the update,
+                    // which we just verified is the same.
+                    FeasibilityDistance::new(metric, seqno),
+                    self.expired_source_key_sink.clone(),
+                )
+            }
+            // We also reset the garbage collection timer (unless the update is a retraction)
+            else if !metric.is_infinite() {
+                source_table.reset_timer(source_key, self.expired_source_key_sink.clone());
+            }
+        }
+        // no entry for this source key, so insert it
+        else {
+            source_table.insert(
+                source_key,
+                FeasibilityDistance::new(metric, seqno),
+                self.expired_source_key_sink.clone(),
+            )
+        };
     }
 
     /// Task which periodically sends a Hello TLV to all known peers
@@ -1450,10 +1541,28 @@ where
         }
     }
 
-    /// Propagates the static routes to all known peers.
-    fn propagate_selected_routes_to_peers(&self) {
-        for peer in self.peer_interfaces.read().unwrap().iter() {
-            self.propagate_selected_routes_to_peer(peer);
+    /// Send a control packet to a peer.
+    ///
+    /// Errors are not propagated to the caller.
+    fn send_update(&self, peer: &Peer, update: Update) {
+        trace!("Sending update to peer");
+
+        // Sanity check, verify what we are doing is actually usefull
+        if !peer.alive() {
+            trace!("Cowardly refusing to sent update to peer which we know is dead");
+            self.metrics.router_update_dead_peer();
+            return;
+        }
+
+        if peer
+            .send_control_packet(ControlPacket::Update(update))
+            .is_err()
+        {
+            // An error indicates the peer is dead
+            trace!(
+                "Failed to send update to dead peer {}",
+                peer.connection_identifier()
+            );
         }
     }
 
@@ -1467,6 +1576,9 @@ where
                 *sr,
                 self.router_id,
             );
+            self.update_source_table(&update);
+
+            // send the update to the peer
             self.send_update(peer, update);
         }
     }
@@ -1497,6 +1609,8 @@ where
                 );
                 (update, None)
             };
+
+        self.update_source_table(&update);
 
         let send_update = |peer: &Peer| {
             // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1556,75 +1670,21 @@ where
                 peer = peer.connection_identifier(),
                 "Propagating route update",
             );
-            self.send_update(peer, update);
-        }
-    }
 
-    /// Send an update to a peer.
-    ///
-    /// This updates updates the source table before sending the udpate as described in the RFC.
-    fn send_update(&self, peer: &Peer, update: babel::Update) {
-        // Sanity check, verify what we are doing is actually usefull
-        if !peer.alive() {
-            trace!("Cowardly refusing to sent update to peer which we know is dead");
-            self.metrics.router_update_dead_peer();
-            return;
-        }
+            self.update_source_table(&update);
 
-        // Before sending an update, the source table might need to be updated
-        let metric = update.metric();
-        let seqno = update.seqno();
-        let router_id = update.router_id();
-        let subnet = update.subnet();
-
-        let source_key = SourceKey::new(subnet, router_id);
-        let mut source_table = self.source_table.write().unwrap();
-
-        if let Some(source_entry) = source_table.get(&source_key) {
-            // if seqno of the update is greater than the seqno in the source table, update the source table
-            if seqno.gt(&source_entry.seqno()) {
-                source_table.insert(
-                    source_key,
-                    FeasibilityDistance::new(metric, seqno),
-                    self.expired_source_key_sink.clone(),
+            // send the update to the peer
+            trace!("Sending update to peer");
+            if peer
+                .send_control_packet(ControlPacket::Update(update))
+                .is_err()
+            {
+                // An error indicates the peer is dead
+                trace!(
+                    "Failed to send update to dead peer {}",
+                    peer.connection_identifier()
                 );
             }
-            // if seqno of the update is equal to the seqno in the source table, update the source table if the metric (of the update) is lower
-            else if seqno == source_entry.seqno() && source_entry.metric() > metric {
-                source_table.insert(
-                    source_key,
-                    // Technically the seqno in the feasibility distance comes from the source
-                    // entry, but that gives a borrow conflict so we use seqno from the update,
-                    // which we just verified is the same.
-                    FeasibilityDistance::new(metric, seqno),
-                    self.expired_source_key_sink.clone(),
-                )
-            }
-            // We also reset the garbage collection timer (unless the update is a retraction)
-            else if !metric.is_infinite() {
-                source_table.reset_timer(source_key, self.expired_source_key_sink.clone());
-            }
-        }
-        // no entry for this source key, so insert it
-        else {
-            source_table.insert(
-                source_key,
-                FeasibilityDistance::new(metric, seqno),
-                self.expired_source_key_sink.clone(),
-            )
-        };
-
-        // send the update to the peer
-        trace!("Sending update to peer");
-        if peer
-            .send_control_packet(ControlPacket::Update(update))
-            .is_err()
-        {
-            // An error indicates the peer is dead
-            trace!(
-                "Failed to send update to dead peer {}",
-                peer.connection_identifier()
-            );
         }
     }
 }

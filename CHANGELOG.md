@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over time.
 - Expired routes which aren't selected are now immediately removed from the routing
   table.
+- Changed how updates are sent to be more performant.
 
 ### Fixed
 
@@ -39,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Limit the amount of time allowed for inbound quic connections to be set up, and
   process multiple of them in parallel. This fixes a DOS vector against the quic
   listener.
+- We now update the source table even if we don't send an update because we are
+  sure the receiver won't select us as a next-hop anyway.
 
 ## [0.5.3] - 2024-06-07
 
