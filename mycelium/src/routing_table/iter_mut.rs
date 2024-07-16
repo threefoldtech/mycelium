@@ -9,20 +9,17 @@ use super::{
     RoutingTableOplogEntry,
 };
 use std::{
-    cell::RefCell,
     marker::PhantomData,
     net::Ipv6Addr,
     ops::{Deref, DerefMut},
-    rc::Rc,
     sync::{Arc, MutexGuard},
 };
 
 /// An iterator over a [`routing table`](super::RoutingTable), yielding mutable access to the
 /// entries in the table.
 pub struct RoutingTableIterMut<'a, 'b> {
-    write_guard: Rc<
-        RefCell<MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
-    >,
+    write_guard:
+        &'b mut MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
     iter: ip_network_table_deps_treebitmap::Iter<'b, Ipv6Addr, Arc<RouteList>>,
 
     expired_route_entry_sink: mpsc::Sender<RouteKey>,
@@ -31,10 +28,9 @@ pub struct RoutingTableIterMut<'a, 'b> {
 
 impl<'a, 'b> RoutingTableIterMut<'a, 'b> {
     pub(super) fn new(
-        write_guard: Rc<
-            RefCell<
-                MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
-            >,
+        write_guard: &'b mut MutexGuard<
+            'a,
+            left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>,
         >,
         iter: ip_network_table_deps_treebitmap::Iter<'b, Ipv6Addr, Arc<RouteList>>,
 
@@ -51,14 +47,14 @@ impl<'a, 'b> RoutingTableIterMut<'a, 'b> {
 
     /// Get the next item in this iterator. This is not implemented as the [`Iterator`] trait,
     /// since we hand out items which are lifetime bound to this struct.
-    pub fn next(&mut self) -> Option<(Subnet, RoutingTableIterMutEntry<'a>)> {
+    pub fn next<'c>(&'c mut self) -> Option<(Subnet, RoutingTableIterMutEntry<'a, 'c>)> {
         self.iter.next().map(|(ip, prefix_size, rl)| {
             let subnet = Subnet::new(ip.into(), prefix_size as u8)
                 .expect("Routing table contains valid subnets");
             (
                 subnet,
                 RoutingTableIterMutEntry {
-                    writer: Rc::clone(&self.write_guard),
+                    writer: self.write_guard,
                     value: Arc::clone(rl),
                     owned: false,
                     subnet,
@@ -71,10 +67,9 @@ impl<'a, 'b> RoutingTableIterMut<'a, 'b> {
 }
 
 /// A smart pointer giving mutable access to a [`RouteList`].
-pub struct RoutingTableIterMutEntry<'a> {
-    writer: Rc<
-        RefCell<MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
-    >,
+pub struct RoutingTableIterMutEntry<'a, 'b> {
+    writer:
+        &'b mut MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
     /// Owned copy of the RouteList, this is populated once mutable access the the RouteList has
     /// been requested.
     value: Arc<RouteList>,
@@ -85,8 +80,11 @@ pub struct RoutingTableIterMutEntry<'a> {
     cancellation_token: CancellationToken,
 }
 
-impl<'a, 'b> RoutingTableIterMutEntry<'a> {
-    pub fn entry_mut(&'b mut self, neighbour: &Peer) -> IterRouteEntryGuard<'a, 'b, PossiblyEmpty> {
+impl<'a, 'b, 'c> RoutingTableIterMutEntry<'a, 'b> {
+    pub fn entry_mut(
+        &'c mut self,
+        neighbour: &Peer,
+    ) -> IterRouteEntryGuard<'a, 'b, 'c, PossiblyEmpty> {
         let entry_identifier = if let Some(pos) = self
             .list
             .iter_mut()
@@ -107,7 +105,7 @@ impl<'a, 'b> RoutingTableIterMutEntry<'a> {
     }
 }
 
-impl<'a> Deref for RoutingTableIterMutEntry<'a> {
+impl Deref for RoutingTableIterMutEntry<'_, '_> {
     type Target = RouteList;
 
     fn deref(&self) -> &Self::Target {
@@ -115,14 +113,14 @@ impl<'a> Deref for RoutingTableIterMutEntry<'a> {
     }
 }
 
-impl DerefMut for RoutingTableIterMutEntry<'_> {
+impl DerefMut for RoutingTableIterMutEntry<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.owned = true;
         Arc::make_mut(&mut self.value)
     }
 }
 
-impl Drop for RoutingTableIterMutEntry<'_> {
+impl Drop for RoutingTableIterMutEntry<'_, '_> {
     fn drop(&mut self) {
         // If owned is false, we never got a mutable reference, and the existing value is a
         // reference to the already existing value in the route table. So we don't have to do
@@ -131,20 +129,19 @@ impl Drop for RoutingTableIterMutEntry<'_> {
             return;
         }
 
-        let mut writer = self.writer.borrow_mut();
-
         // FIXME: try to get rid of clones on the Arc here
         // There was an existing route list which is now empty, so the entry for this subnet
         // needs to be deleted in the routing table.
         if self.value.is_empty() {
             trace!(subnet = %self.subnet, "Removing route list for subnet");
-            writer.append(RoutingTableOplogEntry::Delete(self.subnet));
+            self.writer
+                .append(RoutingTableOplogEntry::Delete(self.subnet));
         }
         // The value already existed, and was mutably accessed, so it was dissociated. Update
         // the routing table to point to the new value.
         else {
             trace!(subnet = %self.subnet, "Updating route list for subnet");
-            writer.append(RoutingTableOplogEntry::Upsert(
+            self.writer.append(RoutingTableOplogEntry::Upsert(
                 self.subnet,
                 Arc::clone(&self.value),
             ));
@@ -154,8 +151,8 @@ impl Drop for RoutingTableIterMutEntry<'_> {
 
 /// A guard which allows write access to a single [`RouteEntry`].
 #[repr(C)] // This is needed since we transmute between instances with different markers.
-pub struct IterRouteEntryGuard<'a, 'b, O> {
-    write_guard: &'b mut RoutingTableIterMutEntry<'a>,
+pub struct IterRouteEntryGuard<'a, 'b, 'c, O> {
+    write_guard: &'c mut RoutingTableIterMutEntry<'a, 'b>,
     /// A way to identify the actual [`RouteEntry`].
     entry_identifier: EntryIdentifier,
     /// Keep track whether we need to delete this entry or not.
@@ -163,14 +160,14 @@ pub struct IterRouteEntryGuard<'a, 'b, O> {
     _marker: std::marker::PhantomData<O>,
 }
 
-impl<'a, 'b, O> IterRouteEntryGuard<'a, 'b, O> {
+impl<O> IterRouteEntryGuard<'_, '_, '_, O> {
     /// Mark the [`RouteEntry`] contained in this `RouteEntryGuard` to be deleted.
     pub fn delete(mut self) {
         self.delete = true
     }
 }
 
-impl<'a, 'b> IterRouteEntryGuard<'a, 'b, PossiblyEmpty> {
+impl<'a, 'b, 'c> IterRouteEntryGuard<'a, 'b, 'c, PossiblyEmpty> {
     /// Returns `true` if the `RouteEntryGuard` does not point to an existing value, or is not a
     /// new value.
     pub fn is_none(&self) -> bool {
@@ -179,18 +176,18 @@ impl<'a, 'b> IterRouteEntryGuard<'a, 'b, PossiblyEmpty> {
 
     /// Convert this `RouteEntryGuard` to an `Occupied` variant, panicking if the contained entry
     /// is none.
-    pub fn unwrap(self) -> IterRouteEntryGuard<'a, 'b, Occupied> {
+    pub fn unwrap(self) -> IterRouteEntryGuard<'a, 'b, 'c, Occupied> {
         assert!(
             !matches!(self.entry_identifier, EntryIdentifier::None),
             "Called RouteEntryGuard::unwrap on an emtpy entry guard"
         );
 
         // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
-        unsafe { std::mem::transmute::<Self, IterRouteEntryGuard<'a, 'b, Occupied>>(self) }
+        unsafe { std::mem::transmute::<Self, IterRouteEntryGuard<'a, 'b, 'c, Occupied>>(self) }
     }
 }
 
-impl Deref for IterRouteEntryGuard<'_, '_, Occupied> {
+impl Deref for IterRouteEntryGuard<'_, '_, '_, Occupied> {
     type Target = RouteEntry;
 
     fn deref(&self) -> &Self::Target {
@@ -204,7 +201,7 @@ impl Deref for IterRouteEntryGuard<'_, '_, Occupied> {
     }
 }
 
-impl DerefMut for IterRouteEntryGuard<'_, '_, Occupied> {
+impl DerefMut for IterRouteEntryGuard<'_, '_, '_, Occupied> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self.entry_identifier {
             EntryIdentifier::Pos(pos) => &mut self.write_guard.list[pos].1,
@@ -216,7 +213,7 @@ impl DerefMut for IterRouteEntryGuard<'_, '_, Occupied> {
     }
 }
 
-impl<O> Drop for IterRouteEntryGuard<'_, '_, O> {
+impl<O> Drop for IterRouteEntryGuard<'_, '_, '_, O> {
     fn drop(&mut self) {
         if self.delete {
             // If we refer to an existing entry, cancel the hold timer

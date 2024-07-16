@@ -1,8 +1,6 @@
 use std::{
-    cell::RefCell,
     net::{IpAddr, Ipv6Addr},
     ops::{Deref, DerefMut, Index},
-    rc::Rc,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -381,7 +379,7 @@ impl RoutingTable {
     /// is dropped, all queued changes will be applied.
     pub fn write(&self) -> RoutingTableWriteGuard {
         RoutingTableWriteGuard {
-            write_guard: Rc::new(RefCell::new(self.writer.lock().unwrap())),
+            write_guard: self.writer.lock().unwrap(),
             read_guard: self
                 .reader
                 .enter()
@@ -469,30 +467,7 @@ impl RoutingTable {
 /// A write guard over the [`RoutingTable`]. While this guard is held, updates won't be able to
 /// complete.
 pub struct RoutingTableWriteGuard<'a> {
-    // NOTE: Wrapping this in an Rc<RefCell<...>> might seem odd at first. The reason this is done
-    // is as follows: this type is an intermediate type to allow a mutable iterator over the
-    // routing table entries to exist. However, for such a mutable iterator, we need to share a
-    // mutable reference to the MutexGuard. The internal left_right data structure does not allow
-    // publishing of changes while we are holding a read handle at the same time (deadlock). But
-    // the standard `Iterator` trait does not allow us to hand out items which reference the
-    // iterator itself. So we can't lock the guard, and hand a reference to some smart pointer to
-    // properly queue changes. We could _not_ lock the guard here, and do so on every call to
-    // Iterator::next, locking only for the lifetime of the item. But that also has deadlock
-    // problems: if the item returned is moved outside of the iterator loop (e.g. pushed to a vec),
-    // the iterator will deadlock (we still need to keep the read handle as well for the iterator).
-    // And even if this does not happen, we would need to queue the changes on the writehandle,
-    // which means that any concurrent update from a different tread which publishes would lead to
-    // a deadlock. We could work around this by using raw pointers, and a pin, and creating a
-    // contract that the returned value is not kept around. This does require unsafe code. As an
-    // alternative, for now we will keep an Rc, which we can clone so there is no reference as far
-    // as the compiler is concerned, and a refcell. We then queue changes done during iteration.
-    // Additionally, we will warn a potential user not to keep the values around, and in the drop
-    // implementation of this type we will try to make sure there are no other Rc's pointing to the
-    // same value.
-    // TODO: This might be better by implementing some kind of `LendingIterator`.
-    write_guard: Rc<
-        RefCell<MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
-    >,
+    write_guard: MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
     read_guard: left_right::ReadGuard<'a, RoutingTableInner>,
     expired_route_entry_sink: mpsc::Sender<RouteKey>,
     cancel_token: CancellationToken,
@@ -501,7 +476,7 @@ pub struct RoutingTableWriteGuard<'a> {
 impl<'a, 'b> RoutingTableWriteGuard<'a> {
     pub fn iter_mut(&'b mut self) -> RoutingTableIterMut<'a, 'b> {
         RoutingTableIterMut::new(
-            Rc::clone(&self.write_guard),
+            &mut self.write_guard,
             self.read_guard.table.iter(),
             self.expired_route_entry_sink.clone(),
             self.cancel_token.clone(),
@@ -511,13 +486,7 @@ impl<'a, 'b> RoutingTableWriteGuard<'a> {
 
 impl Drop for RoutingTableWriteGuard<'_> {
     fn drop(&mut self) {
-        // Since we have a mutable reference here instead of ownership of self we can't consume the
-        // Rc. So manually check reference count.
-        if Rc::strong_count(&self.write_guard) != 1 {
-            panic!("Dropping RoutingTableWriteGuard while there are outstanding references to the write guard lock");
-        }
-
-        self.write_guard.borrow_mut().publish();
+        self.write_guard.publish();
     }
 }
 
