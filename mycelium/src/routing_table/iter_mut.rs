@@ -48,12 +48,10 @@ impl<'a, 'b> RoutingTableIterMut<'a, 'b> {
             cancel_token,
         }
     }
-}
 
-impl<'a, 'b> Iterator for RoutingTableIterMut<'a, 'b> {
-    type Item = (Subnet, RoutingTableIterMutEntry<'a>);
-
-    fn next(&mut self) -> Option<Self::Item> {
+    /// Get the next item in this iterator. This is not implemented as the [`Iterator`] trait,
+    /// since we hand out items which are lifetime bound to this struct.
+    pub fn next(&mut self) -> Option<(Subnet, RoutingTableIterMutEntry<'a>)> {
         self.iter.next().map(|(ip, prefix_size, rl)| {
             let subnet = Subnet::new(ip.into(), prefix_size as u8)
                 .expect("Routing table contains valid subnets");

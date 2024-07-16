@@ -307,9 +307,11 @@ where
         // Scope for routing table write access.
         let subnets_to_select = {
             let mut rt_write = self.routing_table.write();
+            let mut rt_write = rt_write.iter_mut();
+
             let mut subnets_to_select = Vec::new();
 
-            for (subnet, mut rl) in rt_write.iter_mut() {
+            while let Some((subnet, mut rl)) = rt_write.next() {
                 let entry = rl.entry_mut(&dead_peer);
                 if entry.is_none() {
                     continue;
