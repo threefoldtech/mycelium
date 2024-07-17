@@ -989,6 +989,7 @@ where
             } else {
                 if !update_feasible || metric.is_infinite() {
                     debug!(%subnet, "Ignore unfeasible update | retraction for unknown subnet");
+                    self.metrics.router_update_not_interested();
                     return;
                 }
                 let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());

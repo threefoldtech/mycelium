@@ -29,6 +29,7 @@ pub struct PrometheusExporter {
     router_propage_selected_peers_time_spent: IntCounter,
     router_update_skipped_route_selection: IntCounter,
     router_update_denied_by_filter: IntCounter,
+    router_update_not_interested: IntCounter,
     peer_manager_peer_added: IntCounterVec,
     peer_manager_known_peers: IntGauge,
     peer_manager_connection_attemps: IntCounterVec,
@@ -135,6 +136,11 @@ impl PrometheusExporter {
             router_update_denied_by_filter: register_int_counter!(
                 "mycelium_router_update_denied",
                 "Updates which were received and immediately denied by a configured filter",
+            )
+            .expect("Can register an int counter in default registry"),
+            router_update_not_interested: register_int_counter!(
+                "mycelium_router_update_not_interested",
+                "Updates which were allowed by the configured filters, but not of interest as they were either not feasible, or retractions, for an unknown subnet",
             )
             .expect("Can register an int counter in default registry"),
             peer_manager_peer_added: register_int_counter_vec!(
@@ -383,6 +389,11 @@ impl Metrics for PrometheusExporter {
     #[inline]
     fn router_update_denied_by_filter(&self) {
         self.router_update_denied_by_filter.inc()
+    }
+
+    #[inline]
+    fn router_update_not_interested(&self) {
+        self.router_update_not_interested.inc()
     }
 
     #[inline]

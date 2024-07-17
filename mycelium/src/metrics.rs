@@ -163,6 +163,11 @@ pub trait Metrics {
     #[inline]
     fn router_update_denied_by_filter(&self) {}
 
+    /// An update was accepted by the router filters, but was otherwise unfeasible or a retraction,
+    /// for an unknown subnet.
+    #[inline]
+    fn router_update_not_interested(&self) {}
+
     /// A new [`Peer`](crate::peer::Peer) was added to the
     /// [`PeerManager`](crate::peer_manager::PeerManager) while it is running.
     #[inline]
