@@ -1003,13 +1003,13 @@ where
         let maybe_existing_entry = routing_table_entries.entry_mut(&source_peer);
 
         debug!(
-           subnet = %subnet,
-           metric = %metric,
-           seqno = %seqno,
-           router_id = %router_id,
-           entry_exists = maybe_existing_entry.is_some(),
-           update_feasible = update_feasible,
-           peer = source_peer.connection_identifier(),
+            subnet = %subnet,
+            metric = %metric,
+            seqno = %seqno,
+            router_id = %router_id,
+            entry_exists = maybe_existing_entry.is_some(),
+            update_feasible = update_feasible,
+            peer = source_peer.connection_identifier(),
             "Processing update packet",
         );
 
