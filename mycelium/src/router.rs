@@ -987,8 +987,8 @@ where
             if let Some(rte) = self.routing_table.routes_mut(subnet) {
                 rte
             } else {
-                if !update_feasible {
-                    debug!(%subnet, "Ignore unfeasible update for unknown subnet");
+                if !update_feasible || metric.is_infinite() {
+                    debug!(%subnet, "Ignore unfeasible update | retraction for unknown subnet");
                     return;
                 }
                 let ss = self.node_keypair.0.shared_secret(&router_id.to_pubkey());
