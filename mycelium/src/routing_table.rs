@@ -637,6 +637,22 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
             self.table.insert(k, ss, v.clone());
         }
     }
+
+    fn absorb_second(&mut self, operation: RoutingTableOplogEntry, _: &Self) {
+        match operation {
+            RoutingTableOplogEntry::Upsert(subnet, list) => {
+                self.table.insert(
+                    expect_ipv6(subnet.address()),
+                    subnet.prefix_len().into(),
+                    list,
+                );
+            }
+            RoutingTableOplogEntry::Delete(subnet) => {
+                self.table
+                    .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
+            }
+        }
+    }
 }
 
 impl Drop for RoutingTable {
