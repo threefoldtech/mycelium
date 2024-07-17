@@ -1676,17 +1676,7 @@ where
             self.update_source_table(&update);
 
             // send the update to the peer
-            trace!("Sending update to peer");
-            if peer
-                .send_control_packet(ControlPacket::Update(update))
-                .is_err()
-            {
-                // An error indicates the peer is dead
-                trace!(
-                    "Failed to send update to dead peer {}",
-                    peer.connection_identifier()
-                );
-            }
+            self.send_update(peer, update);
         }
     }
 }
