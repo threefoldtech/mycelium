@@ -1114,7 +1114,6 @@ where
         // What doesn't constitue a large change:
         // - small metric change
         // - seqno increase (unless it is requested by a peer)
-        // TODO: we don't memorize seqno requests for now so consider broadcasting this anyway
         let trigger_update = match (&old_selected_route, new_selected_route) {
             (Some(old_route), Some(new_route)) => {
                 if new_route.neighbour() != old_route.neighbour() {
@@ -1127,8 +1126,6 @@ where
                 }
                 // Router id changed.
                 new_route.source().router_id() != old_route.source().router_id()
-                // TODO: remove | seqno changed
-                    || new_route.seqno().gt(&old_route.seqno())
                     || new_route.metric().delta(&old_route.metric()) > BIG_METRIC_CHANGE_TRESHOLD
             }
             (None, Some(new_route)) => {
@@ -1158,9 +1155,9 @@ where
                 subnet = %subnet,
                 "Send update to peers who registered interest through a seqno request"
             );
-            self.trigger_update(subnet, interested_peers);
             // If we have some interest in an update because we forwarded a seqno request but we
             // aren't triggering an update, notify just the interested peers.
+            self.trigger_update(subnet, interested_peers);
         }
     }
 
