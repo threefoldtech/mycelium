@@ -236,6 +236,8 @@ where
 pub struct Info {
     /// The overlay subnet in use by the node.
     pub node_subnet: String,
+    /// The public key of the node
+    pub node_pubkey: PublicKey,
 }
 
 /// Get general info about the node.
@@ -243,8 +245,10 @@ async fn get_info<M>(State(state): State<HttpServerState<M>>) -> Json<Info>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
+    let info = state.node.lock().await.info();
     Json(Info {
-        node_subnet: state.node.lock().await.info().node_subnet.to_string(),
+        node_subnet: info.node_subnet.to_string(),
+        node_pubkey: info.node_pubkey,
     })
 }
 

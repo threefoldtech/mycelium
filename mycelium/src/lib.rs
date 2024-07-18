@@ -98,6 +98,8 @@ pub struct Node<M> {
 pub struct NodeInfo {
     /// The overlay subnet in use by the node.
     pub node_subnet: Subnet,
+    /// The public key of the node
+    pub node_pubkey: crypto::PublicKey,
 }
 
 impl<M> Node<M>
@@ -248,6 +250,7 @@ where
     pub fn info(&self) -> NodeInfo {
         NodeInfo {
             node_subnet: self.router.node_tun_subnet(),
+            node_pubkey: self.router.node_public_key(),
         }
     }
 
