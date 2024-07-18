@@ -26,12 +26,15 @@ reload_html = true
 # which files or dirs will be watcher monitoring
 watch_path = ["src", "assets"]
 
+# add fallback 404 page
+index_on_404 = true
+
 # include `assets` in web platform
 [web.resource]
 
 # CSS style file
 
-style = []
+style = ["./assets/styles.css"]
 
 # Javascript code file
 script = []
