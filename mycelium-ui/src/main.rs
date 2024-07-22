@@ -148,8 +148,11 @@ fn sort_peers(
 ) {
     peers.sort_by(|a, b| {
         let cmp = match column {
-            //"Endpoint" => a.endpoint.cmp(&b.endpoint),
+            "Endpoint" => a.endpoint.cmp(&b.endpoint),
             "Type" => PeerTypeWrapper(a.pt.clone()).cmp(&PeerTypeWrapper(b.pt.clone())),
+            "Connection State" => a.connection_state.cmp(&b.connection_state),
+            "Tx bytes" => a.tx_bytes.cmp(&b.tx_bytes),
+            "Rx bytes" => a.rx_bytes.cmp(&b.rx_bytes),
             _ => Ordering::Equal,
         };
         match direction {
@@ -212,9 +215,18 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                             onclick: move |_| sort_peers_signal("Type".to_string()),
                             "Type {get_sort_indicator(sort_column, sort_direction, \"Type\".to_string())}"
                         }
-                        th { "Connection State" }
-                        th { "Tx bytes" }
-                        th { "Rx bytes" }
+                        th {
+                            onclick: move |_| sort_peers_signal("Connection State".to_string()),
+                            "Connection State {get_sort_indicator(sort_column, sort_direction, \"Connection State\".to_string())}"
+                        }
+                        th {
+                            onclick: move |_| sort_peers_signal("Tx bytes".to_string()),
+                            "Tx bytes {get_sort_indicator(sort_column, sort_direction, \"Tx bytes\".to_string())}"
+                        }
+                        th {
+                            onclick: move |_| sort_peers_signal("Rx bytes".to_string()),
+                            "Rx bytes {get_sort_indicator(sort_column, sort_direction, \"Rx bytes\".to_string())}"
+                        }
                     }
                 }
                 tbody {
