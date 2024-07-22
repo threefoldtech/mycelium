@@ -30,7 +30,7 @@ pub enum Protocol {
 }
 
 /// An endpoint defines a address and a protocol to use when communicating with it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Endpoint {
     proto: Protocol,
