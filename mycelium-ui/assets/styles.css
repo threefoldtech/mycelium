@@ -12,17 +12,20 @@ header {
 .content-container {
     display: flex;
     flex: 1;
+    overflow: hidden;
 }
 
 .sidebar {
     width: 200px;
     background-color: #e0e0e0;
     padding: 1rem;
+    overflow-y: auto;
 }
 
 .main-content {
     flex: 1;
     padding: 1rem;
+    overflow-y: auto;
 }
 
 table {
@@ -38,4 +41,24 @@ th, td {
 
 th {
     background-color: #f2f2f2;
+    cursor: pointer;
+}
+
+th:hover {
+    background-color: #e2e2e2;
+}
+
+.pagination {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pagination button {
+    margin: 0 0.5rem;
+}
+
+.pagination span {
+    margin: 0 0.5rem;
 }

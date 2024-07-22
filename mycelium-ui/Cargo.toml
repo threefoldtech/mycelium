@@ -17,3 +17,4 @@ tracing = "0.1.40"
 dioxus-logger = "0.5.1"
 reqwest = { version = "0.12.5", features = ["json"] }
 serde_json = "1.0.120"
+dioxus-sortable = "0.1.2"

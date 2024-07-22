@@ -100,7 +100,7 @@ struct ConnectionTraffic {
 }
 
 /// General state about a connection to a [`Peer`].
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectionState {
     /// There is a working connection to the [`Peer`].
@@ -112,7 +112,7 @@ pub enum ConnectionState {
 }
 
 /// Identification and information/statistics for a specific [`Peer`]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerStats {
     /// The endpoint of the [`Peer`].

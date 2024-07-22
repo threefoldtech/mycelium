@@ -18,7 +18,7 @@ pub enum EndpointParseError {
 }
 
 /// Protocol used by an endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Protocol {
     /// Standard plain text Tcp.
