@@ -3,6 +3,8 @@
 mod api;
 
 use dioxus::prelude::*;
+use dioxus_free_icons::icons::fa_solid_icons::{FaChevronLeft, FaChevronRight};
+use dioxus_free_icons::Icon;
 use mycelium::peer_manager::PeerType;
 use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -43,14 +45,30 @@ fn Layout() -> Element {
             Header {}
             div { class: "content-container",
                 Sidebar { collapsed: sidebar_collapsed }
-                main { class: "main-content",
+                main { class: if *sidebar_collapsed.read() { "main-content expanded" } else { "main-content" },
                     button {
-                        class: "toggle-sidebar",
+                        class: if *sidebar_collapsed.read() { "toggle-sidebar collapsed" } else { "toggle-sidebar" },
                         onclick: {
                             let sb_collapsed = *sidebar_collapsed.read();
                             move |_| sidebar_collapsed.set(!sb_collapsed)
                         },
-                        if *sidebar_collapsed.read() { "Show sidebar" } else { "Hide sidebar" }
+                        // i {
+                        //     if *sidebar_collapsed.read() {
+                        //         Icon {
+                        //             fill: "white",
+                        //             icon: FaChevronRight,
+                        //         }
+                        //     } else {
+                        //         Icon {
+                        //             fill: "white",
+                        //             icon: FaChevronLeft,
+                        //         }
+                        //     }
+                        // }
+                        Icon {
+                            fill: "white",
+                            icon: FaChevronLeft,
+                        }
                     }
                     Outlet::<Route> {}
                 }
@@ -75,7 +93,8 @@ fn Header() -> Element {
             div { class: "node-info",
                 { match &*fetched_node_info.read_unchecked() {
                     Some(Ok(info)) => rsx! {
-                        span { "Subnet: {info.node_subnet} | " }
+                        span { "Subnet: {info.node_subnet}" }
+                        span { class: "separator", "|" }
                         span { "Public Key: {info.node_pubkey}" }
                     },
                     Some(Err(_)) => rsx! { span { "Error loading node info" } },
@@ -238,39 +257,41 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     rsx! {
         div { class: "peers-table",
             h2 { "Peers" }
-            table {
-                thead {
-                    tr {
-                        th {
-                            onclick: move |_| sort_peers_signal("Endpoint".to_string()),
-                            "Endpoint {get_sort_indicator(sort_column, sort_direction, \"Endpoint\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_peers_signal("Type".to_string()),
-                            "Type {get_sort_indicator(sort_column, sort_direction, \"Type\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_peers_signal("Connection State".to_string()),
-                            "Connection State {get_sort_indicator(sort_column, sort_direction, \"Connection State\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_peers_signal("Tx bytes".to_string()),
-                            "Tx bytes {get_sort_indicator(sort_column, sort_direction, \"Tx bytes\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_peers_signal("Rx bytes".to_string()),
-                            "Rx bytes {get_sort_indicator(sort_column, sort_direction, \"Rx bytes\".to_string())}"
+            div { class: "table-container",
+                table {
+                    thead {
+                        tr {
+                            th { class: "endpoint-column",
+                                onclick: move |_| sort_peers_signal("Endpoint".to_string()),
+                                "Endpoint {get_sort_indicator(sort_column, sort_direction, \"Endpoint\".to_string())}"
+                            }
+                            th { class: "type-column",
+                                onclick: move |_| sort_peers_signal("Type".to_string()),
+                                "Type {get_sort_indicator(sort_column, sort_direction, \"Type\".to_string())}"
+                            }
+                            th { class: "connection-state-column",
+                                onclick: move |_| sort_peers_signal("Connection State".to_string()),
+                                "Connection State {get_sort_indicator(sort_column, sort_direction, \"Connection State\".to_string())}"
+                            }
+                            th { class: "tx-bytes-column",
+                                onclick: move |_| sort_peers_signal("Tx bytes".to_string()),
+                                "Tx bytes {get_sort_indicator(sort_column, sort_direction, \"Tx bytes\".to_string())}"
+                            }
+                            th { class: "rx-bytes-column",
+                                onclick: move |_| sort_peers_signal("Rx bytes".to_string()),
+                                "Rx bytes {get_sort_indicator(sort_column, sort_direction, \"Rx bytes\".to_string())}"
+                            }
                         }
                     }
-                }
-                tbody {
-                    for peer in current_peers {
-                        tr {
-                            td { "{peer.endpoint}" }
-                            td { "{peer.pt}" }
-                            td { "{peer.connection_state}" }
-                            td { "{peer.tx_bytes}" }
-                            td { "{peer.rx_bytes}" }
+                    tbody {
+                        for peer in current_peers {
+                            tr {
+                                td { class: "endpoint-column", "{peer.endpoint}" }
+                                td { class: "type-column", "{peer.pt}" }
+                                td { class: "connection-state-column", "{peer.connection_state}" }
+                                td { class: "tx-bytes-column", "{peer.tx_bytes}" }
+                                td { class: "rx-bytes-column", "{peer.rx_bytes}" }
+                            }
                         }
                     }
                 }
@@ -351,7 +372,7 @@ fn sort_routes(routes: &mut [mycelium_api::Route], column: &str, direction: &Sor
 
 fn RoutesTable(routes: Vec<mycelium_api::Route>, table_name: String) -> Element {
     let mut current_page = use_signal(|| 0);
-    let items_per_page = 20;
+    let items_per_page = 10;
     let mut sort_column = use_signal(|| "Subnet".to_string());
     let mut sort_direction = use_signal(|| SortDirection::Descending);
     let routes_len = routes.len();
@@ -391,34 +412,36 @@ fn RoutesTable(routes: Vec<mycelium_api::Route>, table_name: String) -> Element 
     rsx! {
         div { class: "{table_name.to_lowercase()}-routes",
             h2 { "{table_name} Routes" }
-            table {
-                thead {
-                    tr {
-                        th {
-                            onclick: move |_| sort_routes_signal("Subnet".to_string()),
-                            "Subnet {get_sort_indicator(sort_column, sort_direction, \"Subnet\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_routes_signal("Next-hop".to_string()),
-                            "Next-hop {get_sort_indicator(sort_column, sort_direction, \"Next-hop\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_routes_signal("Metric".to_string()),
-                            "Metric {get_sort_indicator(sort_column, sort_direction, \"Metric\".to_string())}"
-                        }
-                        th {
-                            onclick: move |_| sort_routes_signal("Seqno".to_string()),
-                            "Seqno {get_sort_indicator(sort_column, sort_direction, \"Seqno\".to_string())}"
+            div { class: "table-container",
+                table {
+                    thead {
+                        tr {
+                            th { class: "subnet-column",
+                                onclick: move |_| sort_routes_signal("Subnet".to_string()),
+                                "Subnet {get_sort_indicator(sort_column, sort_direction, \"Subnet\".to_string())}"
+                            }
+                            th { class: "next-hop-column",
+                                onclick: move |_| sort_routes_signal("Next-hop".to_string()),
+                                "Next-hop {get_sort_indicator(sort_column, sort_direction, \"Next-hop\".to_string())}"
+                            }
+                            th { class: "metric-column",
+                                onclick: move |_| sort_routes_signal("Metric".to_string()),
+                                "Metric {get_sort_indicator(sort_column, sort_direction, \"Metric\".to_string())}"
+                            }
+                            th { class: "seqno_column",
+                                onclick: move |_| sort_routes_signal("Seqno".to_string()),
+                                "Seqno {get_sort_indicator(sort_column, sort_direction, \"Seqno\".to_string())}"
+                            }
                         }
                     }
-                }
-                tbody {
-                    for route in current_routes {
-                        tr {
-                            td { "{route.subnet}" }
-                            td { "{route.next_hop}" }
-                            td { "{route.metric}" }
-                            td { "{route.seqno}" }
+                    tbody {
+                        for route in current_routes {
+                            tr {
+                                td { class: "subnet-column", "{route.subnet}" }
+                                td { class: "next-hop-column", "{route.next_hop}" }
+                                td { class: "metric-column", "{route.metric}" }
+                                td { class: "seqno-column", "{route.seqno}" }
+                            }
                         }
                     }
                 }
