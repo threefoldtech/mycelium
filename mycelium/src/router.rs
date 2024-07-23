@@ -1599,7 +1599,7 @@ where
             } else {
                 // This can happen if the only feasible route gets an infinite metric, as those are
                 // never selected.
-                info!(subnet = %subnet, "Retracting route");
+                debug!(subnet = %subnet, "Retracting route");
                 let update = babel::Update::new(
                     UPDATE_INTERVAL,
                     self.router_seqno.read().unwrap().0,
