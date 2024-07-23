@@ -1,7 +1,7 @@
 # REMOVE/ADD COMMENT TO ENABLE/DISABLE LINE
 
 peers = [
-  "tcp://180.40.132.242:9651",
+  "tcp://188.40.132.242:9651",
   "quic://[2a01:4f8:212:fa6::2]:9651",
   "quic://185.69.166.7:9651",
   "tcp://[2a02:1802:5e:0:8c9e:7dff:fec9:f0d2]:9651",

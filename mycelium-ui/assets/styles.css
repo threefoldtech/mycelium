@@ -1,187 +1,4 @@
-/* V2 */
-
-/* @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap'); */
-/**/
-/* :root { */
-/*   --primary-color: #3498db; */
-/*   --secondary-color: #2c3e50; */
-/*   --background-color: #ecf0f1; */
-/*   --text-color: #34495e; */
-/*   --border-color: #bdc3c7; */
-/* } */
-/**/
-/* * { */
-/*   box-sizing: border-box; */
-/*   margin: 0; */
-/*   padding: 0; */
-/* } */
-/**/
-/* body { */
-/*   font-family: 'Lato', sans-serif; */
-/*   background-color: var(--background-color); */
-/*   color: var(--text-color); */
-/* } */
-/**/
-/* .app-container { */
-/*   display: flex; */
-/*   flex-direction: column; */
-/*   height: 100vh; */
-/* } */
-/**/
-/* header { */
-/*   background-color: var(--primary-color); */
-/*   color: white; */
-/*   padding: 1rem; */
-/*   display: flex; */
-/*   justify-content: space-between; */
-/*   align-items: center; */
-/*   position: fixed; */
-/*   width: 100%; */
-/*   z-index: 1000; */
-/* } */
-/**/
-/* header h1 { */
-/*   font-size: 1.5rem; */
-/*   font-weight: 700; */
-/* } */
-/**/
-/* .node-info { */
-/*   font-size: 0.9rem; */
-/* } */
-/**/
-/* .content-container { */
-/*   display: flex; */
-/*   padding-top: 60px; */
-/*   height: calc(100vh - 60px); */
-/* } */
-/**/
-/* .sidebar { */
-/*   background-color: var(--secondary-color); */
-/*   color: white; */
-/*   width: 250px; */
-/*   padding: 1rem; */
-/*   transition: transform 0.3s ease-in-out; */
-/* } */
-/**/
-/* .sidebar.collapsed { */
-/*   transform: translateX(-250px); */
-/* } */
-/**/
-/* .sidebar ul { */
-/*   list-style-type: none; */
-/* } */
-/**/
-/* .sidebar li { */
-/*   margin-bottom: 1rem; */
-/* } */
-/**/
-/* .sidebar a { */
-/*   color: white; */
-/*   text-decoration: none; */
-/*   font-size: 1.1rem; */
-/*   transition: color 0.3s ease; */
-/* } */
-/**/
-/* .sidebar a:hover { */
-/*   color: var(--primary-color); */
-/* } */
-/**/
-/* .main-content { */
-/*   flex: 1; */
-/*   padding: 2rem; */
-/*   overflow-y: auto; */
-/* } */
-/**/
-/* .toggle-sidebar { */
-/*   background-color: var(--secondary-color); */
-/*   color: white; */
-/*   border: none; */
-/*   padding: 0.5rem 1rem; */
-/*   cursor: pointer; */
-/*   font-size: 1rem; */
-/*   transition: background-color 0.3s ease; */
-/* } */
-/**/
-/* .toggle-sidebar:hover { */
-/*   background-color: var(--primary-color); */
-/* } */
-/**/
-/* table { */
-/*   width: 100%; */
-/*   border-collapse: collapse; */
-/*   margin-top: 1rem; */
-/*   background-color: white; */
-/*   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); */
-/* } */
-/**/
-/* th, td { */
-/*   padding: 1rem; */
-/*   text-align: left; */
-/*   border-bottom: 1px solid var(--border-color); */
-/* } */
-/**/
-/* th { */
-/*   background-color: var(--primary-color); */
-/*   color: white; */
-/*   font-weight: 700; */
-/*   cursor: pointer; */
-/*   transition: background-color 0.3s ease; */
-/* } */
-/**/
-/* th:hover { */
-/*   background-color: #2980b9; */
-/* } */
-/**/
-/* .pagination { */
-/*   display: flex; */
-/*   justify-content: center; */
-/*   align-items: center; */
-/*   margin-top: 1rem; */
-/* } */
-/**/
-/* .pagination button { */
-/*   background-color: var(--primary-color); */
-/*   color: white; */
-/*   border: none; */
-/*   padding: 0.5rem 1rem; */
-/*   margin: 0 0.5rem; */
-/*   cursor: pointer; */
-/*   transition: background-color 0.3s ease; */
-/* } */
-/**/
-/* .pagination button:hover:not(:disabled) { */
-/*   background-color: #2980b9; */
-/* } */
-/**/
-/* .pagination button:disabled { */
-/*   background-color: var(--border-color); */
-/*   cursor: not-allowed; */
-/* } */
-/**/
-/* .pagination span { */
-/*   margin: 0 0.5rem; */
-/* } */
-/**/
-/* .selected-routes, .fallback-routes { */
-/*   margin-top: 2rem; */
-/* } */
-/**/
-/* h2 { */
-/*   color: var(--secondary-color); */
-/*   margin-bottom: 1rem; */
-/* } */
-/**/
-/* .node-info h3 { */
-/*   margin-bottom: 0.5rem; */
-/*   font-size: 1.1rem; */
-/*   font-weight: 400; */
-/* } */
-
-
-
-
-/* @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap'); */
-/* @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css'); */
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap');
 
 :root {
   --primary-color: #3498db;
@@ -219,6 +36,7 @@ header {
   position: fixed;
   width: 100%;
   z-index: 1000;
+  height: 60px;
 }
 
 header h1 {
@@ -243,23 +61,30 @@ header h1 {
 .content-container {
   display: flex;
   padding-top: 60px;
-  flex: 1;
+  min-height: calc(100vh - 60px);
 }
 
 .sidebar {
   background-color: var(--secondary-color);
   color: white;
   width: 250px;
-  padding: 1rem;
+  height: 100%;
+  position: fixed;
+  top: 60px;
+  left: 0;
+  /* transition: margin-left 0.3s ease-in-out; */
   transition: transform 0.3s ease-in-out;
+  z-index: 100;
 }
 
 .sidebar.collapsed {
+  /* margin-left: -250px; */
   transform: translateX(-250px);
 }
 
 .sidebar ul {
   list-style-type: none;
+  padding: 1rem;
 }
 
 .sidebar li {
@@ -280,44 +105,35 @@ header h1 {
 .main-content {
   flex: 1;
   padding: 2rem;
-  overflow-y: auto;
+  margin-left: 250px;
   transition: margin-left 0.3s ease-in-out;
 }
 
 .main-content.expanded {
-  margin-left: -250px;
+  margin-left: 0;
+}
+
+.toggle-sidebar.collapsed {
+  left: 10px;
+  transform: translate(-10px) rotate(180deg);
+  transition: left 0.3s ease-in-out, transform: 0s;
 }
 
 .toggle-sidebar {
   background-color: var(--secondary-color);
   color: white;
   border: none;
-  padding: 0.5rem 1rem;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
-  font-size: 1rem;
-  /* transition: background-color 0.3s ease; */
-  transition: left 0.3s ease-in-out, transform 0.3 ease-in-out;
-  position: fixed;
-  left: 250px;
-  top: 70px;
-  z-index: 999;
-  
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.toggle-sidebar.collapsed {
-  left: 0;
-  transform: translateX(-250px) rotate(180deg);
-}
-
-.main-content.expanded .toggle-sidebar {
-  left: 0;
-}
-
-.toggle-sidebar:hover {
-  background-color: var(--primary-color);
+  position: fixed;
+  top: 70px;
+  left: 250px;
+  transition: left 0.3s ease-in-out, transform 0.3s ease-in-out;
+  z-index: 200;
 }
 
 .table-container {
@@ -330,7 +146,6 @@ table {
   margin-top: 1rem;
   background-color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  table-layout: fixed;
 }
 
 th, td {
@@ -354,13 +169,11 @@ th:hover {
   background-color: #2980b9;
 }
 
-/* Routes table column widths */
 .subnet-column { width: 25%; }
 .next-hop-column { width: 35%; }
 .metric-column { width: 20%; }
 .seqno-column { width: 20%; }
 
-/* Peers table column widths */
 .endpoint-column { width: 30%; }
 .type-column { width: 15%; }
 .connection-state-column { width: 20%; }
@@ -397,11 +210,7 @@ th:hover {
   margin: 0 0.5rem;
 }
 
-.peers-table {
-  margin-top: 2rem;
-}
-
-.selected-routes, .fallback-routes {
+.peers-table, .selected-routes, .fallback-routes {
   margin-top: 2rem;
 }
 
