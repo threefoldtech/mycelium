@@ -3,14 +3,14 @@
 mod api;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::fa_solid_icons::{FaChevronLeft, FaChevronRight};
+use dioxus_free_icons::icons::fa_solid_icons::FaChevronLeft;
 use dioxus_free_icons::Icon;
 use mycelium::peer_manager::PeerType;
 use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tracing::Level;
 
-const _: &str = manganis::mg!(file("assets/styles.css"));
+const STYLES_CSS: &str = manganis::mg!(file("assets/styles.css"));
 
 const SERVER_ADDR: std::net::SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
@@ -38,7 +38,7 @@ fn main() {
 
 #[component]
 fn Layout() -> Element {
-    let mut sidebar_collapsed = use_signal(|| false);
+    let sidebar_collapsed = use_signal(|| false);
 
     rsx! {
         div { class: "app-container",
@@ -46,30 +46,6 @@ fn Layout() -> Element {
             div { class: "content-container",
                 Sidebar { collapsed: sidebar_collapsed }
                 main { class: if *sidebar_collapsed.read() { "main-content expanded" } else { "main-content" },
-                    button {
-                        class: if *sidebar_collapsed.read() { "toggle-sidebar collapsed" } else { "toggle-sidebar" },
-                        onclick: {
-                            let sb_collapsed = *sidebar_collapsed.read();
-                            move |_| sidebar_collapsed.set(!sb_collapsed)
-                        },
-                        // i {
-                        //     if *sidebar_collapsed.read() {
-                        //         Icon {
-                        //             fill: "white",
-                        //             icon: FaChevronRight,
-                        //         }
-                        //     } else {
-                        //         Icon {
-                        //             fill: "white",
-                        //             icon: FaChevronLeft,
-                        //         }
-                        //     }
-                        // }
-                        Icon {
-                            fill: "white",
-                            icon: FaChevronLeft,
-                        }
-                    }
                     Outlet::<Route> {}
                 }
             }
@@ -113,6 +89,15 @@ fn Sidebar(collapsed: Signal<bool>) -> Element {
                 li { Link { to: Route::Home {}, "Home" } }
                 li { Link { to: Route::Peers {}, "Peers" } }
                 li { Link { to: Route::Routes {}, "Routes" } }
+            }
+        }
+        button { class: if *collapsed.read() { "toggle-sidebar collapsed" } else { "toggle-sidebar" },
+            onclick: {
+                let c = *collapsed.read();
+                move |_| collapsed.set(!c)
+            },
+            Icon {
+                icon: FaChevronLeft,
             }
         }
     }
