@@ -8,21 +8,23 @@ use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tracing::Level;
 
+const _: &str = manganis::mg!(file("assets/styles.css"));
+
 const SERVER_ADDR: std::net::SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
-enum Route {
-    #[layout(Sidebar)]
+pub enum Route {
+    #[layout(Layout)]
         #[route("/")]
-        Home {},
+        Home,
         #[route("/peers")]
-        Peers {},
+        Peers,
         #[route("/routes")]
-        Routes {},
+        Routes,
     #[end_layout]
-    #[route("/..route")]
+    #[route("/:..route")]
     PageNotFound { route: Vec<String> },
 }
 
@@ -33,35 +35,67 @@ fn main() {
 }
 
 #[component]
-fn App() -> Element {
+fn Layout() -> Element {
+    let mut sidebar_collapsed = use_signal(|| false);
+
     rsx! {
         div { class: "app-container",
             Header {}
-            Router::<Route> {}
+            div { class: "content-container",
+                Sidebar { collapsed: sidebar_collapsed }
+                main { class: "main-content",
+                    button {
+                        class: "toggle-sidebar",
+                        onclick: {
+                            let sb_collapsed = *sidebar_collapsed.read();
+                            move |_| sidebar_collapsed.set(!sb_collapsed)
+                        },
+                        if *sidebar_collapsed.read() { "Show sidebar" } else { "Hide sidebar" }
+                    }
+                    Outlet::<Route> {}
+                }
+            }
         }
+    }
+}
+
+#[component]
+fn App() -> Element {
+    rsx! {
+        Router::<Route> {}
     }
 }
 
 #[component]
 fn Header() -> Element {
+    let fetched_node_info = use_resource(move || api::get_node_info(SERVER_ADDR));
     rsx! {
         header {
             h1 { "Mycelium Network Dashboard" }
+            div { class: "node-info",
+                { match &*fetched_node_info.read_unchecked() {
+                    Some(Ok(info)) => rsx! {
+                        span { "Subnet: {info.node_subnet} | " }
+                        span { "Public Key: {info.node_pubkey}" }
+                    },
+                    Some(Err(_)) => rsx! { span { "Error loading node info" } },
+                    None => rsx! { span { "Loading node info..." } },
+                }}
+            }
         }
     }
 }
 
 #[component]
-fn Sidebar() -> Element {
+fn Sidebar(collapsed: Signal<bool>) -> Element {
     rsx! {
-        nav { class: "sidebar",
+        nav { class: if *collapsed.read() { "sidebar collapsed" } else { "sidebar" },
             ul {
                 li { Link { to: Route::Home {}, "Home" } }
                 li { Link { to: Route::Peers {}, "Peers" } }
                 li { Link { to: Route::Routes {}, "Routes" } }
             }
         }
-        Outlet::<Route> {}
     }
 }
 
