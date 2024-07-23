@@ -1333,7 +1333,7 @@ dependencies = [
  "tracing-logfmt",
  "tracing-subscriber",
  "tun",
- "wintun 0.4.0",
+ "wintun 0.5.0",
  "x25519-dalek",
 ]
 
@@ -3138,18 +3138,8 @@ version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca229916c5ee38c2f2bc1e9d8f04df975b4bd93f9955dc69fabb5d91270045c9"
 dependencies = [
- "windows-core 0.51.1",
+ "windows-core",
  "windows-targets 0.48.5",
-]
-
-[[package]]
-name = "windows"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be"
-dependencies = [
- "windows-core 0.52.0",
- "windows-targets 0.52.5",
 ]
 
 [[package]]
@@ -3159,15 +3149,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1f8cf84f35d2db49a46868f947758c7a1138116f7fac3bc844f43ade1292e64"
 dependencies = [
  "windows-targets 0.48.5",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
-dependencies = [
- "windows-targets 0.52.5",
 ]
 
 [[package]]
@@ -3352,15 +3333,15 @@ dependencies = [
 
 [[package]]
 name = "wintun"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b3c8c8876c686f8a2d6376999ac1c9a24c74d2968551c9394f7e89127783685"
+checksum = "b196f9328341b035820c54beebca487823e2e20a5977f284f2af2a0ee8f04400"
 dependencies = [
  "c2rust-bitfields",
  "libloading",
  "log",
  "thiserror",
- "windows 0.52.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
