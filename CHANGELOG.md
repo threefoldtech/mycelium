@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed how updates are sent to be more performant.
 - A triggered update is no longer sent just because a route sequence number got
   increased. We do still send the update to peer in the seqno request cache.
+- Reduced log level when a route changes next-hop to debug from info.
 
 ### Fixed
 

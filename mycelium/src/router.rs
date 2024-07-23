@@ -1118,7 +1118,7 @@ where
         let trigger_update = match (&old_selected_route, new_selected_route) {
             (Some(old_route), Some(new_route)) => {
                 if new_route.neighbour() != old_route.neighbour() {
-                    info!(
+                    debug!(
                         subnet = %subnet,
                         old_next_hop = old_route.neighbour().connection_identifier(),
                         new_next_hop = new_route.neighbour().connection_identifier(),
