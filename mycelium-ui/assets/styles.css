@@ -245,3 +245,41 @@ h2 {
     font-weight: 700;
 }
 
+/* API server */
+.server-input {
+    display: flex;
+    margin-bottom: 1rem;
+}
+
+.server-input input {
+    flex-grow: 1;
+    padding: 0.5rem;
+    font-size: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px 0 0 4px;
+}
+
+.server-input button {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.server-input button:hover {
+    background-color: #2980b9;
+}
+
+.error {
+    color: #e74c3c;
+    margin-bottom: 1rem;
+}
+
+.warning {
+    color: #f39c12;
+    margin-bottom: 1rem;
+}
