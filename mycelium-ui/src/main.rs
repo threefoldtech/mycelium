@@ -30,12 +30,6 @@ pub enum Route {
     PageNotFound { route: Vec<String> },
 }
 
-#[derive(Clone, Debug)]
-struct ServerState {
-    address: String,
-    connected: bool,
-}
-
 fn main() {
     // Init logger
     dioxus_logger::init(Level::INFO).expect("failed to init logger");
@@ -61,14 +55,6 @@ fn Layout() -> Element {
 
 #[component]
 fn App() -> Element {
-    // Shared state components
-    use_context_provider(|| {
-        Signal::new(ServerState {
-            address: DEFAULT_SERVER_ADDR.to_string(),
-            connected: false,
-        })
-    });
-
     rsx! {
         Router::<Route> {}
     }
@@ -119,23 +105,26 @@ fn Sidebar(collapsed: Signal<bool>) -> Element {
 
 #[component]
 fn Home() -> Element {
-    let mut server_state = use_context::<Signal<ServerState>>();
+    // let mut server_state = use_context::<Signal<ServerState>>();
+    let mut server_state_addr = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
+    let mut server_state_connected = use_signal(|| false);
     let mut new_address = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
-    let mut error_message = use_signal(|| None::<String>);
 
-    let fetched_node_info = use_resource(move || {
-        let address = server_state.read().address.clone();
+    let fetch_node_info = use_resource(move || {
+        let current_addr = server_state_addr.read().clone();
         async move {
-            match SocketAddr::from_str(&address) {
+            match SocketAddr::from_str(&current_addr) {
                 Ok(addr) => {
-                    let result = api::get_node_info(addr).await;
-                    match result {
+                    // The current address is a correct SocketAddr
+                    let node_info = api::get_node_info(addr).await;
+                    match node_info {
                         Ok(info) => {
-                            server_state.write().connected = true;
+                            println!("Succesfully obtained node info from {current_addr}");
+                            server_state_connected.set(true);
                             Ok(info)
                         }
                         Err(e) => {
-                            server_state.write().connected = false;
+                            server_state_connected.set(false);
                             Err(AppError::from(e))
                         }
                     }
@@ -145,15 +134,11 @@ fn Home() -> Element {
         }
     });
 
-    let connect = move |_| {
-        let new_addr = new_address().clone().to_string();
-        if SocketAddr::from_str(&new_addr).is_ok() {
-            server_state.write().address = new_addr;
-            error_message.set(None);
-            // fetched_node_info.refetch();
-        } else {
-            error_message.set(Some("Invalid address format".to_string()));
-        }
+    // Executed when we press the connect button
+    let try_connect = move |_| {
+        let new_addr = new_address.read().to_string();
+        server_state_addr.write().clone_from(&new_addr); // will trigger fetch_node_info
+        println!("Updated server_state address to: {new_addr}");
     };
 
     rsx! {
@@ -163,18 +148,19 @@ fn Home() -> Element {
                 input {
                     placeholder: "Server address (e.g. 127.0.0.1:8989)",
                     value: "{new_address}",
-                    oninput: move |event| new_address.set(event.value().clone())
+                    oninput: move |event| {
+                        println!("RUNNING input oninput event");
+                        new_address.set(event.value().clone());
+                    }
                 }
-                button { onclick: connect, "Connect" }
+                button { onclick: try_connect, "Connect" }
             }
-            if let Some(err_msg) = error_message.read().as_ref() {
-                 { rsx! { p { class: "error", "{err_msg}" } } }
-            }
-            if !server_state.read().connected {
+            if !*server_state_connected.read() {
                 { rsx! { p { class: "warning", "Server is not responding. Please check the server address and try again." } } }
             }
-            match fetched_node_info.read().as_ref() {
+            match fetch_node_info.read().as_ref() {
                 Some(Ok(info)) => {
+                println!("RUNNING: OK: code to generate node subnet and node public key below");
                 { rsx! {
                     p {
                         "Node subnet: ",
@@ -186,8 +172,8 @@ fn Home() -> Element {
                     }
                 } }
                 },
-                Some(Err(e)) => { rsx! { p { class: "error", "Error: {e}" } } },
-                None => { rsx! { p { "Loading..." } } },
+                Some(Err(e)) => { println!("RUNNING: ERR");  rsx! { p { class: "error", "{e}" } } },
+                None => { println!("RUNNING: NONE"); rsx! { p { "Loading..." } } },
             }
         }
     }
