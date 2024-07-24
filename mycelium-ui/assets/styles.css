@@ -224,3 +224,24 @@ h2 {
   font-size: 1.1rem;
   font-weight: 400;
 }
+
+/* Home component */
+.home-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.home-container h2 {
+    color: var(--secondary-color);
+    margin-bottom: 1.5rem;
+}
+
+.home-container p {
+    margin-bottom: 1rem;
+}
+
+.bold {
+    font-weight: 700;
+}
+
