@@ -108,9 +108,16 @@ fn Home() -> Element {
     let fetched_node_info = use_resource(move || api::get_node_info(SERVER_ADDR));
     match &*fetched_node_info.read_unchecked() {
         Some(Ok(info)) => rsx! {
-            div { class: "node-info",
-                h3 { "Node subnet: {info.node_subnet}" }
-                h3 { "Node public key: {info.node_pubkey}" }
+            div { class: "home-container",
+                h2 { "Node Information" }
+                p {
+                    "Node subnet: ",
+                    span { class: "bold", "{info.node_subnet}" }
+                }
+                p {
+                    "Node public key: ",
+                    span { class: "bold", "{info.node_pubkey}" }
+                }
             }
             Outlet::<Route> {}
         },
