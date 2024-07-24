@@ -6,13 +6,13 @@ use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::FaChevronLeft;
 use dioxus_free_icons::Icon;
 use mycelium::peer_manager::PeerType;
-use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{cmp::Ordering, str::FromStr};
 use tracing::Level;
 
 const STYLES_CSS: &str = manganis::mg!(file("assets/styles.css"));
 
-const SERVER_ADDR: std::net::SocketAddr =
+const DEFAULT_SERVER_ADDR: std::net::SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
 
 #[derive(Clone, Routable, Debug, PartialEq)]
@@ -28,6 +28,12 @@ pub enum Route {
     #[end_layout]
     #[route("/:..route")]
     PageNotFound { route: Vec<String> },
+}
+
+#[derive(Clone, Debug)]
+struct ServerState {
+    address: String,
+    connected: bool,
 }
 
 fn main() {
@@ -55,6 +61,14 @@ fn Layout() -> Element {
 
 #[component]
 fn App() -> Element {
+    // Shared state components
+    use_context_provider(|| {
+        Signal::new(ServerState {
+            address: DEFAULT_SERVER_ADDR.to_string(),
+            connected: false,
+        })
+    });
+
     rsx! {
         Router::<Route> {}
     }
@@ -62,7 +76,7 @@ fn App() -> Element {
 
 #[component]
 fn Header() -> Element {
-    let fetched_node_info = use_resource(move || api::get_node_info(SERVER_ADDR));
+    let fetched_node_info = use_resource(move || api::get_node_info(DEFAULT_SERVER_ADDR));
     rsx! {
         header {
             h1 { "Mycelium Network Dashboard" }
@@ -105,30 +119,83 @@ fn Sidebar(collapsed: Signal<bool>) -> Element {
 
 #[component]
 fn Home() -> Element {
-    let fetched_node_info = use_resource(move || api::get_node_info(SERVER_ADDR));
-    match &*fetched_node_info.read_unchecked() {
-        Some(Ok(info)) => rsx! {
-            div { class: "home-container",
-                h2 { "Node Information" }
-                p {
-                    "Node subnet: ",
-                    span { class: "bold", "{info.node_subnet}" }
+    let mut server_state = use_context::<Signal<ServerState>>();
+    let mut new_address = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
+    let mut error_message = use_signal(|| None::<String>);
+
+    let fetched_node_info = use_resource(move || {
+        let address = server_state.read().address.clone();
+        async move {
+            match SocketAddr::from_str(&address) {
+                Ok(addr) => {
+                    let result = api::get_node_info(addr).await;
+                    match result {
+                        Ok(info) => {
+                            server_state.write().connected = true;
+                            Ok(info)
+                        }
+                        Err(e) => {
+                            server_state.write().connected = false;
+                            Err(AppError::from(e))
+                        }
+                    }
                 }
-                p {
-                    "Node public key: ",
-                    span { class: "bold", "{info.node_pubkey}" }
-                }
+                Err(_) => Err(AppError::AddressError("Invalid address format".into())),
             }
-            Outlet::<Route> {}
-        },
-        Some(Err(e)) => rsx! { div { "An error has occurred while fetching peers: {e}" }},
-        None => rsx! { div { "Loading peers..." }},
+        }
+    });
+
+    let connect = move |_| {
+        let new_addr = new_address().clone().to_string();
+        if SocketAddr::from_str(&new_addr).is_ok() {
+            server_state.write().address = new_addr;
+            error_message.set(None);
+            // fetched_node_info.refetch();
+        } else {
+            error_message.set(Some("Invalid address format".to_string()));
+        }
+    };
+
+    rsx! {
+        div { class: "home-container",
+            h2 { "Node information" }
+            div { class: "server-input",
+                input {
+                    placeholder: "Server address (e.g. 127.0.0.1:8989)",
+                    value: "{new_address}",
+                    oninput: move |event| new_address.set(event.value().clone())
+                }
+                button { onclick: connect, "Connect" }
+            }
+            if let Some(err_msg) = error_message.read().as_ref() {
+                 { rsx! { p { class: "error", "{err_msg}" } } }
+            }
+            if !server_state.read().connected {
+                { rsx! { p { class: "warning", "Server is not responding. Please check the server address and try again." } } }
+            }
+            match fetched_node_info.read().as_ref() {
+                Some(Ok(info)) => {
+                { rsx! {
+                    p {
+                        "Node subnet: ",
+                        span { class: "bold", "{info.node_subnet}" }
+                    }
+                    p {
+                        "Node public key: ",
+                        span { class: "bold", "{info.node_pubkey }" }
+                    }
+                } }
+                },
+                Some(Err(e)) => { rsx! { p { class: "error", "Error: {e}" } } },
+                None => { rsx! { p { "Loading..." } } },
+            }
+        }
     }
 }
 
 #[component]
 fn Peers() -> Element {
-    let fetched_peers = use_resource(move || api::get_peers(SERVER_ADDR));
+    let fetched_peers = use_resource(move || api::get_peers(DEFAULT_SERVER_ADDR));
     match &*fetched_peers.read_unchecked() {
         Some(Ok(peers)) => rsx! { {PeersTable(peers.clone()) } },
         Some(Err(e)) => rsx! { div { "An error has occurred while fetching the peers: {e}" } },
@@ -307,7 +374,8 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
 
 #[component]
 fn SelectedRoutesTable() -> Element {
-    let fetched_selected_routes = use_resource(move || api::get_selected_routes(SERVER_ADDR));
+    let fetched_selected_routes =
+        use_resource(move || api::get_selected_routes(DEFAULT_SERVER_ADDR));
 
     match &*fetched_selected_routes.read_unchecked() {
         Some(Ok(routes)) => {
@@ -320,7 +388,8 @@ fn SelectedRoutesTable() -> Element {
 
 #[component]
 fn FallbackRoutesTable() -> Element {
-    let fetched_fallback_routes = use_resource(move || api::get_fallback_routes(SERVER_ADDR));
+    let fetched_fallback_routes =
+        use_resource(move || api::get_fallback_routes(DEFAULT_SERVER_ADDR));
 
     match &*fetched_fallback_routes.read_unchecked() {
         Some(Ok(routes)) => {
@@ -452,5 +521,25 @@ fn RoutesTable(routes: Vec<mycelium_api::Route>, table_name: String) -> Element 
                 }
             }
         }
+    }
+}
+
+enum AppError {
+    NetworkError(reqwest::Error), // reqwest errors
+    AddressError(String),         // address parsing errors
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppError::NetworkError(e) => write!(f, "Network error: {}", e),
+            AppError::AddressError(e) => write!(f, "Address error: {}", e),
+        }
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(value: reqwest::Error) -> Self {
+        AppError::NetworkError(value)
     }
 }
