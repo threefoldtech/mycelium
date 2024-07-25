@@ -5,8 +5,8 @@ mod api;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::FaChevronLeft;
 use dioxus_free_icons::Icon;
+use human_bytes::human_bytes;
 use mycelium::peer_manager::PeerType;
-use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{cmp::Ordering, str::FromStr};
 use tracing::Level;
@@ -386,8 +386,8 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                                 td { class: "endpoint-column", "{peer.endpoint}" }
                                 td { class: "type-column", "{peer.pt}" }
                                 td { class: "connection-state-column", "{peer.connection_state}" }
-                                td { class: "tx-bytes-column", "{peer.tx_bytes}" }
-                                td { class: "rx-bytes-column", "{peer.rx_bytes}" }
+                                td { class: "tx-bytes-column", "{human_bytes(peer.tx_bytes as f64)}" }
+                                td { class: "rx-bytes-column", "{human_bytes(peer.rx_bytes as f64)}" }
                             }
                         }
                     }

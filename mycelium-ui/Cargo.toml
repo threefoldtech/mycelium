@@ -24,3 +24,4 @@ dioxus-free-icons = { version = "0.8.6", features = [
   "font-awesome-brands",
   "font-awesome-regular",
 ] }
+human_bytes = { version = "0.4.3", features = ["fast"] }
