@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::FaChevronLeft;
 use dioxus_free_icons::Icon;
 use mycelium::peer_manager::PeerType;
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{cmp::Ordering, str::FromStr};
 use tracing::Level;
@@ -28,6 +29,12 @@ pub enum Route {
     #[end_layout]
     #[route("/:..route")]
     PageNotFound { route: Vec<String> },
+}
+
+#[derive(Clone, PartialEq)]
+struct SearchState {
+    query: String,
+    column: String,
 }
 
 fn main() {
@@ -105,7 +112,6 @@ fn Sidebar(collapsed: Signal<bool>) -> Element {
 
 #[component]
 fn Home() -> Element {
-    // let mut server_state = use_context::<Signal<ServerState>>();
     let mut server_state_addr = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
     let mut server_state_connected = use_signal(|| false);
     let mut new_address = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
@@ -134,7 +140,7 @@ fn Home() -> Element {
         }
     });
 
-    // Executed when we press the connect button
+    // Executed when connect button is clicked
     let try_connect = move |_| {
         let new_addr = new_address.read().to_string();
         server_state_addr.write().clone_from(&new_addr); // will trigger fetch_node_info
@@ -295,13 +301,59 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
         sorted
     });
 
+    // Searching
+    let mut search_state = use_signal(|| SearchState {
+        query: String::new(),
+        column: "Endpoint".to_string(),
+    });
+
+    let filtered_peers = use_memo(move || {
+        let query = search_state.read().query.to_lowercase();
+        let column = &search_state.read().column;
+        sorted_peers
+            .read()
+            .iter()
+            .filter(|peer| match column.as_str() {
+                "Endpoint" => peer.endpoint.to_string().to_lowercase().contains(&query),
+                "Type" => peer.pt.to_string().to_lowercase().contains(&query),
+                "Connection State" => peer
+                    .connection_state
+                    .to_string()
+                    .to_lowercase()
+                    .contains(&query),
+                "Tx bytes" => peer.tx_bytes.to_string().to_lowercase().contains(&query),
+                "Rx bytes" => peer.rx_bytes.to_string().to_lowercase().contains(&query),
+                _ => false,
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+
+    let peers_len = filtered_peers.read().len();
+
     let start = current_page * items_per_page;
     let end = (start + items_per_page).min(peers_len);
-    let current_peers = &sorted_peers.read()[start..end];
+    let current_peers = &filtered_peers.read()[start..end];
 
     rsx! {
         div { class: "peers-table",
             h2 { "Peers" }
+            div { class: "search-container",
+                input {
+                    placeholder: "Search...",
+                    value: "{search_state.read().query}",
+                    oninput: move |evt| search_state.write().query.clone_from(&evt.value()),
+                }
+                select {
+                    value: "{search_state.read().column}",
+                    onchange: move |evt| search_state.write().column.clone_from(&evt.value()),
+                    option { value: "Endpoint", "Endpoint" }
+                    option { value: "Type", "Type" }
+                    option { value: "Connection State", "Connection State" }
+                    option { value: "Tx bytes", "Tx bytes" }
+                    option { value: "Rx bytes", "Rx bytes" }
+                }
+            }
             div { class: "table-container",
                 table {
                     thead {

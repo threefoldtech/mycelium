@@ -283,3 +283,27 @@ h2 {
     color: #f39c12;
     margin-bottom: 1rem;
 }
+
+/* Searching */
+.search-container {
+  display: flex;
+  margin-bottom: 1rem;
+}
+
+.search-container input {
+  flex-grow: 1;
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px 0 0 4px;
+}
+
+.search-container select {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  background-color: white;
+}
+
