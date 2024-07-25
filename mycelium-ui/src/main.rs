@@ -504,13 +504,53 @@ fn RoutesTable(routes: Vec<mycelium_api::Route>, table_name: String) -> Element 
         sorted
     });
 
+    // Searching
+    let mut search_state = use_signal(|| SearchState {
+        query: String::new(),
+        column: "Subnet".to_string(),
+    });
+
+    let filtered_routes = use_memo(move || {
+        let query = search_state.read().query.to_lowercase();
+        let column = &search_state.read().column;
+        sorted_routes
+            .read()
+            .iter()
+            .filter(|route| match column.as_str() {
+                "Subnet" => route.subnet.to_string().to_lowercase().contains(&query),
+                "Next-hop" => route.next_hop.to_string().to_lowercase().contains(&query),
+                "Metric" => route.metric.to_string().to_lowercase().contains(&query),
+                "Seqno" => route.seqno.to_string().to_lowercase().contains(&query),
+                _ => false,
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+
+    let routes_len = filtered_routes.len();
+
     let start = current_page * items_per_page;
     let end = (start + items_per_page).min(routes_len);
-    let current_routes = &sorted_routes.read()[start..end];
+    let current_routes = &filtered_routes.read()[start..end];
 
     rsx! {
         div { class: "{table_name.to_lowercase()}-routes",
             h2 { "{table_name} Routes" }
+            div { class: "search-container",
+                input {
+                    placeholder: "Search...",
+                    value: "{search_state.read().query}",
+                    oninput: move |evt| search_state.write().query.clone_from(&evt.value()),
+                }
+                select {
+                    value: "{search_state.read().column}",
+                    onchange: move |evt| search_state.write().column.clone_from(&evt.value()),
+                    option { value: "Subnet", "Subnet" }
+                    option { value: "Next-hop", "Next-hop" }
+                    option { value: "Metric", "Metric" }
+                    option { value: "Seqno", "Seqno" }
+                }
+            }
             div { class: "table-container",
                 table {
                     thead {
