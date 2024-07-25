@@ -282,6 +282,7 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
         );
     };
 
+    // Sorting
     let mut sort_peers_signal = move |column: String| {
         if column == *sort_column.read() {
             let new_sort_direction = match *sort_direction.read() {
@@ -293,6 +294,8 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
             sort_column.set(column);
             sort_direction.set(SortDirection::Descending);
         }
+        // When sorting, we should jump back to the first page
+        current_page.set(0);
     };
 
     let sorted_peers = use_memo(move || {
@@ -496,6 +499,8 @@ fn RoutesTable(routes: Vec<mycelium_api::Route>, table_name: String) -> Element 
             sort_column.set(column);
             sort_direction.set(SortDirection::Ascending);
         }
+        // When sorting, we should jump back to the first page
+        current_page.set(0);
     };
 
     let sorted_routes = use_memo(move || {
