@@ -1,6 +1,6 @@
 use std::{
     net::{IpAddr, Ipv6Addr},
-    ops::Index,
+    ops::{Deref, DerefMut, Index},
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -85,8 +85,8 @@ impl RouteList {
     /// Returns an iterator over the `RouteList` yielding mutable access to the elements.
     ///
     /// The iterator yields all [`route entries`](RouteEntry) in the list.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut RouteEntry> {
-        self.list.iter_mut().map(|(_, re)| re)
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = RouteGuard> {
+        self.list.iter_mut().map(|item| RouteGuard { item })
     }
 
     /// Removes a [`RouteEntry`] from the `RouteList`.
@@ -130,6 +130,55 @@ impl RouteList {
             );
 
         self.list.push((abort_handle, re));
+    }
+}
+
+pub struct RouteGuard<'a> {
+    item: &'a mut (Arc<AbortHandle>, RouteEntry),
+}
+
+impl Deref for RouteGuard<'_> {
+    type Target = RouteEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.item.1
+    }
+}
+
+impl DerefMut for RouteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item.1
+    }
+}
+
+impl RouteGuard<'_> {
+    pub fn set_expires(
+        &mut self,
+        expires: tokio::time::Instant,
+        expired_route_entry_sink: mpsc::Sender<RouteKey>,
+        cancellation_token: CancellationToken,
+    ) {
+        let re = &mut self.item.1;
+        re.set_expires(expires);
+        let expiration = re.expires();
+        let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
+        let abort_handle = Arc::new(
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {}
+                        _ = tokio::time::sleep_until(expiration) => {
+                            debug!(route_key = %rk, "Expired route entry for route key");
+                            if let Err(e) =  expired_route_entry_sink.send(rk).await {
+                                error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
+                            }
+                        }
+                    }
+                })
+                .abort_handle(),
+            );
+
+        self.item.0.abort();
+        self.item.0 = abort_handle;
     }
 }
 
@@ -394,30 +443,6 @@ impl<'a> WriteGuard<'a> {
 
             res = op(v, &self.expired_route_entry_sink, &self.cancellation_token);
             delete = v.is_empty();
-
-            for (ab, re) in &mut v.list {
-                let expiration = re.expires();
-                let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
-                let cancellation_token = self.cancellation_token.clone();
-                let expired_route_entry_sink = self.expired_route_entry_sink.clone();
-                let abort_handle = Arc::new(
-                    tokio::spawn(async move {
-                        tokio::select! {
-                            _ = cancellation_token.cancelled() => {}
-                            _ = tokio::time::sleep_until(expiration) => {
-                                debug!(route_key = %rk, "Expired route entry for route key");
-                                if let Err(e) =  expired_route_entry_sink.send(rk).await {
-                                    error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
-                                }
-                            }
-                        }
-                    })
-                    .abort_handle(),
-                );
-
-                ab.abort();
-                *ab = abort_handle;
-            }
 
             new_val
         });

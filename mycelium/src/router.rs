@@ -311,8 +311,9 @@ where
             let mut subnets_to_select = Vec::new();
 
             while let Some((subnet, mut rl)) = rt_write.next() {
-                rl.update_routes(|routes| {
-                    let Some(re) = routes.iter_mut().find(|re| re.neighbour() == &dead_peer) else {
+                rl.update_routes(|routes, eres, ct| {
+                    let Some(mut re) = routes.iter_mut().find(|re| re.neighbour() == &dead_peer)
+                    else {
                         return;
                     };
 
@@ -321,7 +322,11 @@ where
 
                         // Don't clear selected flag yet, running route selection does that for us.
                         re.set_metric(Metric::infinite());
-                        re.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                        re.set_expires(
+                            tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME,
+                            eres.clone(),
+                            ct.clone(),
+                        );
                     } else {
                         routes.remove(&dead_peer);
                     }
@@ -418,8 +423,8 @@ where
                     continue;
                 };
                 let route_selection =
-                    routes.update_routes(|routes, _, _| {
-                        let Some(entry) = routes
+                    routes.update_routes(|routes, eres, ct| {
+                        let Some(mut entry) = routes
                             .iter_mut()
                             .find(|re| re.neighbour() == rk.neighbour())
                         else {
@@ -429,7 +434,7 @@ where
                     if entry.selected() {
                         debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Selected route expired, increasing metric to infinity");
                         entry.set_metric(Metric::infinite());
-                        entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                        entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME, eres.clone(), ct.clone());
                     } else {
                         debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Unselected route expired, removing fallback route");
                         routes.remove(rk.neighbour());
@@ -1039,7 +1044,7 @@ where
                 "Processing update packet",
             );
 
-            if let Some(existing_entry) = maybe_existing_entry {
+            if let Some(mut existing_entry) = maybe_existing_entry {
                 // Unfeasible updates to the selected route are not applied, but we do request a seqno
                 // bump.
                 if existing_entry.selected()
@@ -1068,8 +1073,11 @@ where
                 // Only reset the timer if the update is feasible, this will allow unfeasible updates
                 // to be flushed out naturally. Note that a retraction is always feasbile.
                 if update_feasible {
-                    existing_entry
-                        .set_expires(tokio::time::Instant::now() + route_hold_time(&update));
+                    existing_entry.set_expires(
+                        tokio::time::Instant::now() + route_hold_time(&update),
+                        eres.clone(),
+                        ct.clone(),
+                    );
                 }
 
                 // If the route is not selected, and the update is unfeasible, the route will not be
