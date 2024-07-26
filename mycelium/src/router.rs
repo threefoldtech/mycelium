@@ -17,6 +17,7 @@ use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
     Icmpv6Type,
 };
+use futures::StreamExt;
 use std::{
     error::Error,
     net::IpAddr,
@@ -571,20 +572,36 @@ where
 
     /// Background task to process Update TLV's.
     async fn update_processor(self, mut update_rx: UnboundedReceiver<(Update, Peer)>) {
-        while let Some((update, source_peer)) = update_rx.recv().await {
-            let start = std::time::Instant::now();
+        let (worker_tx, worker_rx) = flume::bounded::<(Update, Peer)>(0);
+        for _ in 0..5 {
+            let router = self.clone();
+            let mut update_rx = worker_rx.clone().into_stream();
+            tokio::task::spawn(async move {
+                while let Some((update, source_peer)) = update_rx.next().await {
+                    let start = std::time::Instant::now();
 
-            if !source_peer.alive() {
-                trace!("Dropping Update TLV since sender is dead.");
-                self.metrics.router_tlv_source_died();
-                continue;
-            }
+                    if !source_peer.alive() {
+                        trace!("Dropping Update TLV since sender is dead.");
+                        router.metrics.router_tlv_source_died();
+                        continue;
+                    }
 
-            self.handle_incoming_update(update, source_peer);
+                    router.handle_incoming_update(update, source_peer);
 
-            self.metrics
-                .router_time_spent_handling_tlv(start.elapsed(), "update");
+                    router
+                        .metrics
+                        .router_time_spent_handling_tlv(start.elapsed(), "update");
+                }
+                warn!("Update processor task exitted");
+            });
         }
+
+        while let Some(item) = update_rx.recv().await {
+            if worker_tx.send_async(item).await.is_err() {
+                break;
+            };
+        }
+        warn!("Update processor coordinator exitted");
     }
 
     /// Background task to process Route Request TLV's.
