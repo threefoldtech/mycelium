@@ -100,7 +100,7 @@ impl RouteEntry {
     }
 
     /// Sets the expiration time for this [`RouteEntry`].
-    pub fn set_expires(&mut self, expires: Instant) {
+    pub(super) fn set_expires(&mut self, expires: Instant) {
         self.expires = expires;
     }
 }

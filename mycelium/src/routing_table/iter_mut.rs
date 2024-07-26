@@ -1,7 +1,7 @@
 use arc_swap::ArcSwap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, trace};
+use tracing::trace;
 
 use crate::subnet::Subnet;
 
@@ -79,38 +79,17 @@ pub struct RoutingTableIterMutEntry<'a, 'b> {
 }
 
 impl<'a, 'b> RoutingTableIterMutEntry<'a, 'b> {
-    pub fn update_routes<F: FnMut(&mut RouteList)>(&mut self, mut op: F) {
+    pub fn update_routes<F: FnMut(&mut RouteList, &mpsc::Sender<RouteKey>, &CancellationToken)>(
+        &mut self,
+        mut op: F,
+    ) {
         let mut delete = false;
         self.store.rcu(|rl| {
             let mut new_val = rl.clone();
             let v = Arc::make_mut(&mut new_val);
 
-            op(v);
+            op(v, &self.expired_route_entry_sink, &self.cancellation_token);
             delete = v.is_empty();
-
-            for (ab, re) in &mut v.list {
-                let expiration = re.expires();
-                let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
-                let cancellation_token = self.cancellation_token.clone();
-                let expired_route_entry_sink = self.expired_route_entry_sink.clone();
-                let abort_handle = Arc::new(
-                    tokio::spawn(async move {
-                        tokio::select! {
-                            _ = cancellation_token.cancelled() => {}
-                            _ = tokio::time::sleep_until(expiration) => {
-                                debug!(route_key = %rk, "Expired route entry for route key");
-                                if let Err(e) =  expired_route_entry_sink.send(rk).await {
-                                    error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
-                                }
-                            }
-                        }
-                    })
-                    .abort_handle(),
-                );
-
-                ab.abort();
-                *ab = abort_handle;
-            }
 
             new_val
         });
