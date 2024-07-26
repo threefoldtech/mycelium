@@ -250,8 +250,7 @@ where
         self.routing_table
             .read()
             .iter()
-            .filter_map(|(_, rl)| rl.selected())
-            .cloned()
+            .filter_map(|(_, rl)| rl.selected().cloned())
             .collect()
     }
 
@@ -260,9 +259,8 @@ where
         self.routing_table
             .read()
             .iter()
-            .flat_map(|(_, rl)| rl.iter())
+            .flat_map(|(_, rl)| rl.iter().cloned().collect::<Vec<_>>())
             .filter(|re| !re.selected())
-            .cloned()
             .collect()
     }
 
@@ -312,21 +310,21 @@ where
             let mut subnets_to_select = Vec::new();
 
             while let Some((subnet, mut rl)) = rt_write.next() {
-                let entry = rl.entry_mut(&dead_peer);
-                if entry.is_none() {
-                    continue;
-                }
-                let mut re = entry.unwrap();
+                rl.update_routes(|routes| {
+                    let Some(re) = routes.iter_mut().find(|re| re.neighbour() == &dead_peer) else {
+                        return;
+                    };
 
-                if re.selected() {
-                    subnets_to_select.push(subnet);
+                    if re.selected() {
+                        subnets_to_select.push(subnet);
 
-                    // Don't clear selected flag yet, running route selection does that for us.
-                    re.set_metric(Metric::infinite());
-                    re.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
-                } else {
-                    re.delete();
-                }
+                        // Don't clear selected flag yet, running route selection does that for us.
+                        re.set_metric(Metric::infinite());
+                        re.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
+                    } else {
+                        routes.remove(&dead_peer);
+                    }
+                });
             }
 
             self.remove_peer_interface(&dead_peer);
@@ -354,8 +352,9 @@ where
 
         // If there is no selected route there is nothing to do here. We keep expired routes in the
         // table for a while so updates of those should already have propagated to peers.
-        if let Some(new_selected) = self.find_best_route(&routes).cloned() {
-            if new_selected.neighbour() == routes[0].neighbour() && routes[0].selected() {
+        let route_list = routes.routes();
+        if let Some(new_selected) = self.find_best_route(&route_list).cloned() {
+            if new_selected.neighbour() == route_list[0].neighbour() && route_list[0].selected() {
                 debug!(
                     "New selected route for {subnet} is the same as the route alreayd installed"
                 );
@@ -363,21 +362,21 @@ where
             }
 
             if new_selected.metric().is_infinite()
-                && routes[0].metric().is_infinite()
-                && routes[0].selected()
+                && route_list[0].metric().is_infinite()
+                && route_list[0].selected()
             {
                 debug!("New selected route for {subnet} is retracted, like the previously selected route");
                 return;
             }
 
             routes.set_selected(new_selected.neighbour());
-        } else if routes[0].selected() {
+        } else if route_list[0].selected() {
             // This means we went from a selected route to a non-selected route. Unselect route and
             // trigger update.
             // At this point we also send a seqno request to all peers which advertised this route
             // to us, to try and get an updated entry. This uses the source key of the unselected
             // entry.
-            self.send_seqno_request(routes[0].source(), None, None);
+            self.send_seqno_request(route_list[0].source(), None, None);
             routes.unselect();
         }
 
@@ -417,27 +416,34 @@ where
                     warn!(%subnet, "Route key expired for unknown subnet");
                     continue;
                 };
-                // Bit of weird scoping for the mutable reference to entries.
-                {
-                    let entry = routes.entry_mut(rk.neighbour());
-                    if entry.is_none() {
-                        continue;
-                    }
-                    let mut entry = entry.unwrap();
-                    self.metrics.router_route_key_expired(!entry.selected());
+                let route_selection =
+                    routes.update_routes(|routes, _, _| {
+                        let Some(entry) = routes
+                            .iter_mut()
+                            .find(|re| re.neighbour() == rk.neighbour())
+                        else {
+                            return false;
+                        };
+                        self.metrics.router_route_key_expired(!entry.selected());
                     if entry.selected() {
                         debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Selected route expired, increasing metric to infinity");
                         entry.set_metric(Metric::infinite());
                         entry.set_expires(tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME);
                     } else {
                         debug!(%subnet, peer = rk.neighbour().connection_identifier(), "Unselected route expired, removing fallback route");
-                        entry.delete();
+                        routes.remove(rk.neighbour());
                         // Removing a fallback route does not require any further changes. It does
                         // not affect the selected route and by extension does not require a
                         // triggered udpate.
-                        continue;
+                        return false;
                     }
-                };
+                        true
+
+                    });
+
+                if !route_selection {
+                    continue;
+                }
 
                 // Re run route selection if this was the selected route. We should do this before
                 // publishing to potentially select a new route, however a time based expiraton of a
@@ -447,7 +453,7 @@ where
                 // Only inject selected route if we are simply retracting it, otherwise it is
                 // actually already removed.
                 debug!("Rerun route selection after expiration event");
-                if let Some(r) = self.find_best_route(&routes).cloned() {
+                if let Some(r) = self.find_best_route(&routes.routes()).cloned() {
                     routes.set_selected(r.neighbour());
                 } else {
                     debug!("Route selection did not find a viable route, unselect existing routes");
@@ -997,91 +1003,104 @@ where
             }
         };
 
-        // Take a deep copy of the old selected route if there is one, deep copy since we will
-        // potentially mutate the route list so we can't keep a reference to it.
-        let old_selected_route = routing_table_entries.selected().cloned();
+        let mut old_selected_route = None;
+        let route_selection = routing_table_entries.update_routes(|routes, eres, ct| {
+            // Take a deep copy of the old selected route if there is one, deep copy since we will
+            // potentially mutate the route list so we can't keep a reference to it.
+            old_selected_route = routes.selected().cloned();
 
-        let maybe_existing_entry = routing_table_entries.entry_mut(&source_peer);
+            let maybe_existing_entry = routes.iter_mut().find(|re| re.neighbour() == &source_peer);
 
-        debug!(
-            subnet = %subnet,
-            metric = %metric,
-            seqno = %seqno,
-            router_id = %router_id,
-            entry_exists = maybe_existing_entry.is_some(),
-            update_feasible = update_feasible,
-            peer = source_peer.connection_identifier(),
-            "Processing update packet",
-        );
+            debug!(
+                subnet = %subnet,
+                metric = %metric,
+                seqno = %seqno,
+                router_id = %router_id,
+                entry_exists = maybe_existing_entry.is_some(),
+                update_feasible = update_feasible,
+                peer = source_peer.connection_identifier(),
+                "Processing update packet",
+            );
 
-        // Track if we unselected the current existing route. This is required to avoid an issue
-        // where we try to unselect the selected route twice if it is lost.
-        let mut existing_route_unselected = false;
+            if let Some(existing_entry) = maybe_existing_entry {
+                // Unfeasible updates to the selected route are not applied, but we do request a seqno
+                // bump.
+                if existing_entry.selected()
+                    && !update_feasible
+                    && existing_entry.source().router_id() == router_id
+                {
+                    self.send_seqno_request(
+                        existing_entry.source(),
+                        Some(source_peer.clone()),
+                        None,
+                    );
+                    return false;
+                }
 
-        if maybe_existing_entry.is_some() {
-            let mut existing_entry = maybe_existing_entry.unwrap();
-            // Unfeasible updates to the selected route are not applied, but we do request a seqno
-            // bump.
-            if existing_entry.selected()
-                && !update_feasible
-                && existing_entry.source().router_id() == router_id
-            {
-                self.send_seqno_request(existing_entry.source(), Some(source_peer), None);
-                return;
+                // Otherwise we just update the entry.
+                if existing_entry.metric().is_infinite() && update.metric().is_infinite() {
+                    // Retraction for retracted route, don't do anything. If we don't filter this
+                    // retracted routes can stay stuck if peer keep sending retractions to eachother
+                    // for this route.
+                    return false;
+                }
+                existing_entry.set_seqno(seqno);
+                existing_entry.set_metric(metric);
+                existing_entry.set_router_id(router_id);
+
+                // Only reset the timer if the update is feasible, this will allow unfeasible updates
+                // to be flushed out naturally. Note that a retraction is always feasbile.
+                if update_feasible {
+                    existing_entry
+                        .set_expires(tokio::time::Instant::now() + route_hold_time(&update));
+                }
+
+                // If the route is not selected, and the update is unfeasible, the route will not be
+                // selected by a subsequent route selection, so we can skip it and avoid wasting time
+                // here.
+                if !existing_entry.selected() && !update_feasible {
+                    trace!("Ignoring route selection for unfeasible update to unselected route");
+                    return false;
+                }
+
+                // If the update is unfeasible the route must be unselected.
+                if existing_entry.selected() && !update_feasible {
+                    existing_entry.set_selected(false);
+                }
+            } else {
+                // If there is no entry yet ignore unfeasible updates and retractions.
+                if metric.is_infinite() || !update_feasible {
+                    debug!("Received unfeasible update | retraction for unknown route - neighbour");
+                    return false;
+                }
+
+                // Create new entry in the route table
+                routes.insert(
+                    RouteEntry::new(
+                        SourceKey::new(subnet, router_id),
+                        source_peer.clone(),
+                        metric,
+                        seqno,
+                        false,
+                        tokio::time::Instant::now() + route_hold_time(&update),
+                    ),
+                    eres.clone(),
+                    ct.clone(),
+                );
             }
 
-            // Otherwise we just update the entry.
-            if existing_entry.metric().is_infinite() && update.metric().is_infinite() {
-                // Retraction for retracted route, don't do anything. If we don't filter this
-                // retracted routes can stay stuck if peer keep sending retractions to eachother
-                // for this route.
-                return;
-            }
-            existing_entry.set_seqno(seqno);
-            existing_entry.set_metric(metric);
-            existing_entry.set_router_id(router_id);
+            true
+        });
 
-            // Only reset the timer if the update is feasible, this will allow unfeasible updates
-            // to be flushed out naturally. Note that a retraction is always feasbile.
-            if update_feasible {
-                existing_entry.set_expires(tokio::time::Instant::now() + route_hold_time(&update));
-            }
-
-            // If the route is not selected, and the update is unfeasible, the route will not be
-            // selected by a subsequent route selection, so we can skip it and avoid wasting time
-            // here.
-            if !existing_entry.selected() && !update_feasible {
-                trace!("Ignoring route selection for unfeasible update to unselected route");
-                self.metrics.router_update_skipped_route_selection();
-                return;
-            }
-
-            // If the update is unfeasible the route must be unselected.
-            if existing_entry.selected() && !update_feasible {
-                existing_route_unselected = true;
-                existing_entry.set_selected(false);
-            }
-        } else {
-            // If there is no entry yet ignore unfeasible updates and retractions.
-            if metric.is_infinite() || !update_feasible {
-                debug!("Received unfeasible update | retraction for unknown route - neighbour");
-                self.metrics.router_update_skipped_route_selection();
-                return;
-            }
-
-            // Create new entry in the route table
-            maybe_existing_entry.or_insert(RouteEntry::new(
-                SourceKey::new(subnet, router_id),
-                source_peer.clone(),
-                metric,
-                seqno,
-                false,
-                tokio::time::Instant::now() + route_hold_time(&update),
-            ));
+        if !route_selection {
+            self.metrics.router_update_skipped_route_selection();
+            return;
         }
 
         // Now that we applied the update, run route selection.
-        let new_selected_route = self.find_best_route(&routing_table_entries).cloned();
+        let new_selected_route = self
+            .find_best_route(&routing_table_entries.routes())
+            .cloned();
         if let Some(ref nbr) = new_selected_route {
             // Install this route in the routing table.
             routing_table_entries.set_selected(nbr.neighbour());
@@ -1096,9 +1115,7 @@ where
             // neigbours who advertised the route at some point.
             self.send_seqno_request(osr.source(), None, None);
 
-            if !existing_route_unselected {
-                routing_table_entries.unselect();
-            }
+            routing_table_entries.unselect();
         };
 
         // Drop these here so the update gets reflected in the routing table, which is needed for a
@@ -1428,11 +1445,13 @@ where
 
             let start = Instant::now();
 
-            for (subnet, sre) in self
-                .routing_table
-                .read()
-                .iter()
-                .filter_map(|(subnet, route_list)| route_list.selected().map(|sr| (subnet, sr)))
+            for (subnet, sre) in
+                self.routing_table
+                    .read()
+                    .iter()
+                    .filter_map(|(subnet, route_list)| {
+                        route_list.selected().map(|sr| (subnet, sr.clone()))
+                    })
             {
                 let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
 
@@ -1442,7 +1461,7 @@ where
                 let router_id = sre.source().router_id();
 
                 let update = babel::Update::new(
-                    advertised_update_interval(sre),
+                    advertised_update_interval(&sre),
                     seqno,
                     metric,
                     subnet,
@@ -1646,7 +1665,7 @@ where
             .routing_table
             .read()
             .iter()
-            .filter_map(|(subnet, route_list)| route_list.selected().map(|sr| (subnet, sr)))
+            .filter_map(|(subnet, route_list)| route_list.selected().map(|sr| (subnet, sr.clone())))
         {
             let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
             // Don't send updates for a route to the next hop of the route, as that peer will never
@@ -1656,7 +1675,7 @@ where
                 continue;
             }
             let update = babel::Update::new(
-                advertised_update_interval(sre),
+                advertised_update_interval(&sre),
                 sre.seqno(),
                 // the cost of the route is the cost of the route + the cost of the link to the next-hop
                 sre.metric() + neigh_link_cost,
