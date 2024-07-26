@@ -1,9 +1,10 @@
 use std::{
     net::{IpAddr, Ipv6Addr},
-    ops::{Deref, DerefMut, Index},
+    ops::Index,
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use arc_swap::ArcSwap;
 use ip_network_table_deps_treebitmap::IpLookupTable;
 use tokio::{sync::mpsc, task::AbortHandle};
 use tokio_util::sync::CancellationToken;
@@ -33,7 +34,7 @@ pub struct RoutingTable {
 
 #[derive(Default)]
 struct RoutingTableInner {
-    table: IpLookupTable<Ipv6Addr, Arc<RouteList>>,
+    table: IpLookupTable<Ipv6Addr, Arc<ArcSwap<RouteList>>>,
 }
 
 /// The RouteList holds all routes for a specific subnet.
@@ -81,29 +82,54 @@ impl RouteList {
         RouteListIter::new(self)
     }
 
-    /// Selects the [`RouteEntry`] which matches the [`RouteKey`] for the associated subnet.
+    /// Returns an iterator over the `RouteList` yielding mutable access to the elements.
     ///
-    /// If a selected route already exists, it is unselected automatically.
-    pub fn set_selected(&mut self, neighbour: &Peer) {
+    /// The iterator yields all [`route entries`](RouteEntry) in the list.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut RouteEntry> {
+        self.list.iter_mut().map(|(_, re)| re)
+    }
+
+    /// Removes a [`RouteEntry`] from the `RouteList`.
+    ///
+    /// This does nothing if the neighbour does not exist.
+    pub fn remove(&mut self, neighbour: &Peer) {
         let Some(pos) = self
             .list
             .iter()
             .position(|re| re.1.neighbour() == neighbour)
         else {
-            error!(
-                neighbour = neighbour.connection_identifier(),
-                "Failed to select route entry with given route key, no such entry"
-            );
             return;
         };
 
-        // We don't need a check for an empty list here, since we found a selected route there
-        // _MUST_ be at least 1 entry.
-        // Set the first element to unselected, then select the proper element so this also works
-        // in case the existing route is "reselected".
-        self.list[0].1.set_selected(false);
-        self.list[pos].1.set_selected(true);
-        self.list.swap(0, pos);
+        let old = self.list.swap_remove(pos);
+        old.0.abort();
+    }
+
+    /// Insert a new [`RouteEntry`] in the `RouteList`.
+    pub fn insert(
+        &mut self,
+        re: RouteEntry,
+        expired_route_entry_sink: mpsc::Sender<RouteKey>,
+        cancellation_token: CancellationToken,
+    ) {
+        let expiration = re.expires();
+        let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
+        let abort_handle = Arc::new(
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {}
+                        _ = tokio::time::sleep_until(expiration) => {
+                            debug!(route_key = %rk, "Expired route entry for route key");
+                            if let Err(e) =  expired_route_entry_sink.send(rk).await {
+                                error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
+                            }
+                        }
+                    }
+                })
+                .abort_handle(),
+            );
+
+        self.list.push((abort_handle, re));
     }
 }
 
@@ -136,169 +162,14 @@ impl<'a> Iterator for RouteListIter<'a> {
     }
 }
 
-/// A guard which allows write access to a single [`RouteEntry`].
-#[repr(C)] // This is needed since we transmute between instances with different markers.
-pub struct RouteEntryGuard<'a, 'b, O> {
-    write_guard: &'b mut WriteGuard<'a>,
-    /// A way to identify the actual [`RouteEntry`].
-    entry_identifier: EntryIdentifier,
-    /// Keep track whether we need to delete this entry or not.
-    delete: bool,
-    _marker: std::marker::PhantomData<O>,
-}
-
-/// Marker to allow [`RouteEntryGuard::or_insert`] to be called once.
-pub struct PossiblyEmpty;
-/// Maker to clearify [`RouteEntryGuard::or_insert`] has been called, and we can always deref the
-/// pointer.
-pub struct Occupied;
-
-/// Specified how the entry we want from the list can be found.
-enum EntryIdentifier {
-    /// The given entry exists in the RouteList at the specified position.
-    Pos(usize),
-    /// A new Route Entry has been inserted which is not part of the RouteList yet.
-    New(RouteEntry),
-    /// No entry is found in the list, and we haven't been given one either.
-    None,
-}
-
-impl<'a, 'b, O> RouteEntryGuard<'a, 'b, O> {
-    /// Mark the [`RouteEntry`] contained in this `RouteEntryGuard` to be deleted.
-    pub fn delete(mut self) {
-        self.delete = true
-    }
-}
-
-impl<'a, 'b> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
-    /// Inserts the given [`RouteEntry`] if it does not exist yet. If an entry already exists, this
-    /// does nothing.
-    pub fn or_insert(mut self, re: RouteEntry) -> RouteEntryGuard<'a, 'b, Occupied> {
-        if matches!(self.entry_identifier, EntryIdentifier::None) {
-            self.entry_identifier = EntryIdentifier::New(re)
-        };
-
-        // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
-        unsafe { std::mem::transmute::<Self, RouteEntryGuard<'a, 'b, Occupied>>(self) }
-    }
-
-    /// Returns `true` if the `RouteEntryGuard` does not point to an existing value, or is not a
-    /// new value.
-    pub fn is_none(&self) -> bool {
-        matches!(self.entry_identifier, EntryIdentifier::None)
-    }
-
-    /// Returns `true` if the `RouteEntryGuard` points to either an existing value, or contains a
-    /// new value to be inserted.
-    pub fn is_some(&self) -> bool {
-        matches!(
-            self.entry_identifier,
-            EntryIdentifier::Pos(_) | EntryIdentifier::New(_)
-        )
-    }
-
-    /// Convert this `RouteEntryGuard` to an `Occupied` variant, panicking if the contained entry
-    /// is none.
-    pub fn unwrap(self) -> RouteEntryGuard<'a, 'b, Occupied> {
-        assert!(
-            !matches!(self.entry_identifier, EntryIdentifier::None),
-            "Called RouteEntryGuard::unwrap on an emtpy entry guard"
-        );
-
-        // SAFETY: Transmuting to the same struct with a different marker, on a repr(C) struct.
-        unsafe { std::mem::transmute::<Self, RouteEntryGuard<'a, 'b, Occupied>>(self) }
-    }
-}
-
-impl Deref for RouteEntryGuard<'_, '_, Occupied> {
-    type Target = RouteEntry;
-
-    fn deref(&self) -> &Self::Target {
-        match self.entry_identifier {
-            EntryIdentifier::Pos(pos) => &self.write_guard.list[pos].1,
-            EntryIdentifier::New(ref re) => re,
-            EntryIdentifier::None => {
-                unreachable!()
-            }
-        }
-    }
-}
-
-impl DerefMut for RouteEntryGuard<'_, '_, Occupied> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self.entry_identifier {
-            EntryIdentifier::Pos(pos) => &mut self.write_guard.list[pos].1,
-            EntryIdentifier::New(ref mut re) => re,
-            EntryIdentifier::None => {
-                unreachable!()
-            }
-        }
-    }
-}
-
-impl<O> Drop for RouteEntryGuard<'_, '_, O> {
-    fn drop(&mut self) {
-        if self.delete {
-            // If we refer to an existing entry, cancel the hold timer
-            if let EntryIdentifier::Pos(idx) = self.entry_identifier {
-                // Important: swap remove reorders the vector, but this is not an issue as it moves
-                // the _last_ element, and we only need the first element to be stable.
-                let old = self.write_guard.list.swap_remove(idx);
-                old.0.abort();
-            }
-            return;
-        }
-
-        let expired_route_entry_sink = self.write_guard.expired_route_entry_sink.clone();
-        let cancellation_token = self.write_guard.cancellation_token.clone();
-
-        let spawn_timer = |re: &RouteEntry| {
-            let expiration = re.expires();
-            let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
-            Arc::new(
-                tokio::spawn(async move {
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {}
-                        _ = tokio::time::sleep_until(expiration) => {
-                            debug!(route_key = %rk, "Expired route entry for route key");
-                            if let Err(e) =  expired_route_entry_sink.send(rk).await {
-                                error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
-                            }
-                        }
-                    }
-                })
-                .abort_handle(),
-            )
-        };
-
-        let value = std::mem::replace(&mut self.entry_identifier, EntryIdentifier::None);
-        match value {
-            EntryIdentifier::Pos(pos) => {
-                let v = &mut self.write_guard.list[pos];
-                let handle = spawn_timer(&v.1);
-                v.0.abort();
-                v.0 = handle;
-            }
-            EntryIdentifier::New(re) => {
-                let handle = spawn_timer(&re);
-                self.write_guard.list.push((handle, re));
-            }
-            EntryIdentifier::None => {}
-        }
-
-        // TODO: manage route entry based on selected flag
-    }
-}
-
 /// Hold an exclusive write lock over the routing table. While this item is in scope, no other
 /// calls can get a mutable refernce to the content of a routing table. Once this guard goes out of
 /// scope, changes to the contained RouteList will be applied.
 pub struct WriteGuard<'a> {
-    writer: MutexGuard<'a, left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>,
+    routing_table: &'a RoutingTable,
     /// Owned copy of the RouteList, this is populated once mutable access the the RouteList has
     /// been requested.
-    value: Arc<RouteList>,
-    owned: bool,
+    value: Arc<ArcSwap<RouteList>>,
     /// Did the RouteList exist initially?
     exists: bool,
     /// The subnet we are writing to.
@@ -340,8 +211,7 @@ impl RoutingTable {
             .expect("Write handle is saved on the router so it is not dropped yet.")
             .table
             .longest_match(ip)
-            .map(|(_, _, rl)| rl)
-            .cloned()
+            .map(|(_, _, rl)| rl.load_full())
     }
 
     /// Get a list of all routes for the given subnet. Changes to the RoutingTable after this
@@ -359,7 +229,7 @@ impl RoutingTable {
             .expect("Write handle is saved on the router so it is not dropped yet.")
             .table
             .exact_match(subnet_ip, subnet.prefix_len().into())
-            .cloned()
+            .map(|rl| rl.load_full())
     }
 
     /// Gets continued read access to the `RoutingTable`. While the returned
@@ -397,19 +267,18 @@ impl RoutingTable {
             panic!("IP v4 addresses are not supported")
         };
 
-        let writer = self.writer.lock().unwrap();
-        let value = writer
+        let value = self
+            .reader
             .enter()
-            .expect("Enter through write handle is always valid")
+            .expect("Write handle is saved next to read handle so this is always Some; qed")
             .table
             .exact_match(subnet_address, subnet.prefix_len().into())?
             .clone();
 
         Some(WriteGuard {
-            writer,
+            routing_table: self,
             // If we didn't find a route list in the route table we create a new empty list,
             // therefore we immediately own it.
-            owned: false,
             value,
             exists: true,
             subnet,
@@ -426,13 +295,11 @@ impl RoutingTable {
             panic!("IP v4 addresses are not supported")
         };
 
-        let writer = self.writer.lock().unwrap();
-        let value = Arc::new(RouteList::new(shared_secret));
+        let value = Arc::new(Arc::new(RouteList::new(shared_secret)).into());
 
         WriteGuard {
-            writer,
+            routing_table: self,
             value,
-            owned: true,
             exists: false,
             subnet,
             expired_route_entry_sink: self.expired_route_entry_sink.clone(),
@@ -455,6 +322,7 @@ impl RoutingTable {
             .table
             .longest_match(ip)
             .and_then(|(_, _, rl)| {
+                let rl = rl.load();
                 if !rl[0].selected() {
                     None
                 } else {
@@ -503,104 +371,149 @@ impl<'a> RoutingTableReadGuard<'a> {
 }
 
 impl<'a> WriteGuard<'a> {
-    /// Get [`RouteEntryGuard`] containing a [`RouteEntry`] for the given [`RouteKey`].
-    pub fn entry_mut<'b>(&'b mut self, neighbour: &Peer) -> RouteEntryGuard<'a, 'b, PossiblyEmpty> {
-        let entry_identifier = if let Some(pos) = self
-            .list
-            .iter_mut()
-            .map(|(_, e)| e)
-            .position(|entry| entry.neighbour() == neighbour)
-        {
-            EntryIdentifier::Pos(pos)
-        } else {
-            EntryIdentifier::None
-        };
-
-        RouteEntryGuard {
-            write_guard: self,
-            delete: false,
-            entry_identifier,
-            _marker: std::marker::PhantomData,
-        }
+    /// Loads the current [`RouteList`].
+    #[inline]
+    pub fn routes(&self) -> Arc<RouteList> {
+        self.value.load_full()
     }
 
-    /// Ensures no [`route`] is selected for this [`Subnet`]. If no [`route`] was selected, this
-    /// does nothing.
+    /// Get mutable access to the [`RouteList`]. This will update the [`RouteList`] in place
+    /// without locking the [`RoutingTable`].
+    // TODO: Proper abstractions
+    pub fn update_routes<
+        F: FnMut(&mut RouteList, &mpsc::Sender<RouteKey>, &CancellationToken) -> bool,
+    >(
+        &mut self,
+        mut op: F,
+    ) -> bool {
+        let mut res = false;
+        let mut delete = false;
+        self.value.rcu(|rl| {
+            let mut new_val = rl.clone();
+            let v = Arc::make_mut(&mut new_val);
+
+            res = op(v, &self.expired_route_entry_sink, &self.cancellation_token);
+            delete = v.is_empty();
+
+            for (ab, re) in &mut v.list {
+                let expiration = re.expires();
+                let rk = RouteKey::new(re.source().subnet(), re.neighbour().clone());
+                let cancellation_token = self.cancellation_token.clone();
+                let expired_route_entry_sink = self.expired_route_entry_sink.clone();
+                let abort_handle = Arc::new(
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = cancellation_token.cancelled() => {}
+                            _ = tokio::time::sleep_until(expiration) => {
+                                debug!(route_key = %rk, "Expired route entry for route key");
+                                if let Err(e) =  expired_route_entry_sink.send(rk).await {
+                                    error!(route_key = %e.0, "Failed to send expired route key on cleanup channel");
+                                }
+                            }
+                        }
+                    })
+                    .abort_handle(),
+                );
+
+                ab.abort();
+                *ab = abort_handle;
+            }
+
+            new_val
+        });
+
+        if delete && self.exists {
+            trace!(subnet = %self.subnet, "Deleting subnet which became empty after updating");
+            let mut writer = self.routing_table.writer.lock().unwrap();
+
+            writer.append(RoutingTableOplogEntry::Delete(self.subnet));
+            writer.publish();
+        }
+
+        res
+    }
+
+    /// Set the [`RouteEntry`] with the given [`neighbour`](Peer) as the selected route.
+    pub fn set_selected(&mut self, neighbour: &Peer) {
+        self.value.rcu(|routes| {
+            let mut new_routes = routes.clone();
+            let routes = Arc::make_mut(&mut new_routes);
+            let Some(pos) = routes
+                .list
+                .iter()
+                .position(|re| re.1.neighbour() == neighbour)
+            else {
+                error!(
+                    neighbour = neighbour.connection_identifier(),
+                    "Failed to select route entry with given route key, no such entry"
+                );
+                return new_routes;
+            };
+
+            // We don't need a check for an empty list here, since we found a selected route there
+            // _MUST_ be at least 1 entry.
+            // Set the first element to unselected, then select the proper element so this also works
+            // in case the existing route is "reselected".
+            routes.list[0].1.set_selected(false);
+            routes.list[pos].1.set_selected(true);
+            routes.list.swap(0, pos);
+
+            new_routes
+        });
+    }
+
+    /// Unconditionally unselects the selected route, if one is present.
     ///
-    /// [`route`]: RouteEntry
+    /// In case no route is selected, this is a no-op.
     pub fn unselect(&mut self) {
-        if let Some((_, entry)) = self.list.get_mut(0) {
-            entry.set_selected(false);
-        }
-    }
-}
+        self.value.rcu(|v| {
+            let mut new_val = v.clone();
+            let new_ref = Arc::make_mut(&mut new_val);
 
-impl Deref for WriteGuard<'_> {
-    type Target = RouteList;
+            if let Some(e) = new_ref.list.get_mut(0) {
+                e.1.set_selected(false);
+            }
 
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl DerefMut for WriteGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.owned = true;
-        Arc::make_mut(&mut self.value)
+            new_val
+        });
     }
 }
 
 impl Drop for WriteGuard<'_> {
     fn drop(&mut self) {
-        // If owned is false, we never got a mutable reference, and the existing value is a
-        // reference to the already existing value in the route table. So we don't have to do
-        // anything here.
-        if !self.owned {
-            return;
-        }
-
         // FIXME: try to get rid of clones on the Arc here
+        let value = self.value.load();
         match self.exists {
             // The route list did not exist, and now it is not empty, so an entry was added. We
             // need to add the route list to the routing table.
-            false if !self.value.is_empty() => {
+            false if !value.is_empty() => {
                 trace!(subnet = %self.subnet, "Inserting new route list for subnet");
-                self.writer.append(RoutingTableOplogEntry::Upsert(
+                let mut writer = self.routing_table.writer.lock().unwrap();
+                writer.append(RoutingTableOplogEntry::Upsert(
                     self.subnet,
                     Arc::clone(&self.value),
                 ));
+                writer.publish();
             }
             // There was an existing route list which is now empty, so the entry for this subnet
             // needs to be deleted in the routing table.
-            true if self.value.is_empty() => {
+            true if value.is_empty() => {
                 trace!(subnet = %self.subnet, "Removing route list for subnet");
-                self.writer
-                    .append(RoutingTableOplogEntry::Delete(self.subnet));
+                let mut writer = self.routing_table.writer.lock().unwrap();
+                writer.append(RoutingTableOplogEntry::Delete(self.subnet));
+                writer.publish();
             }
-            // The value already existed, and was mutably accessed, so it was dissociated. Update
-            // the routing table to point to the new value.
-            true => {
-                trace!(subnet = %self.subnet, "Updating route list for subnet");
-                self.writer.append(RoutingTableOplogEntry::Upsert(
-                    self.subnet,
-                    Arc::clone(&self.value),
-                ));
-            }
-            // The value did not exist and is still empty, so nothing was added. Nothing to do
-            // here.
-            false => {
-                trace!(subnet = %self.subnet, "Unknown subnet had no routes and still doesn't have any");
-            }
+            // Nothing to do in these cases. Either no value was inserted in a non existing
+            // routelist, or an existing one was updated in place.
+            _ => {}
         }
-
-        self.writer.publish();
     }
 }
 
 /// Operations allowed on the left_right for the routing table.
 enum RoutingTableOplogEntry {
     /// Insert or Update the value for the given subnet.
-    Upsert(Subnet, Arc<RouteList>),
+    Upsert(Subnet, Arc<ArcSwap<RouteList>>),
     /// Delete the entry for the given subnet.
     Delete(Subnet),
 }
