@@ -261,7 +261,13 @@ fn sort_peers(
 ) {
     peers.sort_by(|a, b| {
         let cmp = match column {
-            "Endpoint" => a.endpoint.cmp(&b.endpoint),
+            "Protocol" => a.endpoint.proto().cmp(&b.endpoint.proto()),
+            "Address" => a.endpoint.address().ip().cmp(&b.endpoint.address().ip()),
+            "Port" => a
+                .endpoint
+                .address()
+                .port()
+                .cmp(&b.endpoint.address().port()),
             "Type" => PeerTypeWrapper(a.pt.clone()).cmp(&PeerTypeWrapper(b.pt.clone())),
             "Connection State" => a.connection_state.cmp(&b.connection_state),
             "Tx bytes" => a.tx_bytes.cmp(&b.tx_bytes),
@@ -278,7 +284,7 @@ fn sort_peers(
 fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     let mut current_page = use_signal(|| 0);
     let items_per_page = 20;
-    let mut sort_column = use_signal(|| "Type".to_string());
+    let mut sort_column = use_signal(|| "Protocol".to_string());
     let mut sort_direction = use_signal(|| SortDirection::Ascending);
     let peers_len = peers.len();
 
@@ -316,7 +322,7 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     // Searching
     let mut search_state = use_signal(|| SearchState {
         query: String::new(),
-        column: "Endpoint".to_string(),
+        column: "Protocol".to_string(),
     });
 
     let filtered_peers = use_memo(move || {
@@ -326,7 +332,26 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
             .read()
             .iter()
             .filter(|peer| match column.as_str() {
-                "Endpoint" => peer.endpoint.to_string().to_lowercase().contains(&query),
+                "Protocol" => peer
+                    .endpoint
+                    .proto()
+                    .to_string()
+                    .to_lowercase()
+                    .contains(&query),
+                "Address" => peer
+                    .endpoint
+                    .address()
+                    .ip()
+                    .to_string()
+                    .to_lowercase()
+                    .contains(&query),
+                "Port" => peer
+                    .endpoint
+                    .address()
+                    .port()
+                    .to_string()
+                    .to_lowercase()
+                    .contains(&query),
                 "Type" => peer.pt.to_string().to_lowercase().contains(&query),
                 "Connection State" => peer
                     .connection_state
@@ -359,7 +384,9 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                 select {
                     value: "{search_state.read().column}",
                     onchange: move |evt| search_state.write().column.clone_from(&evt.value()),
-                    option { value: "Endpoint", "Endpoint" }
+                    option { value: "Protocol", "Protocol" }
+                    option { value: "Address", "Address" }
+                    option { value: "Port", "Port" }
                     option { value: "Type", "Type" }
                     option { value: "Connection State", "Connection State" }
                     option { value: "Tx bytes", "Tx bytes" }
@@ -370,9 +397,17 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                 table {
                     thead {
                         tr {
-                            th { class: "endpoint-column",
-                                onclick: move |_| sort_peers_signal("Endpoint".to_string()),
-                                "Endpoint {get_sort_indicator(sort_column, sort_direction, \"Endpoint\".to_string())}"
+                            th { class: "protocol-column",
+                                onclick: move |_| sort_peers_signal("Protocol".to_string()),
+                                "Protocol {get_sort_indicator(sort_column, sort_direction, \"Protocol\".to_string())}"
+                            }
+                            th { class: "address-column",
+                                onclick: move |_| sort_peers_signal("Address".to_string()),
+                                "Address {get_sort_indicator(sort_column, sort_direction, \"Address\".to_string())}"
+                            }
+                            th { class: "port-column",
+                                onclick: move |_| sort_peers_signal("Port".to_string()),
+                                "Port {get_sort_indicator(sort_column, sort_direction, \"Port\".to_string())}"
                             }
                             th { class: "type-column",
                                 onclick: move |_| sort_peers_signal("Type".to_string()),
@@ -395,7 +430,9 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                     tbody {
                         for peer in current_peers {
                             tr {
-                                td { class: "endpoint-column", "{peer.endpoint}" }
+                                td { class: "protocol-column", "{peer.endpoint.proto()}" }
+                                td { class: "address-column", "{peer.endpoint.address().ip()}" }
+                                td { class: "port-column", "{peer.endpoint.address().port()}" }
                                 td { class: "type-column", "{peer.pt}" }
                                 td { class: "connection-state-column", "{peer.connection_state}" }
                                 td { class: "tx-bytes-column", "{human_bytes(peer.tx_bytes as f64)}" }
