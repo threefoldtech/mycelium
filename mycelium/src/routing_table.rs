@@ -6,11 +6,11 @@ use std::{
 
 use arc_swap::ArcSwap;
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use tokio::{sync::mpsc, task::AbortHandle};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace};
 
-use crate::{crypto::SharedSecret, peer::Peer, subnet::Subnet};
+use crate::{crypto::SharedSecret, peer::Peer, subnet::Subnet, task::AbortHandle};
 
 pub use iter::RoutingTableIter;
 pub use iter_mut::RoutingTableIterMut;
@@ -126,7 +126,7 @@ impl RouteList {
                         }
                     }
                 })
-                .abort_handle(),
+                .abort_handle().into(),
             );
 
         self.list.push((abort_handle, re));
@@ -174,7 +174,7 @@ impl RouteGuard<'_> {
                         }
                     }
                 })
-                .abort_handle(),
+                .abort_handle().into(),
             );
 
         self.item.0.abort();
