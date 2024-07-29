@@ -37,6 +37,7 @@ mod seqno_cache;
 mod sequence_number;
 mod source_table;
 pub mod subnet;
+pub mod task;
 mod tun;
 
 /// The prefix of the global subnet used.
