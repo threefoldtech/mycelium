@@ -7,6 +7,7 @@ use dioxus_free_icons::icons::fa_solid_icons::FaChevronLeft;
 use dioxus_free_icons::Icon;
 use human_bytes::human_bytes;
 use mycelium::peer_manager::PeerType;
+use mycelium_api::Info;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{cmp::Ordering, str::FromStr};
 use tracing::Level;
@@ -37,10 +38,30 @@ struct SearchState {
     column: String,
 }
 
+// Shared state structs below. We do not put both fields in one shared struct as
+// this can easily lead to a circular dependency when one field is being read whilst
+// the other is updated
+
+#[derive(Clone, PartialEq)]
+struct ServerAddress(SocketAddr);
+
+#[derive(Clone, PartialEq)]
+struct ServerConnected(bool);
+
 fn main() {
     // Init logger
     dioxus_logger::init(Level::INFO).expect("failed to init logger");
     dioxus::launch(App);
+}
+
+#[component]
+fn App() -> Element {
+    use_context_provider(|| Signal::new(ServerAddress(DEFAULT_SERVER_ADDR)));
+    use_context_provider(|| Signal::new(ServerConnected(false)));
+
+    rsx! {
+        Router::<Route> {}
+    }
 }
 
 #[component]
@@ -61,15 +82,9 @@ fn Layout() -> Element {
 }
 
 #[component]
-fn App() -> Element {
-    rsx! {
-        Router::<Route> {}
-    }
-}
-
-#[component]
 fn Header() -> Element {
-    let fetched_node_info = use_resource(move || api::get_node_info(DEFAULT_SERVER_ADDR));
+    let server_addr = use_context::<Signal<ServerAddress>>();
+    let fetched_node_info = use_resource(move || api::get_node_info(server_addr.read().0));
     rsx! {
         header {
             h1 { "Mycelium Network Dashboard" }
@@ -110,41 +125,39 @@ fn Sidebar(collapsed: Signal<bool>) -> Element {
     }
 }
 
+// This will fetch the node's subnet and public key and update the shared state
+// to set `connected` to true or false
+async fn fetch_node_info() -> Result<mycelium_api::Info, AppError> {
+    println!("Running fetch node info...");
+    let server_addr = use_context::<Signal<ServerAddress>>();
+    let mut server_connected = use_context::<Signal<ServerConnected>>();
+    let address = server_addr.read().0;
+
+    match api::get_node_info(address).await {
+        Ok(info) => {
+            server_connected.write().0 = true;
+
+            Ok(info)
+        }
+        Err(e) => {
+            server_connected.write().0 = true;
+            Err(AppError::from(e))
+        }
+    }
+}
+
 #[component]
 fn Home() -> Element {
-    let mut server_state_addr = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
-    let mut server_state_connected = use_signal(|| false);
-    let mut new_address = use_signal(|| DEFAULT_SERVER_ADDR.to_string());
+    println!("Running Home component");
+    let mut server_state = use_context::<Signal<ServerAddress>>();
+    let mut new_address = use_signal(|| server_state.read().0.to_string());
+    let mut node_info = use_resource(fetch_node_info);
 
-    let fetch_node_info = use_resource(move || {
-        let current_addr = server_state_addr.read().clone();
-        async move {
-            match SocketAddr::from_str(&current_addr) {
-                Ok(addr) => {
-                    // The current address is a correct SocketAddr
-                    let node_info = api::get_node_info(addr).await;
-                    match node_info {
-                        Ok(info) => {
-                            println!("Succesfully obtained node info from {current_addr}");
-                            server_state_connected.set(true);
-                            Ok(info)
-                        }
-                        Err(e) => {
-                            server_state_connected.set(false);
-                            Err(AppError::from(e))
-                        }
-                    }
-                }
-                Err(_) => Err(AppError::AddressError("Invalid address format".into())),
-            }
-        }
-    });
-
-    // Executed when connect button is clicked
     let try_connect = move |_| {
-        let new_addr = new_address.read().to_string();
-        server_state_addr.write().clone_from(&new_addr); // will trigger fetch_node_info
-        println!("Updated server_state address to: {new_addr}");
+        if let Ok(addr) = SocketAddr::from_str(&new_address.read()) {
+            server_state.write().0 = addr;
+            node_info.restart(); // This will trigger a new fetch_node_info() call
+        }
     };
 
     rsx! {
@@ -154,33 +167,28 @@ fn Home() -> Element {
                 input {
                     placeholder: "Server address (e.g. 127.0.0.1:8989)",
                     value: "{new_address}",
-                    oninput: move |event| {
-                        println!("RUNNING input oninput event");
-                        new_address.set(event.value().clone());
-                    }
+                    oninput: move |evt| new_address.set(evt.value().clone()),
                 }
                 button { onclick: try_connect, "Connect" }
             }
-            if !*server_state_connected.read() {
-                { rsx! { p { class: "warning", "Server is not responding. Please check the server address and try again." } } }
-            }
-            match fetch_node_info.read().as_ref() {
-                Some(Ok(info)) => {
-                println!("RUNNING: OK: code to generate node subnet and node public key below");
-                { rsx! {
+            {match node_info.read().as_ref() {
+                Some(Ok(info)) => rsx! {
                     p {
                         "Node subnet: ",
                         span { class: "bold", "{info.node_subnet}" }
                     }
                     p {
                         "Node public key: ",
-                        span { class: "bold", "{info.node_pubkey }" }
+                        span { class: "bold", "{info.node_pubkey}" }
                     }
-                } }
                 },
-                Some(Err(e)) => { println!("RUNNING: ERR");  rsx! { p { class: "error", "{e}" } } },
-                None => { println!("RUNNING: NONE"); rsx! { p { "Loading..." } } },
-            }
+                Some(Err(e)) => rsx! {
+                    p { class: "error", "Error: {e}" }
+                },
+                None => rsx! {
+                    p { "Enter a server address and click 'Connect' to fetch node information." }
+                }
+            }}
         }
     }
 }
