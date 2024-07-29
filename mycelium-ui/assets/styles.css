@@ -307,3 +307,26 @@ h2 {
   background-color: white;
 }
 
+/* Refresh button */
+.refresh-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.refresh-button:hover {
+    background-color: #2980b9;
+}
+
+.refresh-button svg {
+    margin-right: 0.5rem;
+}
