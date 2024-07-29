@@ -149,13 +149,13 @@ async fn fetch_node_info() -> Result<mycelium_api::Info, AppError> {
 #[component]
 fn Home() -> Element {
     println!("Running Home component");
-    let mut server_state = use_context::<Signal<ServerAddress>>();
-    let mut new_address = use_signal(|| server_state.read().0.to_string());
+    let mut server_addr = use_context::<Signal<ServerAddress>>();
+    let mut new_address = use_signal(|| server_addr.read().0.to_string());
     let mut node_info = use_resource(fetch_node_info);
 
     let try_connect = move |_| {
         if let Ok(addr) = SocketAddr::from_str(&new_address.read()) {
-            server_state.write().0 = addr;
+            server_addr.write().0 = addr;
             node_info.restart(); // This will trigger a new fetch_node_info() call
         }
     };
@@ -195,7 +195,8 @@ fn Home() -> Element {
 
 #[component]
 fn Peers() -> Element {
-    let fetched_peers = use_resource(move || api::get_peers(DEFAULT_SERVER_ADDR));
+    let server_addr = use_context::<Signal<ServerAddress>>().read().0;
+    let fetched_peers = use_resource(move || api::get_peers(server_addr));
     match &*fetched_peers.read_unchecked() {
         Some(Ok(peers)) => rsx! { {PeersTable(peers.clone()) } },
         Some(Err(e)) => rsx! { div { "An error has occurred while fetching the peers: {e}" } },
@@ -423,8 +424,9 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
 
 #[component]
 fn SelectedRoutesTable() -> Element {
+    let server_addr = use_context::<Signal<ServerAddress>>();
     let fetched_selected_routes =
-        use_resource(move || api::get_selected_routes(DEFAULT_SERVER_ADDR));
+        use_resource(move || api::get_selected_routes(server_addr.read().0));
 
     match &*fetched_selected_routes.read_unchecked() {
         Some(Ok(routes)) => {
@@ -437,8 +439,9 @@ fn SelectedRoutesTable() -> Element {
 
 #[component]
 fn FallbackRoutesTable() -> Element {
+    let server_addr = use_context::<Signal<ServerAddress>>();
     let fetched_fallback_routes =
-        use_resource(move || api::get_fallback_routes(DEFAULT_SERVER_ADDR));
+        use_resource(move || api::get_fallback_routes(server_addr.read().0));
 
     match &*fetched_fallback_routes.read_unchecked() {
         Some(Ok(routes)) => {
