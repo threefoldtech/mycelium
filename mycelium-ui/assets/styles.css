@@ -330,3 +330,42 @@ h2 {
 .refresh-button svg {
     margin-right: 0.5rem;
 }
+
+/* Expandable row styles */
+.expanded-row {
+    background-color: #f8f9fa;
+}
+
+.expanded-content {
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.expanded-content p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.close-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.close-button:hover {
+    background-color: #2980b9;
+}
+
+/* Make the table rows clickable */
+tbody tr {
+    cursor: pointer;
+}
+
+tbody tr:hover {
+    background-color: #f1f3f5;
+}
