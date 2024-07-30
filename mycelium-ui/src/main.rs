@@ -7,7 +7,7 @@ use dioxus_free_icons::icons::fa_solid_icons::FaChevronLeft;
 use dioxus_free_icons::Icon;
 use human_bytes::human_bytes;
 use mycelium::peer_manager::PeerType;
-use mycelium_api::Info;
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{cmp::Ordering, str::FromStr};
 use tracing::Level;
@@ -281,6 +281,10 @@ fn sort_peers(
     });
 }
 
+#[derive(Clone, PartialEq)]
+// Rows that have been expaneded out to show additional information
+struct ExpandedRows(HashSet<String>);
+
 fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     let mut current_page = use_signal(|| 0);
     let items_per_page = 20;
@@ -295,6 +299,16 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                 .max(0)
                 .min((peers_len - 1) as i32 / items_per_page as i32) as usize,
         );
+    };
+
+    let mut expanded_rows = use_signal(|| ExpandedRows(HashSet::new()));
+    let mut toggle_row_expansion = move |peer_endpoint: String| {
+        let mut expanded = expanded_rows.write();
+        if expanded.0.contains(&peer_endpoint) {
+            expanded.0.remove(&peer_endpoint);
+        } else {
+            expanded.0.insert(peer_endpoint);
+        }
     };
 
     // Sorting
@@ -363,14 +377,19 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                 _ => false,
             })
             .cloned()
-            .collect::<Vec<_>>()
+            .collect::<Vec<mycelium::peer_manager::PeerStats>>()
     });
 
     let peers_len = filtered_peers.read().len();
 
     let start = current_page * items_per_page;
     let end = (start + items_per_page).min(peers_len);
-    let current_peers = &filtered_peers.read()[start..end];
+    let current_peers = filtered_peers.read()[start..end].to_vec();
+    // let current_peers = use_memo(move || {
+    //     let start = *current_page.read() * items_per_page;
+    //     let end = (start + items_per_page).min(filtered_peers.read().len());
+    //     &filtered_peers.read()[start..end].to_vec();
+    // });
 
     rsx! {
         div { class: "peers-table",
@@ -428,8 +447,9 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                         }
                     }
                     tbody {
-                        for peer in current_peers {
+                        for peer in current_peers.into_iter() {
                             tr {
+                                onclick: move |_| toggle_row_expansion(peer.endpoint.to_string()),
                                 td { class: "protocol-column", "{peer.endpoint.proto()}" }
                                 td { class: "address-column", "{peer.endpoint.address().ip()}" }
                                 td { class: "port-column", "{peer.endpoint.address().port()}" }
@@ -437,6 +457,19 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                                 td { class: "connection-state-column", "{peer.connection_state}" }
                                 td { class: "tx-bytes-column", "{human_bytes(peer.tx_bytes as f64)}" }
                                 td { class: "rx-bytes-column", "{human_bytes(peer.rx_bytes as f64)}" }
+                            }
+                            {
+                                let is_expanded = expanded_rows.read().0.contains(&peer.endpoint.to_string());
+                                if is_expanded {
+                                    rsx! {
+                                        ExpandedPeerRow {
+                                            peer: peer.clone(),
+                                            on_close: move |_| toggle_row_expansion(peer.endpoint.to_string())
+                                        }
+                                    }
+                                } else {
+                                    rsx! { }
+                                }
                             }
                         }
                     }
@@ -453,6 +486,24 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
                     disabled: (current_page + 1) * items_per_page >= peers_len,
                     onclick: move |_| change_page(1),
                     "Next"
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ExpandedPeerRow(peer: mycelium::peer_manager::PeerStats, on_close: EventHandler<()>) -> Element {
+    rsx! {
+        tr { class: "expanded-row",
+            td { colspan: "7",
+                div { class: "expanded-content",
+                    p { "Tx bytes: {human_bytes(peer.tx_bytes as f64)}" }
+                    p { "Rx bytes: {human_bytes(peer.rx_bytes as f64)}" }
+                    button { class: "close-button",
+                        onclick: move |_| on_close.call(()),
+                        "Close"
+                    }
                 }
             }
         }
