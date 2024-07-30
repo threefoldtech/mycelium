@@ -46,7 +46,6 @@ netdev = "0.30.0"
 openssl = { version = "0.10.66", optional = true }
 tokio-openssl = { version = "0.6.4", optional = true }
 arc-swap = "1.7.1"
-flume = "0.11.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.14.1"
