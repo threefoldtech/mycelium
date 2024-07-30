@@ -17,9 +17,9 @@ use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
     Icmpv6Type,
 };
-use futures::StreamExt;
 use std::{
     error::Error,
+    hash::{Hash, Hasher},
     net::IpAddr,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
@@ -577,12 +577,14 @@ where
 
     /// Background task to process Update TLV's.
     async fn update_processor(self, mut update_rx: UnboundedReceiver<(Update, Peer)>) {
-        let (worker_tx, worker_rx) = flume::bounded::<(Update, Peer)>(0);
-        for _ in 0..5 {
+        const WORKERS: usize = 5;
+
+        let senders = core::array::from_fn::<_, WORKERS, _>(|_| {
             let router = self.clone();
-            let mut update_rx = worker_rx.clone().into_stream();
+            let (tx, mut rx) = mpsc::unbounded_channel::<(_, Peer)>();
+
             tokio::task::spawn(async move {
-                while let Some((update, source_peer)) = update_rx.next().await {
+                while let Some((update, source_peer)) = rx.recv().await {
                     let start = std::time::Instant::now();
 
                     if !source_peer.alive() {
@@ -599,10 +601,16 @@ where
                 }
                 warn!("Update processor task exitted");
             });
-        }
+
+            tx
+        });
 
         while let Some(item) = update_rx.recv().await {
-            if worker_tx.send_async(item).await.is_err() {
+            let mut hasher = std::hash::DefaultHasher::new();
+            item.0.subnet().network().hash(&mut hasher);
+            let slot = hasher.finish() as usize % WORKERS;
+
+            if senders[slot].send(item).is_err() {
                 break;
             };
         }
