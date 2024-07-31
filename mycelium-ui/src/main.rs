@@ -12,7 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{cmp::Ordering, str::FromStr};
 use tracing::Level;
 
-const STYLES_CSS: &str = manganis::mg!(file("assets/styles.css"));
+const _: &str = manganis::mg!(file("assets/styles.css"));
 
 const DEFAULT_SERVER_ADDR: std::net::SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
@@ -196,11 +196,61 @@ fn Home() -> Element {
 #[component]
 fn Peers() -> Element {
     let server_addr = use_context::<Signal<ServerAddress>>().read().0;
-    let fetched_peers = use_resource(move || api::get_peers(server_addr));
-    match &*fetched_peers.read_unchecked() {
-        Some(Ok(peers)) => rsx! { {PeersTable(peers.clone()) } },
-        Some(Err(e)) => rsx! { div { "An error has occurred while fetching the peers: {e}" } },
-        None => rsx! { div { "Loading peers..." } },
+
+    // Use a signal to store the fetched peers
+    let mut peers = use_signal(|| Vec::new());
+
+    // Catch error if fetching peers fails
+    let mut error = use_signal(|| None::<String>);
+
+    // Use resource for initial fetch
+    let _initial_fetch = use_resource(move || async move {
+        match api::get_peers(server_addr).await {
+            Ok(fetched_peers) => {
+                peers.set(fetched_peers);
+                error.set(None);
+            }
+            Err(e) => {
+                println!("Error fetching peers: {}", e);
+                error.set(Some(format!(
+                    "An error has occurred while fetching peers: {}",
+                    e
+                )));
+            }
+        }
+    });
+
+    // Use coroutine for periodic updates
+    let _: Coroutine<()> = use_coroutine(|_rx: UnboundedReceiver<_>| {
+        // create clone of hook handles which can be moved into async closure
+        to_owned![peers, server_addr];
+        async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                match api::get_peers(server_addr).await {
+                    Ok(fetched_peers) => {
+                        peers.set(fetched_peers);
+                        error.set(None);
+                    }
+                    Err(e) => {
+                        println!("Error fetching peers: {}", e);
+                        error.set(Some(format!(
+                            "An error has occurred while fetching peers: {}",
+                            e
+                        )))
+                    }
+                }
+            }
+        }
+    });
+
+    // Render PeersTable with current peers data
+    rsx! {
+        if let Some(err) = error.read().as_ref() {
+            div { class: "error-message", "{err}" }
+        } else {
+            {PeersTable(peers)}
+        }
     }
 }
 
@@ -285,7 +335,7 @@ fn sort_peers(
 // Rows that have been expaneded out to show additional information
 struct ExpandedRows(HashSet<String>);
 
-fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
+fn PeersTable(peers: Signal<Vec<mycelium::peer_manager::PeerStats>>) -> Element {
     let mut current_page = use_signal(|| 0);
     let items_per_page = 20;
     let mut sort_column = use_signal(|| "Protocol".to_string());
@@ -328,7 +378,7 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     };
 
     let sorted_peers = use_memo(move || {
-        let mut sorted = peers.clone();
+        let mut sorted = peers.read().to_vec();
         sort_peers(&mut sorted, &sort_column.read(), &sort_direction.read());
         sorted
     });
@@ -342,8 +392,8 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     let filtered_peers = use_memo(move || {
         let query = search_state.read().query.to_lowercase();
         let column = &search_state.read().column;
+        let sorted_peers = sorted_peers.read();
         sorted_peers
-            .read()
             .iter()
             .filter(|peer| match column.as_str() {
                 "Protocol" => peer
@@ -385,11 +435,6 @@ fn PeersTable(peers: Vec<mycelium::peer_manager::PeerStats>) -> Element {
     let start = current_page * items_per_page;
     let end = (start + items_per_page).min(peers_len);
     let current_peers = filtered_peers.read()[start..end].to_vec();
-    // let current_peers = use_memo(move || {
-    //     let start = *current_page.read() * items_per_page;
-    //     let end = (start + items_per_page).min(filtered_peers.read().len());
-    //     &filtered_peers.read()[start..end].to_vec();
-    // });
 
     rsx! {
         div { class: "peers-table",
