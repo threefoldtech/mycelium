@@ -4,6 +4,8 @@ use arc_swap::ArcSwap;
 
 use crate::{routing_table::RouteList, subnet::Subnet};
 
+use super::RouteListReadGuard;
+
 /// An iterator over a [`routing table`](super::RoutingTable) giving read only access to
 /// [`RouteList`]'s.
 pub struct RoutingTableIter<'a>(
@@ -20,14 +22,14 @@ impl<'a> RoutingTableIter<'a> {
 }
 
 impl<'a> Iterator for RoutingTableIter<'a> {
-    type Item = (Subnet, Arc<RouteList>);
+    type Item = (Subnet, RouteListReadGuard);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|(ip, prefix_size, rl)| {
             (
                 Subnet::new(ip.into(), prefix_size as u8)
                     .expect("Routing table contains valid subnets"),
-                rl.load_full(),
+                RouteListReadGuard { inner: rl.load() },
             )
         })
     }

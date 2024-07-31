@@ -251,7 +251,7 @@ impl RoutingTable {
 
     /// Get a list of the routes for the most precises [`Subnet`] known which contains the given
     /// [`IpAddr`].
-    pub fn best_routes(&self, ip: IpAddr) -> Option<Arc<RouteList>> {
+    pub fn best_routes(&self, ip: IpAddr) -> Option<RouteListReadGuard> {
         let IpAddr::V6(ip) = ip else {
             panic!("Only IPv6 is supported currently");
         };
@@ -260,13 +260,13 @@ impl RoutingTable {
             .expect("Write handle is saved on the router so it is not dropped yet.")
             .table
             .longest_match(ip)
-            .map(|(_, _, rl)| rl.load_full())
+            .map(|(_, _, rl)| RouteListReadGuard { inner: rl.load() })
     }
 
     /// Get a list of all routes for the given subnet. Changes to the RoutingTable after this
     /// method returns will not be visible and require this method to be called again to be
     /// observed.
-    pub fn routes(&self, subnet: Subnet) -> Option<Arc<RouteList>> {
+    pub fn routes(&self, subnet: Subnet) -> Option<RouteListReadGuard> {
         let subnet_ip = if let IpAddr::V6(ip) = subnet.address() {
             ip
         } else {
@@ -278,7 +278,7 @@ impl RoutingTable {
             .expect("Write handle is saved on the router so it is not dropped yet.")
             .table
             .exact_match(subnet_ip, subnet.prefix_len().into())
-            .map(|rl| rl.load_full())
+            .map(|rl| RouteListReadGuard { inner: rl.load() })
     }
 
     /// Gets continued read access to the `RoutingTable`. While the returned
@@ -381,6 +381,18 @@ impl RoutingTable {
     }
 }
 
+pub struct RouteListReadGuard {
+    inner: arc_swap::Guard<Arc<RouteList>>,
+}
+
+impl Deref for RouteListReadGuard {
+    type Target = RouteList;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.deref()
+    }
+}
+
 /// A write guard over the [`RoutingTable`]. While this guard is held, updates won't be able to
 /// complete.
 pub struct RoutingTableWriteGuard<'a> {
@@ -422,8 +434,10 @@ impl<'a> RoutingTableReadGuard<'a> {
 impl<'a> WriteGuard<'a> {
     /// Loads the current [`RouteList`].
     #[inline]
-    pub fn routes(&self) -> Arc<RouteList> {
-        self.value.load_full()
+    pub fn routes(&self) -> RouteListReadGuard {
+        RouteListReadGuard {
+            inner: self.value.load(),
+        }
     }
 
     /// Get mutable access to the [`RouteList`]. This will update the [`RouteList`] in place
