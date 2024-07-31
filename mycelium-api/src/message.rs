@@ -184,8 +184,9 @@ where
 {
     let dst = message_info.dst.ip();
     debug!(
-        "Pushing new message of {} bytes to message stack for target {dst}",
-        message_info.payload.len(),
+        message.dst=%dst,
+        message.len=message_info.payload.len(),
+        "Pushing new reply to message stack",
     );
 
     let (id, sub) = match state.node.lock().await.push_message(
@@ -252,9 +253,10 @@ where
 {
     let dst = message_info.dst.ip();
     debug!(
-        "Pushing new reply to {} of {} bytes to message stack for target {dst}",
-        id.as_hex(),
-        message_info.payload.len(),
+        message.id=id.as_hex(),
+        message.dst=%dst,
+        message.len=message_info.payload.len(),
+        "Pushing new reply to message stack",
     );
 
     state.node.lock().await.reply_message(
@@ -274,7 +276,7 @@ async fn message_status<M>(
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
-    debug!("Fetching message status for message {}", id.as_hex());
+    debug!(message.id=%id.as_hex(), "Fetching message status");
 
     state
         .node

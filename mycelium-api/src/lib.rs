@@ -67,7 +67,7 @@ impl Http {
             let listener = match tokio::net::TcpListener::bind(listen_addr).await {
                 Ok(listener) => listener,
                 Err(e) => {
-                    error!("Failed to bind listener for Http Api server: {e}");
+                    error!(err=%e, "Failed to bind listener for Http Api server");
                     error!("API disabled");
                     return;
                 }
@@ -79,7 +79,7 @@ impl Http {
                 });
 
             if let Err(e) = server.await {
-                error!("Http API server error: {e}");
+                error!(err=%e, "Http API server error");
             }
         });
         Http { _cancel_tx }
@@ -110,7 +110,10 @@ async fn add_peer<M>(
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
-    debug!("Attempting to add peer {} to  the system", payload.endpoint);
+    debug!(
+        peer.endpoint = payload.endpoint,
+        "Attempting to add peer to the system"
+    );
     let endpoint = match Endpoint::from_str(&payload.endpoint) {
         Ok(endpoint) => endpoint,
         Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string())),
@@ -133,7 +136,7 @@ async fn delete_peer<M>(
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
-    debug!("Attempting to remove peer {} to  the system", endpoint);
+    debug!(peer.endpoint=%endpoint, "Attempting to remove peer from the system");
     let endpoint = match Endpoint::from_str(&endpoint) {
         Ok(endpoint) => endpoint,
         Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string())),
