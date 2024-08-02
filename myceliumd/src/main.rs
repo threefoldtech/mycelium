@@ -275,6 +275,15 @@ pub struct NodeArguments {
     /// This option only has an effect on Linux.
     #[arg(long = "firewall-mark")]
     firewall_mark: Option<u32>,
+
+    /// The amount of worker tasks to spawn to handle updates.
+    ///
+    /// By default, updates are processed on a single task only. This is sufficient for most use
+    /// cases. In case you notice that the node can't keep up with the incoming updates (typically
+    /// because you are running a public node with a lot of connections), this value can be
+    /// increased to process updates in parallel.
+    #[arg(long = "update-workers", default_value_t = 1)]
+    update_workers: usize,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -291,6 +300,7 @@ struct MyceliumConfig {
     api_addr: Option<SocketAddr>,
     metrics_api_address: Option<SocketAddr>,
     firewall_mark: Option<u32>,
+    update_workers: Option<usize>,
 }
 
 #[tokio::main]
@@ -414,6 +424,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     private_network_config: None,
                     metrics: metrics.clone(),
                     firewall_mark: merged_config.firewall_mark,
+                    update_workers: merged_config.update_workers,
                 };
                 metrics.spawn(metrics_api_addr);
                 let node = Node::new(config).await?;
@@ -438,6 +449,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     private_network_config: None,
                     metrics: mycelium_metrics::NoMetrics,
                     firewall_mark: merged_config.firewall_mark,
+                    update_workers: merged_config.update_workers,
                 };
                 let node = Node::new(config).await?;
                 mycelium_api::Http::spawn(node, merged_config.api_addr)
@@ -640,6 +652,11 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArg
             .metrics_api_address
             .or(file_config.metrics_api_address),
         firewall_mark: cli_args.firewall_mark.or(file_config.firewall_mark),
+        update_workers: if cli_args.update_workers != 1 {
+            cli_args.update_workers
+        } else {
+            file_config.update_workers.unwrap_or(1)
+        },
     }
 }
 
