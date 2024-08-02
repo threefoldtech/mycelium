@@ -100,6 +100,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         firewall_mark: None,
         #[cfg(any(target_os = "android", target_os = "ios"))]
         tun_fd: Some(tun_fd),
+        update_workers: 1,
     };
     let _node = match Node::new(config).await {
         Ok(node) => {
