@@ -78,6 +78,12 @@ pub struct Config<M> {
     // the TUN's file descriptor to mycelium.
     #[cfg(any(target_os = "android", target_os = "ios"))]
     pub tun_fd: Option<i32>,
+
+    /// The maount of worker tasks spawned to process updates. Up to this amound of updates can be
+    /// processed in parallel. Because processing an update is a CPU bound task, it is pointless to
+    /// set this to a value which is higher than the amount of logical CPU cores available to the
+    /// system.
+    pub update_workers: usize,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
@@ -126,6 +132,7 @@ where
 
         // Creating a new Router instance
         let router = match router::Router::new(
+            config.update_workers,
             tun_tx,
             node_subnet,
             vec![node_subnet],
