@@ -15,11 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   based on the OS. For more information see [README](/README.md#configuration)
 - Windows installer for Mycelium. The `.msi` file can be downloaded from the release
   assets.
+- Added flag to specify how many update workers should be started, which governs
+  the amount of parallelism used for processing updates.
 
 ### Changed
 
 - Increased the starting metric of a peer from 50 to 1000.
-- Reworked the internals of the routing table, which should reduce memory consumption
+- Reworked the internals of the routing table, which should reduce memory consumption.
+  Additionally, it is now possible to apply updates in parallel
 - Periodically reduce the allocated size of the seqno cache to avoid wasting some
   memory which is not currently used by the cache but still allocated.
 - Demote seqno cache warnings about duplicate seqno requests go debug lvl, as it
