@@ -88,6 +88,11 @@ impl<M> Router<M>
 where
     M: Metrics + Clone + Send + 'static,
 {
+    /// Create a new `Router`.
+    ///
+    /// # Panics
+    ///
+    /// If update_workers is not in the range of [1..255], this will panic.
     pub fn new(
         update_workers: usize,
         node_tun: UnboundedSender<DataPacket>,
@@ -97,6 +102,12 @@ where
         update_filters: Vec<Box<dyn RouteUpdateFilter + Send + Sync>>,
         metrics: M,
     ) -> Result<Self, Box<dyn Error>> {
+        // We could use a NonZeroU8 here, but for now just handle this manually as this might get
+        // changed in the future.
+        if !(1..255).contains(&update_workers) {
+            panic!("update workers must be at least 1 and at most 255");
+        }
+
         // Tx is passed onto each new peer instance. This enables peers to send control packets to the router.
         let (router_control_tx, router_control_rx) = mpsc::unbounded_channel();
         // Tx is passed onto each new peer instance. This enables peers to send data packets to the router.
