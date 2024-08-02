@@ -80,6 +80,7 @@ pub struct Router<M> {
     /// Channel to notify the router of expired SourceKey's.
     expired_source_key_sink: mpsc::Sender<SourceKey>,
     seqno_cache: SeqnoCache,
+    update_workers: usize,
     metrics: M,
 }
 
@@ -88,6 +89,7 @@ where
     M: Metrics + Clone + Send + 'static,
 {
     pub fn new(
+        update_workers: usize,
         node_tun: UnboundedSender<DataPacket>,
         node_tun_subnet: Subnet,
         static_routes: Vec<Subnet>,
@@ -125,6 +127,7 @@ where
             expired_source_key_sink,
             seqno_cache,
             update_filters: Arc::new(update_filters),
+            update_workers,
             metrics,
         };
 
@@ -577,9 +580,8 @@ where
 
     /// Background task to process Update TLV's.
     async fn update_processor(self, mut update_rx: UnboundedReceiver<(Update, Peer)>) {
-        const WORKERS: usize = 5;
-
-        let senders = core::array::from_fn::<_, WORKERS, _>(|_| {
+        let mut senders = Vec::with_capacity(self.update_workers);
+        for _ in 0..self.update_workers {
             let router = self.clone();
             let (tx, mut rx) = mpsc::unbounded_channel::<(_, Peer)>();
 
@@ -602,13 +604,13 @@ where
                 warn!("Update processor task exitted");
             });
 
-            tx
-        });
+            senders.push(tx);
+        }
 
         while let Some(item) = update_rx.recv().await {
             let mut hasher = std::hash::DefaultHasher::new();
             item.0.subnet().network().hash(&mut hasher);
-            let slot = hasher.finish() as usize % WORKERS;
+            let slot = hasher.finish() as usize % self.update_workers;
 
             if senders[slot].send(item).is_err() {
                 break;
@@ -1754,6 +1756,7 @@ where
             dead_peer_sink: self.dead_peer_sink.clone(),
             expired_source_key_sink: self.expired_source_key_sink.clone(),
             seqno_cache: self.seqno_cache.clone(),
+            update_workers: self.update_workers,
             metrics: self.metrics.clone(),
         }
     }
