@@ -8,7 +8,11 @@ use components::peers::Peers;
 use components::routes::Routes;
 
 use dioxus::prelude::*;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use mycelium::{endpoint::Endpoint, peer_manager::PeerStats};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
 const _: &str = manganis::mg!(file("assets/styles.css"));
 
@@ -25,6 +29,11 @@ fn main() {
 fn App() -> Element {
     use_context_provider(|| Signal::new(ServerAddress(DEFAULT_SERVER_ADDR)));
     use_context_provider(|| Signal::new(ServerConnected(false)));
+    use_context_provider(|| {
+        Signal::new(PeerSignalMapping(
+            HashMap::<Endpoint, Signal<PeerStats>>::new(),
+        ))
+    });
 
     rsx! {
         Router::<Route> {}
@@ -57,6 +66,9 @@ struct ServerAddress(SocketAddr);
 
 #[derive(Clone, PartialEq)]
 struct ServerConnected(bool);
+
+#[derive(Clone, PartialEq)]
+struct PeerSignalMapping(HashMap<Endpoint, Signal<PeerStats>>);
 
 pub fn get_sort_indicator(
     sort_column: Signal<String>,
