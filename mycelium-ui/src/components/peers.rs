@@ -1,5 +1,5 @@
 use crate::get_sort_indicator;
-use crate::{api, SearchState, ServerAddress, SortDirection};
+use crate::{api, PeerSignalMapping, SearchState, ServerAddress, SortDirection};
 use dioxus::prelude::*;
 use dioxus_charts::LineChart;
 use human_bytes::human_bytes;
@@ -10,22 +10,32 @@ use std::{
 };
 
 const REFRESH_RATE_MS: u64 = 500;
+const MAX_DATA_POINTS: usize = 60; // Store 60 seconds of data
 
 #[component]
 pub fn Peers() -> Element {
     let server_addr = use_context::<Signal<ServerAddress>>().read().0;
-    let peers = use_signal(Vec::new);
-    let mut error = use_signal(|| None::<String>);
+    let error = use_signal(|| None::<String>);
+    // Mapping between peer and their corresponding signal
+    let peer_signal_map = use_context::<Signal<PeerSignalMapping>>();
 
     let _: Coroutine<()> = use_coroutine(|_rx: UnboundedReceiver<_>| {
-        to_owned![peers, server_addr];
         async move {
+            to_owned![server_addr, error, peer_signal_map];
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
                 match api::get_peers(server_addr).await {
                     Ok(fetched_peers) => {
-                        println!("fetching them peers bro");
-                        peers.set(fetched_peers);
+                        let mut peer_signal_map = peer_signal_map.write();
+                        // populate the peer_signal_map
+                        for peer in fetched_peers {
+                            peer_signal_map
+                                .0
+                                .entry(peer.endpoint)
+                                .or_insert(use_signal(|| peer.clone())) // ret. mut ref to signal
+                                .set(peer); // set signal (each time, so with new rx/tx data incl.)
+                        }
+
                         error.set(None);
                     }
                     Err(e) => {
@@ -44,37 +54,32 @@ pub fn Peers() -> Element {
         if let Some(err) = error.read().as_ref() {
             div { class: "error-message", "{err}" }
         } else {
-             PeersTable { peers: peers }
+            PeersTable { } // no arg reuiqred --> we use (global shared) context now
         }
     }
 }
 
 #[component]
-fn PeersTable(peers: Signal<Vec<PeerStats>>) -> Element {
+// fn PeersTable(peer_signal_map: HashMap<Endpoint, Signal<PeerStats>>) -> Element {
+fn PeersTable() -> Element {
     let mut current_page = use_signal(|| 0);
     let items_per_page = 20;
     let mut sort_column = use_signal(|| "Protocol".to_string());
     let mut sort_direction = use_signal(|| SortDirection::Ascending);
-    let peers_len = peers.read().len();
 
+    let peer_signal_map = use_context::<Signal<PeerSignalMapping>>();
+
+    // let peers_len = peers.read().len();
+    let peers_len = peer_signal_map.read().0.len();
+
+    // Pagination
     let mut change_page = move |delta: i32| {
         let cur_page = *current_page.read() as i32;
         current_page.set(
             (cur_page + delta)
                 .max(0)
-                .min((peers_len - 1) as i32 / items_per_page as i32) as usize,
+                .min((peers_len - 1) as i32 / items_per_page),
         );
-    };
-
-    let mut expanded_rows = use_signal(|| ExpandedRows(HashSet::new()));
-    let mut toggle_row_expansion = move |peer_endpoint: String| {
-        expanded_rows.with_mut(|rows| {
-            if rows.0.contains(&peer_endpoint) {
-                rows.0.remove(&peer_endpoint);
-            } else {
-                rows.0.insert(peer_endpoint);
-            }
-        });
     };
 
     // Sorting
@@ -94,7 +99,12 @@ fn PeersTable(peers: Signal<Vec<PeerStats>>) -> Element {
     };
 
     let sorted_peers = use_memo(move || {
-        let mut sorted = peers.read().to_vec();
+        let mut sorted = peer_signal_map
+            .read()
+            .0
+            .values()
+            .map(|x| x.read().clone())
+            .collect::<Vec<_>>();
         sort_peers(&mut sorted, &sort_column.read(), &sort_direction.read());
         sorted
     });
@@ -149,8 +159,20 @@ fn PeersTable(peers: Signal<Vec<PeerStats>>) -> Element {
     let peers_len = filtered_peers.read().len();
 
     let start = current_page * items_per_page;
-    let end = (start + items_per_page).min(peers_len);
-    let current_peers = filtered_peers.read()[start..end].to_vec();
+    let end = (start + items_per_page).min(peers_len as i32);
+    let current_peers = filtered_peers.read()[start as usize..end as usize].to_vec();
+
+    // Expanding peer to show rx/tx bytes graphs
+    let mut expanded_rows = use_signal(|| ExpandedRows(HashSet::new()));
+    let mut toggle_row_expansion = move |peer_endpoint: String| {
+        expanded_rows.with_mut(|rows| {
+            if rows.0.contains(&peer_endpoint) {
+                rows.0.remove(&peer_endpoint);
+            } else {
+                rows.0.insert(peer_endpoint);
+            }
+        });
+    };
 
     rsx! {
         div { class: "peers-table",
@@ -220,16 +242,20 @@ fn PeersTable(peers: Signal<Vec<PeerStats>>) -> Element {
                                 td { class: "rx-bytes-column", "{human_bytes(peer.rx_bytes as f64)}" }
                             }
                             {
-                                let is_expanded = expanded_rows.read().0.contains(&peer.endpoint.to_string());
-                                let mut peer_signal = use_signal(|| peer.clone());
-                                // Update the peer_signal when the peers are fetched
-                                peer_signal.set(peer.clone());
-                                if is_expanded {
-                                    rsx! {
-                                        ExpandedPeerRow {
-                                            peer: peer_signal,
-                                            on_close: move |_| toggle_row_expansion(peer.endpoint.to_string())
+                                // // let current_peer_signal = peer_signals.get(&peer.endpoint).cloned();
+                                let corresponding_peer_signal = peer_signal_map.read().0.get(&peer.endpoint).cloned();
+                                let peer_expanded = expanded_rows.read().0.contains(&peer.endpoint.to_string());
+
+                                if let Some(peer_signal) = corresponding_peer_signal {
+                                    if peer_expanded {
+                                        rsx! {
+                                            ExpandedPeerRow {
+                                                peer: peer_signal,
+                                                on_close: move |_| toggle_row_expansion(peer.endpoint.to_string()),
+                                            }
                                         }
+                                    } else {
+                                        rsx! {}
                                     }
                                 } else {
                                     rsx! {}
@@ -247,7 +273,7 @@ fn PeersTable(peers: Signal<Vec<PeerStats>>) -> Element {
                 }
                 span { "Page {current_page + 1}" }
                 button {
-                    disabled: (current_page + 1) * items_per_page >= peers_len,
+                    disabled: (current_page + 1) * items_per_page >= peers_len as i32,
                     onclick: move |_| change_page(1),
                     "Next"
                 }
@@ -256,45 +282,74 @@ fn PeersTable(peers: Signal<Vec<PeerStats>>) -> Element {
     }
 }
 
+#[derive(Clone)]
+struct BandwidthData {
+    tx_bytes: u64,
+    rx_bytes: u64,
+    timestamp: tokio::time::Duration,
+}
+
 #[component]
-fn ExpandedPeerRow(
-    peer: Signal<mycelium::peer_manager::PeerStats>,
-    on_close: EventHandler<()>,
-) -> Element {
-    let tx_data_deque: VecDeque<f32> = VecDeque::with_capacity(20);
-    let rx_data_deque: VecDeque<f32> = VecDeque::with_capacity(20);
-    let mut tx_chart_data = use_signal(|| tx_data_deque);
-    let mut rx_chart_data = use_signal(|| rx_data_deque);
+fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Element {
+    let bandwidth_data = use_signal(VecDeque::<BandwidthData>::new);
+    let start_time = use_signal(tokio::time::Instant::now);
 
-    let mut prev_tx = use_signal(|| 0f64);
-    let mut prev_rx = use_signal(|| 0f64);
+    use_future(move || {
+        to_owned![bandwidth_data, start_time, peer];
+        async move {
+            let mut last_tx = peer.read().tx_bytes;
+            let mut last_rx = peer.read().rx_bytes;
 
-    use_effect(move || {
-        println!("yeah...");
-        let current_tx = peer.read().tx_bytes as f64;
-        let current_rx = peer.read().rx_bytes as f64;
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
 
-        // Calculate data flow per second
-        let tx_per_second = (current_tx - *prev_tx.read()) as u64 * (1000 / REFRESH_RATE_MS);
-        let rx_per_second = (current_rx - *prev_rx.read()) as u64 * (1000 / REFRESH_RATE_MS);
+                let current_time = tokio::time::Instant::now();
+                let elapsed_time = current_time.duration_since(*start_time.read());
 
-        tx_chart_data.with_mut(|tx_data| {
-            if tx_data.len() >= 20 {
-                tx_data.pop_front();
+                let tx_rate =
+                    (peer.read().tx_bytes - last_tx) as f64 / (REFRESH_RATE_MS as f64 / 1000.0);
+                let rx_rate =
+                    (peer.read().rx_bytes - last_rx) as f64 / (REFRESH_RATE_MS as f64 / 1000.0);
+
+                bandwidth_data.with_mut(|data| {
+                    let new_data = BandwidthData {
+                        tx_bytes: tx_rate as u64,
+                        rx_bytes: rx_rate as u64,
+                        timestamp: elapsed_time,
+                    };
+                    data.push_back(new_data);
+
+                    if data.len() > MAX_DATA_POINTS {
+                        data.pop_front();
+                    }
+                });
+
+                last_tx = peer.read().tx_bytes;
+                last_rx = peer.read().rx_bytes;
             }
-            tx_data.push_back(tx_per_second as f32);
-        });
-
-        rx_chart_data.with_mut(|rx_data| {
-            if rx_data.len() >= 20 {
-                rx_data.pop_front();
-            }
-            rx_data.push_back(rx_per_second as f32);
-        });
+        }
     });
-    // Causes a circular dependency which causes the program to become unresponsive
-    // prev_tx.set(peer.read().tx_bytes as f64);
-    // prev_rx.set(peer.read().rx_bytes as f64);
+
+    let tx_data = use_memo(move || {
+        bandwidth_data
+            .read()
+            .iter()
+            .map(|d| d.tx_bytes as f32)
+            .collect::<Vec<f32>>()
+    });
+
+    let rx_data = use_memo(move || {
+        bandwidth_data
+            .read()
+            .iter()
+            .map(|d| d.rx_bytes as f32)
+            .collect::<Vec<f32>>()
+    });
+    let labels = bandwidth_data
+        .read()
+        .iter()
+        .map(|d| format!("{:.1}", d.timestamp.as_secs_f64()))
+        .collect::<Vec<String>>();
 
     rsx! {
         tr { class: "expanded-row",
@@ -308,9 +363,9 @@ fn ExpandedPeerRow(
                         padding_right: 80,
                         padding_bottom: 80,
                         label_interpolation: (|v| human_bytes(v as f64).to_string()) as fn(f32)-> String,
-                        series: vec![tx_chart_data.read().iter().cloned().collect::<Vec<f32>>()],
-                        labels: (0..tx_chart_data.read().len()).map(|i| i.to_string()).collect::<Vec<String>>(),
-                        series_labels: vec!["Tx Bytes".into()],
+                        series: vec![tx_data.read().to_vec()],
+                        labels: labels.clone(),
+                        series_labels: vec!["Tx Bytes/s".into()],
                     }
                     // Rx chart
                     LineChart {
@@ -320,12 +375,10 @@ fn ExpandedPeerRow(
                         padding_right: 80,
                         padding_bottom: 80,
                         label_interpolation: (|v| human_bytes(v as f64).to_string()) as fn(f32)-> String,
-                        series: vec![rx_chart_data.read().iter().cloned().collect::<Vec<f32>>()],
-                        labels: (0..rx_chart_data.read().len()).map(|i| i.to_string()).collect::<Vec<String>>(),
-                        series_labels: vec!["Rx Bytes".into()],
+                        series: vec![rx_data.read().clone()],
+                        labels: labels.clone(),
+                        series_labels: vec!["Rx Bytes/s".into()],
                     }
-                    // p { "Tx bytes: {human_bytes(peer.read().tx_bytes as f64)}" }
-                    // p { "Rx bytes: {human_bytes(peer.read().rx_bytes as f64)}" }
                     button { class: "close-button",
                         onclick: move |_| on_close.call(()),
                         "Close"
@@ -335,6 +388,7 @@ fn ExpandedPeerRow(
         }
     }
 }
+
 #[derive(Clone, PartialEq)]
 // Rows that have been expaneded out to show additional information
 struct ExpandedRows(HashSet<String>);
