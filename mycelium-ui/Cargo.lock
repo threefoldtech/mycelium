@@ -3063,6 +3063,7 @@ dependencies = [
  "dioxus-free-icons",
  "dioxus-logger",
  "dioxus-sortable",
+ "futures-util",
  "human_bytes",
  "manganis",
  "mycelium",

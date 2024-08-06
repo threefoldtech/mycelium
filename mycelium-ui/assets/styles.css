@@ -336,10 +336,25 @@ h2 {
     background-color: #f8f9fa;
 }
 
+.graph-container {
+    width: 100%;
+    max-width: 800px;
+    margin-bottom: 2rem;
+}
+
+.graph-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--secondary-color);
+    text-align: center;
+}
+
 .expanded-content {
-    padding: 1rem;
+    padding: 2rem;
     display: flex;
-    justify-content: space-between;
+    /* justify-content: space-between; */
+    flex-direction: column;
     align-items: center;
 }
 
@@ -348,13 +363,43 @@ h2 {
     font-size: 0.9rem;
 }
 
+/* Style for both Tx and Rx charts */
+.expanded-content svg {
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Style for chart lines */
+.expanded-content path {
+    stroke-width: 3;
+}
+
+/* Style for Tx bytes chart */
+.graph-container:nth-child(1) path {
+    stroke: #3498db;
+}
+
+/* Style for Rx bytes chart */
+.graph-container:nth-child(2) path {
+    stroke: #2ecc71;
+}
+
 .close-button {
     background-color: var(--primary-color);
     color: white;
     border: none;
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
     cursor: pointer;
     transition: background-color 0.3s ease;
+    border-radius: 4px;
+    margin-top: 1rem;
+}
+
+.close-button:hover {
+    background-color: #2980b9;
 }
 
 .close-button:hover {
