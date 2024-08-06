@@ -34,9 +34,17 @@ fn App() -> Element {
             HashMap::<Endpoint, Signal<PeerStats>>::new(),
         ))
     });
+    use_context_provider(|| Signal::new(StopFetchingPeerSignal(false)));
 
     rsx! {
-        Router::<Route> {}
+        Router::<Route> {
+            config: || {
+                RouterConfig::default().on_update(|state| {
+                    use_context::<Signal<StopFetchingPeerSignal>>().write().0 = state.current() != Route::Peers {};
+                    (state.current() == Route::Peers {}).then_some(NavigationTarget::Internal(Route::Peers {}))
+                })
+            }
+        }
     }
 }
 
@@ -60,6 +68,11 @@ struct SearchState {
     query: String,
     column: String,
 }
+
+// This signal is used to stop the loop that keeps fetching information about the peers when
+// looking at the peers table, e.g. when the user goes back to Home or Routes page.
+#[derive(Clone, PartialEq)]
+struct StopFetchingPeerSignal(bool);
 
 #[derive(Clone, PartialEq)]
 struct ServerAddress(SocketAddr);

@@ -1,7 +1,10 @@
 use crate::get_sort_indicator;
-use crate::{api, PeerSignalMapping, SearchState, ServerAddress, SortDirection};
+use crate::{
+    api, PeerSignalMapping, SearchState, ServerAddress, SortDirection, StopFetchingPeerSignal,
+};
 use dioxus::prelude::*;
 use dioxus_charts::LineChart;
+use futures_util::StreamExt;
 use human_bytes::human_bytes;
 use mycelium::peer_manager::{PeerStats, PeerType};
 use std::{
@@ -18,33 +21,43 @@ pub fn Peers() -> Element {
     let error = use_signal(|| None::<String>);
     // Mapping between peer and their corresponding signal
     let peer_signal_map = use_context::<Signal<PeerSignalMapping>>();
+    // Set to false when user is on Peers page. Changes to true when visiting any other page of the
+    // application
+    let stop_fetching_signal = use_context::<Signal<StopFetchingPeerSignal>>().read().0;
+    println!("current value stop_fetching_signal: {stop_fetching_signal}");
 
-    let _: Coroutine<()> = use_coroutine(|_rx: UnboundedReceiver<_>| {
+    let _: Coroutine<()> = use_coroutine(|_rx| {
         async move {
             to_owned![server_addr, error, peer_signal_map];
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
-                match api::get_peers(server_addr).await {
-                    Ok(fetched_peers) => {
-                        let mut peer_signal_map = peer_signal_map.write();
-                        // populate the peer_signal_map
-                        for peer in fetched_peers {
-                            peer_signal_map
-                                .0
-                                .entry(peer.endpoint)
-                                .or_insert(use_signal(|| peer.clone())) // ret. mut ref to signal
-                                .set(peer); // set signal (each time, so with new rx/tx data incl.)
-                        }
+                if !stop_fetching_signal {
+                    println!("Starting loop");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
+                    match api::get_peers(server_addr).await {
+                        Ok(fetched_peers) => {
+                            let mut peer_signal_map = peer_signal_map.write();
+                            // populate the peer_signal_map
+                            for peer in fetched_peers {
+                                peer_signal_map
+                                    .0
+                                    .entry(peer.endpoint)
+                                    .or_insert(use_signal(|| peer.clone()))
+                                    .set(peer); // set signal (each time, so with new rx/tx data incl.)
+                            }
 
-                        error.set(None);
+                            error.set(None);
+                        }
+                        Err(e) => {
+                            eprintln!("Error fetching peers: {}", e);
+                            error.set(Some(format!(
+                                "An error has occurred while fetching peers: {}",
+                                e
+                            )))
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("Error fetching peers: {}", e);
-                        error.set(Some(format!(
-                            "An error has occurred while fetching peers: {}",
-                            e
-                        )))
-                    }
+                } else {
+                    println!("breaking out of loop");
+                    break;
                 }
             }
         }
@@ -54,13 +67,12 @@ pub fn Peers() -> Element {
         if let Some(err) = error.read().as_ref() {
             div { class: "error-message", "{err}" }
         } else {
-            PeersTable { } // no arg reuiqred --> we use (global shared) context now
+            PeersTable { }
         }
     }
 }
 
 #[component]
-// fn PeersTable(peer_signal_map: HashMap<Endpoint, Signal<PeerStats>>) -> Element {
 fn PeersTable() -> Element {
     let mut current_page = use_signal(|| 0);
     let items_per_page = 20;
@@ -355,29 +367,36 @@ fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Eleme
         tr { class: "expanded-row",
             td { colspan: "7",
                 div { class: "expanded-content",
-                    // Tx chart
-                    LineChart {
-                        show_grid: false,
-                        padding_top: 80,
-                        padding_left: 100,
-                        padding_right: 80,
-                        padding_bottom: 80,
-                        label_interpolation: (|v| human_bytes(v as f64).to_string()) as fn(f32)-> String,
-                        series: vec![tx_data.read().to_vec()],
-                        labels: labels.clone(),
-                        series_labels: vec!["Tx Bytes/s".into()],
+                    div { class: "graph-container",
+                        // Tx chart
+                        div { class: "graph-title", "Tx Bytes/s" }
+                        LineChart {
+                            show_grid: false,
+                            show_grid_ticks: true,
+                            padding_top: 80,
+                            padding_left: 100,
+                            padding_right: 80,
+                            padding_bottom: 80,
+                            label_interpolation: (|v| human_bytes(v as f64).to_string()) as fn(f32)-> String,
+                            series: vec![tx_data.read().to_vec()],
+                            labels: labels.clone(),
+                            series_labels: vec!["Tx Bytes/s".into()],
+                        }
                     }
-                    // Rx chart
-                    LineChart {
-                        show_grid: false,
-                        padding_top: 80,
-                        padding_left: 100,
-                        padding_right: 80,
-                        padding_bottom: 80,
-                        label_interpolation: (|v| human_bytes(v as f64).to_string()) as fn(f32)-> String,
-                        series: vec![rx_data.read().clone()],
-                        labels: labels.clone(),
-                        series_labels: vec!["Rx Bytes/s".into()],
+                    div { class: "graph-container",
+                        // Rx chart
+                        div { class: "graph-title", "Rx Bytes/s" }
+                        LineChart {
+                            show_grid: false,
+                            padding_top: 80,
+                            padding_left: 100,
+                            padding_right: 80,
+                            padding_bottom: 80,
+                            label_interpolation: (|v| human_bytes(v as f64).to_string()) as fn(f32)-> String,
+                            series: vec![rx_data.read().clone()],
+                            labels: labels.clone(),
+                            series_labels: vec!["Rx Bytes/s".into()],
+                        }
                     }
                     button { class: "close-button",
                         onclick: move |_| on_close.call(()),
