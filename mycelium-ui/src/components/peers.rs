@@ -1,65 +1,52 @@
 use crate::get_sort_indicator;
-use crate::{
-    api, PeerSignalMapping, SearchState, ServerAddress, SortDirection, StopFetchingPeerSignal,
-};
+use crate::{api, SearchState, ServerAddress, SortDirection, StopFetchingPeerSignal};
 use dioxus::prelude::*;
 use dioxus_charts::LineChart;
-use futures_util::StreamExt;
 use human_bytes::human_bytes;
-use mycelium::peer_manager::{PeerStats, PeerType};
+use mycelium::{
+    endpoint::Endpoint,
+    peer_manager::{PeerStats, PeerType},
+};
 use std::{
     cmp::Ordering,
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
 };
 
 const REFRESH_RATE_MS: u64 = 500;
-const MAX_DATA_POINTS: usize = 60; // Store 60 seconds of data
+const MAX_DATA_POINTS: usize = 8; // displays last 4 seconds
 
 #[component]
 pub fn Peers() -> Element {
     let server_addr = use_context::<Signal<ServerAddress>>().read().0;
     let error = use_signal(|| None::<String>);
-    // Mapping between peer and their corresponding signal
-    let peer_signal_map = use_context::<Signal<PeerSignalMapping>>();
-    // Set to false when user is on Peers page. Changes to true when visiting any other page of the
-    // application
-    let stop_fetching_signal = use_context::<Signal<StopFetchingPeerSignal>>().read().0;
-    println!("current value stop_fetching_signal: {stop_fetching_signal}");
+    let peer_data = use_signal(HashMap::<Endpoint, PeerStats>::new);
 
-    let _: Coroutine<()> = use_coroutine(|_rx| {
-        async move {
-            to_owned![server_addr, error, peer_signal_map];
-            loop {
-                if !stop_fetching_signal {
-                    println!("Starting loop");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
-                    match api::get_peers(server_addr).await {
-                        Ok(fetched_peers) => {
-                            let mut peer_signal_map = peer_signal_map.write();
-                            // populate the peer_signal_map
+    let _ = use_resource(move || async move {
+        to_owned![server_addr, error, peer_data];
+        loop {
+            let stop_fetching_signal = use_context::<Signal<StopFetchingPeerSignal>>().read().0;
+            if !stop_fetching_signal {
+                match api::get_peers(server_addr).await {
+                    Ok(fetched_peers) => {
+                        peer_data.with_mut(|data| {
                             for peer in fetched_peers {
-                                peer_signal_map
-                                    .0
-                                    .entry(peer.endpoint)
-                                    .or_insert(use_signal(|| peer.clone()))
-                                    .set(peer); // set signal (each time, so with new rx/tx data incl.)
+                                data.insert(peer.endpoint, peer);
                             }
-
-                            error.set(None);
-                        }
-                        Err(e) => {
-                            eprintln!("Error fetching peers: {}", e);
-                            error.set(Some(format!(
-                                "An error has occurred while fetching peers: {}",
-                                e
-                            )))
-                        }
+                        });
+                        error.set(None);
                     }
-                } else {
-                    println!("breaking out of loop");
-                    break;
+                    Err(e) => {
+                        eprintln!("Error fetching peers: {}", e);
+                        error.set(Some(format!(
+                            "An error has occurred while fetching peers: {}",
+                            e
+                        )))
+                    }
                 }
+            } else {
+                break;
             }
+            tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
         }
     });
 
@@ -67,22 +54,18 @@ pub fn Peers() -> Element {
         if let Some(err) = error.read().as_ref() {
             div { class: "error-message", "{err}" }
         } else {
-            PeersTable { }
+            PeersTable { peer_data: peer_data }
         }
     }
 }
 
 #[component]
-fn PeersTable() -> Element {
+fn PeersTable(peer_data: Signal<HashMap<Endpoint, PeerStats>>) -> Element {
     let mut current_page = use_signal(|| 0);
     let items_per_page = 20;
     let mut sort_column = use_signal(|| "Protocol".to_string());
     let mut sort_direction = use_signal(|| SortDirection::Ascending);
-
-    let peer_signal_map = use_context::<Signal<PeerSignalMapping>>();
-
-    // let peers_len = peers.read().len();
-    let peers_len = peer_signal_map.read().0.len();
+    let peers_len = peer_data.read().len();
 
     // Pagination
     let mut change_page = move |delta: i32| {
@@ -111,14 +94,9 @@ fn PeersTable() -> Element {
     };
 
     let sorted_peers = use_memo(move || {
-        let mut sorted = peer_signal_map
-            .read()
-            .0
-            .values()
-            .map(|x| x.read().clone())
-            .collect::<Vec<_>>();
-        sort_peers(&mut sorted, &sort_column.read(), &sort_direction.read());
-        sorted
+        let mut peers = peer_data.read().values().cloned().collect::<Vec<_>>();
+        sort_peers(&mut peers, &sort_column.read(), &sort_direction.read());
+        peers
     });
 
     // Searching
@@ -169,7 +147,6 @@ fn PeersTable() -> Element {
     });
 
     let peers_len = filtered_peers.read().len();
-
     let start = current_page * items_per_page;
     let end = (start + items_per_page).min(peers_len as i32);
     let current_peers = filtered_peers.read()[start as usize..end as usize].to_vec();
@@ -254,20 +231,14 @@ fn PeersTable() -> Element {
                                 td { class: "rx-bytes-column", "{human_bytes(peer.rx_bytes as f64)}" }
                             }
                             {
-                                // // let current_peer_signal = peer_signals.get(&peer.endpoint).cloned();
-                                let corresponding_peer_signal = peer_signal_map.read().0.get(&peer.endpoint).cloned();
                                 let peer_expanded = expanded_rows.read().0.contains(&peer.endpoint.to_string());
-
-                                if let Some(peer_signal) = corresponding_peer_signal {
-                                    if peer_expanded {
-                                        rsx! {
-                                            ExpandedPeerRow {
-                                                peer: peer_signal,
-                                                on_close: move |_| toggle_row_expansion(peer.endpoint.to_string()),
-                                            }
+                                if peer_expanded {
+                                    rsx! {
+                                        ExpandedPeerRow {
+                                            peer_endpoint: peer.endpoint,
+                                            peer_data: peer_data,
+                                            on_close: move |_| toggle_row_expansion(peer.endpoint.to_string()),
                                         }
-                                    } else {
-                                        rsx! {}
                                     }
                                 } else {
                                     rsx! {}
@@ -302,42 +273,51 @@ struct BandwidthData {
 }
 
 #[component]
-fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Element {
+fn ExpandedPeerRow(
+    peer_endpoint: Endpoint,
+    peer_data: Signal<HashMap<Endpoint, PeerStats>>,
+    on_close: EventHandler<()>,
+) -> Element {
     let bandwidth_data = use_signal(VecDeque::<BandwidthData>::new);
     let start_time = use_signal(tokio::time::Instant::now);
 
     use_future(move || {
-        to_owned![bandwidth_data, start_time, peer];
+        to_owned![bandwidth_data, start_time, peer_data, peer_endpoint];
         async move {
-            let mut last_tx = peer.read().tx_bytes;
-            let mut last_rx = peer.read().rx_bytes;
+            let mut last_tx = 0;
+            let mut last_rx = 0;
+            if let Some(peer_stats) = peer_data.read().get(&peer_endpoint) {
+                last_tx = peer_stats.tx_bytes;
+                last_rx = peer_stats.rx_bytes;
+            }
 
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
-
                 let current_time = tokio::time::Instant::now();
                 let elapsed_time = current_time.duration_since(*start_time.read());
 
-                let tx_rate =
-                    (peer.read().tx_bytes - last_tx) as f64 / (REFRESH_RATE_MS as f64 / 1000.0);
-                let rx_rate =
-                    (peer.read().rx_bytes - last_rx) as f64 / (REFRESH_RATE_MS as f64 / 1000.0);
+                if let Some(peer_stats) = peer_data.read().get(&peer_endpoint) {
+                    let tx_rate =
+                        (peer_stats.tx_bytes - last_tx) as f64 / (REFRESH_RATE_MS as f64 / 1000.0);
+                    let rx_rate =
+                        (peer_stats.rx_bytes - last_rx) as f64 / (REFRESH_RATE_MS as f64 / 1000.0);
 
-                bandwidth_data.with_mut(|data| {
-                    let new_data = BandwidthData {
-                        tx_bytes: tx_rate as u64,
-                        rx_bytes: rx_rate as u64,
-                        timestamp: elapsed_time,
-                    };
-                    data.push_back(new_data);
+                    bandwidth_data.with_mut(|data| {
+                        let new_data = BandwidthData {
+                            tx_bytes: tx_rate as u64,
+                            rx_bytes: rx_rate as u64,
+                            timestamp: elapsed_time,
+                        };
+                        data.push_back(new_data);
 
-                    if data.len() > MAX_DATA_POINTS {
-                        data.pop_front();
-                    }
-                });
+                        if data.len() > MAX_DATA_POINTS {
+                            data.pop_front();
+                        }
+                    });
 
-                last_tx = peer.read().tx_bytes;
-                last_rx = peer.read().rx_bytes;
+                    last_tx = peer_stats.tx_bytes;
+                    last_rx = peer_stats.rx_bytes;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(REFRESH_RATE_MS)).await;
             }
         }
     });
@@ -372,7 +352,7 @@ fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Eleme
                         div { class: "graph-title", "Tx Bytes/s" }
                         LineChart {
                             show_grid: false,
-                            show_grid_ticks: true,
+                            show_dots: false,
                             padding_top: 80,
                             padding_left: 100,
                             padding_right: 80,
@@ -388,6 +368,7 @@ fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Eleme
                         div { class: "graph-title", "Rx Bytes/s" }
                         LineChart {
                             show_grid: false,
+                            show_dots: false,
                             padding_top: 80,
                             padding_left: 100,
                             padding_right: 80,
@@ -398,9 +379,11 @@ fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Eleme
                             series_labels: vec!["Rx Bytes/s".into()],
                         }
                     }
-                    button { class: "close-button",
-                        onclick: move |_| on_close.call(()),
-                        "Close"
+                    div { class: "cluse-button-container",
+                        button { class: "close-button",
+                            onclick: move |_| on_close.call(()),
+                            "Close"
+                        }
                     }
                 }
             }
@@ -409,7 +392,6 @@ fn ExpandedPeerRow(peer: Signal<PeerStats>, on_close: EventHandler<()>) -> Eleme
 }
 
 #[derive(Clone, PartialEq)]
-// Rows that have been expaneded out to show additional information
 struct ExpandedRows(HashSet<String>);
 
 fn sort_peers(
