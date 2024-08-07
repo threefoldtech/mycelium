@@ -337,8 +337,8 @@ h2 {
 }
 
 .graph-container {
-    width: 100%;
-    max-width: 800px;
+    width: calc(50% -1rem);
+    max-width: 600px;
     margin-bottom: 2rem;
 }
 
@@ -353,27 +353,29 @@ h2 {
 .expanded-content {
     padding: 2rem;
     display: flex;
-    /* justify-content: space-between; */
-    flex-direction: column;
-    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
 }
 
 .expanded-content p {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 0.5rem;
 }
 
 /* Style for both Tx and Rx charts */
 .expanded-content svg {
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     overflow: hidden;
+    max-width: 100%;
+    height: auto;
 }
 
 /* Style for chart lines */
 .expanded-content path {
-    stroke-width: 3;
+    stroke-width: 2;
 }
 
 /* Style for Tx bytes chart */
@@ -384,6 +386,13 @@ h2 {
 /* Style for Rx bytes chart */
 .graph-container:nth-child(2) path {
     stroke: #2ecc71;
+}
+
+.close-button-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: 1rem;
 }
 
 .close-button {
@@ -414,3 +423,17 @@ tbody tr {
 tbody tr:hover {
     background-color: #f1f3f5;
 }
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+    .expanded-content {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .graph-container {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
