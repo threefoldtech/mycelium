@@ -14,7 +14,7 @@ name = "mycelium-private"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.11", features = ["derive"] }
+clap = { version = "4.5.15", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
 tracing-subscriber = { version = "0.3.18", features = [
