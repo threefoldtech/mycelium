@@ -379,7 +379,7 @@ fn ExpandedPeerRow(
                             series_labels: vec!["Rx Bytes/s".into()],
                         }
                     }
-                    div { class: "cluse-button-container",
+                    div { class: "close-button-container",
                         button { class: "close-button",
                             onclick: move |_| on_close.call(()),
                             "Close"

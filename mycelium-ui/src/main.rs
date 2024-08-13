@@ -24,7 +24,11 @@ const DEFAULT_SERVER_ADDR: SocketAddr =
 fn main() {
     // Init logger
     dioxus_logger::init(tracing::Level::INFO).expect("failed to init logger");
-    dioxus::launch(App);
+
+    let config = dioxus::desktop::Config::new()
+        .with_custom_head(r#"<link rel="stylesheet" href="styles.css">"#.to_string());
+    LaunchBuilder::desktop().with_cfg(config).launch(App);
+    // dioxus::launch(App);
 }
 
 #[component]
