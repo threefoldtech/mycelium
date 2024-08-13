@@ -1,4 +1,6 @@
 #![allow(non_snake_case)]
+// Disable terminal popup on Windows
+#![cfg_attr(feature = "bundle", windows_subsystem = "windows")]
 
 mod api;
 mod components;
