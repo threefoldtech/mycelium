@@ -1,4 +1,6 @@
+use mycelium::endpoint::Endpoint;
 use std::net::SocketAddr;
+use urlencoding::encode;
 
 pub async fn get_peers(
     server_addr: SocketAddr,
@@ -48,4 +50,29 @@ pub async fn get_node_info(server_addr: SocketAddr) -> Result<mycelium_api::Info
             Ok(node_info) => Ok(node_info),
         },
     }
+}
+
+pub async fn remove_peer(
+    server_addr: SocketAddr,
+    peer_endpoint: Endpoint,
+) -> Result<(), reqwest::Error> {
+    let full_endpoint = format!(
+        "{}://{}",
+        peer_endpoint.proto().to_string().to_lowercase(),
+        peer_endpoint.address().to_string()
+    );
+    let encoded_full_endpoint = encode(&full_endpoint);
+    let request_url = format!(
+        "http://{}/api/v1/admin/peers/{}",
+        server_addr, encoded_full_endpoint
+    );
+
+    let client = reqwest::Client::new();
+    client
+        .delete(request_url)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(())
 }

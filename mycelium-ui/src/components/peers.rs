@@ -29,6 +29,14 @@ pub fn Peers() -> Element {
                 match api::get_peers(server_addr).await {
                     Ok(fetched_peers) => {
                         peer_data.with_mut(|data| {
+                            // Collect the endpoint from the fetched peers
+                            let fetched_endpoints: HashSet<Endpoint> =
+                                fetched_peers.iter().map(|peer| peer.endpoint).collect();
+
+                            // Remove peers that are no longer in the fetched data
+                            data.retain(|endpoint, _| fetched_endpoints.contains(endpoint));
+
+                            // Insert or update the fetched peers
                             for peer in fetched_peers {
                                 data.insert(peer.endpoint, peer);
                             }
@@ -343,6 +351,17 @@ fn ExpandedPeerRow(
         .map(|d| format!("{:.1}", d.timestamp.as_secs_f64()))
         .collect::<Vec<String>>();
 
+    let remove_peer = move |_| {
+        spawn(async move {
+            println!("Removing peer: {}", peer_endpoint);
+            let server_addr = use_context::<Signal<ServerAddress>>().read().0;
+            match api::remove_peer(server_addr, peer_endpoint).await {
+                Ok(_) => on_close.call(()),
+                Err(e) => eprintln!("Error removing peer: {e}"),
+            }
+        });
+    };
+
     rsx! {
         tr { class: "expanded-row",
             td { colspan: "7",
@@ -383,6 +402,12 @@ fn ExpandedPeerRow(
                         button { class: "close-button",
                             onclick: move |_| on_close.call(()),
                             "Close"
+                        }
+                    }
+                    div { class: "remove-button-container",
+                        button { class: "remove-button",
+                            onclick: remove_peer,
+                            "Remove peer"
                         }
                     }
                 }

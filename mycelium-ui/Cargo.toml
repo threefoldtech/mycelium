@@ -28,6 +28,7 @@ human_bytes = { version = "0.4.3", features = ["fast"] }
 tokio = "1.39.2"
 dioxus-charts = "0.2.0"
 futures-util = "0.3.30"
+urlencoding = "2.1.3"
 
 [features]
 bundle = []

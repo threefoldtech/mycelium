@@ -3072,6 +3072,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "urlencoding",
 ]
 
 [[package]]
