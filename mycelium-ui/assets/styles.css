@@ -389,7 +389,7 @@ h2 {
 }
 
 .close-button-container {
-    width: 100%;
+    width: 50%;
     display: flex;
     justify-content: center;
     margin-top: 1rem;
@@ -413,6 +413,29 @@ h2 {
 
 .close-button:hover {
     background-color: #2980b9;
+}
+
+.remove-button-container {
+    width: 50%;
+    display: flex;
+    justify-content: center;
+    margin-top: 1rem;
+}
+
+.remove-button {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border-radius: 4px;
+    margin-top: 1rem;
+}
+
+.remove-button:hover {
+    background-color: #c0392b;
 }
 
 /* Make the table rows clickable */
