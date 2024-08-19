@@ -1123,6 +1123,15 @@ where
             } else {
                 // If there is no entry yet ignore unfeasible updates and retractions.
                 if metric.is_infinite() || !update_feasible {
+                    // If the update is not feasible, and we don't have a selected route for the
+                    // subnet, request a seqno bump.
+                    if !update_feasible && routes.selected().is_none() {
+                        self.send_seqno_request(
+                            SourceKey::new(update.subnet(), update.router_id()),
+                            Some(source_peer.clone()),
+                            None,
+                        );
+                    }
                     debug!("Received unfeasible update | retraction for unknown route - neighbour");
                     return false;
                 }

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added flag to specify how many update workers should be started, which governs
   the amount of parallelism used for processing updates.
 - Send a seqno request if we receive an unfeasible update for a subnet with no
-  routes.
+  routes, or if there is no selected route for the subnet.
 
 ### Changed
 
