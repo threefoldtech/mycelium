@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 mycelium = { path = "../mycelium", features = ["vendored-openssl"] }
-tokio = { version = "1.39.2", features = ["signal", "rt-multi-thread"] }
+tokio = { version = "1.39.3", features = ["signal", "rt-multi-thread"] }
 thiserror = "1.0.63"
 tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
