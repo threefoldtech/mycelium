@@ -1037,6 +1037,13 @@ where
                 rte
             } else {
                 if !update_feasible || metric.is_infinite() {
+                    if !update_feasible {
+                        self.send_seqno_request(
+                            SourceKey::new(update.subnet(), update.router_id()),
+                            Some(source_peer),
+                            None,
+                        );
+                    }
                     debug!(%subnet, "Ignore unfeasible update | retraction for unknown subnet");
                     self.metrics.router_update_not_interested();
                     return;
