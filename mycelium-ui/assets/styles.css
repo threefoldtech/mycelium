@@ -284,10 +284,19 @@ h2 {
     margin-bottom: 1rem;
 }
 
+/* Searching and adding */
+.search-and-add-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
 /* Searching */
 .search-container {
+  flex-grow: 1;
   display: flex;
-  margin-bottom: 1rem;
+  margin-right: 1rem;
 }
 
 .search-container input {
@@ -305,6 +314,22 @@ h2 {
   border-left: none;
   border-radius: 0 4px 4px 0;
   background-color: white;
+}
+
+/* Add peer button */
+.add-peer-container button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.add-peer-container button:hover {
+  background-color: #2980b9
 }
 
 /* Refresh button */

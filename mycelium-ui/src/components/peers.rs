@@ -10,7 +10,9 @@ use mycelium::{
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet, VecDeque},
+    str::FromStr,
 };
+use tracing::{error, info};
 
 const REFRESH_RATE_MS: u64 = 500;
 const MAX_DATA_POINTS: usize = 8; // displays last 4 seconds
@@ -171,25 +173,60 @@ fn PeersTable(peer_data: Signal<HashMap<Endpoint, PeerStats>>) -> Element {
         });
     };
 
+    let toggle_add_peer_input = use_signal(|| true); //TODO: fix UX for adding peer
+    let add_peer = move |peer_endpoint: String| {
+        spawn(async move {
+            let server_addr = use_context::<Signal<ServerAddress>>().read().0;
+            // Check correct endpoint format and add peer
+            match Endpoint::from_str(&peer_endpoint) {
+                Ok(endpoint) => {
+                    if let Err(e) = api::add_peer(server_addr, endpoint).await {
+                        error!("Error adding peer: {e}");
+                    } else {
+                        info!("Succesfully added peer: {endpoint}");
+                    }
+                }
+                Err(e) => error!("Incorrect peer endpoint: {e}"),
+            }
+        });
+    };
+    let mut new_peer_endpoint = use_signal(|| "".to_string());
+
     rsx! {
         div { class: "peers-table",
             h2 { "Peers" }
-            div { class: "search-container",
-                input {
-                    placeholder: "Search...",
-                    value: "{search_state.read().query}",
-                    oninput: move |evt| search_state.write().query.clone_from(&evt.value()),
+            div { class: "search-and-add-container",
+                div { class: "search-container",
+                    input {
+                        placeholder: "Search...",
+                        value: "{search_state.read().query}",
+                        oninput: move |evt| search_state.write().query.clone_from(&evt.value()),
+                    }
+                    select {
+                        value: "{search_state.read().column}",
+                        onchange: move |evt| search_state.write().column.clone_from(&evt.value()),
+                        option { value: "Protocol", "Protocol" }
+                        option { value: "Address", "Address" }
+                        option { value: "Port", "Port" }
+                        option { value: "Type", "Type" }
+                        option { value: "Connection State", "Connection State" }
+                        option { value: "Tx bytes", "Tx bytes" }
+                        option { value: "Rx bytes", "Rx bytes" }
+                    }
                 }
-                select {
-                    value: "{search_state.read().column}",
-                    onchange: move |evt| search_state.write().column.clone_from(&evt.value()),
-                    option { value: "Protocol", "Protocol" }
-                    option { value: "Address", "Address" }
-                    option { value: "Port", "Port" }
-                    option { value: "Type", "Type" }
-                    option { value: "Connection State", "Connection State" }
-                    option { value: "Tx bytes", "Tx bytes" }
-                    option { value: "Rx bytes", "Rx bytes" }
+                div { class: "add-peer-container",
+                    button {
+                        onclick: move |_| add_peer(new_peer_endpoint.read().to_string()),
+                        "Add peer"
+                    }
+                    if *toggle_add_peer_input.read() {
+                        div { class: "expanded-add-peer-container",
+                            input {
+                                placeholder: "tcp://ipaddr:port",
+                                oninput: move |evt| new_peer_endpoint.set(evt.value())
+                            }
+                        }
+                    }
                 }
             }
             div { class: "table-container",
