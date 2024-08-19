@@ -59,7 +59,7 @@ pub async fn remove_peer(
     let full_endpoint = format!(
         "{}://{}",
         peer_endpoint.proto().to_string().to_lowercase(),
-        peer_endpoint.address().to_string()
+        peer_endpoint.address()
     );
     let encoded_full_endpoint = encode(&full_endpoint);
     let request_url = format!(
@@ -70,6 +70,23 @@ pub async fn remove_peer(
     let client = reqwest::Client::new();
     client
         .delete(request_url)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(())
+}
+
+pub async fn add_peer(
+    server_addr: SocketAddr,
+    peer_endpoint: Endpoint,
+) -> Result<(), reqwest::Error> {
+    println!("adding peer: {peer_endpoint}");
+    let client = reqwest::Client::new();
+    let request_url = format!("http://{server_addr}/api/v1/admin/peers");
+    client
+        .post(request_url)
+        .json(&peer_endpoint)
         .send()
         .await?
         .error_for_status()?;
