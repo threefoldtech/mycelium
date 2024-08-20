@@ -13,7 +13,7 @@ function IPA
     sudo ip addr add $argv
 end
 
-set peers tcp://188.40.132.242:9651 quic://136.243.47.186:9651 tcp://185.69.166.7:9651 quic://[2a02:1802:5e:0:8c9e:7dff:fec9:f0d2]:9651 tcp://[2a01:4f9:6a:1dc5::2]:9651 quic://[2a01:4f9:5a:1042::2]:9651
+set peers tcp://188.40.132.242:9651 quic://[2a01:4f8:212:fa6::2]:9651 tcp://185.69.166.7:9651 quic://[2a02:1802:5e:0:ec4:7aff:fe51:e36b]:9651 tcp://65.21.231.58:9651 quic://[2a01:4f9:5a:1042::2]:9651 tcp://[2604:a00:50:17b:9e6b:ff:fe1f:e054]:9651 quic://5.78.122.16:9651 tcp://[2a01:4ff:2f0:3621::1]:9651 quic://142.93.217.194:9651
 
 function IPNA
     set name $argv[1]
