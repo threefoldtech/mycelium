@@ -174,19 +174,24 @@ fn PeersTable(peer_data: Signal<HashMap<Endpoint, PeerStats>>) -> Element {
     };
 
     let toggle_add_peer_input = use_signal(|| true); //TODO: fix UX for adding peer
+    let mut add_peer_error = use_signal(|| None::<String>);
     let add_peer = move |peer_endpoint: String| {
         spawn(async move {
             let server_addr = use_context::<Signal<ServerAddress>>().read().0;
             // Check correct endpoint format and add peer
             match Endpoint::from_str(&peer_endpoint) {
-                Ok(endpoint) => {
-                    if let Err(e) = api::add_peer(server_addr, endpoint).await {
+                Ok(_) => {
+                    if let Err(e) = api::add_peer(server_addr, peer_endpoint.clone()).await {
                         error!("Error adding peer: {e}");
+                        add_peer_error.set(Some(format!("Error adding peer: {}", e)));
                     } else {
-                        info!("Succesfully added peer: {endpoint}");
+                        info!("Succesfully added peer: {peer_endpoint}");
                     }
                 }
-                Err(e) => error!("Incorrect peer endpoint: {e}"),
+                Err(e) => {
+                    error!("Incorrect peer endpoint: {e}");
+                    add_peer_error.set(Some(format!("Incorrect peer endpoint: {}", e)));
+                }
             }
         });
     };
@@ -215,17 +220,22 @@ fn PeersTable(peer_data: Signal<HashMap<Endpoint, PeerStats>>) -> Element {
                     }
                 }
                 div { class: "add-peer-container",
-                    button {
-                        onclick: move |_| add_peer(new_peer_endpoint.read().to_string()),
-                        "Add peer"
-                    }
-                    if *toggle_add_peer_input.read() {
-                        div { class: "expanded-add-peer-container",
-                            input {
-                                placeholder: "tcp://ipaddr:port",
-                                oninput: move |evt| new_peer_endpoint.set(evt.value())
+                    div { class: "add-peer-input-button",
+                        if *toggle_add_peer_input.read() {
+                            div { class: "expanded-add-peer-container",
+                                input {
+                                    placeholder: "tcp://ipaddr:port",
+                                    oninput: move |evt| new_peer_endpoint.set(evt.value())
+                                }
                             }
                         }
+                        button {
+                            onclick: move |_| add_peer(new_peer_endpoint.read().to_string()),
+                            "Add peer"
+                        }
+                    }
+                    if let Some(error) = add_peer_error.read().as_ref() {
+                        div { class: "add-peer-error", "{error}" }
                     }
                 }
             }
