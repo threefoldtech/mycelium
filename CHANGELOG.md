@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the amount of parallelism used for processing updates.
 - Send a seqno request if we receive an unfeasible update for a subnet with no
   routes, or if there is no selected route for the subnet.
+- New public peers in US, India, and Singapore.
 
 ### Changed
 
