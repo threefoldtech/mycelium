@@ -72,13 +72,11 @@ header h1 {
   position: fixed;
   top: 60px;
   left: 0;
-  /* transition: margin-left 0.3s ease-in-out; */
   transition: transform 0.3s ease-in-out;
   z-index: 100;
 }
 
 .sidebar.collapsed {
-  /* margin-left: -250px; */
   transform: translateX(-250px);
 }
 
@@ -298,7 +296,6 @@ h2 {
   flex: 0 0 60%;
   display: flex;
   margin-right: 1rem;
-  /* border-right: 1px solid var(--border-color); */
   margin-bottom: 0.5rem;
 }
 
@@ -408,8 +405,7 @@ h2 {
 }
 
 .graph-container {
-    width: calc(50% -1rem);
-    max-width: 600px;
+    width: calc(50% - 1rem);
     margin-bottom: 2rem;
 }
 
@@ -436,12 +432,12 @@ h2 {
 
 /* Style for both Tx and Rx charts */
 .expanded-content svg {
+    width: 100%;
+    height: auto;
     margin-bottom: 1rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     overflow: hidden;
-    max-width: 100%;
-    height: auto;
 }
 
 /* Style for chart lines */
@@ -459,12 +455,12 @@ h2 {
     stroke: #2ecc71;
 }
 
-.close-button-container {
-    width: 50%;
-    display: flex;
-    justify-content: center;
-    margin-top: 1rem;
-}
+.button-container {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+} 
 
 .close-button {
     background-color: var(--primary-color);
@@ -478,23 +474,8 @@ h2 {
     margin-top: 1rem;
 }
 
-.close-button:hover {
-    background-color: #2980b9;
-}
-
-.close-button:hover {
-    background-color: #2980b9;
-}
-
-.remove-button-container {
-    width: 50%;
-    display: flex;
-    justify-content: center;
-    margin-top: 1rem;
-}
-
 .remove-button {
-    background-color: #e74c3c;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 0.75rem 1.5rem;
