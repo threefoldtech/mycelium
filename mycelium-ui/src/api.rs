@@ -1,4 +1,5 @@
 use mycelium::endpoint::Endpoint;
+use mycelium_api::AddPeer;
 use std::net::SocketAddr;
 use urlencoding::encode;
 
@@ -79,17 +80,25 @@ pub async fn remove_peer(
 
 pub async fn add_peer(
     server_addr: SocketAddr,
-    peer_endpoint: Endpoint,
+    peer_endpoint: String,
 ) -> Result<(), reqwest::Error> {
     println!("adding peer: {peer_endpoint}");
     let client = reqwest::Client::new();
     let request_url = format!("http://{server_addr}/api/v1/admin/peers");
-    client
-        .post(request_url)
-        .json(&peer_endpoint)
-        .send()
-        .await?
-        .error_for_status()?;
+    // client
+    //     .post(request_url)
+    //     .json(&AddPeer {
+    //         endpoint: peer_endpoint.to_string(),
+    //     })
+    //     .send()
+    //     .await?
+    //     .error_for_status()?;
+
+    let dbg = client.post(request_url).json(&AddPeer {
+        endpoint: peer_endpoint,
+    });
+    println!("{:#?}", dbg);
+    dbg.send().await?.error_for_status()?;
 
     Ok(())
 }
