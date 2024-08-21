@@ -116,23 +116,3 @@ pub enum SortDirection {
     Ascending,
     Descending,
 }
-
-enum AppError {
-    NetworkError(reqwest::Error), // reqwest errors
-    AddressError(String),         // address parsing errors
-}
-
-impl std::fmt::Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AppError::NetworkError(e) => write!(f, "Network error: {}", e),
-            AppError::AddressError(e) => write!(f, "Address error: {}", e),
-        }
-    }
-}
-
-impl From<reqwest::Error> for AppError {
-    fn from(value: reqwest::Error) -> Self {
-        AppError::NetworkError(value)
-    }
-}
