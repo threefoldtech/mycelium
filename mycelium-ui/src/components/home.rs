@@ -1,5 +1,4 @@
 use crate::api;
-use crate::AppError;
 use crate::{ServerAddress, ServerConnected};
 use dioxus::prelude::*;
 use std::net::SocketAddr;
@@ -51,7 +50,7 @@ pub fn Home() -> Element {
     }
 }
 
-async fn fetch_node_info() -> Result<mycelium_api::Info, AppError> {
+async fn fetch_node_info() -> Result<mycelium_api::Info, reqwest::Error> {
     let server_addr = use_context::<Signal<ServerAddress>>();
     let mut server_connected = use_context::<Signal<ServerConnected>>();
     let address = server_addr.read().0;
@@ -63,7 +62,7 @@ async fn fetch_node_info() -> Result<mycelium_api::Info, AppError> {
         }
         Err(e) => {
             server_connected.write().0 = false;
-            Err(AppError::from(e))
+            Err(e)
         }
     }
 }
