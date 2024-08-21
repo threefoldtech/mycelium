@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Release flow to create the Windows installer now properly extracts wintun
+
 ## [0.5.4] - 2024-08-20
 
 ### Added
