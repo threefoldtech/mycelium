@@ -20,7 +20,7 @@ the following command (in the `mycelium-ui` directory):
 
 `dx serve`
 
-This will start a development server and launch the application in your default webbrowser.
+This will start a development server and launch the application in a WebView.
 
 ## Bundling the application
 
@@ -29,7 +29,7 @@ To bundle the application, you can use:
 `dx bundle --release --features bundle`
 
 This will create a bundled version of the application in the `dist/bundle/` directory. The bundled
-application can be distirbuted and run on various platforms, including Windows, MacOS and Linux. Dioxus
+application can be distributed and run on various platforms, including Windows, MacOS and Linux. Dioxus
 also offers support for mobile, but note that this has not been tested.
 
 ## Documentation
