@@ -104,7 +104,7 @@ jobs:
         run: curl -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
 
       - name: Unzip Wintun
-        run: unzip wintun.zip
+        run: unzip wintun
 
       - name: Move .dll file to myceliumd directory
         run: move wintun\bin\amd64\wintun.dll myceliumd
