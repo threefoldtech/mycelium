@@ -81,13 +81,9 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    if !validate_utun_name(&tun_config.name) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "TUN device name must be of the form 'utunXXX...' where X is a digit",
-        ))?;
-    }
-    let mut tun = match create_tun_interface(&tun_config.name) {
+    let tun_name = find_available_utun_name(&tun_config.name)?;
+
+    let mut tun = match create_tun_interface(&tun_name) {
         Ok(tun) => tun,
         Err(e) => {
             error!(
@@ -97,7 +93,7 @@ pub async fn new(
             return Err(e);
         }
     };
-    let iface = Iface::by_name(&tun_config.name)?;
+    let iface = Iface::by_name(&tun_name)?;
     iface.add_address(tun_config.node_subnet, tun_config.route_subnet)?;
 
     let (tun_sink, mut sink_receiver) = mpsc::channel::<PacketBuffer>(1000);
@@ -172,6 +168,40 @@ fn validate_utun_name(input: &str) -> bool {
         .expect("We just checked that name starts with 'utun' so this is always some")
         .parse::<u64>()
         .is_ok()
+}
+
+/// Find an available utun interface name
+fn find_available_utun_name(preferred_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let interfaces = datalink::interfaces();
+    let utun_interfaces: Vec<_> = interfaces
+        .iter()
+        .filter(|iface| iface.name.starts_with("utun"))
+        .collect();
+
+    if !preferred_name.is_empty() && validate_utun_name(preferred_name) {
+        if !utun_interfaces
+            .iter()
+            .any(|iface| iface.name == preferred_name)
+        {
+            return Ok(preferred_name.to_string());
+        }
+        error!("Preferred utun name '{}' is already in use", preferred_name);
+    }
+
+    let max_utun_number = utun_interfaces
+        .iter()
+        .filter_map(|iface| iface.name[4..].parse::<u64>().ok())
+        .max()
+        .unwrap_or(0);
+
+    let new_utun_number = max_utun_number + 1;
+    let new_utun_name = format!("utun{}", new_utun_number);
+
+    if validate_utun_name(&new_utun_name) {
+        Ok(new_utun_name)
+    } else {
+        Err("Could not find an available utun interface name".into())
+    }
 }
 
 /// Create a new TUN interface
