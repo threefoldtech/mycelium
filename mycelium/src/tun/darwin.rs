@@ -10,6 +10,7 @@ use std::{
 
 use futures::{Sink, Stream};
 use nix::sys::socket::SockaddrIn6;
+use pnet::datalink;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
