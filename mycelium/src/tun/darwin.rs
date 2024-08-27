@@ -82,6 +82,7 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
+    println!("TUN NAME FROM CONFIG: {}", tun_config.name);
     let tun_name = find_available_utun_name(&tun_config.name)?;
 
     let mut tun = match create_tun_interface(&tun_name) {
@@ -89,7 +90,7 @@ pub async fn new(
         Err(e) => {
             error!(
                 "Could not create tun device named \"{}\", make sure the name is not yet in use, and you have sufficient privileges to create a network device",
-                tun_config.name,
+                tun_name,
             );
             return Err(e);
         }
@@ -172,21 +173,23 @@ fn validate_utun_name(input: &str) -> bool {
 }
 
 /// Find an available utun interface name
-fn find_available_utun_name(preferred_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
     let interfaces = datalink::interfaces();
     let utun_interfaces: Vec<_> = interfaces
         .iter()
         .filter(|iface| iface.name.starts_with("utun"))
         .collect();
 
-    if !preferred_name.is_empty() && validate_utun_name(preferred_name) {
-        if !utun_interfaces
-            .iter()
-            .any(|iface| iface.name == preferred_name)
-        {
-            return Ok(preferred_name.to_string());
-        }
-        error!("Preferred utun name '{}' is already in use", preferred_name);
+    if !preferred_name.is_empty() {
+	if !validate_utun_name(preferred_name) {
+		error!("Invalid TUN name: {preferred_name}. Name must start with 'utun' followed by digits");
+		return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid TUN name"));
+	}
+	if interfaces.iter().any(|iface| iface.name == preferred_name) {
+		error!("TUN name {preferred_name} already in use");
+		return Err(io::Error::new(io::ErrorKind::AlreadyExists, "TUN name already in use"));	
+	}
+	return Ok(preferred_name.to_string());
     }
 
     let max_utun_number = utun_interfaces
@@ -199,9 +202,11 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, Box<dyn std:
     let new_utun_name = format!("utun{}", new_utun_number);
 
     if validate_utun_name(&new_utun_name) {
+	info!("Automatically assigned TUN name: {new_utun_name}");
         Ok(new_utun_name)
     } else {
-        Err("Could not find an available utun interface name".into())
+	error!("No available TUN name found");
+	Err(io::Error::new(io::ErrorKind::Other, "No available TUN name"))
     }
 }
 
