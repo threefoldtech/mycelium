@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default TUN name on Linux and Windows is now `mycelium`. On MacOS it is now `utun0`.
+
 ## [0.5.4] - 2024-08-20
 
 ### Added

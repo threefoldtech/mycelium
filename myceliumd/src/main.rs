@@ -40,7 +40,7 @@ const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 const TUN_NAME: &str = "mycelium";
 /// Default name of tun interface
 #[cfg(target_os = "macos")]
-const TUN_NAME: &str = "utun3";
+const TUN_NAME: &str = "utun0";
 
 /// The logging formats that can be selected.
 #[derive(Clone, PartialEq, Eq)]
