@@ -9,14 +9,14 @@ use std::{
 };
 
 use futures::{Sink, Stream};
-use netdev::get_interfaces;
+use netdev;
 use nix::sys::socket::SockaddrIn6;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
     sync::mpsc,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::crypto::PacketBuffer;
 use crate::subnet::Subnet;
@@ -82,6 +82,7 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
+    println!("preferred_name: {}", tun_config.name);
     let tun_name = find_available_utun_name(&tun_config.name)?;
 
     let mut tun = match create_tun_interface(&tun_name) {
@@ -181,41 +182,43 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
                 "Invalid TUN name",
             ));
         }
-        if interfaces.iter().any(|iface| iface.name == preferred_name) {
+        let interfaces = netdev::get_interfaces();
+        let utun_interfaces: Vec<_> = interfaces
+            .iter()
+            .filter(|iface| iface.name.starts_with("utun"))
+            .collect();
+        if utun_interfaces
+            .iter()
+            .any(|iface| iface.name == preferred_name)
+        {
             error!("TUN name {preferred_name} already in use");
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "TUN name already in use",
             ));
         }
-        return Ok(preferred_name.to_string());
+        if validate_utun_name(preferred_name) {
+            return Ok(preferred_name.to_string());
+        } else {
+            let max_utun_number = utun_interfaces
+                .iter()
+                .filter_map(|iface| iface.name[4..].parse::<u64>().ok())
+                .max()
+                .unwrap_or(0);
+            let new_utun_name = format!("utun{}", max_utun_number + 1);
+            if validate_utun_name(&new_utun_name) {
+                warn!("Automatically assigned TUN name: {new_utun_name}");
+                return Ok(new_utun_name);
+            } else {
+                error!("No available TUN name found");
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "No available TUN name",
+                ));
+            }
+        }
     }
-
-    let interfaces = netdev::get_interfaces();
-    let utun_interfaces: Vec<_> = interfaces
-        .iter()
-        .filter(|iface| iface.name.starts_with("utun"))
-        .collect();
-
-    let max_utun_number = utun_interfaces
-        .iter()
-        .filter_map(|iface| iface.name[4..].parse::<u64>().ok())
-        .max()
-        .unwrap_or(0);
-
-    let new_utun_number = max_utun_number + 1;
-    let new_utun_name = format!("utun{}", new_utun_number);
-
-    if validate_utun_name(&new_utun_name) {
-        info!("Automatically assigned TUN name: {new_utun_name}");
-        Ok(new_utun_name)
-    } else {
-        error!("No available TUN name found");
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "No available TUN name",
-        ))
-    }
+    Ok(preferred_name.to_string())
 }
 
 /// Create a new TUN interface
