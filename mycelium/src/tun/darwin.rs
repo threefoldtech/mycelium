@@ -9,8 +9,8 @@ use std::{
 };
 
 use futures::{Sink, Stream};
+use netdev::get_interfaces;
 use nix::sys::socket::SockaddrIn6;
-use pnet::datalink;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
@@ -82,7 +82,6 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    println!("TUN NAME FROM CONFIG: {}", tun_config.name);
     let tun_name = find_available_utun_name(&tun_config.name)?;
 
     let mut tun = match create_tun_interface(&tun_name) {
@@ -174,12 +173,6 @@ fn validate_utun_name(input: &str) -> bool {
 
 /// Find an available utun interface name
 fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
-    let interfaces = datalink::interfaces();
-    let utun_interfaces: Vec<_> = interfaces
-        .iter()
-        .filter(|iface| iface.name.starts_with("utun"))
-        .collect();
-
     if !preferred_name.is_empty() {
         if !validate_utun_name(preferred_name) {
             error!("Invalid TUN name: {preferred_name}. Name must start with 'utun' followed by digits");
@@ -197,6 +190,12 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
         }
         return Ok(preferred_name.to_string());
     }
+
+    let interfaces = netdev::get_interfaces();
+    let utun_interfaces: Vec<_> = interfaces
+        .iter()
+        .filter(|iface| iface.name.starts_with("utun"))
+        .collect();
 
     let max_utun_number = utun_interfaces
         .iter()
