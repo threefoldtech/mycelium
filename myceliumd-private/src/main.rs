@@ -37,7 +37,7 @@ const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 
 /// Default name of tun interface
 #[cfg(not(target_os = "macos"))]
-const TUN_NAME: &str = "tun0";
+const TUN_NAME: &str = "mycelium";
 /// Default name of tun interface
 #[cfg(target_os = "macos")]
 const TUN_NAME: &str = "utun3";
