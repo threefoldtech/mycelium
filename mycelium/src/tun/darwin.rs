@@ -181,15 +181,21 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
         .collect();
 
     if !preferred_name.is_empty() {
-	if !validate_utun_name(preferred_name) {
-		error!("Invalid TUN name: {preferred_name}. Name must start with 'utun' followed by digits");
-		return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid TUN name"));
-	}
-	if interfaces.iter().any(|iface| iface.name == preferred_name) {
-		error!("TUN name {preferred_name} already in use");
-		return Err(io::Error::new(io::ErrorKind::AlreadyExists, "TUN name already in use"));	
-	}
-	return Ok(preferred_name.to_string());
+        if !validate_utun_name(preferred_name) {
+            error!("Invalid TUN name: {preferred_name}. Name must start with 'utun' followed by digits");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Invalid TUN name",
+            ));
+        }
+        if interfaces.iter().any(|iface| iface.name == preferred_name) {
+            error!("TUN name {preferred_name} already in use");
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "TUN name already in use",
+            ));
+        }
+        return Ok(preferred_name.to_string());
     }
 
     let max_utun_number = utun_interfaces
@@ -202,11 +208,14 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
     let new_utun_name = format!("utun{}", new_utun_number);
 
     if validate_utun_name(&new_utun_name) {
-	info!("Automatically assigned TUN name: {new_utun_name}");
+        info!("Automatically assigned TUN name: {new_utun_name}");
         Ok(new_utun_name)
     } else {
-	error!("No available TUN name found");
-	Err(io::Error::new(io::ErrorKind::Other, "No available TUN name"))
+        error!("No available TUN name found");
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "No available TUN name",
+        ))
     }
 }
 
