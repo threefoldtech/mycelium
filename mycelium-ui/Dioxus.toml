@@ -1,0 +1,48 @@
+[application]
+
+# App (Project) Name
+name = "mycelium-ui"
+
+# Dioxus App Default Platform
+# desktop, web
+default_platform = "desktop"
+
+# `build` & `serve` dist path
+out_dir = "dist"
+
+# assets file folder
+asset_dir = "assets"
+
+[web.app]
+
+# HTML title tag content
+title = "mycelium-ui"
+
+[web.watcher]
+
+# when watcher trigger, regenerate the `index.html`
+reload_html = true
+
+# which files or dirs will be watcher monitoring
+watch_path = ["src", "assets"]
+
+# add fallback 404 page
+index_on_404 = true
+
+# include `assets` in web platform
+[web.resource]
+
+# CSS style file
+
+style = [
+  "https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap",
+]
+
+# Javascript code file
+script = []
+
+[web.resource.dev]
+
+# Javascript code file
+# serve: [dev-server] only
+script = []

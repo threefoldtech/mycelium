@@ -1,0 +1,514 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap');
+
+:root {
+  --primary-color: #3498db;
+  --secondary-color: #2c3e50;
+  --background-color: #ecf0f1;
+  --text-color: #34495e;
+  --border-color: #bdc3c7;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Lato', sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+header {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: fixed;
+  width: 100%;
+  z-index: 1000;
+  height: 60px;
+}
+
+header h1 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.node-info {
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+}
+
+.node-info span {
+  margin-right: 1rem;
+}
+
+.node-info .separator {
+  margin: 0 1rem;
+}
+
+.content-container {
+  display: flex;
+  padding-top: 60px;
+  min-height: calc(100vh - 60px);
+}
+
+.sidebar {
+  background-color: var(--secondary-color);
+  color: white;
+  width: 250px;
+  height: 100%;
+  position: fixed;
+  top: 60px;
+  left: 0;
+  transition: transform 0.3s ease-in-out;
+  z-index: 100;
+}
+
+.sidebar.collapsed {
+  transform: translateX(-250px);
+}
+
+.sidebar ul {
+  list-style-type: none;
+  padding: 1rem;
+}
+
+.sidebar li {
+  margin-bottom: 1rem;
+}
+
+.sidebar a {
+  color: white;
+  text-decoration: none;
+  font-size: 1.1rem;
+  transition: color 0.3s ease;
+}
+
+.sidebar a:hover {
+  color: var(--primary-color);
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  margin-left: 250px;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+.main-content.expanded {
+  margin-left: 0;
+}
+
+.toggle-sidebar.collapsed {
+  left: 10px;
+  transform: translate(-10px) rotate(180deg);
+  transition: left 0.3s ease-in-out, transform: 0s;
+}
+
+.toggle-sidebar {
+  background-color: var(--secondary-color);
+  color: white;
+  border: none;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 70px;
+  left: 250px;
+  transition: left 0.3s ease-in-out, transform 0.3s ease-in-out;
+  z-index: 200;
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+th, td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+th {
+  background-color: var(--primary-color);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+th:hover {
+  background-color: #2980b9;
+}
+
+.subnet-column { width: 25%; }
+.next-hop-column { width: 35%; }
+.metric-column { width: 20%; }
+.seqno-column { width: 20%; }
+
+.endpoint-column { width: 30%; }
+.type-column { width: 15%; }
+.connection-state-column { width: 20%; }
+.tx-bytes-column { width: 17.5%; }
+.rx-bytes-column { width: 17.5%; }
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.pagination button {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  margin: 0 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.pagination button:hover:not(:disabled) {
+  background-color: #2980b9;
+}
+
+.pagination button:disabled {
+  background-color: var(--border-color);
+  cursor: not-allowed;
+}
+
+.pagination span {
+  margin: 0 0.5rem;
+}
+
+.peers-table, .selected-routes, .fallback-routes {
+  margin-top: 2rem;
+}
+
+h2 {
+  color: var(--secondary-color);
+  margin-bottom: 1rem;
+}
+
+.node-info h3 {
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 400;
+}
+
+/* Home component */
+.home-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.home-container h2 {
+    color: var(--secondary-color);
+    margin-bottom: 1.5rem;
+}
+
+.home-container p {
+    margin-bottom: 1rem;
+}
+
+.bold {
+    font-weight: 700;
+}
+
+/* API server */
+.server-input {
+    display: flex;
+    margin-bottom: 1rem;
+}
+
+.server-input input {
+    flex-grow: 1;
+    padding: 0.5rem;
+    font-size: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px 0 0 4px;
+}
+
+.server-input button {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.server-input button:hover {
+    background-color: #2980b9;
+}
+
+.error {
+    color: #e74c3c;
+    margin-bottom: 1rem;
+}
+
+.warning {
+    color: #f39c12;
+    margin-bottom: 1rem;
+}
+
+/* Searching and adding */
+.search-and-add-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+/* Searching */
+.search-container {
+  flex: 0 0 60%;
+  display: flex;
+  margin-right: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.search-container input {
+  flex-grow: 1;
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px 0 0 4px;
+  min-width: 200px;
+  height: 40px;
+}
+
+.search-container select {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  background-color: white;
+  min-width: 120px;
+  height: 40px;
+}
+
+/* Add peer button */
+.add-peer-container {
+  flex: 0 0 35%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.add-peer-input-button {
+  display: flex;
+  width: 100%;
+}
+
+
+.add-peer-container button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  white-space: nowrap;
+  height: 40px;
+}
+
+.add-peer-container button:hover {
+  background-color: #2980b9
+}
+
+.add-peer-error {
+  color: #e74c3c !important;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.expanded-add-peer-container {
+    flex-grow: 1;
+    display: flex;
+    margin-right: 0.5rem;
+}
+
+.expanded-add-peer-container input {
+    flex-grow: 1;
+    padding: 0.5rem;
+    font-size: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    min-width: 150px;
+    height: 40px;
+}
+
+/* Refresh button */
+.refresh-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.refresh-button:hover {
+    background-color: #2980b9;
+}
+
+.refresh-button svg {
+    margin-right: 0.5rem;
+}
+
+/* Expandable row styles */
+.expanded-row {
+    background-color: #f8f9fa;
+}
+
+.graph-container {
+    width: calc(50% - 1rem);
+    margin-bottom: 2rem;
+}
+
+.graph-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--secondary-color);
+    text-align: center;
+}
+
+.expanded-content {
+    padding: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.expanded-content p {
+    margin: 0;
+    font-size: 0.5rem;
+}
+
+/* Style for both Tx and Rx charts */
+.expanded-content svg {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Style for chart lines */
+.expanded-content path {
+    stroke-width: 2;
+}
+
+/* Style for Tx bytes chart */
+.graph-container:nth-child(1) path {
+    stroke: #3498db;
+}
+
+/* Style for Rx bytes chart */
+.graph-container:nth-child(2) path {
+    stroke: #2ecc71;
+}
+
+.button-container {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+} 
+
+.close-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border-radius: 4px;
+    margin-top: 1rem;
+}
+
+.remove-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border-radius: 4px;
+    margin-top: 1rem;
+}
+
+.remove-button:hover {
+    background-color: #c0392b;
+}
+
+/* Make the table rows clickable */
+tbody tr {
+    cursor: pointer;
+}
+
+tbody tr:hover {
+    background-color: #f1f3f5;
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+    .expanded-content {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .graph-container {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+

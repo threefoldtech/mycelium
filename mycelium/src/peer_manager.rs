@@ -64,7 +64,7 @@ pub struct PeerManager<M> {
 }
 
 /// Details how the PeerManager learned about a remote.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PeerType {
     /// Statically configured peer.
@@ -100,7 +100,7 @@ struct ConnectionTraffic {
 }
 
 /// General state about a connection to a [`Peer`].
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectionState {
     /// There is a working connection to the [`Peer`].
@@ -112,7 +112,7 @@ pub enum ConnectionState {
 }
 
 /// Identification and information/statistics for a specific [`Peer`]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerStats {
     /// The endpoint of the [`Peer`].

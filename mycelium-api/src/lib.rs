@@ -152,7 +152,7 @@ where
 }
 
 /// Alias to a [`Metric`](crate::metric::Metric) for serialization in the API.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Metric {
     /// Finite metric
     Value(u16),
@@ -162,7 +162,7 @@ pub enum Metric {
 
 /// Info about a route. This uses base types only to avoid having to introduce too many Serialize
 /// bounds in the core types.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[serde(rename_all = "camelCase")]
 pub struct Route {
     /// We convert the [`subnet`](Subnet) to a string to avoid introducing a bound on the actual
@@ -231,11 +231,13 @@ where
 }
 
 /// General info about a node.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Info {
     /// The overlay subnet in use by the node.
     pub node_subnet: String,
+    /// The public key of the node
+    pub node_pubkey: PublicKey,
 }
 
 /// Get general info about the node.
@@ -243,8 +245,10 @@ async fn get_info<M>(State(state): State<HttpServerState<M>>) -> Json<Info>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
+    let info = state.node.lock().await.info();
     Json(Info {
-        node_subnet: state.node.lock().await.info().node_subnet.to_string(),
+        node_subnet: info.node_subnet.to_string(),
+        node_pubkey: info.node_pubkey,
     })
 }
 
