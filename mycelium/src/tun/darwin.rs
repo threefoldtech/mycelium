@@ -9,7 +9,6 @@ use std::{
 };
 
 use futures::{Sink, Stream};
-use netdev;
 use nix::sys::socket::SockaddrIn6;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -234,13 +233,13 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
     let new_utun_name = format!("utun{}", first_free_index);
     if validate_utun_name(&new_utun_name) {
         warn!("Automatically assigned TUN name: {new_utun_name}");
-        return Ok(new_utun_name);
+        Ok(new_utun_name)
     } else {
         error!("No available TUN name found");
-        return Err(io::Error::new(
+        Err(io::Error::new(
             io::ErrorKind::Other,
             "No available TUN name",
-        ));
+        ))
     }
 }
 
