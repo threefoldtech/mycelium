@@ -176,11 +176,6 @@ fn validate_utun_name(input: &str) -> bool {
 /// - If the name is valid but already in use, an error will be thrown
 /// - If the name is not valid, we try to find the first freely available TUN name
 fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
-    println!("preferred name: {preferred_name}");
-
-    // Check if the preferred name is valid.
-    let is_valid_name = validate_utun_name(preferred_name);
-
     // Get the list of existing utun interfaces.
     let interfaces = netdev::get_interfaces();
     let utun_interfaces: Vec<_> = interfaces
@@ -194,22 +189,17 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
         })
         .collect();
 
-    // If the preferred name is valid, check if it's already in use.
-    if is_valid_name {
-        if utun_interfaces.contains(&preferred_name) {
-            error!("TUN name {preferred_name} already in use");
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "TUN name already in use",
-            ));
-        } else {
-            // If valid and not in use, return the preferred name.
-            return Ok(preferred_name.to_string());
-        }
+    // Check if the preferred name is valid and not in use.
+    if validate_utun_name(preferred_name) && !utun_interfaces.contains(&preferred_name) {
+        return Ok(preferred_name.to_string());
     }
 
-    // If the preferred name is not valid, warn the user and find the first available utun name.
-    warn!("Invalid TUN name: {preferred_name}. Looking for the next available TUN name.");
+    // If the preferred name is invalid or already in use, find the first available utun name.
+    if !validate_utun_name(preferred_name) {
+        warn!("Invalid TUN name: {preferred_name}. Looking for the first available TUN name.");
+    } else {
+        warn!("TUN name {preferred_name} already in use. Looking for the next available TUN name.");
+    }
 
     // Extract and sort the utun numbers.
     let mut utun_numbers = utun_interfaces
@@ -232,7 +222,7 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
     // Create new utun name based on the first free index.
     let new_utun_name = format!("utun{}", first_free_index);
     if validate_utun_name(&new_utun_name) {
-        warn!("Automatically assigned TUN name: {new_utun_name}");
+        info!("Automatically assigned TUN name: {new_utun_name}");
         Ok(new_utun_name)
     } else {
         error!("No available TUN name found");
