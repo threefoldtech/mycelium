@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Default TUN name on Linux and Windows is now `mycelium`. On MacOS it is now `utun0`.
 
+### Changed
+
+- TUN interface name validation on MacOS. If the user supplies an invalid or already
+taken interface name, an available interface name will be automatically assigned.
+
 ### Fixed
 
 - Release flow to create the Windows installer now properly extracts wintun
