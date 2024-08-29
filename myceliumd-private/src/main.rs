@@ -257,8 +257,8 @@ pub struct NodeArguments {
     /// Setting this only matters if a TUN interface is actually created, i.e. if the `--no-tun`
     /// flag is **not** set. The name set here must be valid for the current platform, e.g. on OSX,
     /// the name must start with `utun` and be followed by digits.
-    #[arg(long = "tun-name", default_value = TUN_NAME)]
-    tun_name: String,
+    #[arg(long = "tun-name")]
+    tun_name: Option<String>,
 
     /// Enable a private network, with this name.
     ///
@@ -300,6 +300,24 @@ pub struct NodeArguments {
     /// because you are running a public node with a lot of connections), this value can be
     /// increased to process updates in parallel.
     #[arg(long = "update-workers", default_value_t = 1)]
+    update_workers: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MergedNodeConfig {
+    peers: Vec<Endpoint>,
+    tcp_listen_port: u16,
+    disable_quic: bool,
+    quic_listen_port: u16,
+    peer_discovery_port: u16,
+    disable_peer_discovery: bool,
+    api_addr: SocketAddr,
+    no_tun: bool,
+    tun_name: String,
+    metrics_api_address: Option<SocketAddr>,
+    network_key_file: Option<PathBuf>,
+    network_name: Option<String>,
+    firewall_mark: Option<u32>,
     update_workers: usize,
 }
 
@@ -436,13 +454,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let metrics = mycelium_metrics::PrometheusExporter::new();
                 let config = mycelium::Config {
                     node_key: node_secret_key,
-                    peers: merged_config.static_peers,
+                    peers: merged_config.peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
                     quic_listen_port: if merged_config.disable_quic {
                         None
                     } else {
-                        Some(merged_config.peer_discovery_port)
+                        Some(merged_config.quic_listen_port)
                     },
                     peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
@@ -461,13 +479,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 let config = mycelium::Config {
                     node_key: node_secret_key,
-                    peers: merged_config.static_peers,
+                    peers: merged_config.peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
                     quic_listen_port: if merged_config.disable_quic {
                         None
                     } else {
-                        Some(merged_config.peer_discovery_port)
+                        Some(merged_config.quic_listen_port)
                     },
                     peer_discovery_port: if merged_config.disable_peer_discovery {
                         None
@@ -633,9 +651,9 @@ async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArguments {
-    NodeArguments {
-        static_peers: if !cli_args.static_peers.is_empty() {
+fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedNodeConfig {
+    MergedNodeConfig {
+        peers: if !cli_args.static_peers.is_empty() {
             cli_args.static_peers
         } else {
             file_config.peers.unwrap_or_default()
@@ -672,10 +690,12 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> NodeArg
                 .unwrap_or(DEFAULT_HTTP_API_SERVER_ADDRESS)
         },
         no_tun: cli_args.no_tun || file_config.no_tun.unwrap_or(false),
-        tun_name: if cli_args.tun_name != *TUN_NAME {
-            cli_args.tun_name
+        tun_name: if let Some(tun_name_cli) = cli_args.tun_name {
+            tun_name_cli
+        } else if let Some(tun_name_config) = file_config.tun_name {
+            tun_name_config
         } else {
-            file_config.tun_name.unwrap_or_else(|| TUN_NAME.to_string())
+            TUN_NAME.to_string()
         },
         metrics_api_address: cli_args
             .metrics_api_address
