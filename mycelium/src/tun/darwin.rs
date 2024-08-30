@@ -86,10 +86,7 @@ pub async fn new(
     let mut tun = match create_tun_interface(&tun_name) {
         Ok(tun) => tun,
         Err(e) => {
-            error!(
-                "Could not create tun device named \"{}\", make sure the name is not yet in use, and you have sufficient privileges to create a network device",
-                tun_name,
-            );
+            error!(tun_name=%tun_name, err=%e, "Could not create TUN device. Make sure the name is not yet in use, and you have sufficient privileges to create a network device");
             return Err(e);
         }
     };
@@ -196,9 +193,9 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
 
     // If the preferred name is invalid or already in use, find the first available utun name.
     if !validate_utun_name(preferred_name) {
-        warn!("Invalid TUN name: {preferred_name}. Looking for the first available TUN name.");
+        warn!(tun_name=%preferred_name, "Invalid TUN name. Looking for the first available TUN name");
     } else {
-        warn!("TUN name {preferred_name} already in use. Looking for the next available TUN name.");
+        warn!(tun_name=%preferred_name, "TUN name already in use. Looking for the next available TUN name.");
     }
 
     // Extract and sort the utun numbers.
@@ -222,7 +219,7 @@ fn find_available_utun_name(preferred_name: &str) -> Result<String, io::Error> {
     // Create new utun name based on the first free index.
     let new_utun_name = format!("utun{}", first_free_index);
     if validate_utun_name(&new_utun_name) {
-        info!("Automatically assigned TUN name: {new_utun_name}");
+        info!(tun_name=%new_utun_name, "Automatically assigned TUN name.");
         Ok(new_utun_name)
     } else {
         error!("No available TUN name found");
