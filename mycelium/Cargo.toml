@@ -11,7 +11,7 @@ private-network = ["dep:openssl", "dep:tokio-openssl"]
 vendored-openssl = ["openssl/vendored"]
 
 [dependencies]
-tokio = { version = "1.39.3", features = [
+tokio = { version = "1.40.0", features = [
   "io-util",
   "fs",
   "macros",
