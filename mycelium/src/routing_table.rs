@@ -372,7 +372,7 @@ impl RoutingTable {
             .longest_match(ip)
             .and_then(|(_, _, rl)| {
                 let rl = rl.load();
-                if !rl[0].selected() {
+                if rl.is_empty() || !rl[0].selected() {
                     None
                 } else {
                     Some(rl[0].clone())

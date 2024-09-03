@@ -225,8 +225,7 @@ where
     pub fn get_pubkey(&self, ip: IpAddr) -> Option<PublicKey> {
         self.routing_table
             .best_routes(ip)
-            // We can index here safely since we always have at least 1 route if we get
-            // Option::Some.
+            .and_then(|rl| if rl.is_empty() { None } else { Some(rl) })
             .map(|rl| rl[0].source().router_id().to_pubkey())
     }
 
