@@ -30,7 +30,7 @@ tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
 faster-hex = "0.9.0"
-tokio-stream = { version = "0.1.15", features = ["sync"] }
+tokio-stream = { version = "0.1.16", features = ["sync"] }
 left-right = "0.11.5"
 ipnet = "2.10.0"
 ip_network_table-deps-treebitmap = "0.5.0"
