@@ -17,4 +17,4 @@ once_cell = "1.19.0"
 tracing-android = "0.2.0"
 
 [target.'cfg(target_os = "ios")'.dependencies]
-tracing-oslog = "0.1.2"
+tracing-oslog = "0.2.0"
