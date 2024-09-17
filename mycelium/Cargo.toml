@@ -44,7 +44,7 @@ rustls = { version = "0.23.12", default-features = false, features = ["ring"] }
 rcgen = "0.13.1"
 netdev = "0.30.0"
 openssl = { version = "0.10.66", optional = true }
-tokio-openssl = { version = "0.6.4", optional = true }
+tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.7.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
