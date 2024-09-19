@@ -28,7 +28,7 @@ fn setup_logging() {
         .init();
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 fn setup_logging() {
     use tracing::level_filters::LevelFilter;
     use tracing_oslog::OsLogger;
@@ -44,12 +44,12 @@ fn setup_logging() {
         .init();
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 static INIT_LOG: Lazy<()> = Lazy::new(|| {
     setup_logging();
 });
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 fn setup_logging_once() {
     // Accessing the Lazy value will ensure setup_logging is called exactly once
     let _ = &*INIT_LOG;
@@ -74,7 +74,7 @@ static RESPONSE_CHANNEL: Lazy<ResponseChannelType> = Lazy::new(|| {
 #[tokio::main]
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     setup_logging_once();
 
     info!("starting mycelium");
@@ -92,13 +92,21 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
         quic_listen_port: None,
         peer_discovery_port: None, // disable multicast discovery
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            all(target_os = "macos", not(feature = "mactunfd")),
+            target_os = "windows"
+        ))]
         tun_name: "tun0".to_string(),
 
         metrics: NoMetrics,
         private_network_config: None,
         firewall_mark: None,
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        #[cfg(any(
+            target_os = "android",
+            target_os = "ios",
+            all(target_os = "macos", feature = "mactunfd"),
+        ))]
         tun_fd: Some(tun_fd),
         update_workers: 1,
     };
