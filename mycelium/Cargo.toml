@@ -9,6 +9,9 @@ readme = "../README.md"
 message = []
 private-network = ["dep:openssl", "dep:tokio-openssl"]
 vendored-openssl = ["openssl/vendored"]
+mactunfd = [
+  "tun/appstore",
+] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
 
 [dependencies]
 tokio = { version = "1.40.0", features = [

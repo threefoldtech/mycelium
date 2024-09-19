@@ -60,7 +60,11 @@ pub struct Config<M> {
     /// Udp port for peer discovery.
     pub peer_discovery_port: Option<u16>,
     /// Name for the TUN device.
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        all(target_os = "macos", not(feature = "mactunfd")),
+        target_os = "windows"
+    ))]
     pub tun_name: String,
 
     /// Configuration for a private network, if run in that mode. To enable private networking,
@@ -72,11 +76,15 @@ pub struct Config<M> {
     /// Mark that's set on all packets that we send on the underlying network
     pub firewall_mark: Option<u32>,
 
-    // tun_fd is android and iOS specific option
-    // We can't create TUN device from the Rust code in android and iOS.
-    // So, we create the TUN device on Kotlin(android) or Swift(iOS) then pass
+    // tun_fd is android, iOS, macos on appstore specific option
+    // We can't create TUN device from the Rust code in android, iOS, and macos on appstore.
+    // So, we create the TUN device on Kotlin(android) or Swift(iOS, macos) then pass
     // the TUN's file descriptor to mycelium.
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        all(target_os = "macos", feature = "mactunfd"),
+    ))]
     pub tun_fd: Option<i32>,
 
     /// The maount of worker tasks spawned to process updates. Up to this amound of updates can be
@@ -215,7 +223,11 @@ where
                 target_os = "ios"
             ))]
             {
-                #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+                #[cfg(any(
+                    target_os = "linux",
+                    all(target_os = "macos", not(feature = "mactunfd")),
+                    target_os = "windows"
+                ))]
                 let tun_config = TunConfig {
                     name: config.tun_name.clone(),
                     node_subnet: Subnet::new(node_addr.into(), 64)
@@ -223,7 +235,11 @@ where
                     route_subnet: Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
                         .expect("Static configured TUN route is valid; qed"),
                 };
-                #[cfg(any(target_os = "android", target_os = "ios"))]
+                #[cfg(any(
+                    target_os = "android",
+                    target_os = "ios",
+                    all(target_os = "macos", feature = "mactunfd"),
+                ))]
                 let tun_config = TunConfig {
                     tun_fd: config.tun_fd.unwrap(),
                 };
