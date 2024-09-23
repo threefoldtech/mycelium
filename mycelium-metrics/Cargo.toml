@@ -9,7 +9,7 @@ readme = "../README.md"
 prometheus = ["dep:axum", "dep:prometheus", "dep:tokio", "dep:tracing"]
 
 [dependencies]
-axum = { version = "0.7.5", default-features = false, optional = true, features = [
+axum = { version = "0.7.6", default-features = false, optional = true, features = [
   "http1",
   "http2",
   "tokio",
