@@ -1284,7 +1284,7 @@ fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>>
         })
     {
         for addr in nic.ipv6 {
-            if addr.addr.segments()[..4] == [0xfe80, 0, 0, 0] {
+            if addr.addr().segments()[..4] == [0xfe80, 0, 0, 0] {
                 nics.insert(nic.index);
             }
         }
