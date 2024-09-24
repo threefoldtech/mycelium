@@ -118,9 +118,7 @@ pub async fn new(
 fn create_tun_interface(name: &str) -> Result<Tun, Box<dyn std::error::Error>> {
     let tun = TunBuilder::new()
         .name(name)
-        .tap(false)
         .mtu(LINK_MTU)
-        .packet_info(false)
         .up()
         .try_build()?;
 
