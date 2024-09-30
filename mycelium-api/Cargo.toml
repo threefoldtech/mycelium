@@ -9,7 +9,7 @@ readme = "../README.md"
 message = ["mycelium/message"]
 
 [dependencies]
-axum = { version = "0.7.6", default-features = false, features = [
+axum = { version = "0.7.7", default-features = false, features = [
   "http1",
   "http2",
   "json",
