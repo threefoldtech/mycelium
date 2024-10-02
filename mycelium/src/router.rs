@@ -372,6 +372,8 @@ where
         // If there is no selected route there is nothing to do here. We keep expired routes in the
         // table for a while so updates of those should already have propagated to peers.
         let route_list = routes.routes();
+        // If we have a new selected route we must have at least 1 item in the route list so
+        // accessing the 0th list element here is fine.
         if let Some(new_selected) = self.find_best_route(&route_list).cloned() {
             if new_selected.neighbour() == route_list[0].neighbour() && route_list[0].selected() {
                 debug!(
@@ -389,7 +391,7 @@ where
             }
 
             routes.set_selected(new_selected.neighbour());
-        } else if route_list[0].selected() {
+        } else if !route_list.is_empty() && route_list[0].selected() {
             // This means we went from a selected route to a non-selected route. Unselect route and
             // trigger update.
             // At this point we also send a seqno request to all peers which advertised this route

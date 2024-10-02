@@ -7,18 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix a panic in the route cleanup task when a peer dies who is the last stored
+  announcer of a subnet.
+
 ## [0.5.5] - 2024-09-27
 
 ### Added
 
 - Mycelium-ui, a standalone GUI which exposes (part of) the mycelium API. This
-  does __not__ have a bundled mycelium node, so that needs to be run separately.
-  
+  does **not** have a bundled mycelium node, so that needs to be run separately.
+
 ### Changed
 
 - Default TUN name on Linux and Windows is now `mycelium`. On MacOS it is now `utun0`.
 - TUN interface name validation on MacOS. If the user supplies an invalid or already
-taken interface name, an available interface name will be automatically assigned.
+  taken interface name, an available interface name will be automatically assigned.
 
 ### Fixed
 
