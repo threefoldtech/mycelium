@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2024-10-03
+
 ### Fixed
 
 - Fix a panic in the route cleanup task when a peer dies who is the last stored
@@ -542,4 +544,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.5.3]: https://github.com/threefoldtech/mycelium/compare/v0.5.2...v0.5.3
 [0.5.4]: https://github.com/threefoldtech/mycelium/compare/v0.5.3...v0.5.4
 [0.5.5]: https://github.com/threefoldtech/mycelium/compare/v0.5.4...v0.5.5
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.5.5...HEAD
+[0.5.6]: https://github.com/threefoldtech/mycelium/compare/v0.5.5...v0.5.6
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.5.6...HEAD

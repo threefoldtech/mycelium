@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-api"
-version = "0.5.5"
+version = "0.5.6"
 edition = "2021"
 license-file = "../LICENSE"
 readme = "../README.md"

@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "aes-gcm",
  "arc-swap",
@@ -1347,7 +1347,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-api"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-cli"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "base64 0.22.1",
  "byte-unit",
@@ -1377,7 +1377,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-metrics"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "axum",
  "mycelium",
@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "myceliumd"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "base64 0.22.1",
  "byte-unit",
