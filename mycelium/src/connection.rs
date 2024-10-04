@@ -43,13 +43,13 @@ pub trait Connection: AsyncRead + AsyncWrite {
 pub struct Quic {
     tx: quinn::SendStream,
     rx: quinn::RecvStream,
-    remote: SocketAddr,
+    con: quinn::Connection,
 }
 
 impl Quic {
     /// Create a new wrapper around Quic streams.
-    pub fn new(tx: quinn::SendStream, rx: quinn::RecvStream, remote: SocketAddr) -> Self {
-        Quic { tx, rx, remote }
+    pub fn new(tx: quinn::SendStream, rx: quinn::RecvStream, con: quinn::Connection) -> Self {
+        Quic { tx, rx, con }
     }
 }
 
@@ -129,11 +129,11 @@ impl AsyncWrite for Quic {
 
 impl Connection for Quic {
     fn identifier(&self) -> Result<String, io::Error> {
-        Ok(format!("QUIC -> {}", self.remote))
+        Ok(format!("QUIC -> {}", self.con.remote_address()))
     }
 
     fn static_link_cost(&self) -> Result<u16, io::Error> {
-        Ok(match self.remote {
+        Ok(match self.con.remote_address() {
             SocketAddr::V4(_) => PACKET_PROCESSING_COST_IP4_QUIC,
             SocketAddr::V6(ip) if ip.ip().to_ipv4_mapped().is_some() => {
                 PACKET_PROCESSING_COST_IP4_QUIC
