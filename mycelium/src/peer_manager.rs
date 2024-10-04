@@ -621,7 +621,7 @@ where
             Ok(connecting) => match connecting.await {
                 Ok(con) => match con.open_bi().await {
                     Ok((tx, rx)) => {
-                        let q_con = Quic::new(tx, rx, endpoint.address());
+                        let q_con = Quic::new(tx, rx, con);
                         let res = {
                             let router = self.router.lock().unwrap();
                             let router_data_tx = router.router_data_tx();
@@ -841,9 +841,10 @@ where
                                 return;
                             }
                         };
+                        let remote_address = con.remote_address();
 
                         let quic_peer = match con.accept_bi().await {
-                            Ok((tx, rx)) => Quic::new(tx, rx, con.remote_address()),
+                            Ok((tx, rx)) => Quic::new(tx, rx, con),
                             Err(e) => {
                                 debug!(err=%e, "Failed to accept bidirectional quic stream");
                                 return;
@@ -866,9 +867,9 @@ where
                                 return;
                             }
                         };
-                        info!(remote=%con.remote_address(), "Accepted new inbound quic peer");
+                        info!(remote=%remote_address, "Accepted new inbound quic peer");
                         self.add_peer(
-                            Endpoint::new(Protocol::Quic, con.remote_address()),
+                            Endpoint::new(Protocol::Quic, remote_address),
                             PeerType::Inbound,
                             ConnectionTraffic { tx_bytes, rx_bytes },
                             Some(new_peer),
