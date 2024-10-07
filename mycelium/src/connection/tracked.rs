@@ -9,8 +9,6 @@ use std::{
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use super::Connection;
-
 /// Wrapper which keeps track of how much bytes have been read and written from a connection.
 pub struct Tracked<C> {
     /// Bytes read counter
@@ -23,27 +21,12 @@ pub struct Tracked<C> {
 
 impl<C> Tracked<C>
 where
-    C: Connection + Unpin,
+    C: AsyncRead + AsyncWrite + Unpin,
 {
     /// Create a new instance of a tracked connections. Counters are passed in so they can be
     /// reused accross connections.
     pub fn new(read: Arc<AtomicU64>, write: Arc<AtomicU64>, con: C) -> Self {
         Self { read, write, con }
-    }
-}
-
-impl<C> Connection for Tracked<C>
-where
-    C: Connection + Unpin,
-{
-    #[inline]
-    fn identifier(&self) -> Result<String, std::io::Error> {
-        self.con.identifier()
-    }
-
-    #[inline]
-    fn static_link_cost(&self) -> Result<u16, std::io::Error> {
-        self.con.static_link_cost()
     }
 }
 
