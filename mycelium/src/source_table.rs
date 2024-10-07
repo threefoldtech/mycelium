@@ -169,6 +169,7 @@ mod tests {
 
     use crate::{
         babel,
+        connection::DuplexStream,
         crypto::SecretKey,
         metric::Metric,
         peer::Peer,
@@ -178,11 +179,7 @@ mod tests {
         source_table::{FeasibilityDistance, SourceKey, SourceTable},
         subnet::Subnet,
     };
-    use std::{
-        net::Ipv6Addr,
-        sync::{atomic::AtomicU64, Arc},
-        time::Duration,
-    };
+    use std::{net::Ipv6Addr, time::Duration};
 
     /// A retraction is always considered to be feasible.
     #[tokio::test]
@@ -378,10 +375,8 @@ mod tests {
         let neighbor = Peer::new(
             router_data_tx,
             router_control_tx,
-            con1,
+            DuplexStream::new(con1),
             dead_peer_sink,
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AtomicU64::new(0)),
         )
         .expect("Can create a dummy peer");
 
@@ -423,10 +418,8 @@ mod tests {
         let neighbor = Peer::new(
             router_data_tx,
             router_control_tx,
-            con1,
+            DuplexStream::new(con1),
             dead_peer_sink,
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AtomicU64::new(0)),
         )
         .expect("Can create a dummy peer");
 
@@ -468,10 +461,8 @@ mod tests {
         let neighbor = Peer::new(
             router_data_tx,
             router_control_tx,
-            con1,
+            DuplexStream::new(con1),
             dead_peer_sink,
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AtomicU64::new(0)),
         )
         .expect("Can create a dummy peer");
 
