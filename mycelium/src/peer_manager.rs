@@ -1,4 +1,4 @@
-use crate::connection::Quic;
+use crate::connection::{Quic, TcpStream};
 use crate::endpoint::{Endpoint, Protocol};
 use crate::metrics::Metrics;
 use crate::peer::{Peer, PeerRef};
@@ -24,7 +24,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{collections::hash_map::Entry, future::IntoFuture};
-use tokio::net::TcpStream;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::AbortHandle;
 use tokio::time::MissedTickBehavior;
@@ -479,7 +478,7 @@ where
             None
         };
 
-        match TcpStream::connect(endpoint.address())
+        match tokio::net::TcpStream::connect(endpoint.address())
             .map(|result| result.and_then(|socket| set_fw_mark(socket, self.firewall_mark)))
             .await
         {
@@ -549,14 +548,22 @@ where
                 };
 
                 #[cfg(not(feature = "private-network"))]
-                let res = Peer::new(
-                    router_data_tx,
-                    router_control_tx,
-                    peer_stream,
-                    dead_peer_sink,
-                    ct.tx_bytes,
-                    ct.rx_bytes,
-                );
+                let res = {
+                    let peer_stream = match TcpStream::new(peer_stream, ct.rx_bytes, ct.tx_bytes) {
+                        Ok(ps) => ps,
+                        Err(err) => {
+                            error!(%err, "Failed to create wrapped tcp stream");
+                            return (endpoint, None);
+                        }
+                    };
+
+                    Peer::new(
+                        router_data_tx,
+                        router_control_tx,
+                        peer_stream,
+                        dead_peer_sink,
+                    )
+                };
 
                 match res {
                     Ok(new_peer) => {
@@ -621,21 +628,14 @@ where
             Ok(connecting) => match connecting.await {
                 Ok(con) => match con.open_bi().await {
                     Ok((tx, rx)) => {
-                        let q_con = Quic::new(tx, rx, con);
+                        let q_con = Quic::new(tx, rx, con, ct.tx_bytes, ct.rx_bytes);
                         let res = {
                             let router = self.router.lock().unwrap();
                             let router_data_tx = router.router_data_tx();
                             let router_control_tx = router.router_control_tx();
                             let dead_peer_sink = router.dead_peer_sink().clone();
 
-                            Peer::new(
-                                router_data_tx,
-                                router_control_tx,
-                                q_con,
-                                dead_peer_sink,
-                                ct.tx_bytes,
-                                ct.rx_bytes,
-                            )
+                            Peer::new(router_data_tx, router_control_tx, q_con, dead_peer_sink)
                         };
                         match res {
                             Ok(new_peer) => {
@@ -758,22 +758,32 @@ where
                         };
 
                         #[cfg(not(feature = "private-network"))]
-                        let new_peer = Peer::new(
-                            router_data_tx.clone(),
-                            router_control_tx.clone(),
-                            stream,
-                            dead_peer_sink.clone(),
-                            tx_bytes.clone(),
-                            rx_bytes.clone(),
-                        );
+                        let new_peer = {
+                            let new_stream =
+                                match TcpStream::new(stream, tx_bytes.clone(), rx_bytes.clone()) {
+                                    Ok(ns) => ns,
+                                    Err(err) => {
+                                        error!(%err, "Failed to create wrapped tcp stream");
+                                        continue;
+                                    }
+                                };
 
-                        let new_peer = match new_peer {
-                            Ok(peer) => peer,
-                            Err(e) => {
-                                error!(err=%e, "Failed to spawn peer");
-                                continue;
+                            let new_peer = Peer::new(
+                                router_data_tx.clone(),
+                                router_control_tx.clone(),
+                                new_stream,
+                                dead_peer_sink.clone(),
+                            );
+
+                            match new_peer {
+                                Ok(peer) => peer,
+                                Err(e) => {
+                                    error!(err=%e, "Failed to spawn peer");
+                                    continue;
+                                }
                             }
                         };
+
                         info!("Accepted new inbound peer");
                         self.add_peer(
                             Endpoint::new(
@@ -843,23 +853,23 @@ where
                         };
                         let remote_address = con.remote_address();
 
+
+                        let tx_bytes = Arc::new(AtomicU64::new(0));
+                        let rx_bytes = Arc::new(AtomicU64::new(0));
+
                         let quic_peer = match con.accept_bi().await {
-                            Ok((tx, rx)) => Quic::new(tx, rx, con),
+                            Ok((tx, rx)) => Quic::new(tx, rx, con, rx_bytes.clone(), tx_bytes.clone()),
                             Err(e) => {
                                 debug!(err=%e, "Failed to accept bidirectional quic stream");
                                 return;
                             }
                         };
 
-                        let tx_bytes = Arc::new(AtomicU64::new(0));
-                        let rx_bytes = Arc::new(AtomicU64::new(0));
                         let new_peer = match Peer::new(
                             router_data_tx.clone(),
                             router_control_tx.clone(),
                             quic_peer,
                             dead_peer_sink.clone(),
-                            tx_bytes.clone(),
-                            rx_bytes.clone(),
                         ) {
                             Ok(peer) => peer,
                             Err(e) => {

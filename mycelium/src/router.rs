@@ -1823,15 +1823,14 @@ fn advertised_update_interval(sre: &RouteEntry) -> Duration {
 mod tests {
     use std::{
         net::{IpAddr, Ipv6Addr},
-        sync::{atomic::AtomicU64, Arc},
         time::Duration,
     };
 
     use tokio::sync::mpsc;
 
     use crate::{
-        babel::Update, crypto::PublicKey, metric::Metric, peer::Peer, router_id::RouterId,
-        sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
+        babel::Update, connection::DuplexStream, crypto::PublicKey, metric::Metric, peer::Peer,
+        router_id::RouterId, sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
     };
 
     #[test]
@@ -1888,10 +1887,8 @@ mod tests {
         let neighbor = Peer::new(
             router_data_tx,
             router_control_tx,
-            con1,
+            DuplexStream::new(con1),
             dead_peer_sink,
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AtomicU64::new(0)),
         )
         .expect("Can create a dummy peer");
         let subnet = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 0)), 64)

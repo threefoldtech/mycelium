@@ -1,11 +1,18 @@
-use std::{io, net::SocketAddr, pin::Pin};
-
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
+use std::{
+    future::Future,
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    sync::{atomic::AtomicU64, Arc},
 };
 
+use crate::packet::{self, ControlPacket, DataPacket, Packet};
+
+use futures::{SinkExt, StreamExt};
+use tokio::io::{AsyncRead, AsyncWrite};
+
 mod tracked;
+use tokio_util::codec::Framed;
 pub use tracked::Tracked;
 
 #[cfg(feature = "private-network")]
@@ -31,7 +38,27 @@ const PACKET_PROCESSING_COST_IP6_QUIC: u16 = 7;
 // TODO
 const PACKET_PROCESSING_COST_IP4_QUIC: u16 = 12;
 
-pub trait Connection: AsyncRead + AsyncWrite {
+pub trait Connection {
+    /// Feeds a data packet on the connection. Depending on the connection you might need to call
+    /// [`Connection::flush`] before the packet is actually sent.
+    fn feed_data_packet(
+        &mut self,
+        packet: DataPacket,
+    ) -> impl Future<Output = io::Result<()>> + Send;
+
+    /// Feeds a control packet on the connection. Depending on the connection you might need to call
+    /// [`Connection::flush`] before the packet is actually sent.
+    fn feed_control_packet(
+        &mut self,
+        packet: ControlPacket,
+    ) -> impl Future<Output = io::Result<()>> + Send;
+
+    /// Flush the connection. This sends all buffered packets which haven't beend sent yet.
+    fn flush(&mut self) -> impl Future<Output = io::Result<()>> + Send;
+
+    /// Receive a packet from the remote end.
+    fn receive_packet(&mut self) -> impl Future<Output = Option<io::Result<Packet>>> + Send;
+
     /// Get an identifier for this connection, which shows details about the remote
     fn identifier(&self) -> Result<String, io::Error>;
 
@@ -39,31 +66,51 @@ pub trait Connection: AsyncRead + AsyncWrite {
     fn static_link_cost(&self) -> Result<u16, io::Error>;
 }
 
-/// A wrapper around a quic send and quic receive stream, implementing the [`Connection`] trait.
-pub struct Quic {
-    tx: quinn::SendStream,
-    rx: quinn::RecvStream,
-    con: quinn::Connection,
+/// A wrapper about an asynchronous (non blocking) tcp stream.
+pub struct TcpStream {
+    framed: Framed<Tracked<tokio::net::TcpStream>, packet::Codec>,
+    local_addr: SocketAddr,
+    peer_addr: SocketAddr,
 }
 
-impl Quic {
-    /// Create a new wrapper around Quic streams.
-    pub fn new(tx: quinn::SendStream, rx: quinn::RecvStream, con: quinn::Connection) -> Self {
-        Quic { tx, rx, con }
+impl TcpStream {
+    /// Create a new wrapped [`TcpStream`] which implements the [`Connection`] trait.
+    pub fn new(
+        tcp_stream: tokio::net::TcpStream,
+        read: Arc<AtomicU64>,
+        write: Arc<AtomicU64>,
+    ) -> io::Result<Self> {
+        Ok(Self {
+            local_addr: tcp_stream.local_addr()?,
+            peer_addr: tcp_stream.peer_addr()?,
+            framed: Framed::new(Tracked::new(read, write, tcp_stream), packet::Codec::new()),
+        })
     }
 }
 
 impl Connection for TcpStream {
+    async fn feed_data_packet(&mut self, packet: DataPacket) -> io::Result<()> {
+        self.framed.feed(Packet::DataPacket(packet)).await
+    }
+
+    async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
+        self.framed.feed(Packet::ControlPacket(packet)).await
+    }
+
+    async fn receive_packet(&mut self) -> Option<io::Result<Packet>> {
+        self.framed.next().await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        self.framed.flush().await
+    }
+
     fn identifier(&self) -> Result<String, io::Error> {
-        Ok(format!(
-            "TCP {} <-> {}",
-            self.local_addr()?,
-            self.peer_addr()?
-        ))
+        Ok(format!("TCP {} <-> {}", self.local_addr, self.peer_addr))
     }
 
     fn static_link_cost(&self) -> Result<u16, io::Error> {
-        Ok(match self.peer_addr()? {
+        Ok(match self.peer_addr {
             SocketAddr::V4(_) => PACKET_PROCESSING_COST_IP4_TCP,
             SocketAddr::V6(ip) if ip.ip().to_ipv4_mapped().is_some() => {
                 PACKET_PROCESSING_COST_IP4_TCP
@@ -73,7 +120,37 @@ impl Connection for TcpStream {
     }
 }
 
-impl AsyncRead for Quic {
+/// A wrapper around a quic send and quic receive stream, implementing the [`Connection`] trait.
+pub struct Quic {
+    framed: Framed<Tracked<QuicStream>, packet::Codec>,
+    con: quinn::Connection,
+}
+
+struct QuicStream {
+    tx: quinn::SendStream,
+    rx: quinn::RecvStream,
+}
+
+impl Quic {
+    /// Create a new wrapper around Quic streams.
+    pub fn new(
+        tx: quinn::SendStream,
+        rx: quinn::RecvStream,
+        con: quinn::Connection,
+        read: Arc<AtomicU64>,
+        write: Arc<AtomicU64>,
+    ) -> Self {
+        Quic {
+            framed: Framed::new(
+                Tracked::new(read, write, QuicStream { tx, rx }),
+                packet::Codec::new(),
+            ),
+            con,
+        }
+    }
+}
+
+impl AsyncRead for QuicStream {
     #[inline]
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -84,7 +161,7 @@ impl AsyncRead for Quic {
     }
 }
 
-impl AsyncWrite for Quic {
+impl AsyncWrite for QuicStream {
     #[inline]
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -128,6 +205,22 @@ impl AsyncWrite for Quic {
 }
 
 impl Connection for Quic {
+    async fn feed_data_packet(&mut self, packet: DataPacket) -> io::Result<()> {
+        self.framed.feed(Packet::DataPacket(packet)).await
+    }
+
+    async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
+        self.framed.feed(Packet::ControlPacket(packet)).await
+    }
+
+    async fn receive_packet(&mut self) -> Option<io::Result<Packet>> {
+        self.framed.next().await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        self.framed.flush().await
+    }
+
     fn identifier(&self) -> Result<String, io::Error> {
         Ok(format!("QUIC -> {}", self.con.remote_address()))
     }
@@ -144,10 +237,39 @@ impl Connection for Quic {
 }
 
 #[cfg(test)]
-use tokio::io::DuplexStream;
+/// Wrapper for an in-memory pipe implementing the [`Connection`] trait.
+pub struct DuplexStream {
+    framed: Framed<tokio::io::DuplexStream, packet::Codec>,
+}
+
+#[cfg(test)]
+impl DuplexStream {
+    /// Create a new in memory duplex stream.
+    pub fn new(duplex: tokio::io::DuplexStream) -> Self {
+        Self {
+            framed: Framed::new(duplex, packet::Codec::new()),
+        }
+    }
+}
 
 #[cfg(test)]
 impl Connection for DuplexStream {
+    async fn feed_data_packet(&mut self, packet: DataPacket) -> io::Result<()> {
+        self.framed.feed(Packet::DataPacket(packet)).await
+    }
+
+    async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
+        self.framed.feed(Packet::ControlPacket(packet)).await
+    }
+
+    async fn receive_packet(&mut self) -> Option<io::Result<Packet>> {
+        self.framed.next().await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        self.framed.flush().await
+    }
+
     fn identifier(&self) -> Result<String, io::Error> {
         Ok("Memory pipe".to_string())
     }

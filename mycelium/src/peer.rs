@@ -1,9 +1,8 @@
-use futures::{SinkExt, StreamExt};
 use std::{
     error::Error,
     io,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc, RwLock, Weak,
     },
 };
@@ -11,13 +10,9 @@ use tokio::{
     select,
     sync::{mpsc, Notify},
 };
-use tokio_util::codec::Framed;
 use tracing::{debug, error, info, trace};
 
-use crate::{
-    connection::{self, Connection},
-    packet::{self, Packet},
-};
+use crate::{connection::Connection, packet::Packet};
 use crate::{
     packet::{ControlPacket, DataPacket},
     sequence_number::SeqNo,
@@ -63,14 +58,9 @@ impl Peer {
     pub fn new<C: Connection + Unpin + Send + 'static>(
         router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
-        connection: C,
+        mut connection: C,
         dead_peer_sink: mpsc::Sender<Peer>,
-        bytes_written: Arc<AtomicU64>,
-        bytes_read: Arc<AtomicU64>,
     ) -> Result<Self, io::Error> {
-        // Wrap connection so we can get access to the counters.
-        let connection = connection::Tracked::new(bytes_read, bytes_written, connection);
-
         // Data channel for peer
         let (to_peer_data, mut from_routing_data) = mpsc::unbounded_channel::<DataPacket>();
         // Control channel for peer
@@ -90,10 +80,6 @@ impl Peer {
             }),
         };
 
-        // Framed for peer
-        // Used to send and receive packets from a TCP stream
-        let mut framed = Framed::new(connection, packet::Codec::new());
-
         {
             let peer = peer.clone();
 
@@ -101,8 +87,8 @@ impl Peer {
                 loop {
                     select! {
                         // Received over the TCP stream
-                        frame = framed.next() => {
-                            match frame {
+                        packet = connection.receive_packet() => {
+                            match packet {
                                 Some(Ok(packet)) => {
                                     match packet {
                                         Packet::DataPacket(packet) => {
@@ -136,16 +122,17 @@ impl Peer {
                         }
 
                         Some(packet) = from_routing_data.recv() => {
-                            if let Err(e) = framed.feed(Packet::DataPacket(packet)).await {
+                            if let Err(e) = connection.feed_data_packet(packet).await {
                                 error!("Failed to feed data packet to connection: {e}");
                                 break
                             }
+
 
                             for _ in 1..PACKET_COALESCE_WINDOW {
                                 // There can be 2 cases of errors here, empty channel and no more
                                 // senders. In both cases we don't really care at this point.
                                 if let Ok(packet) = from_routing_data.try_recv() {
-                                    if let Err(e) = framed.feed(Packet::DataPacket(packet)).await {
+                                    if let Err(e) = connection.feed_data_packet(packet).await {
                                         error!("Failed to feed data packet to connection: {e}");
                                         break
                                     }
@@ -156,14 +143,14 @@ impl Peer {
                                 }
                             }
 
-                            if let Err(e) = framed.flush().await {
+                            if let Err(e) = connection.flush().await {
                                 error!("Failed to flush buffered peer connection data packets: {e}");
                                 break
                             }
                         }
 
                         Some(packet) = from_routing_control.recv() => {
-                            if let Err(e) = framed.feed(Packet::ControlPacket(packet)).await {
+                            if let Err(e) = connection.feed_control_packet(packet).await {
                                 error!("Failed to feed control packet to connection: {e}");
                                 break
                             }
@@ -172,7 +159,7 @@ impl Peer {
                                 // There can be 2 cases of errors here, empty channel and no more
                                 // senders. In both cases we don't really care at this point.
                                 if let Ok(packet) = from_routing_control.try_recv() {
-                                    if let Err(e) = framed.feed(Packet::ControlPacket(packet)).await {
+                                    if let Err(e) = connection.feed_control_packet(packet).await {
                                         error!("Failed to feed data packet to connection: {e}");
                                         break
                                     }
@@ -182,7 +169,7 @@ impl Peer {
                                 }
                             }
 
-                            if let Err(e) = framed.flush().await {
+                            if let Err(e) = connection.flush().await {
                                 error!("Failed to flush buffered peer connection control packets: {e}");
                                 break
                             }
