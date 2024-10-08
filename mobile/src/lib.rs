@@ -73,7 +73,7 @@ static RESPONSE_CHANNEL: Lazy<ResponseChannelType> = Lazy::new(|| {
 
 #[tokio::main]
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
-pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
+pub async fn start_mycelium(peers: Vec<String>, tun_fd: Option<i32>, priv_key: Vec<u8>) {
     #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     setup_logging_once();
 
@@ -107,7 +107,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
             target_os = "ios",
             all(target_os = "macos", feature = "mactunfd"),
         ))]
-        tun_fd: Some(tun_fd),
+        tun_fd,
         update_workers: 1,
     };
     let _node = match Node::new(config).await {
