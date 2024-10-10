@@ -637,8 +637,9 @@ where
         transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
         transport_config.keep_alive_interval(Some(Duration::from_secs(20)));
         // we don't use datagrams.
-        transport_config.datagram_receive_buffer_size(None);
-        transport_config.datagram_send_buffer_size(0);
+        transport_config.datagram_receive_buffer_size(Some(16 << 20));
+        transport_config.datagram_send_buffer_size(16 << 20);
+        transport_config.initial_mtu(1500);
         config.transport_config(Arc::new(transport_config));
 
         match quic_socket.connect_with(config, endpoint.address(), "dummy.mycelium") {
@@ -1218,8 +1219,9 @@ fn make_quic_endpoint(
     transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
     transport_config.keep_alive_interval(Some(Duration::from_secs(20)));
     // we don't use datagrams.
-    transport_config.datagram_receive_buffer_size(None);
-    transport_config.datagram_send_buffer_size(0);
+    transport_config.datagram_receive_buffer_size(Some(16 << 20));
+    transport_config.datagram_send_buffer_size(16 << 20);
+    transport_config.initial_mtu(1500);
     // TODO: further tweak this.
 
     let socket = std::net::UdpSocket::bind(("::", quic_listen_port))

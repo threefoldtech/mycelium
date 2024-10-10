@@ -13,7 +13,7 @@ use crate::subnet::Subnet;
 use crate::tun::TunConfig;
 
 // TODO
-const LINK_MTU: i32 = 1400;
+const LINK_MTU: i32 = 1300;
 
 /// Create a new tun interface and set required routes
 ///
