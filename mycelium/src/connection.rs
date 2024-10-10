@@ -8,11 +8,13 @@ use std::{
 
 use crate::packet::{self, ControlPacket, DataPacket, Packet};
 
+use bytes::BytesMut;
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 mod tracked;
-use tokio_util::codec::Framed;
+use tokio_util::codec::{Decoder, Encoder, Framed};
+use tracing::info;
 pub use tracked::Tracked;
 
 #[cfg(feature = "private-network")]
@@ -206,7 +208,13 @@ impl AsyncWrite for QuicStream {
 
 impl Connection for Quic {
     async fn feed_data_packet(&mut self, packet: DataPacket) -> io::Result<()> {
-        self.framed.feed(Packet::DataPacket(packet)).await
+        let mut codec = packet::Codec::new();
+        let mut buffer = BytesMut::with_capacity(1500);
+        codec.encode(Packet::DataPacket(packet), &mut buffer)?;
+
+        self.con
+            .send_datagram(buffer.into())
+            .map_err(|sde| io::Error::new(io::ErrorKind::Other, sde))
     }
 
     async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
@@ -214,7 +222,26 @@ impl Connection for Quic {
     }
 
     async fn receive_packet(&mut self) -> Option<io::Result<Packet>> {
-        self.framed.next().await
+        tokio::select! {
+            datagram = self.con.read_datagram() => {
+                let datagram_bytes = match datagram {
+                    Ok(buffer) => buffer,
+                    Err(e) => return Some(Err(e.into())),
+                };
+                let mut codec = packet::Codec::new();
+                match codec.decode(&mut datagram_bytes.into()) {
+                    Ok(Some(packet)) => Some(Ok(packet)),
+                    // Partial? packet read. We consider this to be a stream hangup
+                    // TODO: verify
+                    Ok(None) => None,
+                    Err(e) => Some(Err(e)),
+                }
+            },
+            packet = self.framed.next() => {
+                packet
+            }
+
+        }
     }
 
     async fn flush(&mut self) -> io::Result<()> {
