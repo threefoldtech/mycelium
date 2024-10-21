@@ -46,7 +46,7 @@ quinn = { version = "0.11.5", default-features = false, features = [
 rustls = { version = "0.23.15", default-features = false, features = ["ring"] }
 rcgen = "0.13.1"
 netdev = "0.31.0"
-openssl = { version = "0.10.66", optional = true }
+openssl = { version = "0.10.68", optional = true }
 tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.7.1"
 
