@@ -8,7 +8,7 @@ use crate::tun::TunConfig;
 use crate::{crypto::PacketBuffer, subnet::Subnet};
 
 // TODO
-const LINK_MTU: usize = 1400;
+const LINK_MTU: usize = 1500;
 
 /// Type of the tunnel used, specified when creating the tunnel.
 const WINDOWS_TUNNEL_TYPE: &str = "Mycelium";
