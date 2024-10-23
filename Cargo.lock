@@ -3100,8 +3100,7 @@ dependencies = [
 [[package]]
 name = "wintun"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b196f9328341b035820c54beebca487823e2e20a5977f284f2af2a0ee8f04400"
+source = "git+https://github.com/iwanbk/wintun?branch=ipv6-mtu#f2e5353c54cc6a8486b55112dc0de6e016491a8a"
 dependencies = [
  "c2rust-bitfields",
  "libloading",
