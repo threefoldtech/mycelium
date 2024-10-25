@@ -36,7 +36,7 @@ pub async fn new(
     let tun = wintun::Adapter::create(&wintun, &tun_config.name, WINDOWS_TUNNEL_TYPE, None)?;
     info!("Created wintun tunnel interface");
     // Configure created network adapter.
-    tun.set_mtu(LINK_MTU)?;
+    set_adapter_mtu(&tun_config.name, LINK_MTU)?;
     // Set address, this will use a `netsh` command under the hood unfortunately.
     // TODO: fix in library
     // tun.set_network_addresses_tuple(node_subnet.address(), route_subnet.mask(), None)?;
@@ -126,6 +126,32 @@ fn add_address(adapter_name: &str, subnet: Subnet, route_subnet: Subnet) -> Resu
             adapter_name,
             &format!("{}/{}", subnet.address(), route_subnet.prefix_len()),
         ])
+        .spawn()?
+        .wait()?;
+
+    match exit_code.code() {
+        Some(0) => Ok(()),
+        Some(x) => Err(io::Error::from_raw_os_error(x)),
+        None => {
+            warn!("Failed to determine `netsh` exit status");
+            Ok(())
+        }
+    }
+}
+
+fn set_adapter_mtu(name: &str, mtu: usize) -> Result<(), io::Error> {
+    let args = &[
+        "interface",
+        "ipv6",
+        "set",
+        "subinterface",
+        &format!("\"{}\"", name),
+        &format!("mtu={}", mtu),
+        "store=persistent",
+    ];
+
+    let exit_code = std::process::Command::new("netsh")
+        .args(args)
         .spawn()?
         .wait()?;
 
