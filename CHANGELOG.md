@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Properly set the interface ipv6 MTU on windows.
+
 ## [0.5.6] - 2024-10-03
 
 ### Fixed
