@@ -9,11 +9,20 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      patterns:
+        - "*"
   - package-ecosystem: "cargo" # See documentation for possible values
     directory: "/myceliumd" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      patterns:
+        - "*"
   - package-ecosystem: "cargo" # See documentation for possible values
     directory: "/myceliumd-private" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      patterns:
+        - "*"
