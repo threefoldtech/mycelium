@@ -597,8 +597,8 @@ where
             let router = self.clone();
             let (tx, mut rx) = mpsc::unbounded_channel::<(_, Peer)>();
 
-            tokio::task::spawn(async move {
-                while let Some((update, source_peer)) = rx.recv().await {
+            tokio::task::spawn_blocking(move || {
+                while let Some((update, source_peer)) = rx.blocking_recv() {
                     let start = std::time::Instant::now();
 
                     if !source_peer.alive() {
