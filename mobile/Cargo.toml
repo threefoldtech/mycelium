@@ -11,7 +11,7 @@ mactunfd = ["mycelium/mactunfd"]
 [dependencies]
 mycelium = { path = "../mycelium", features = ["vendored-openssl"] }
 tokio = { version = "1.40.0", features = ["signal", "rt-multi-thread"] }
-thiserror = "1.0.64"
+thiserror = "1.0.65"
 tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 once_cell = "1.20.2"
