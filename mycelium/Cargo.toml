@@ -14,7 +14,7 @@ mactunfd = [
 ] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
 
 [dependencies]
-tokio = { version = "1.40.0", features = [
+tokio = { version = "1.41.0", features = [
   "io-util",
   "fs",
   "macros",

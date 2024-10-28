@@ -16,7 +16,7 @@ serde_json = "1.0.132"
 base64 = "0.22.1"
 prettytable-rs = "0.10.0"
 tracing = "0.1.40"
-tokio = { version = "1.40.0", default-features = false, features = [
+tokio = { version = "1.41.0", default-features = false, features = [
   "net",
   "rt",
   "fs",
