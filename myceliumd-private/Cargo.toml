@@ -32,7 +32,7 @@ tokio = { version = "1.40.0", features = [
   "rt-multi-thread",
   "signal",
 ] }
-reqwest = { version = "0.12.8", default-features = false, features = ["json"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["json"] }
 base64 = "0.22.1"
 config = "0.14.0"
 dirs = "5.0.1"
