@@ -1,6 +1,6 @@
 [package]
 name = "myceliumd-private"
-version = "0.5.6"
+version = "0.5.7"
 edition = "2021"
 license-file = "../LICENSE"
 readme = "./README.md"
