@@ -10,19 +10,22 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      patterns:
-        - "*"
+      mycelium:
+        patterns:
+          - "*"
   - package-ecosystem: "cargo" # See documentation for possible values
     directory: "/myceliumd" # Location of package manifests
     schedule:
       interval: "weekly"
     groups:
-      patterns:
-        - "*"
+      myceliumd:
+        patterns:
+          - "*"
   - package-ecosystem: "cargo" # See documentation for possible values
     directory: "/myceliumd-private" # Location of package manifests
     schedule:
       interval: "weekly"
     groups:
-      patterns:
-        - "*"
+      myceliumd-private:
+        patterns:
+          - "*"
