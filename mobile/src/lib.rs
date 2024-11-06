@@ -90,6 +90,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         peers: endpoints,
         no_tun: false,
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
+        sctp_listen_port: None,
         quic_listen_port: None,
         peer_discovery_port: None, // disable multicast discovery
         #[cfg(any(

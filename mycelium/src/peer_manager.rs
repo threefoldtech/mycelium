@@ -1,3 +1,4 @@
+use crate::connection::sctp::Sctp;
 use crate::connection::{Quic, TcpStream};
 use crate::endpoint::{Endpoint, Protocol};
 use crate::metrics::Metrics;
@@ -158,6 +159,8 @@ struct Inner<M> {
     peers: Mutex<HashMap<Endpoint, PeerInfo>>,
     /// Listen port for new peer connections
     tcp_listen_port: u16,
+    /// Listen port for incoming sctp connections, if enabled
+    sctp_listen_port: Option<u16>,
     quic_socket: Option<quinn::Endpoint>,
     /// Identity and name of a private network, if one exists
     private_network_config: Option<(String, [u8; 32])>,
@@ -175,6 +178,7 @@ where
         static_peers_sockets: Vec<Endpoint>,
         tcp_listen_port: u16,
         quic_listen_port: Option<u16>,
+        sctp_listen_port: Option<u16>,
         peer_discovery_port: u16,
         disable_peer_discovery: bool,
         private_network_config: Option<(String, PrivateNetworkKey)>,
@@ -228,6 +232,7 @@ where
                         .collect(),
                 ),
                 tcp_listen_port,
+                sctp_listen_port,
                 quic_socket,
                 private_network_config,
                 metrics,
@@ -248,6 +253,13 @@ where
             let handle = tokio::spawn(peer_manager.inner.clone().quic_listener());
             peer_manager.abort_handles.push(handle.abort_handle());
         };
+
+        // Start sctp listener if required
+        if peer_manager.inner.sctp_listen_port.is_some() && !is_private_net {
+            info!("Starting Sctp listener");
+            let handle = tokio::spawn(peer_manager.inner.clone().sctp_listener());
+            peer_manager.abort_handles.push(handle.abort_handle());
+        }
 
         // Start (re)connecting to outbound/local peers
         let handle = tokio::spawn(peer_manager.inner.clone().connect_to_peers());
@@ -434,6 +446,56 @@ where
         match endpoint.proto() {
             Protocol::Tcp | Protocol::Tls => self.connect_tcp_peer(endpoint, ct).await,
             Protocol::Quic => self.connect_quic_peer(endpoint, ct).await,
+            Protocol::Sctp => self.connect_sctp_peer(endpoint, ct).await,
+        }
+    }
+
+    async fn connect_sctp_peer(
+        self: Arc<Self>,
+        endpoint: Endpoint,
+        ct: ConnectionTraffic,
+    ) -> (Endpoint, Option<Peer>) {
+        match tokio_sctp::SctpStream::connect(endpoint.address()).await {
+            Ok(stream) => {
+                debug!("Opened connection");
+                // Make sure Nagle's algorithm is disabled as it can cause latency spikes.
+                if let Err(e) = stream.set_nodelay(true) {
+                    debug!(err=%e, "Couldn't disable Nagle's algorithm on stream");
+                    return (endpoint, None);
+                }
+
+                // Scope the MutexGuard, if we don't do this the future won't be Send
+                let (router_data_tx, router_control_tx, dead_peer_sink) = {
+                    let router = self.router.lock().unwrap();
+                    (
+                        router.router_data_tx(),
+                        router.router_control_tx(),
+                        router.dead_peer_sink().clone(),
+                    )
+                };
+
+                let res = Peer::new(
+                    router_data_tx,
+                    router_control_tx,
+                    Sctp::new(stream),
+                    dead_peer_sink,
+                );
+
+                match res {
+                    Ok(new_peer) => {
+                        info!("Connected to new peer");
+                        (endpoint, Some(new_peer))
+                    }
+                    Err(e) => {
+                        debug!(err=%e, "Failed to spawn peer");
+                        (endpoint, None)
+                    }
+                }
+            }
+            Err(e) => {
+                debug!(err=%e, "Couldn't connect");
+                (endpoint, None)
+            }
         }
     }
 
@@ -893,6 +955,66 @@ where
         }
 
         info!("Shutting down closed quic listener");
+    }
+
+    /// Start listening on the configured sctp socket for new inbound peers.
+    async fn sctp_listener(self: Arc<Self>) {
+        // Take a copy of every channel here first so we avoid lock contention in the loop later.
+        let router_data_tx = self.router.lock().unwrap().router_data_tx();
+        let router_control_tx = self.router.lock().unwrap().router_control_tx();
+        let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
+
+        let Some(sctp_listen_port) = self.sctp_listen_port else {
+            error!("Tried to start sctp listener while sctp is disabled");
+            return;
+        };
+
+        let listener_socket = SocketAddr::new(
+            "::".parse().expect("Valid all interface IP(6) specifier"),
+            sctp_listen_port,
+        );
+
+        match tokio_sctp::SctpListener::bind(listener_socket) {
+            Ok(listener) => loop {
+                match listener.accept().await {
+                    Ok((stream, remote)) => {
+                        let tx_bytes = Arc::new(AtomicU64::new(0));
+                        let rx_bytes = Arc::new(AtomicU64::new(0));
+
+                        let new_peer = {
+                            let new_peer = Peer::new(
+                                router_data_tx.clone(),
+                                router_control_tx.clone(),
+                                Sctp::new(stream),
+                                dead_peer_sink.clone(),
+                            );
+
+                            match new_peer {
+                                Ok(peer) => peer,
+                                Err(e) => {
+                                    error!(err=%e, "Failed to spawn peer");
+                                    continue;
+                                }
+                            }
+                        };
+
+                        info!("Accepted new inbound peer");
+                        self.add_peer(
+                            Endpoint::new(Protocol::Sctp, remote),
+                            PeerType::Inbound,
+                            ConnectionTraffic { tx_bytes, rx_bytes },
+                            Some(new_peer),
+                        );
+                    }
+                    Err(e) => {
+                        error!(err=%e, "Error accepting connection");
+                    }
+                }
+            },
+            Err(e) => {
+                error!(err=%e, "Error starting listener");
+            }
+        }
     }
 
     /// Add a new peer identifier we discovered.

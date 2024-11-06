@@ -11,6 +11,8 @@ use crate::packet::{self, ControlPacket, DataPacket, Packet};
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+pub mod sctp;
+
 mod tracked;
 use tokio_util::codec::Framed;
 pub use tracked::Tracked;

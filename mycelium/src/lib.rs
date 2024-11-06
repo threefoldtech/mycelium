@@ -55,6 +55,10 @@ pub struct Config<M> {
     pub no_tun: bool,
     /// Listen port for TCP connections.
     pub tcp_listen_port: u16,
+    /// Listen port for SCTP connections.
+    ///
+    /// If this is [None], SCTP is disabled for incoming connections.
+    pub sctp_listen_port: Option<u16>,
     /// Listen port for Quic connections.
     pub quic_listen_port: Option<u16>,
     /// Udp port for peer discovery.
@@ -176,6 +180,7 @@ where
             config.peers,
             config.tcp_listen_port,
             config.quic_listen_port,
+            config.sctp_listen_port,
             config.peer_discovery_port.unwrap_or_default(),
             config.peer_discovery_port.is_none(),
             config.private_network_config,

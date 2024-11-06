@@ -220,6 +220,10 @@ pub struct NodeArguments {
     #[arg(short = 't', long = "tcp-listen-port", default_value_t = DEFAULT_TCP_LISTEN_PORT)]
     tcp_listen_port: u16,
 
+    /// Port to listen on for sctp connections.
+    #[arg(long = "sctp-listen-port")]
+    sctp_listen_port: Option<u16>,
+
     /// Disable quic protocol for connecting to peers
     #[arg(long = "disable-quic", default_value_t = false)]
     disable_quic: bool,
@@ -407,6 +411,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match cli.command {
         None => {
+            // TODO: properly
+            let sctp_listen_port = cli.node_args.sctp_listen_port;
             let merged_config = merge_config(cli.node_args, mycelium_config);
 
             let node_keys = get_node_keys(&key_path).await?;
@@ -426,6 +432,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peers: merged_config.peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
+                    // TODO: proper config
+                    sctp_listen_port,
                     quic_listen_port: if merged_config.disable_quic {
                         None
                     } else {
@@ -451,6 +459,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peers: merged_config.peers,
                     no_tun: merged_config.no_tun,
                     tcp_listen_port: merged_config.tcp_listen_port,
+                    // TODO: proper config
+                    sctp_listen_port,
                     quic_listen_port: if merged_config.disable_quic {
                         None
                     } else {

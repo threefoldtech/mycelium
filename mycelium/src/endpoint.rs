@@ -27,6 +27,8 @@ pub enum Protocol {
     Tls,
     /// Quic protocol (over UDP).
     Quic,
+    /// Plain text Sctp
+    Sctp,
 }
 
 /// An endpoint defines a address and a protocol to use when communicating with it.
@@ -65,6 +67,7 @@ impl FromStr for Endpoint {
                     "tcp" => Protocol::Tcp,
                     "quic" => Protocol::Quic,
                     "tls" => Protocol::Tls,
+                    "sctp" => Protocol::Sctp,
                     _ => return Err(EndpointParseError::UnknownProtocol),
                 };
                 let socket_addr = SocketAddr::from_str(socket)?;
@@ -86,6 +89,7 @@ impl fmt::Display for Protocol {
             Self::Tcp => "Tcp",
             Self::Tls => "Tls",
             Self::Quic => "Quic",
+            Self::Sctp => "Sctp",
         })
     }
 }
