@@ -18,13 +18,13 @@ axum = { version = "0.7.7", default-features = false, features = [
 ] }
 base64 = "0.22.1"
 tracing = "0.1.40"
-tokio = { version = "1.41.0", default-features = false, features = [
+tokio = { version = "1.41.1", default-features = false, features = [
   "net",
   "rt",
 ] }
 mycelium = { path = "../mycelium" }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
-serde = { version = "1.0.214", features = ["derive"] }
+serde = { version = "1.0.215", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1.0.132"
