@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Before we process a seqno request for a subnet, check the seqno cache to see if
+  we recently forwarded an entry for it.
+
 ## [0.5.7] - 2024-11-31
 
 ### Fixed

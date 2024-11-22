@@ -773,6 +773,16 @@ where
         // According to the babel rfc, we shoudl maintain a table of recent SeqNo requests and
         // periodically retry requests without reply. We will however not do this for now and rely
         // on the fact that we have stable links in general.
+        if let Some((sent_at, _)) = self.seqno_cache.info(&SeqnoRequestCacheKey {
+            router_id: seqno_request.router_id(),
+            subnet: seqno_request.prefix(),
+            seqno: seqno_request.seqno(),
+        }) {
+            // Only forward 1 request per minute for a given subnet request
+            if sent_at.elapsed() <= Duration::from_secs(60) {
+                return;
+            }
+        };
 
         // If we have a selected route for the prefix, and its router id is different from the
         // requested router id, or the router id is the same and the entries sequence number is
