@@ -505,9 +505,9 @@ where
     ) {
         let (hello_tx, hello_rx) = mpsc::unbounded_channel();
         let (ihu_tx, ihu_rx) = mpsc::unbounded_channel();
-        let (update_tx, update_rx) = mpsc::unbounded_channel();
+        let (update_tx, update_rx) = mpsc::channel(1_000_000);
         let (rr_tx, rr_rx) = mpsc::unbounded_channel();
-        let (sn_tx, sn_rx) = mpsc::unbounded_channel();
+        let (sn_tx, sn_rx) = mpsc::channel(100_000);
 
         tokio::spawn(self.clone().hello_processor(hello_rx));
         tokio::spawn(self.clone().ihu_processor(ihu_rx));
@@ -536,8 +536,16 @@ where
                     };
                 }
                 babel::Tlv::Update(update) => {
-                    if update_tx.send((update, source_peer)).is_err() {
-                        break;
+                    if let Err(e) = update_tx.try_send((update, source_peer)) {
+                        match e {
+                            mpsc::error::TrySendError::Closed(_) => {
+                                self.metrics.router_tlv_discarded();
+                                break;
+                            }
+                            mpsc::error::TrySendError::Full(_) => {
+                                self.metrics.router_tlv_discarded();
+                            }
+                        }
                     };
                 }
                 babel::Tlv::RouteRequest(route_request) => {
@@ -546,8 +554,16 @@ where
                     };
                 }
                 babel::Tlv::SeqNoRequest(seqno_request) => {
-                    if sn_tx.send((seqno_request, source_peer)).is_err() {
-                        break;
+                    if let Err(e) = sn_tx.try_send((seqno_request, source_peer)) {
+                        match e {
+                            mpsc::error::TrySendError::Closed(_) => {
+                                self.metrics.router_tlv_discarded();
+                                break;
+                            }
+                            mpsc::error::TrySendError::Full(_) => {
+                                self.metrics.router_tlv_discarded();
+                            }
+                        }
                     };
                 }
             }
@@ -591,11 +607,11 @@ where
     }
 
     /// Background task to process Update TLV's.
-    async fn update_processor(self, mut update_rx: UnboundedReceiver<(Update, Peer)>) {
+    async fn update_processor(self, mut update_rx: Receiver<(Update, Peer)>) {
         let mut senders = Vec::with_capacity(self.update_workers);
         for _ in 0..self.update_workers {
             let router = self.clone();
-            let (tx, mut rx) = mpsc::unbounded_channel::<(_, Peer)>();
+            let (tx, mut rx) = mpsc::channel::<(_, Peer)>(1_000_000);
 
             tokio::task::spawn_blocking(move || {
                 while let Some((update, source_peer)) = rx.blocking_recv() {
@@ -624,8 +640,16 @@ where
             item.0.subnet().network().hash(&mut hasher);
             let slot = hasher.finish() as usize % self.update_workers;
 
-            if senders[slot].send(item).is_err() {
-                break;
+            if let Err(e) = senders[slot].try_send(item) {
+                match e {
+                    mpsc::error::TrySendError::Closed(_) => {
+                        self.metrics.router_tlv_discarded();
+                        break;
+                    }
+                    mpsc::error::TrySendError::Full(_) => {
+                        self.metrics.router_tlv_discarded();
+                    }
+                }
             };
         }
         warn!("Update processor coordinator exitted");
@@ -650,7 +674,7 @@ where
     }
 
     /// Background task to process Seqno Request TLV's.
-    async fn seqno_request_processor(self, mut sn_rx: UnboundedReceiver<(SeqNoRequest, Peer)>) {
+    async fn seqno_request_processor(self, mut sn_rx: Receiver<(SeqNoRequest, Peer)>) {
         while let Some((sn, source_peer)) = sn_rx.recv().await {
             let start = std::time::Instant::now();
 

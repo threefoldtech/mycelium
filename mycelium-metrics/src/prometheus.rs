@@ -26,6 +26,7 @@ pub struct PrometheusExporter {
     router_update_dead_peer: IntCounter,
     router_received_tlvs: IntCounter,
     router_tlv_source_died: IntCounter,
+    router_tlv_discarded: IntCounter,
     router_propage_selected_peers_time_spent: IntCounter,
     router_update_skipped_route_selection: IntCounter,
     router_update_denied_by_filter: IntCounter,
@@ -121,6 +122,11 @@ impl PrometheusExporter {
             router_tlv_source_died: register_int_counter!(
                 "mycelium_router_tlv_source_died",
                 "Dropped TLV's which have been received, but where the peer has died before they could be processed",
+            )
+            .expect("Can register an int counter in default registry"),
+            router_tlv_discarded: register_int_counter!(
+                "mycelium_router_tlv_discarded",
+                "Dropped TLV's which have been received, but where not processed because the router couldn't keep up",
             )
             .expect("Can register an int counter in default registry"),
             router_propage_selected_peers_time_spent: register_int_counter!(
@@ -370,6 +376,11 @@ impl Metrics for PrometheusExporter {
     #[inline]
     fn router_tlv_source_died(&self) {
         self.router_tlv_source_died.inc()
+    }
+
+    #[inline]
+    fn router_tlv_discarded(&self) {
+        self.router_tlv_discarded.inc()
     }
 
     #[inline]

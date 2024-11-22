@@ -58,6 +58,11 @@ pub trait Metrics {
     #[inline]
     fn router_tlv_source_died(&self) {}
 
+    /// The [`Router`](crate::router::Router) dropped a received TLV before processing it, because
+    /// it coulnd't keep up
+    #[inline]
+    fn router_tlv_discarded(&self) {}
+
     /// A [`Peer`](crate::peer::Peer) was added to the [`Router`](crate::router::Router).
     #[inline]
     fn router_peer_added(&self) {}
