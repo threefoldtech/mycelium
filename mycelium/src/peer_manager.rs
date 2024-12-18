@@ -711,6 +711,11 @@ where
                         let tx_bytes = Arc::new(AtomicU64::new(0));
                         let rx_bytes = Arc::new(AtomicU64::new(0));
 
+                        if let Err(e) = stream.set_nodelay(true) {
+                            error!(err=%e, "Couldn't disable Nagle's algorithm on stream");
+                            return;
+                        }
+
                         #[cfg(feature = "private-network")]
                         let new_peer = if let Some(acceptor) = &acceptor {
                             let ssl = match Ssl::new(acceptor.context()) {
