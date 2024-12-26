@@ -293,7 +293,7 @@ impl<'de> Deserialize<'de> for Metric {
     {
         struct MetricVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for MetricVisitor {
+        impl serde::de::Visitor<'_> for MetricVisitor {
             type Value = Metric;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

@@ -113,7 +113,7 @@ impl Add<&Metric> for Metric {
     }
 }
 
-impl<'a> Add<Metric> for &'a Metric {
+impl Add<Metric> for &Metric {
     type Output = Metric;
 
     fn add(self, rhs: Metric) -> Self::Output {

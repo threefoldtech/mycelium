@@ -78,7 +78,7 @@ pub struct RoutingTableIterMutEntry<'a, 'b> {
     cancellation_token: CancellationToken,
 }
 
-impl<'a, 'b> RoutingTableIterMutEntry<'a, 'b> {
+impl RoutingTableIterMutEntry<'_, '_> {
     pub fn update_routes<F: FnMut(&mut RouteList, &mpsc::Sender<RouteKey>, &CancellationToken)>(
         &mut self,
         mut op: F,

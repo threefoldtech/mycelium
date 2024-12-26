@@ -425,13 +425,13 @@ pub struct RoutingTableReadGuard<'a> {
     guard: left_right::ReadGuard<'a, RoutingTableInner>,
 }
 
-impl<'a> RoutingTableReadGuard<'a> {
+impl RoutingTableReadGuard<'_> {
     pub fn iter(&self) -> RoutingTableIter {
         RoutingTableIter::new(self.guard.table.iter())
     }
 }
 
-impl<'a> WriteGuard<'a> {
+impl WriteGuard<'_> {
     /// Loads the current [`RouteList`].
     #[inline]
     pub fn routes(&self) -> RouteListReadGuard {

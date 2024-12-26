@@ -306,8 +306,7 @@ where
                 }
                 message.state = TransmissionState::InProgress;
                 // Transform message into chunks.
-                let mut chunks =
-                    Vec::with_capacity((message.len + AVERAGE_CHUNK_SIZE - 1) / AVERAGE_CHUNK_SIZE);
+                let mut chunks = Vec::with_capacity(message.len.div_ceil(AVERAGE_CHUNK_SIZE));
                 for (chunk_idx, data_chunk) in
                     message.msg.data.chunks(AVERAGE_CHUNK_SIZE).enumerate()
                 {
@@ -382,8 +381,7 @@ where
             // Otherwise unilaterally reset the state. The message id space is large enough to
             // avoid accidental collisions.
             let mi = MessageInit::new(mp);
-            let expected_chunks =
-                (mi.length() as usize + AVERAGE_CHUNK_SIZE - 1) / AVERAGE_CHUNK_SIZE;
+            let expected_chunks = (mi.length() as usize).div_ceil(AVERAGE_CHUNK_SIZE);
             let chunks = vec![None; expected_chunks];
             let message = ReceivedMessageInfo {
                 id: message_id,
@@ -418,8 +416,7 @@ where
                     return;
                 }
                 // Check max chunk idx.
-                let max_chunk_idx =
-                    ((message.len + MINIMUM_CHUNK_SIZE - 1) / MINIMUM_CHUNK_SIZE) - 1;
+                let max_chunk_idx = message.len.div_ceil(MINIMUM_CHUNK_SIZE);
                 if mc.chunk_idx() > max_chunk_idx {
                     debug!("Dropping CHUNK because index is too high");
                     return;
@@ -1132,7 +1129,7 @@ impl Serialize for MessageId {
 
 struct MessageIdVisitor;
 
-impl<'de> Visitor<'de> for MessageIdVisitor {
+impl Visitor<'_> for MessageIdVisitor {
     type Value = MessageId;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -1234,7 +1231,7 @@ struct Flags<'a> {
     _marker: PhantomData<&'a MessagePacketHeader<'a>>,
 }
 
-impl<'a> Flags<'a> {
+impl Flags<'_> {
     /// Check if the MESSAGE_INIT flag is set on the header.
     fn init(&self) -> bool {
         self.flags & FLAG_MESSAGE_INIT != 0
@@ -1334,7 +1331,7 @@ impl FlagsMut<'_, '_> {
 //   - 8 bytes message id
 //   - 2 bytes flags
 //   - 2 bytes reserved
-impl<'a> MessagePacketHeader<'a> {
+impl MessagePacketHeader<'_> {
     /// Get the [`MessageId`] from the buffer.
     fn message_id(&self) -> MessageId {
         MessageId(
@@ -1400,7 +1397,7 @@ impl<'a> MessagePacketHeaderMut<'a> {
     }
 }
 
-impl<'a> Deref for MessagePacketHeader<'a> {
+impl Deref for MessagePacketHeader<'_> {
     type Target = [u8; MESSAGE_HEADER_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -1408,7 +1405,7 @@ impl<'a> Deref for MessagePacketHeader<'a> {
     }
 }
 
-impl<'a> Deref for MessagePacketHeaderMut<'a> {
+impl Deref for MessagePacketHeaderMut<'_> {
     type Target = [u8; MESSAGE_HEADER_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -1416,7 +1413,7 @@ impl<'a> Deref for MessagePacketHeaderMut<'a> {
     }
 }
 
-impl<'a> DerefMut for MessagePacketHeaderMut<'a> {
+impl DerefMut for MessagePacketHeaderMut<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.header
     }
