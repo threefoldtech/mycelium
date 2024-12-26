@@ -266,7 +266,7 @@ impl Serialize for PublicKey {
 }
 
 struct PublicKeyVisitor;
-impl<'de> Visitor<'de> for PublicKeyVisitor {
+impl Visitor<'_> for PublicKeyVisitor {
     type Value = PublicKey;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -336,7 +336,7 @@ impl Deref for PacketBuffer {
     }
 }
 
-impl<'a> Deref for PacketBufferHeader<'a> {
+impl Deref for PacketBufferHeader<'_> {
     type Target = [u8; DATA_HEADER_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -344,7 +344,7 @@ impl<'a> Deref for PacketBufferHeader<'a> {
     }
 }
 
-impl<'a> Deref for PacketBufferHeaderMut<'a> {
+impl Deref for PacketBufferHeaderMut<'_> {
     type Target = [u8; DATA_HEADER_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -352,7 +352,7 @@ impl<'a> Deref for PacketBufferHeaderMut<'a> {
     }
 }
 
-impl<'a> DerefMut for PacketBufferHeaderMut<'a> {
+impl DerefMut for PacketBufferHeaderMut<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }

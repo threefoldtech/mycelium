@@ -21,7 +21,7 @@ impl<'a> RoutingTableIter<'a> {
     }
 }
 
-impl<'a> Iterator for RoutingTableIter<'a> {
+impl Iterator for RoutingTableIter<'_> {
     type Item = (Subnet, RouteListReadGuard);
 
     fn next(&mut self) -> Option<Self::Item> {
