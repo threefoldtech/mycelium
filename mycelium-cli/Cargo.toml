@@ -11,16 +11,16 @@ message = ["mycelium/message", "mycelium-api/message"]
 [dependencies]
 mycelium = { path = "../mycelium" }
 mycelium-api = { path = "../mycelium-api" }
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.132"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.134"
 base64 = "0.22.1"
 prettytable-rs = "0.10.0"
-tracing = "0.1.40"
-tokio = { version = "1.41.1", default-features = false, features = [
+tracing = "0.1.41"
+tokio = { version = "1.42.0", default-features = false, features = [
   "net",
   "rt",
   "fs",
 ] }
-reqwest = { version = "0.12.9", default-features = false, features = ["json"] }
+reqwest = { version = "0.12.12", default-features = false, features = ["json"] }
 byte-unit = "5.1.6"
 urlencoding = "2.1.3"
