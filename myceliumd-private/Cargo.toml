@@ -14,10 +14,10 @@ name = "mycelium-private"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.20", features = ["derive"] }
-tracing = { version = "0.1.40", features = ["release_max_level_debug"] }
+clap = { version = "4.5.26", features = ["derive"] }
+tracing = { version = "0.1.41", features = ["release_max_level_debug"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
-tracing-subscriber = { version = "0.3.18", features = [
+tracing-subscriber = { version = "0.3.19", features = [
   "env-filter",
   "nu-ansi-term",
 ] }
@@ -25,14 +25,14 @@ mycelium = { path = "../mycelium", features = ["private-network", "message"] }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
 mycelium-api = { path = "../mycelium-api", features = ["message"] }
 mycelium-cli = { path = "../mycelium-cli/", features = ["message"] }
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.132"
-tokio = { version = "1.41.1", features = [
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.135"
+tokio = { version = "1.43.0", features = [
   "macros",
   "rt-multi-thread",
   "signal",
 ] }
 reqwest = { version = "0.12.9", default-features = false, features = ["json"] }
 base64 = "0.22.1"
-config = "0.14.1"
-dirs = "5.0.1"
+config = "0.15.5"
+dirs = "6.0.0"
