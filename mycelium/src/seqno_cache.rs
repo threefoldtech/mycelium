@@ -3,11 +3,11 @@
 //! relevant updates.
 
 use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
+use dashmap::DashMap;
 use tokio::time::MissedTickBehavior;
 use tracing::{debug, trace};
 
@@ -55,14 +55,7 @@ struct SeqnoForwardInfo {
 #[derive(Clone)]
 pub struct SeqnoCache {
     /// Actual cache wrapped in an Arc to make it sharaeble.
-    inner: Arc<SeqnoCacheInner>,
-}
-
-/// Actual implementation of the cache.
-struct SeqnoCacheInner {
-    /// Actual cache, maps requests to the peers who originated them. The local node is not
-    /// represented, since it always processes the update.
-    cache: RwLock<HashMap<SeqnoRequestCacheKey, SeqnoForwardInfo>>,
+    cache: Arc<DashMap<SeqnoRequestCacheKey, SeqnoForwardInfo, ahash::RandomState>>,
 }
 
 impl SeqnoCache {
@@ -70,18 +63,23 @@ impl SeqnoCache {
     pub fn new() -> Self {
         trace!(capacity = 0, "Creating new seqno cache");
 
-        let inner = Arc::new(SeqnoCacheInner::new());
-        // Spawn background cleanup task.
-        tokio::spawn(inner.clone().sweep_entries());
+        let cache = Arc::new(DashMap::with_hasher_and_shard_amount(
+            ahash::RandomState::new(),
+            // This number has been chosen completely at random
+            1024,
+        ));
+        let sc = Self { cache };
 
-        Self { inner }
+        // Spawn background cleanup task.
+        tokio::spawn(sc.clone().sweep_entries());
+
+        sc
     }
 
     /// Record a forwarded seqno request to a given target. Also keep track of the origin of the
     /// request. If the local node generated the request, source must be [`None`]
     pub fn forward(&self, request: SeqnoRequestCacheKey, target: Peer, source: Option<Peer>) {
-        let mut cache = self.inner.cache.write().unwrap();
-        let info = cache.entry(request).or_default();
+        let mut info = self.cache.entry(request).or_default();
         info.last_sent = Instant::now();
         if !info.targets.contains(&target) {
             info.targets.push(target);
@@ -104,10 +102,7 @@ impl SeqnoCache {
     /// Get a list of all peers which we've already sent the given seqno request to, as well as
     /// when we've last sent a request.
     pub fn info(&self, request: &SeqnoRequestCacheKey) -> Option<(Instant, Vec<Peer>)> {
-        self.inner
-            .cache
-            .read()
-            .unwrap()
+        self.cache
             .get(request)
             .map(|info| (info.last_sent, info.targets.clone()))
     }
@@ -115,25 +110,17 @@ impl SeqnoCache {
     /// Removes forwarding info from the seqno cache. If forwarding info is available, the source
     /// peers (peers which requested us to forward this request) are returned.
     pub fn remove(&self, request: &SeqnoRequestCacheKey) -> Option<Vec<Peer>> {
-        self.inner
-            .cache
-            .write()
-            .unwrap()
-            .remove(request)
-            .map(|info| info.sources)
+        self.cache.remove(request).map(|(_, info)| info.sources)
     }
-}
 
-impl SeqnoCacheInner {
-    /// Create a new empty `SeqnoCacheInner`.
-    fn new() -> Self {
-        Self {
-            cache: RwLock::new(HashMap::new()),
-        }
+    /// Get forwarding info from the seqno cache. If forwarding info is available, the source
+    /// peers (peers which requested us to forward this request) are returned.
+    pub fn get(&self, request: &SeqnoRequestCacheKey) -> Option<Vec<Peer>> {
+        self.cache.get(request).map(|info| info.sources.clone())
     }
 
     /// Periodic task to clear old entries for which no reply came in.
-    async fn sweep_entries(self: Arc<Self>) {
+    async fn sweep_entries(self) {
         let mut interval = tokio::time::interval(SEQNO_DEDUP_TTL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -142,15 +129,15 @@ impl SeqnoCacheInner {
 
             debug!("Cleaning up expired seqno requests from seqno cache");
 
-            let mut cache = self.cache.write().unwrap();
-            let prev_entries = cache.len();
-            let prev_cap = cache.capacity();
-            cache.retain(|_, info| info.first_sent.elapsed() <= SEQNO_DEDUP_TTL);
-            cache.shrink_to_fit();
+            let prev_entries = self.cache.len();
+            let prev_cap = self.cache.capacity();
+            self.cache
+                .retain(|_, info| info.first_sent.elapsed() <= SEQNO_DEDUP_TTL);
+            self.cache.shrink_to_fit();
 
             debug!(
-                cleaned_entries = prev_entries - cache.len(),
-                removed_capacity = prev_cap - cache.capacity(),
+                cleaned_entries = prev_entries - self.cache.len(),
+                removed_capacity = prev_cap - self.cache.capacity(),
                 "Cleaned up stale seqno request cache entries"
             );
         }
@@ -158,12 +145,6 @@ impl SeqnoCacheInner {
 }
 
 impl Default for SeqnoCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Default for SeqnoCacheInner {
     fn default() -> Self {
         Self::new()
     }
