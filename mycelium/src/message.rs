@@ -1106,8 +1106,7 @@ impl MessageId {
     fn new() -> Self {
         let mut id = Self([0u8; 8]);
 
-        id.0.try_fill(&mut rand::thread_rng())
-            .expect("Can instantiate new ID from thread RNG generator; qed");
+        id.0.fill(&mut rand::rng());
 
         id
     }

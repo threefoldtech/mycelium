@@ -119,8 +119,11 @@ fn create_tun_interface(name: &str) -> Result<Tun, Box<dyn std::error::Error>> {
     let tun = TunBuilder::new()
         .name(name)
         .mtu(LINK_MTU)
+        .queues(1)
         .up()
-        .try_build()?;
+        .build()?
+        .pop()
+        .expect("Succesfully build tun interface has 1 queue");
 
     Ok(tun)
 }
