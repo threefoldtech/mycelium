@@ -109,12 +109,16 @@ impl SeqnoCache {
 
     /// Removes forwarding info from the seqno cache. If forwarding info is available, the source
     /// peers (peers which requested us to forward this request) are returned.
+    // TODO: cleanup if needed
+    #[allow(dead_code)]
     pub fn remove(&self, request: &SeqnoRequestCacheKey) -> Option<Vec<Peer>> {
         self.cache.remove(request).map(|(_, info)| info.sources)
     }
 
     /// Get forwarding info from the seqno cache. If forwarding info is available, the source
     /// peers (peers which requested us to forward this request) are returned.
+    // TODO: cleanup if needed
+    #[allow(dead_code)]
     pub fn get(&self, request: &SeqnoRequestCacheKey) -> Option<Vec<Peer>> {
         self.cache.get(request).map(|info| info.sources.clone())
     }
