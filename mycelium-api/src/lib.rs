@@ -52,10 +52,10 @@ impl Http {
         let admin_routes = Router::new()
             .route("/admin", get(get_info))
             .route("/admin/peers", get(get_peers).post(add_peer))
-            .route("/admin/peers/:endpoint", delete(delete_peer))
+            .route("/admin/peers/{endpoint}", delete(delete_peer))
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
-            .route("/pubkey/:ip", get(get_pubk_from_ip))
+            .route("/pubkey/{ip}", get(get_pubk_from_ip))
             .with_state(server_state.clone());
         let app = Router::new().nest("/api/v1", admin_routes);
         #[cfg(feature = "message")]

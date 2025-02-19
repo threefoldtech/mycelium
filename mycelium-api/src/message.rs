@@ -27,8 +27,8 @@ where
 {
     Router::new()
         .route("/messages", get(get_message).post(push_message))
-        .route("/messages/status/:id", get(message_status))
-        .route("/messages/reply/:id", post(reply_message))
+        .route("/messages/status/{id}", get(message_status))
+        .route("/messages/reply/{id}", post(reply_message))
         .with_state(server_state)
 }
 
