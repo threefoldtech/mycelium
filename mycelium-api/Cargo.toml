@@ -24,7 +24,7 @@ tokio = { version = "1.43.0", default-features = false, features = [
 ] }
 mycelium = { path = "../mycelium" }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
-serde = { version = "1.0.217", features = ["derive"] }
+serde = { version = "1.0.218", features = ["derive"] }
 
 [dev-dependencies]
-serde_json = "1.0.138"
+serde_json = "1.0.139"
