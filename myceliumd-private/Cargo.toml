@@ -14,7 +14,7 @@ name = "mycelium-private"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.30", features = ["derive"] }
+clap = { version = "4.5.31", features = ["derive"] }
 tracing = { version = "0.1.41", features = ["release_max_level_debug"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
 tracing-subscriber = { version = "0.3.19", features = [
@@ -25,8 +25,8 @@ mycelium = { path = "../mycelium", features = ["private-network", "message"] }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
 mycelium-api = { path = "../mycelium-api", features = ["message"] }
 mycelium-cli = { path = "../mycelium-cli/", features = ["message"] }
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
 tokio = { version = "1.43.0", features = [
   "macros",
   "rt-multi-thread",
