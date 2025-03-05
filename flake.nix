@@ -130,7 +130,7 @@
       ]
       (system:
       let
-        craneLib = crane.lib.${system};
+        craneLib = crane.mkLib pkgs;
 
         pkgs = import inputs.nixpkgs {
           inherit system;
