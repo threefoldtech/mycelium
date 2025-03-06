@@ -829,6 +829,7 @@ where
         }) {
             // Only forward 1 request per minute for a given subnet request
             if sent_at.elapsed() <= Duration::from_secs(60) {
+                self.metrics.router_seqno_request_unhandled();
                 return;
             }
         };
