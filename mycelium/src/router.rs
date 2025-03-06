@@ -650,7 +650,7 @@ where
         }
 
         while let Some(item) = update_rx.recv().await {
-            let mut hasher = std::hash::DefaultHasher::new();
+            let mut hasher = ahash::AHasher::default();
             item.0.subnet().network().hash(&mut hasher);
             let slot = hasher.finish() as usize % self.update_workers;
 
