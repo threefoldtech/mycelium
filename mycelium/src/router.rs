@@ -197,6 +197,10 @@ where
         debug!("Adding peer {} to router", peer.connection_identifier());
         self.peer_interfaces.write().unwrap().push(peer.clone());
         self.metrics.router_peer_added();
+        // Make sure to set the timers to current values in case lock acquisition takes time. Otherwise these
+        // might immediately cause timeout timers to fire.
+        peer.set_time_last_received_hello(tokio::time::Instant::now());
+        peer.set_time_last_received_ihu(tokio::time::Instant::now());
 
         // Request route table dump of peer
         debug!(
