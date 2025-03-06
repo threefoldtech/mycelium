@@ -546,8 +546,18 @@ where
                                 self.metrics.router_tlv_discarded();
                                 break;
                             }
-                            mpsc::error::TrySendError::Full(_) => {
-                                self.metrics.router_tlv_discarded();
+                            mpsc::error::TrySendError::Full(update) => {
+                                // If the metric is directly connected (0), always process the
+                                // update.
+                                if update.0.metric().is_direct() {
+                                    // Channel disconnected
+                                    if update_tx.send(update).await.is_err() {
+                                        self.metrics.router_tlv_discarded();
+                                        break;
+                                    }
+                                } else {
+                                    self.metrics.router_tlv_discarded();
+                                }
                             }
                         }
                     };
@@ -650,8 +660,19 @@ where
                         self.metrics.router_tlv_discarded();
                         break;
                     }
-                    mpsc::error::TrySendError::Full(_) => {
-                        self.metrics.router_tlv_discarded();
+
+                    mpsc::error::TrySendError::Full(update) => {
+                        // If the metric is directly connected (0), always process the
+                        // update.
+                        if update.0.metric().is_direct() {
+                            // Channel disconnected
+                            if senders[slot].send(update).await.is_err() {
+                                self.metrics.router_tlv_discarded();
+                                break;
+                            }
+                        } else {
+                            self.metrics.router_tlv_discarded();
+                        }
                     }
                 }
             };
