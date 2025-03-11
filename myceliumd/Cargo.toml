@@ -12,7 +12,7 @@ name = "mycelium"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.31", features = ["derive"] }
+clap = { version = "4.5.32", features = ["derive"] }
 tracing = { version = "0.1.41", features = ["release_max_level_debug"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
 tracing-subscriber = { version = "0.3.19", features = [
@@ -23,9 +23,9 @@ mycelium = { path = "../mycelium", features = ["message"] }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
 mycelium-cli = { path = "../mycelium-cli/", features = ["message"] }
 mycelium-api = { path = "../mycelium-api", features = ["message"] }
-serde = { version = "1.0.218", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-tokio = { version = "1.43.0", features = [
+tokio = { version = "1.44.0", features = [
   "macros",
   "rt-multi-thread",
   "signal",
@@ -35,5 +35,5 @@ base64 = "0.22.1"
 prettytable-rs = "0.10.0"
 urlencoding = "2.1.3"
 byte-unit = "5.1.6"
-config = "0.15.8"
+config = "0.15.9"
 dirs = "6.0.0"
