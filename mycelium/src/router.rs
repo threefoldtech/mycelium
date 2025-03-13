@@ -114,7 +114,7 @@ where
         let (router_data_tx, router_data_rx) = mpsc::channel::<DataPacket>(1000);
         let (expired_source_key_sink, expired_source_key_stream) = mpsc::channel(1);
         let (expired_route_entry_sink, expired_route_entry_stream) = mpsc::channel(1);
-        let (dead_peer_sink, dead_peer_stream) = mpsc::channel(1);
+        let (dead_peer_sink, dead_peer_stream) = mpsc::channel(100);
 
         let routing_table = RoutingTable::new(expired_route_entry_sink);
 
@@ -259,8 +259,23 @@ where
             "Removing peer {} from the router",
             peer.connection_identifier()
         );
-        self.peer_interfaces.write().unwrap().retain(|p| p != peer);
-        self.metrics.router_peer_removed();
+        peer.died();
+
+        let mut peers = self.peer_interfaces.write().unwrap();
+        let old_peers = peers.len();
+        peers.retain(|p| p != peer);
+
+        let removed = old_peers - peers.len();
+        for _ in 0..removed {
+            self.metrics.router_peer_removed();
+        }
+
+        if removed > 1 {
+            warn!(
+                "REMOVED {removed} peers from peer list while called with {}",
+                peer.connection_identifier()
+            );
+        }
     }
 
     /// Get a list of all selected route entries.
@@ -306,19 +321,20 @@ where
                 dead_peers
             };
 
-            for dead_peer in dead_peers {
-                self.handle_dead_peer(dead_peer);
-            }
+            self.handle_dead_peer(&dead_peers);
         }
     }
 
     /// Remove a dead peer from the router.
-    pub fn handle_dead_peer(&self, dead_peer: Peer) {
-        self.metrics.router_peer_died();
-        debug!(
-            "Cleaning up peer {} which is reportedly dead",
-            dead_peer.connection_identifier()
-        );
+    pub fn handle_dead_peer(&self, dead_peers: &[Peer]) {
+        for dead_peer in dead_peers {
+            self.metrics.router_peer_died();
+            debug!(
+                "Cleaning up peer {} which is reportedly dead",
+                dead_peer.connection_identifier()
+            );
+            self.remove_peer_interface(dead_peer);
+        }
 
         // Scope for routing table write access.
         let subnets_to_select = {
@@ -329,28 +345,28 @@ where
 
             while let Some((subnet, mut rl)) = rt_write.next() {
                 rl.update_routes(|routes, eres, ct| {
-                    let Some(mut re) = routes.iter_mut().find(|re| re.neighbour() == &dead_peer)
-                    else {
-                        return;
-                    };
+                    for dead_peer in dead_peers {
+                        let Some(mut re) = routes.iter_mut().find(|re| re.neighbour() == dead_peer)
+                        else {
+                            continue;
+                        };
 
-                    if re.selected() {
-                        subnets_to_select.push(subnet);
+                        if re.selected() {
+                            subnets_to_select.push(subnet);
 
-                        // Don't clear selected flag yet, running route selection does that for us.
-                        re.set_metric(Metric::infinite());
-                        re.set_expires(
-                            tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME,
-                            eres.clone(),
-                            ct.clone(),
-                        );
-                    } else {
-                        routes.remove(&dead_peer);
+                            // Don't clear selected flag yet, running route selection does that for us.
+                            re.set_metric(Metric::infinite());
+                            re.set_expires(
+                                tokio::time::Instant::now() + RETRACTED_ROUTE_HOLD_TIME,
+                                eres.clone(),
+                                ct.clone(),
+                            );
+                        } else {
+                            routes.remove(dead_peer);
+                        }
                     }
                 });
             }
-
-            self.remove_peer_interface(&dead_peer);
 
             subnets_to_select
         };
@@ -495,8 +511,13 @@ where
     /// Process notifications about peers who are dead. This allows peers who can self-diagnose
     /// connection states to notify us, and allow for more efficient cleanup.
     async fn process_dead_peers(self, mut dead_peer_stream: mpsc::Receiver<Peer>) {
-        while let Some(dead_peer) = dead_peer_stream.recv().await {
-            self.handle_dead_peer(dead_peer);
+        let mut tx_buf = Vec::with_capacity(100);
+        loop {
+            let received = dead_peer_stream.recv_many(&mut tx_buf, 100).await;
+            if received == 0 {
+                break;
+            }
+            self.handle_dead_peer(&tx_buf[..received]);
         }
         warn!("Processing of dead peers halted");
     }

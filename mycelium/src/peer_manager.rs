@@ -960,7 +960,9 @@ where
                     .pr
                     .upgrade()
                 {
-                    router.handle_dead_peer(old_peer);
+                    router.handle_dead_peer(&[old_peer]);
+                } else {
+                    warn!("Added duplicate inbound entry but did not kill old peer");
                 }
             }
             info!("Replaced existing inbound peer");
