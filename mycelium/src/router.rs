@@ -1079,7 +1079,7 @@ where
         }
 
         // We accepted the update, check if we have a seqno request sent for this update
-        let interested_peers = self.seqno_cache.remove(&SeqnoRequestCacheKey {
+        let interested_peers = self.seqno_cache.get(&SeqnoRequestCacheKey {
             router_id,
             subnet,
             seqno,
