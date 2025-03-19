@@ -34,8 +34,6 @@ const IHU_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3);
 /// Max time used in UPDATE packets. For local (static) routes this is the timeout they are
 /// advertised with.
 const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3 * 5);
-/// Time between route table dumps to peers.
-const ROUTE_PROPAGATION_INTERVAL: Duration = UPDATE_INTERVAL;
 /// Amount of seconds that can elapse before we consider a [`Peer`] as dead from the routers POV.
 /// Since IHU's are sent in response to HELLO packets, this MUST be greater than the
 /// [`HELLO_INTERVAL`].
@@ -151,8 +149,6 @@ where
             router.clone(),
             router_data_rx,
         ));
-        tokio::spawn(Router::propagate_static_routes(router.clone()));
-        tokio::spawn(Router::propagate_selected_routes(router.clone()));
 
         tokio::spawn(Router::check_for_dead_peers(router.clone()));
 
@@ -1557,83 +1553,10 @@ where
         });
     }
 
-    /// Task to propagate the static routes periodically
-    async fn propagate_static_routes(self) {
-        loop {
-            tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
-
-            trace!("Propagating static routes");
-
-            for peer in self.peer_interfaces.read().unwrap().iter() {
-                self.propagate_static_route_to_peer(peer)
-            }
-        }
-    }
-
     /// Propagate all static routes to all known peers.
     fn propagate_static_routes_to_peers(&self) {
         for peer in self.peer_interfaces.read().unwrap().iter() {
             self.propagate_static_route_to_peer(peer);
-        }
-    }
-
-    /// Task to propagate selected routes periodically
-    async fn propagate_selected_routes(self) {
-        loop {
-            tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
-
-            trace!("Propagating selected routes");
-
-            let start = Instant::now();
-
-            for (subnet, sre) in
-                self.routing_table
-                    .read()
-                    .iter()
-                    .filter_map(|(subnet, route_list)| {
-                        route_list.selected().map(|sr| (subnet, sr.clone()))
-                    })
-            {
-                let neigh_link_cost = Metric::from(sre.neighbour().link_cost());
-
-                // the cost of the route is the cost of the route + the cost of the link to the next-hop
-                let metric = sre.metric() + neigh_link_cost;
-                let seqno = sre.seqno();
-                let router_id = sre.source().router_id();
-
-                let update = babel::Update::new(
-                    advertised_update_interval(&sre),
-                    seqno,
-                    metric,
-                    subnet,
-                    router_id,
-                );
-
-                // Before sending an update, the source table might need to be updated
-                self.update_source_table(&update);
-
-                // send the update to the peer
-                for peer in self.peer_interfaces.read().unwrap().iter() {
-                    debug!(
-                        subnet = %subnet,
-                        metric = %metric,
-                        seqno = %seqno,
-                        peer = peer.connection_identifier(),
-                        "Propagating route update",
-                    );
-                    // Don't send updates for a route to the next hop of the route, as that peer will never
-                    // select the route through us (that would caus a routing loop). The protocol can
-                    // handle this just fine, leaving this out is essentially an easy optimization.
-                    if peer == sre.neighbour() {
-                        continue;
-                    }
-
-                    self.send_update(peer, update.clone());
-                }
-            }
-
-            self.metrics
-                .router_time_spent_periodic_propagating_selected_routes(start.elapsed());
         }
     }
 
