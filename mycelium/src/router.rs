@@ -7,7 +7,7 @@ use crate::{
     packet::{ControlPacket, DataPacket},
     peer::Peer,
     router_id::RouterId,
-    routing_table::{RouteEntry, RouteKey, RouteList, RoutingTable},
+    routing_table::{RouteEntry, RouteKey, RouteList, Routes, RoutingTable},
     seqno_cache::{SeqnoCache, SeqnoRequestCacheKey},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
@@ -227,19 +227,24 @@ where
 
     /// Get the [`PublicKey`] for an [`IpAddr`] if a route exists to the IP.
     pub fn get_pubkey(&self, ip: IpAddr) -> Option<PublicKey> {
-        self.routing_table
-            .best_routes(ip)
-            .and_then(|rl| if rl.is_empty() { None } else { Some(rl) })
-            .map(|rl| rl[0].source().router_id().to_pubkey())
+        if let Routes::Exist(routes) = self.routing_table.best_routes(ip) {
+            if routes.is_empty() {
+                None
+            } else {
+                Some(routes[0].source().router_id().to_pubkey())
+            }
+        } else {
+            None
+        }
     }
 
     /// Gets the cached [`SharedSecret`] for the remote.
     pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
-        self.routing_table
-            .best_routes(dest)
-            // We can index here safely since we always have at least 1 route if we get
-            // Option::Some.
-            .map(|rl| rl.shared_secret().clone())
+        if let Routes::Exist(routes) = self.routing_table.best_routes(dest) {
+            Some(routes.shared_secret().clone())
+        } else {
+            None
+        }
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
@@ -774,12 +779,7 @@ where
             .router_process_route_request(route_request.prefix().is_none());
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
-            let update = if let Some(sre) = self
-                .routing_table
-                .routes(subnet)
-                .as_ref()
-                .and_then(|rl| rl.selected())
-            {
+            let update = if let Some(sre) = self.routing_table.routes(subnet).selected() {
                 trace!("Advertising selected route for {subnet} after route request");
                 // Optimization: Don't send an update if the selected route next-hop is the peer
                 // who requested the route, as per the babel protocol the update will never be
@@ -859,12 +859,7 @@ where
         // requested router id, or the router id is the same and the entries sequence number is
         // not smaller than the requested sequence number, send an update for the route
         // to the peer (triggered update).
-        if let Some(route_entry) = self
-            .routing_table
-            .routes(seqno_request.prefix())
-            .as_ref()
-            .and_then(|rl| rl.selected())
-        {
+        if let Some(route_entry) = self.routing_table.routes(seqno_request.prefix()).selected() {
             if !route_entry.metric().is_infinite()
                 && (seqno_request.router_id() != route_entry.source().router_id()
                     || !route_entry.seqno().lt(&seqno_request.seqno()))
@@ -968,7 +963,9 @@ where
                 }
             }
 
-            if let Some(possible_routes) = self.routing_table.routes(seqno_request.prefix()) {
+            if let Routes::Exist(possible_routes) =
+                self.routing_table.routes(seqno_request.prefix())
+            {
                 {
                     let source_table = self.source_table.read().unwrap();
                     // First only consider feasible routes.
@@ -1390,7 +1387,7 @@ where
                     .iter()
                     .cloned()
                     .collect()
-            } else if let Some(known_routes) = known_routes {
+            } else if let Routes::Exist(known_routes) = known_routes {
                 known_routes
                     .iter()
                     .filter_map(|re| {
