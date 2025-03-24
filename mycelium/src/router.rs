@@ -207,7 +207,7 @@ where
             "Requesting route table dump from {}",
             peer.connection_identifier()
         );
-        if let Err(e) = peer.send_control_packet(RouteRequest::new(None).into()) {
+        if let Err(e) = peer.send_control_packet(RouteRequest::new(None, 0).into()) {
             error!(
                 "Failed to request route table dump from {}: {e}",
                 peer.connection_identifier()
