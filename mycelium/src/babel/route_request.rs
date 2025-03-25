@@ -8,15 +8,13 @@ use crate::subnet::Subnet;
 use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
 /// Base wire size of a [`RouteRequest`] without variable length address encoding.
-const ROUTE_REQUEST_BASE_WIRE_SIZE: u8 = 3;
+const ROUTE_REQUEST_BASE_WIRE_SIZE: u8 = 2;
 
 /// Seqno request TLV body as defined in https://datatracker.ietf.org/doc/html/rfc8966#name-route-request
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteRequest {
     /// The prefix being requested
     prefix: Option<Subnet>,
-    /// The requests' generation
-    generation: u8,
 }
 
 impl RouteRequest {
@@ -24,19 +22,13 @@ impl RouteRequest {
     /// route table dumb in requested.
     ///
     /// [`prefix`]: Subnet
-    pub fn new(prefix: Option<Subnet>, generation: u8) -> Self {
-        Self { prefix, generation }
+    pub fn new(prefix: Option<Subnet>) -> Self {
+        Self { prefix }
     }
 
     /// Return the [`prefix`](Subnet) associated with this `RouteRequest`.
     pub fn prefix(&self) -> Option<Subnet> {
         self.prefix
-    }
-
-    /// Return the generation of the `RouteRequest`, which is the amount of times it has been
-    /// forwarded already.
-    pub fn generation(&self) -> u8 {
-        self.generation
     }
 
     /// Calculates the size on the wire of this `RouteRequest`.
@@ -56,7 +48,6 @@ impl RouteRequest {
     /// This function will panic if there are insufficient bytes present in the provided buffer to
     /// decode a complete `RouteRequest`.
     pub fn from_bytes(src: &mut bytes::BytesMut, len: u8) -> Option<Self> {
-        let generation = src.get_u8();
         let ae = src.get_u8();
         let plen = src.get_u8();
 
@@ -96,7 +87,7 @@ impl RouteRequest {
             _ => {
                 // Invalid AE type, skip reamining data and ignore
                 trace!("Invalid AE type in route_request packet, drop packet");
-                src.advance(len as usize - 3);
+                src.advance(len as usize - 2);
                 return None;
             }
         };
@@ -105,12 +96,11 @@ impl RouteRequest {
 
         trace!("Read route_request tlv body");
 
-        Some(RouteRequest { prefix, generation })
+        Some(RouteRequest { prefix })
     }
 
     /// Encode this `RouteRequest` tlv as part of a packet.
     pub fn write_bytes(&self, dst: &mut bytes::BytesMut) {
-        dst.put_u8(self.generation);
         if let Some(prefix) = self.prefix {
             dst.put_u8(match prefix.address() {
                 IpAddr::V4(_) => AE_IPV4,
@@ -147,13 +137,12 @@ mod tests {
                 Subnet::new(Ipv6Addr::new(512, 25, 26, 27, 28, 0, 0, 29).into(), 64)
                     .expect("64 is a valid IPv6 prefix size; qed"),
             ),
-            generation: 2,
         };
 
         rr.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 11);
-        assert_eq!(buf[..11], [2, 2, 64, 2, 0, 0, 25, 0, 26, 0, 27]);
+        assert_eq!(buf.len(), 10);
+        assert_eq!(buf[..10], [2, 64, 2, 0, 0, 25, 0, 26, 0, 27]);
 
         let mut buf = bytes::BytesMut::new();
 
@@ -162,35 +151,28 @@ mod tests {
                 Subnet::new(Ipv4Addr::new(10, 101, 4, 1).into(), 32)
                     .expect("32 is a valid IPv4 prefix size; qed"),
             ),
-            generation: 3,
         };
 
         rr.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 7);
-        assert_eq!(buf[..7], [3, 1, 32, 10, 101, 4, 1]);
+        assert_eq!(buf.len(), 6);
+        assert_eq!(buf[..6], [1, 32, 10, 101, 4, 1]);
 
         let mut buf = bytes::BytesMut::new();
 
-        let rr = super::RouteRequest {
-            prefix: None,
-            generation: 0,
-        };
+        let rr = super::RouteRequest { prefix: None };
 
         rr.write_bytes(&mut buf);
 
-        assert_eq!(buf.len(), 3);
-        assert_eq!(buf[..3], [0, 0, 0]);
+        assert_eq!(buf.len(), 2);
+        assert_eq!(buf[..2], [0, 0]);
     }
 
     #[test]
     fn decoding() {
-        let mut buf = bytes::BytesMut::from(&[12, 0, 0][..]);
+        let mut buf = bytes::BytesMut::from(&[0, 0][..]);
 
-        let rr = super::RouteRequest {
-            prefix: None,
-            generation: 12,
-        };
+        let rr = super::RouteRequest { prefix: None };
 
         let buf_len = buf.len();
         assert_eq!(
@@ -199,14 +181,13 @@ mod tests {
         );
         assert_eq!(buf.remaining(), 0);
 
-        let mut buf = bytes::BytesMut::from(&[24, 1, 24, 10, 15, 19][..]);
+        let mut buf = bytes::BytesMut::from(&[1, 24, 10, 15, 19][..]);
 
         let rr = super::RouteRequest {
             prefix: Some(
                 Subnet::new(Ipv4Addr::new(10, 15, 19, 0).into(), 24)
                     .expect("24 is a valid IPv4 prefix size; qed"),
             ),
-            generation: 24,
         };
 
         let buf_len = buf.len();
@@ -216,14 +197,13 @@ mod tests {
         );
         assert_eq!(buf.remaining(), 0);
 
-        let mut buf = bytes::BytesMut::from(&[7, 2, 64, 0, 10, 0, 20, 0, 30, 0, 40][..]);
+        let mut buf = bytes::BytesMut::from(&[2, 64, 0, 10, 0, 20, 0, 30, 0, 40][..]);
 
         let rr = super::RouteRequest {
             prefix: Some(
                 Subnet::new(Ipv6Addr::new(10, 20, 30, 40, 0, 0, 0, 0).into(), 64)
                     .expect("64 is a valid IPv6 prefix size; qed"),
             ),
-            generation: 7,
         };
 
         let buf_len = buf.len();
@@ -233,14 +213,13 @@ mod tests {
         );
         assert_eq!(buf.remaining(), 0);
 
-        let mut buf = bytes::BytesMut::from(&[4, 3, 64, 0, 10, 0, 20, 0, 30, 0, 40][..]);
+        let mut buf = bytes::BytesMut::from(&[3, 64, 0, 10, 0, 20, 0, 30, 0, 40][..]);
 
         let rr = super::RouteRequest {
             prefix: Some(
                 Subnet::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 10, 20, 30, 40).into(), 64)
                     .expect("64 is a valid IPv6 prefix size; qed"),
             ),
-            generation: 4,
         };
 
         let buf_len = buf.len();
@@ -257,7 +236,7 @@ mod tests {
         // test to fail if we forget to update something
         let mut buf = bytes::BytesMut::from(
             &[
-                0, 4, 64, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+                4, 64, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
             ][..],
         );
 
@@ -276,16 +255,13 @@ mod tests {
     fn roundtrip() {
         let mut buf = bytes::BytesMut::new();
 
-        let seqno_src = super::RouteRequest::new(
-            Some(
-                Subnet::new(
-                    Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0, 0, 0, 0).into(),
-                    64,
-                )
-                .expect("64 is a valid IPv6 prefix size; qed"),
-            ),
-            27,
-        );
+        let seqno_src = super::RouteRequest::new(Some(
+            Subnet::new(
+                Ipv6Addr::new(0x21f, 0x4025, 0xabcd, 0xdead, 0, 0, 0, 0).into(),
+                64,
+            )
+            .expect("64 is a valid IPv6 prefix size; qed"),
+        ));
         seqno_src.write_bytes(&mut buf);
         let buf_len = buf.len();
         let decoded = super::RouteRequest::from_bytes(&mut buf, buf_len as u8);

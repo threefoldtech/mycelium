@@ -299,13 +299,10 @@ mod tests {
         let mut sender = Framed::new(tx, super::Codec::new());
         let mut receiver = Framed::new(rx, super::Codec::new());
 
-        let rr = super::RouteRequest::new(
-            Some(
-                Subnet::new(Ipv6Addr::new(0x400, 1, 2, 3, 0, 0, 0, 0).into(), 64)
-                    .expect("64 is a valid IPv6 prefix size; qed"),
-            ),
-            13,
-        );
+        let rr = super::RouteRequest::new(Some(
+            Subnet::new(Ipv6Addr::new(0x400, 1, 2, 3, 0, 0, 0, 0).into(), 64)
+                .expect("64 is a valid IPv6 prefix size; qed"),
+        ));
 
         sender
             .send(rr.clone().into())
