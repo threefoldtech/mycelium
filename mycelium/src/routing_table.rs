@@ -273,6 +273,7 @@ impl RoutingTable {
             subnet,
             Arc::new(SubnetEntry::Queried { query_timeout }),
         ));
+        write_handle.flush();
     }
 }
 
