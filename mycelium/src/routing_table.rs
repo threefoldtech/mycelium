@@ -6,7 +6,7 @@ use std::{
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
 use subnet_entry::SubnetEntry;
-use tokio::{sync::mpsc, time::Duration};
+use tokio::{select, sync::mpsc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, trace};
 
@@ -274,14 +274,47 @@ impl RoutingTable {
         {
             // We only need the write handle in the task
             let writer = self.writer.clone();
+            let cancel_token = self.cancel_token.clone();
             tokio::task::spawn(async move {
+                select! {
+                    _ = cancel_token.cancelled() => {
+                        // Future got cancelled, nothing to do
+                        return
+                    }
+                    _ = tokio::time::sleep_until(query_timeout) => {
+                        // Timeout fired, mark as no route
+                    }
+                }
+
+                let expiry = tokio::time::Instant::now() + NO_ROUTE_EXPIRATION;
+
+                // Scope this so the lock for the write_handle goes out of scope when we are done
+                // here, as we don't want to hold the write_handle lock while sleeping for the
+                // second timeout.
+                {
+                    let mut write_handle = writer.lock().expect("Can lock writer");
+                    write_handle.append(RoutingTableOplogEntry::QueryExpired(
+                        subnet,
+                        Arc::new(SubnetEntry::NoRoute { expiry }),
+                    ));
+                    write_handle.flush();
+                }
+
+                // TODO: Check if we are indeed marked as NoRoute here, if we aren't this can be
+                // cancelled now
+
+                select! {
+                    _ = cancel_token.cancelled() => {
+                        // Future got cancelled, nothing to do
+                        return
+                    }
+                    _ = tokio::time::sleep_until(expiry) => {
+                        // Timeout fired, remove no route entry
+                    }
+                }
+
                 let mut write_handle = writer.lock().expect("Can lock writer");
-                write_handle.append(RoutingTableOplogEntry::QueryExpired(
-                    subnet,
-                    Arc::new(SubnetEntry::NoRoute {
-                        expiry: tokio::time::Instant::now() + NO_ROUTE_EXPIRATION,
-                    }),
-                ));
+                write_handle.append(RoutingTableOplogEntry::NoRouteExpired(subnet));
                 write_handle.flush();
             });
         }
@@ -479,6 +512,8 @@ enum RoutingTableOplogEntry {
     /// The route request for a subnet expired, if it is still in query state mark it as not
     /// existing
     QueryExpired(Subnet, Arc<SubnetEntry>),
+    /// The marker for explicitly not having a route to a subnet has expired
+    NoRouteExpired(Subnet),
 }
 
 /// Convert an [`IpAddr`] into an [`Ipv6Addr`]. Panics if the contained addrss is not an IPv6
@@ -519,6 +554,17 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                     }
                 }
             }
+            RoutingTableOplogEntry::NoRouteExpired(subnet) => {
+                if let Some(entry) = self
+                    .table
+                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
+                {
+                    if let SubnetEntry::NoRoute { .. } = &**entry {
+                        self.table
+                            .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
+                    }
+                }
+            }
         }
     }
 
@@ -552,6 +598,17 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                             subnet.prefix_len().into(),
                             nre,
                         );
+                    }
+                }
+            }
+            RoutingTableOplogEntry::NoRouteExpired(subnet) => {
+                if let Some(entry) = self
+                    .table
+                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
+                {
+                    if let SubnetEntry::NoRoute { .. } = &**entry {
+                        self.table
+                            .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
                     }
                 }
             }
