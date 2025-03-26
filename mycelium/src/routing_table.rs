@@ -6,7 +6,7 @@ use std::{
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
 use subnet_entry::SubnetEntry;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, trace};
 
@@ -24,6 +24,8 @@ mod route_entry;
 mod route_key;
 mod route_list;
 mod subnet_entry;
+
+const NO_ROUTE_EXPIRATION: Duration = Duration::from_secs(60);
 
 pub enum Routes {
     Exist(RouteListReadGuard),
@@ -268,6 +270,22 @@ impl RoutingTable {
             panic!("IP v4 addresses are not supported")
         };
 
+        // Start a task to expire the queried state if we didn't have any results in time.
+        {
+            // We only need the write handle in the task
+            let writer = self.writer.clone();
+            tokio::task::spawn(async move {
+                let mut write_handle = writer.lock().expect("Can lock writer");
+                write_handle.append(RoutingTableOplogEntry::QueryExpired(
+                    subnet,
+                    Arc::new(SubnetEntry::NoRoute {
+                        expiry: tokio::time::Instant::now() + NO_ROUTE_EXPIRATION,
+                    }),
+                ));
+                write_handle.flush();
+            });
+        }
+
         let mut write_handle = self.writer.lock().expect("Can lock writer");
         write_handle.append(RoutingTableOplogEntry::Upsert(
             subnet,
@@ -458,6 +476,9 @@ enum RoutingTableOplogEntry {
     Upsert(Subnet, Arc<SubnetEntry>),
     /// Delete the entry for the given subnet.
     Delete(Subnet),
+    /// The route request for a subnet expired, if it is still in query state mark it as not
+    /// existing
+    QueryExpired(Subnet, Arc<SubnetEntry>),
 }
 
 /// Convert an [`IpAddr`] into an [`Ipv6Addr`]. Panics if the contained addrss is not an IPv6
@@ -484,6 +505,20 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                 self.table
                     .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
             }
+            RoutingTableOplogEntry::QueryExpired(subnet, nre) => {
+                if let Some(entry) = self
+                    .table
+                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
+                {
+                    if let SubnetEntry::Queried { .. } = &**entry {
+                        self.table.insert(
+                            expect_ipv6(subnet.address()),
+                            subnet.prefix_len().into(),
+                            Arc::clone(nre),
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -505,6 +540,20 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
             RoutingTableOplogEntry::Delete(subnet) => {
                 self.table
                     .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
+            }
+            RoutingTableOplogEntry::QueryExpired(subnet, nre) => {
+                if let Some(entry) = self
+                    .table
+                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
+                {
+                    if let SubnetEntry::Queried { .. } = &**entry {
+                        self.table.insert(
+                            expect_ipv6(subnet.address()),
+                            subnet.prefix_len().into(),
+                            nre,
+                        );
+                    }
+                }
             }
         }
     }
