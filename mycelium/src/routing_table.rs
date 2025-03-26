@@ -259,6 +259,21 @@ impl RoutingTable {
                 }
             })
     }
+
+    /// Marks a subnet as queried in the route table.
+    ///
+    /// This function will not do anything if the subnet contains valid routes.
+    pub fn mark_queried(&self, subnet: Subnet, query_timeout: tokio::time::Instant) {
+        if !matches!(subnet.address(), IpAddr::V6(_)) {
+            panic!("IP v4 addresses are not supported")
+        };
+
+        let mut write_handle = self.writer.lock().expect("Can lock writer");
+        write_handle.append(RoutingTableOplogEntry::Upsert(
+            subnet,
+            Arc::new(SubnetEntry::Queried { query_timeout }),
+        ));
+    }
 }
 
 pub struct RouteListReadGuard {

@@ -39,6 +39,11 @@ impl RouteRequest {
         self.generation
     }
 
+    /// Increment the generation of the `RouteRequest`.
+    pub fn inc_generation(&mut self) {
+        self.generation += 1
+    }
+
     /// Calculates the size on the wire of this `RouteRequest`.
     pub fn wire_size(&self) -> u8 {
         ROUTE_REQUEST_BASE_WIRE_SIZE
