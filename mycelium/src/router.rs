@@ -1500,21 +1500,67 @@ where
                 error!("Error sending data packet to TUN interface: {:?}", e);
             }
         } else {
-            match self.routing_table.selected_route(data_packet.dst_ip.into()) {
-                Some(route_entry) => {
-                    self.metrics.router_route_packet_forward();
-                    if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
-                        error!(
-                            "Error sending data packet to peer {}: {:?}",
-                            route_entry.neighbour().connection_identifier(),
-                            e
-                        );
+            match self.routing_table.routes(data_packet.dst_ip.into()) {
+                Routes::Exist(routes) => match routes.selected() {
+                    Some(route_entry) => {
+                        self.metrics.router_route_packet_forward();
+                        if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
+                            error!(
+                                "Error sending data packet to peer {}: {:?}",
+                                route_entry.neighbour().connection_identifier(),
+                                e
+                            );
+                        }
                     }
+                    None => {
+                        self.metrics.router_route_packet_no_route();
+                        self.no_route_to_host(data_packet);
+                    }
+                },
+                Routes::Queried => {
+                    // Wait for query resolution
+                    // TODO: proper fix
+                    tokio::task::block_in_place(|| {
+                        std::thread::sleep(std::time::Duration::from_secs(1))
+                    });
+                    self.route_packet(data_packet);
                 }
-                None => {
+                Routes::NoRoute => {
                     self.metrics.router_route_packet_no_route();
                     self.no_route_to_host(data_packet);
                 }
+                Routes::None => {
+                    // Send route request
+                    // NOTE: we request the full /64 subnet
+                    self.send_route_request(
+                        Subnet::new(data_packet.dst_ip.into(), 64)
+                            .expect("64 is a valid subnet size for IPv6 addresses"),
+                    );
+                    // TODO: proper fix
+                    tokio::task::block_in_place(|| {
+                        std::thread::sleep(std::time::Duration::from_secs(1))
+                    });
+                    self.route_packet(data_packet);
+                }
+            }
+        }
+    }
+
+    /// Send a [`RouteRequest`] for the [`Subnet`] to all peers.
+    fn send_route_request(&self, subnet: Subnet) {
+        let route_request = RouteRequest::new(Some(subnet), 0);
+
+        for peer in self
+            .peer_interfaces
+            .read()
+            .expect("Can read peer interfaces")
+            .iter()
+        {
+            if peer
+                .send_control_packet(route_request.clone().into())
+                .is_err()
+            {
+                debug!(subnet = %subnet, "Could not send route request to peer");
             }
         }
     }
