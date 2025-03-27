@@ -9,7 +9,10 @@
 //! might not be optimal for other uses.
 
 use core::fmt;
-use std::{hash::Hash, net::IpAddr};
+use std::{
+    hash::Hash,
+    net::{IpAddr, Ipv6Addr},
+};
 
 use ipnet::IpNet;
 
@@ -139,6 +142,12 @@ impl Subnet {
     /// Returns the netmask of the subnet as an [`IpAddr`].
     pub fn mask(&self) -> IpAddr {
         self.inner.netmask()
+    }
+}
+
+impl From<Ipv6Addr> for Subnet {
+    fn from(value: Ipv6Addr) -> Self {
+        Self::new(value.into(), 128).expect("128 is a valid subnet size for an IPv6 address; qed")
     }
 }
 
