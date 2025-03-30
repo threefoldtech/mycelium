@@ -230,10 +230,28 @@ where
 
     /// Gets the cached [`SharedSecret`] for the remote.
     pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
-        if let Routes::Exist(routes) = self.routing_table.best_routes(dest) {
-            Some(routes.shared_secret().clone())
-        } else {
-            None
+        // TODO: proper fix
+        match self.routing_table.best_routes(dest) {
+            Routes::Exist(routes) => Some(routes.shared_secret().clone()),
+            Routes::Queried => {
+                info!("Route is queried already");
+                tokio::task::block_in_place(|| {
+                    std::thread::sleep(std::time::Duration::from_secs(1))
+                });
+                self.get_shared_secret_from_dest(dest)
+            }
+            Routes::NoRoute => None,
+            Routes::None => {
+                // NOTE: we request the full /64 subnet
+                self.send_route_request(
+                    Subnet::new(dest, 64)
+                        .expect("64 is a valid subnet size for an IPv6 address; qed"),
+                );
+                tokio::task::block_in_place(|| {
+                    std::thread::sleep(std::time::Duration::from_secs(1))
+                });
+                self.get_shared_secret_from_dest(dest)
+            }
         }
     }
 
