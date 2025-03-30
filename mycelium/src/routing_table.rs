@@ -201,16 +201,20 @@ impl RoutingTable {
             .exact_match(subnet_address, subnet.prefix_len().into())?
             .clone();
 
-        Some(WriteGuard {
-            routing_table: self,
-            // If we didn't find a route list in the route table we create a new empty list,
-            // therefore we immediately own it.
-            value,
-            exists: true,
-            subnet,
-            expired_route_entry_sink: self.expired_route_entry_sink.clone(),
-            cancellation_token: self.cancel_token.clone(),
-        })
+        if matches!(*value, SubnetEntry::Exists { .. }) {
+            Some(WriteGuard {
+                routing_table: self,
+                // If we didn't find a route list in the route table we create a new empty list,
+                // therefore we immediately own it.
+                value,
+                exists: true,
+                subnet,
+                expired_route_entry_sink: self.expired_route_entry_sink.clone(),
+                cancellation_token: self.cancel_token.clone(),
+            })
+        } else {
+            None
+        }
     }
 
     /// Adds a new [`Subnet`] to the `RoutingTable`. The returned [`WriteGuard`] can be used to
