@@ -791,93 +791,113 @@ where
             .router_process_route_request(route_request.prefix().is_none());
         // Handle the case of a single subnet.
         if let Some(subnet) = route_request.prefix() {
-            // If we have existing routes, attempt to send the selected route
-            let update = match self.routing_table.routes(subnet) {
-                Routes::Exist(routes) => {
-                    if let Some(sre) = routes.selected() {
-                        trace!("Advertising selected route for {subnet} after route request");
-                        // Optimization: Don't send an update if the selected route next-hop is the peer
-                        // who requested the route, as per the babel protocol the update will never be
-                        // accepted.
-                        if sre.neighbour() == &source_peer {
-                            trace!(
+            // Check if these are local routes by chance
+            let update = if let Some(static_route) = self
+                .static_routes
+                .iter()
+                .find(|sr| sr.contains_subnet(&subnet))
+            {
+                debug!(
+                    "Advertising static route {static_route} in response to route request for {subnet}"
+                );
+                babel::Update::new(
+                    UPDATE_INTERVAL, // Static route is advertised with the default interval
+                    self.router_seqno.read().unwrap().0, // Updates receive the seqno of the router
+                    Metric::from(0), // Static route has no further hop costs
+                    *static_route,
+                    self.router_id,
+                )
+            } else {
+                // If we have existing routes, attempt to send the selected route
+                match self.routing_table.routes(subnet) {
+                    Routes::Exist(routes) => {
+                        if let Some(sre) = routes.selected() {
+                            trace!("Advertising selected route for {subnet} after route request");
+                            // Optimization: Don't send an update if the selected route next-hop is the peer
+                            // who requested the route, as per the babel protocol the update will never be
+                            // accepted.
+                            if sre.neighbour() == &source_peer {
+                                trace!(
                                 "Not advertising route since the next-hop is the requesting peer"
                             );
+                                return;
+                            }
+                            babel::Update::new(
+                                advertised_update_interval(sre),
+                                sre.seqno(),
+                                sre.metric() + Metric::from(sre.neighbour().link_cost()),
+                                subnet,
+                                sre.source().router_id(),
+                            )
+                        } else {
+                            // We don't have a selected route but we do have routes. It seems all routes
+                            // are currently unfeasible. Don't send an update, but also don't send a
+                            // retraction since we know the subnet exists
                             return;
                         }
+                    }
+                    // If the route is queried already we don't have to do anything.
+                    // TODO: metric
+                    Routes::Queried => return,
+                    Routes::NoRoute => {
+                        // We explicitly don't have a route for this subnet, so send a retraction to
+                        // notify our peer as soon as possible not to expect anything.
                         babel::Update::new(
-                            advertised_update_interval(sre),
-                            sre.seqno(),
-                            sre.metric() + Metric::from(sre.neighbour().link_cost()),
-                            subnet,
-                            sre.source().router_id(),
+                            INTERVAL_NOT_REPEATING,
+                            self.router_seqno.read().unwrap().0, // Retractions receive the seqno of the router
+                            Metric::infinite(), // Static route has no further hop costs
+                            subnet,             // Advertise the exact subnet requested
+                            self.router_id,     // Our own router ID, since we advertise this
                         )
-                    } else {
-                        // We don't have a selected route but we do have routes. It seems all routes
-                        // are currently unfeasible. Don't send an update, but also don't send a
-                        // retraction since we know the subnet exists
-                        return;
                     }
-                }
-                // If the route is queried already we don't have to do anything.
-                // TODO: metric
-                Routes::Queried => return,
-                Routes::NoRoute => {
-                    // We explicitly don't have a route for this subnet, so send a retraction to
-                    // notify our peer as soon as possible not to expect anything.
-                    babel::Update::new(
-                        INTERVAL_NOT_REPEATING,
-                        self.router_seqno.read().unwrap().0, // Retractions receive the seqno of the router
-                        Metric::infinite(), // Static route has no further hop costs
-                        subnet,             // Advertise the exact subnet requested
-                        self.router_id,     // Our own router ID, since we advertise this
-                    )
-                }
-                Routes::None => {
-                    // We don't have a route, but we also don't have confirmation locally that the
-                    // route does not exist. Forward the route request to the remainder of our
-                    // peers and search for the route.
-                    //
-                    // First check the generation of the route request, if it is too high we simply
-                    // ignore it. Check against the eventually bumped generation.
-                    if route_request.generation() + 1 >= MAX_RR_GENERATION {
-                        // Drop route request
-                        // TODO: metric
-                        return;
-                    }
-                    route_request.inc_generation();
-
-                    debug!(
-                        rr.subnet = %subnet,
-                        rr.generation = route_request.generation(),
-                        "Forwarding route request to peers"
-                    );
-
-                    self.routing_table
-                        .mark_queried(subnet, tokio::time::Instant::now() + ROUTE_QUERY_TIMEOUT);
-
-                    // Now transmit to all our peers, except the sender
-                    for peer in self
-                        .peer_interfaces
-                        .read()
-                        .expect("Can read router peer interfaces")
-                        .iter()
-                        .filter(|p| *p != &source_peer)
-                    {
-                        if peer
-                            .send_control_packet(route_request.clone().into())
-                            .is_err()
-                        {
-                            debug!(
-                                rr.subnet = %subnet,
-                                rr.generation = route_request.generation(),
-                                peer = peer.connection_identifier(),
-                                "Can't forward route request to dead peer"
-                            );
+                    Routes::None => {
+                        // We don't have a route, but we also don't have confirmation locally that the
+                        // route does not exist. Forward the route request to the remainder of our
+                        // peers and search for the route.
+                        //
+                        // First check the generation of the route request, if it is too high we simply
+                        // ignore it. Check against the eventually bumped generation.
+                        if route_request.generation() + 1 >= MAX_RR_GENERATION {
+                            // Drop route request
+                            // TODO: metric
+                            return;
                         }
-                    }
+                        route_request.inc_generation();
 
-                    return;
+                        debug!(
+                            rr.subnet = %subnet,
+                            rr.generation = route_request.generation(),
+                            "Forwarding route request to peers"
+                        );
+
+                        self.routing_table.mark_queried(
+                            subnet,
+                            tokio::time::Instant::now() + ROUTE_QUERY_TIMEOUT,
+                        );
+
+                        // Now transmit to all our peers, except the sender
+                        for peer in self
+                            .peer_interfaces
+                            .read()
+                            .expect("Can read router peer interfaces")
+                            .iter()
+                            .filter(|p| *p != &source_peer)
+                        {
+                            if peer
+                                .send_control_packet(route_request.clone().into())
+                                .is_err()
+                            {
+                                debug!(
+                                    rr.subnet = %subnet,
+                                    rr.generation = route_request.generation(),
+                                    peer = peer.connection_identifier(),
+                                    "Can't forward route request to dead peer"
+                                );
+                            }
+                        }
+
+                        return;
+                    }
                 }
             };
 
