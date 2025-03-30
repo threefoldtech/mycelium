@@ -1526,7 +1526,7 @@ where
                 error!("Error sending data packet to TUN interface: {:?}", e);
             }
         } else {
-            match self.routing_table.routes(data_packet.dst_ip.into()) {
+            match self.routing_table.best_routes(data_packet.dst_ip.into()) {
                 Routes::Exist(routes) => match routes.selected() {
                     Some(route_entry) => {
                         self.metrics.router_route_packet_forward();
