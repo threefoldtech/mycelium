@@ -203,18 +203,6 @@ where
         // might immediately cause timeout timers to fire.
         peer.set_time_last_received_hello(tokio::time::Instant::now());
         peer.set_time_last_received_ihu(tokio::time::Instant::now());
-
-        // Request route table dump of peer
-        debug!(
-            "Requesting route table dump from {}",
-            peer.connection_identifier()
-        );
-        if let Err(e) = peer.send_control_packet(RouteRequest::new(None, 0).into()) {
-            error!(
-                "Failed to request route table dump from {}: {e}",
-                peer.connection_identifier()
-            );
-        }
     }
 
     /// Get the public key used by the router
