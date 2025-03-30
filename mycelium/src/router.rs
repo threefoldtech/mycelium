@@ -1538,6 +1538,9 @@ where
     fn send_route_request(&self, subnet: Subnet) {
         let route_request = RouteRequest::new(Some(subnet), 0);
 
+        self.routing_table
+            .mark_queried(subnet, tokio::time::Instant::now() + ROUTE_QUERY_TIMEOUT);
+
         for peer in self
             .peer_interfaces
             .read()
