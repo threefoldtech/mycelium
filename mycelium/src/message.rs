@@ -421,15 +421,43 @@ where
                     debug!("Dropping CHUNK because index is too high");
                     return;
                 }
-                // Check chunk size, allow exception on last chunk.
+
+                // Calculate the actual number of chunks and the index of the last chunk
+                // based on the sender's chunking strategy (AVERAGE_CHUNK_SIZE).
+                let actual_num_chunks = message.len.div_ceil(AVERAGE_CHUNK_SIZE as u64);
+                // Handle the edge case of a 0-byte message resulting in 0 chunks.
+                let actual_last_chunk_idx = if actual_num_chunks == 0 {
+                    0
+                } else {
+                    actual_num_chunks - 1
+                };
+
+                // Sanity check: Ensure the received chunk index isn't impossibly high.
+                if mc.chunk_idx() >= actual_num_chunks {
+                    debug!(
+                        "Dropping CHUNK because index {} is out of bounds (expected max {})",
+                        mc.chunk_idx(),
+                        actual_last_chunk_idx
+                    );
+                    return;
+                }
+
                 if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != max_chunk_idx {
                     debug!(
                         "Dropping CHUNK {}/{max_chunk_idx} which is too small ({} bytes / {MINIMUM_CHUNK_SIZE} bytes)",
                         mc.chunk_idx(),
                         mc.chunk_size()
                     );
+                }
+                // Allow the *actual* last chunk (determined by AVERAGE_CHUNK_SIZE) to be smaller than the minimum.
+                if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != actual_last_chunk_idx {
+                    debug!(
+                        "Dropping CHUNK {}/{} which is too small ({} bytes / {MINIMUM_CHUNK_SIZE} bytes)",
+                        mc.chunk_idx(), actual_last_chunk_idx, mc.chunk_size()
+                    );
                     return;
                 }
+
                 // Finally check if we have sufficient space for our chunks.
                 if message.chunks.len() as u64 <= mc.chunk_idx() {
                     // TODO: optimize
