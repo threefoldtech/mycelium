@@ -442,13 +442,6 @@ where
                     return;
                 }
 
-                if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != max_chunk_idx {
-                    debug!(
-                        "Dropping CHUNK {}/{max_chunk_idx} which is too small ({} bytes / {MINIMUM_CHUNK_SIZE} bytes)",
-                        mc.chunk_idx(),
-                        mc.chunk_size()
-                    );
-                }
                 // Allow the *actual* last chunk (determined by AVERAGE_CHUNK_SIZE) to be smaller than the minimum.
                 if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != actual_last_chunk_idx {
                     debug!(
