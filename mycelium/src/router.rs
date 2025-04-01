@@ -234,7 +234,6 @@ where
         match self.routing_table.best_routes(dest) {
             Routes::Exist(routes) => Some(routes.shared_secret().clone()),
             Routes::Queried => {
-                info!("Route is queried already");
                 tokio::task::block_in_place(|| {
                     std::thread::sleep(std::time::Duration::from_secs(1))
                 });
