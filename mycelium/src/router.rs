@@ -65,6 +65,10 @@ const MAX_RR_GENERATION: u8 = 16;
 /// Give a route query 5 seconds to resolve, this should be plenty generous.
 const ROUTE_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Amount of time to wait before checking if a queried route resolved.
+// TODO: Remove once proper feedback is in place
+const QUERY_CHECK_DURATION: Duration = Duration::from_millis(100);
+
 pub struct Router<M> {
     routing_table: RoutingTable,
     peer_interfaces: Arc<RwLock<Vec<Peer>>>,
@@ -234,9 +238,7 @@ where
         match self.routing_table.best_routes(dest) {
             Routes::Exist(routes) => Some(routes.shared_secret().clone()),
             Routes::Queried => {
-                tokio::task::block_in_place(|| {
-                    std::thread::sleep(std::time::Duration::from_secs(1))
-                });
+                tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
                 self.get_shared_secret_from_dest(dest)
             }
             Routes::NoRoute => None,
@@ -246,9 +248,7 @@ where
                     Subnet::new(dest, 64)
                         .expect("64 is a valid subnet size for an IPv6 address; qed"),
                 );
-                tokio::task::block_in_place(|| {
-                    std::thread::sleep(std::time::Duration::from_secs(1))
-                });
+                tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
                 self.get_shared_secret_from_dest(dest)
             }
         }
@@ -1545,9 +1545,7 @@ where
                 Routes::Queried => {
                     // Wait for query resolution
                     // TODO: proper fix
-                    tokio::task::block_in_place(|| {
-                        std::thread::sleep(std::time::Duration::from_secs(1))
-                    });
+                    tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
                     self.route_packet(data_packet);
                 }
                 Routes::NoRoute => {
@@ -1562,9 +1560,7 @@ where
                             .expect("64 is a valid subnet size for IPv6 addresses"),
                     );
                     // TODO: proper fix
-                    tokio::task::block_in_place(|| {
-                        std::thread::sleep(std::time::Duration::from_secs(1))
-                    });
+                    tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
                     self.route_packet(data_packet);
                 }
             }
