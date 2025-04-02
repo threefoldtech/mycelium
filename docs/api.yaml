@@ -1,21 +1,21 @@
 openapi: 3.0.2
 info:
-  version: '1.0.0' 
-  
+  version: "1.0.0"
+
   title: Mycelium management
   contact:
-    url: 'https://github.com/threefoldtech/mycelium'
+    url: "https://github.com/threefoldtech/mycelium"
   license:
     name: Apache 2.0
-    url: 'https://github.com/threefoldtech/mycelium/blob/master/LICENSE'
-  
+    url: "https://github.com/threefoldtech/mycelium/blob/master/LICENSE"
+
   description: |
     This is the specification of the **mycelium** management API. It is used to perform admin tasks on the system, and
     to perform administrative duties.
 
 externalDocs:
   description: For full documentation, check out the mycelium github repo.
-  url: 'https://github.com/threefoldtech/mycelium'
+  url: "https://github.com/threefoldtech/mycelium"
 
 tags:
   - name: Admin
@@ -28,10 +28,10 @@ tags:
     description: Operations on the embedded message subsystem
 
 servers:
-  - url: 'http://localhost:8989'
+  - url: "http://localhost:8989"
 
 paths:
-  '/api/v1/admin':
+  "/api/v1/admin":
     get:
       tags:
         - Admin
@@ -40,14 +40,14 @@ paths:
         Get general info about the node, which is not related to other more specific functionality
       operationId: getInfo
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Info'
+                $ref: "#/components/schemas/Info"
 
-  '/api/v1/admin/peers':
+  "/api/v1/admin/peers":
     get:
       tags:
         - Admin
@@ -59,14 +59,14 @@ paths:
         of bytes we've sent to and received from the peer.
       operationId: getPeers
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/PeerStats'
+                  $ref: "#/components/schemas/PeerStats"
     post:
       tags:
         - Admin
@@ -80,16 +80,16 @@ paths:
         later on.
       operationId: addPeer
       responses:
-        '204':
+        "204":
           description: Peer added
-        '400':
+        "400":
           description: Malformed endpoint
           content:
             text/plain:
               schema:
                 type: string
                 description: Details about why the endpoint is not valid
-        '409':
+        "409":
           description: Peer already exists
           content:
             text/plain:
@@ -97,7 +97,7 @@ paths:
                 type: string
                 description: message saying we already know this peer
 
-  '/api/v1/admin/peers/{endpoint}':
+  "/api/v1/admin/peers/{endpoint}":
     delete:
       tags:
         - Admin
@@ -109,16 +109,16 @@ paths:
         is currently active, it will be closed.
       operationId: deletePeer
       responses:
-        '204':
+        "204":
           description: Peer removed
-        '400':
+        "400":
           description: Malformed endpoint
           content:
             text/plain:
               schema:
                 type: string
                 description: Details about why the endpoint is not valid
-        '404':
+        "404":
           description: Peer doesn't exist
           content:
             text/plain:
@@ -126,7 +126,7 @@ paths:
                 type: string
                 description: message saying we don't know this peer
 
-  '/api/v1/admin/routes/selected':
+  "/api/v1/admin/routes/selected":
     get:
       tags:
         - Admin
@@ -137,16 +137,16 @@ paths:
         It is possible for a route to be selected and have an infinite metric. This route will however not forward packets.
       operationId: getSelectedRoutes
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Route'
+                  $ref: "#/components/schemas/Route"
 
-  '/api/v1/admin/routes/fallback':
+  "/api/v1/admin/routes/fallback":
     get:
       tags:
         - Admin
@@ -157,7 +157,7 @@ paths:
         These routes are available to be selected in case the selected route for a destination suddenly fails, or gets retracted.
       operationId: getSelectedRoutes
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
@@ -166,7 +166,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Route'
 
-  '/api/v1/messages':
+  "/api/v1/messages":
     get:
       tags:
         - Message
@@ -188,7 +188,7 @@ paths:
         - in: query
           name: timeout
           required: false
-          schema: 
+          schema:
             type: integer
             format: int64
             minimum: 0
@@ -197,25 +197,25 @@ paths:
             a message if present, or return immediately if there isn't
           example: 60
         - in: query
-          name: topic 
+          name: topic
           required: false
-          schema: 
-            type: string 
+          schema:
+            type: string
             format: byte
             minLength: 0
-            maxLength: 340 
+            maxLength: 340
           description: |
             Optional filter for loading messages. If set, the system checks if the message has the given string at the start. This way
             a topic can be encoded.
           example: example.topic
       responses:
-        '200':
+        "200":
           description: Message retrieved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InboundMessage'
-        '204':
+                $ref: "#/components/schemas/InboundMessage"
+        "204":
           description: No message ready
     post:
       tags:
@@ -229,7 +229,7 @@ paths:
         - in: query
           name: reply_timeout
           required: false
-          schema: 
+          schema:
             type: integer
             format: int64
             minimum: 0
@@ -242,29 +242,29 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PushMessageBody'
+              $ref: "#/components/schemas/PushMessageBody"
       responses:
-        '200':
+        "200":
           description: We received a reply within the specified timeout
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InboundMessage'
+                $ref: "#/components/schemas/InboundMessage"
 
-        '201':
+        "201":
           description: Message pushed successfully, and not waiting for a reply
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PushMessageResponseId'
-        '408':
+                $ref: "#/components/schemas/PushMessageResponseId"
+        "408":
           description: The system timed out waiting for a reply to the message
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PushMessageResponseId'
+                $ref: "#/components/schemas/PushMessageResponseId"
 
-  '/api/v1/messsages/reply/{id}':
+  "/api/v1/messsages/reply/{id}":
     post:
       tags:
         - Message
@@ -272,7 +272,7 @@ paths:
       description: |
         Submits a reply message to the system, where ID is an id of a previously received message. If the sender is waiting
         for a reply, it will bypass the queue of open messages.
-      operationId: pushMessageReply 
+      operationId: pushMessageReply
       parameters:
         - in: path
           name: id
@@ -287,12 +287,12 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PushMessageBody'
+              $ref: "#/components/schemas/PushMessageBody"
       responses:
-        '204':
+        "204":
           description: successfully submitted the reply
 
-  '/api/v1/messages/status/{id}':
+  "/api/v1/messages/status/{id}":
     get:
       tags:
         - Message
@@ -312,16 +312,16 @@ paths:
             maxLength: 16
           example: abcdef0123456789
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageStatusResponse'
-        '404':
+                $ref: "#/components/schemas/MessageStatusResponse"
+        "404":
           description: Message not found
-  
-  '/api/v1/pubkey/{mycelium_ip}':
+
+  "/api/v1/pubkey/{mycelium_ip}":
     get:
       summary: Get the pubkey from node ip
       description: |
@@ -336,15 +336,14 @@ paths:
             format: ipv6
             example: 5fd:7636:b80:9ad0::1
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PublicKeyResponse'
-        '404':
+                $ref: "#/components/schemas/PublicKeyResponse"
+        "404":
           description: Public key not found
-
 
 components:
   schemas:
@@ -365,8 +364,8 @@ components:
           description: Protocol used
           type: string
           enum:
-            - 'tcp'
-            - 'quic'
+            - "tcp"
+            - "quic"
           example: tcp
         socketAddr:
           description: The socket address used
@@ -378,22 +377,22 @@ components:
       type: object
       properties:
         endpoint:
-          $ref: '#/components/schemas/Endpoint'
+          $ref: "#/components/schemas/Endpoint"
         type:
           description: How we know about this peer
           type: string
           enum:
-            - 'static'
-            - 'inbound'
-            - 'linkLocalDiscovery'
+            - "static"
+            - "inbound"
+            - "linkLocalDiscovery"
           example: static
         connectionState:
           description: The current state of the connection to the peer
           type: string
           enum:
-            - 'alive'
-            - 'connecting'
-            - 'dead'
+            - "alive"
+            - "connecting"
+            - "dead"
           example: alive
         txBytes:
           description: The amount of bytes transmitted to this peer
@@ -493,7 +492,7 @@ components:
       type: object
       properties:
         dst:
-          $ref: '#/components/schemas/MessageDestination'
+          $ref: "#/components/schemas/MessageDestination"
         topic:
           description: An optional message topic
           type: string
@@ -510,7 +509,7 @@ components:
     MessageDestination:
       oneOf:
         - description: An IP in the subnet of the receiver node
-          type: object 
+          type: object
           properties:
             ip:
               description: The target IP of the message
@@ -547,8 +546,8 @@ components:
           type: string
           format: ipv6
           example: 449:abcd:0123:defa::1
-        state: 
-          $ref: '#/components/schemas/TransmissionState'
+        state:
+          $ref: "#/components/schemas/TransmissionState"
         created:
           description: Unix timestamp of when this message was created
           type: integer
@@ -569,8 +568,8 @@ components:
       description: The state of an outbound message in it's lifetime
       oneOf:
         - type: string
-          enum: ['pending', 'received', 'read', 'aborted']
-          example: 'received'
+          enum: ["pending", "received", "read", "aborted"]
+          example: "received"
         - type: object
           properties:
             sending:
@@ -588,10 +587,10 @@ components:
                   type: integer
                   minimum: 0
                   example: 3
-      example: 'received'
+      example: "received"
 
     PublicKeyResponse:
-      description: Public key requested based on a node's IP 
+      description: Public key requested based on a node's IP
       type: object
       properties:
         NodePubKey:
