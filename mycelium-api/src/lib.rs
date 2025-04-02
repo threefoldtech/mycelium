@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 use tracing::{debug, error};
 
 use mycelium::{
@@ -55,6 +55,7 @@ impl Http {
             .route("/admin/peers/{endpoint}", delete(delete_peer))
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
+            .route("/admin/routes/queried", get(get_queried_routes))
             .route("/pubkey/{ip}", get(get_pubk_from_ip))
             .with_state(server_state.clone());
         let app = Router::new().nest("/api/v1", admin_routes);
@@ -228,6 +229,42 @@ where
         .collect();
 
     Json(routes)
+}
+
+/// Info about a queried subnet. This uses base types only to avoid having to introduce too
+/// many Serialize bounds in the core types.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct QueriedSubnet {
+    /// We convert the [`subnet`](Subnet) to a string to avoid introducing a bound on the actual
+    /// type.
+    pub subnet: String,
+    /// The amount of time left before the query expires.
+    pub expiration: String,
+}
+
+async fn get_queried_routes<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<QueriedSubnet>>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Loading queried subnets");
+    let queries = state
+        .node
+        .lock()
+        .await
+        .queried_subnets()
+        .into_iter()
+        .map(|qs| QueriedSubnet {
+            subnet: qs.subnet().to_string(),
+            expiration: qs
+                .query_expires()
+                .duration_since(Instant::now())
+                .as_secs()
+                .to_string(),
+        })
+        .collect();
+
+    Json(queries)
 }
 
 /// General info about a node.
