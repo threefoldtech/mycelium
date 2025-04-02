@@ -2,7 +2,7 @@ use std::{net::Ipv6Addr, sync::Arc};
 
 use crate::subnet::Subnet;
 
-use super::{subnet_entry::SubnetEntry, RouteListReadGuard};
+use super::{subnet_entry::SubnetEntry, QueriedSubnet, RouteListReadGuard};
 
 /// An iterator over a [`routing table`](super::RoutingTable) giving read only access to
 /// [`RouteList`]'s.
@@ -29,6 +29,37 @@ impl Iterator for RoutingTableIter<'_> {
                     Subnet::new(ip.into(), prefix_size as u8)
                         .expect("Routing table contains valid subnets"),
                     RouteListReadGuard { inner: list.load() },
+                ));
+            }
+        }
+        None
+    }
+}
+
+/// Iterator over queried routes in the routing table.
+pub struct RoutingTableQueryIter<'a>(
+    ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<SubnetEntry>>,
+);
+
+impl<'a> RoutingTableQueryIter<'a> {
+    /// Create a new `RoutingTableQueryIter` which will iterate over all queried entries in a [`RoutingTable`].
+    pub(super) fn new(
+        inner: ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<SubnetEntry>>,
+    ) -> Self {
+        Self(inner)
+    }
+}
+
+impl Iterator for RoutingTableQueryIter<'_> {
+    type Item = QueriedSubnet;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for (ip, prefix_size, rl) in self.0.by_ref() {
+            if let SubnetEntry::Queried { query_timeout } = &**rl {
+                return Some(QueriedSubnet::new(
+                    Subnet::new(ip.into(), prefix_size as u8)
+                        .expect("Routing table contains valid subnets"),
+                    *query_timeout,
                 ));
             }
         }
