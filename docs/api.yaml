@@ -155,7 +155,7 @@ paths:
       description: |
         List all fallback routes in the system, and their next hop identifier, metric and sequence number.
         These routes are available to be selected in case the selected route for a destination suddenly fails, or gets retracted.
-      operationId: getSelectedRoutes
+      operationId: getFallbackRoutes
       responses:
         "200":
           description: Success
