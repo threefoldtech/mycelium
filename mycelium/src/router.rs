@@ -7,7 +7,7 @@ use crate::{
     packet::{ControlPacket, DataPacket},
     peer::Peer,
     router_id::RouterId,
-    routing_table::{RouteEntry, RouteKey, RouteList, Routes, RoutingTable},
+    routing_table::{QueriedSubnet, RouteEntry, RouteKey, RouteList, Routes, RoutingTable},
     seqno_cache::{SeqnoCache, SeqnoRequestCacheKey},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
@@ -307,6 +307,11 @@ where
             .flat_map(|(_, rl)| rl.iter().cloned().collect::<Vec<_>>())
             .filter(|re| !re.selected())
             .collect()
+    }
+
+    /// Get a list of all [`queried subnets`](QueriedSubnet).
+    pub fn load_queried_subnets(&self) -> Vec<QueriedSubnet> {
+        self.routing_table.read().iter_queries().collect()
     }
 
     /// Task which periodically checks for dead peers in the Router.
