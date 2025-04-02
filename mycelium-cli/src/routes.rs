@@ -1,4 +1,4 @@
-use mycelium_api::Route;
+use mycelium_api::{QueriedSubnet, Route};
 use prettytable::{row, Table};
 use std::net::SocketAddr;
 
@@ -74,6 +74,40 @@ pub async fn list_fallback_routes(
                         route.metric,
                         route.seqno,
                     ]);
+                }
+
+                table.printstd();
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn list_queried_subnets(
+    server_addr: SocketAddr,
+    json_print: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let request_url = format!("http://{server_addr}/api/v1/admin/routes/queried");
+    match reqwest::get(&request_url).await {
+        Err(e) => {
+            error!("Failed to retrieve queried subnets");
+            return Err(e.into());
+        }
+        Ok(resp) => {
+            debug!("Listing queried routes");
+
+            if json_print {
+                // API call returns routes in JSON format by default
+                let queried_routes = resp.text().await?;
+                println!("{queried_routes}");
+            } else {
+                // Print routes in table format
+                let queries: Vec<QueriedSubnet> = resp.json().await?;
+                let mut table = Table::new();
+                table.add_row(row!["Subnet", "Query expiration"]);
+
+                for query in queries.iter() {
+                    table.add_row(row![query.subnet, query.expiration,]);
                 }
 
                 table.printstd();
