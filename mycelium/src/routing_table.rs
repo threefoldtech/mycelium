@@ -5,6 +5,7 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
+use iter::RoutingTableQueryIter;
 use subnet_entry::SubnetEntry;
 use tokio::{select, sync::mpsc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -14,12 +15,14 @@ use crate::{crypto::SharedSecret, peer::Peer, subnet::Subnet};
 
 pub use iter::RoutingTableIter;
 pub use iter_mut::RoutingTableIterMut;
+pub use queried_subnet::QueriedSubnet;
 pub use route_entry::RouteEntry;
 pub use route_key::RouteKey;
 pub use route_list::RouteList;
 
 mod iter;
 mod iter_mut;
+mod queried_subnet;
 mod route_entry;
 mod route_key;
 mod route_list;
@@ -379,6 +382,11 @@ pub struct RoutingTableReadGuard<'a> {
 impl RoutingTableReadGuard<'_> {
     pub fn iter(&self) -> RoutingTableIter {
         RoutingTableIter::new(self.guard.table.iter())
+    }
+
+    /// Create an iterator for all queried subnets in the routing table
+    pub fn iter_queries(&self) -> RoutingTableQueryIter {
+        RoutingTableQueryIter::new(self.guard.table.iter())
     }
 }
 
