@@ -164,7 +164,28 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Route'
+                  $ref: "#/components/schemas/Route"
+
+  "/api/v1/admin/routes/queried":
+    get:
+      tags:
+        - Admin
+        - Route
+      summary: List all currently queried subnets
+      description: |
+        List all currently queried subnets in the system, and the amount of seconds until the query expires.
+        These subnets are actively being probed in the network. If no route to them is discovered before the query expires,
+        they will be marked as not reachable temporarily.
+      operationId: getQueriedSubnets
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QueriedSubnet"
 
   "/api/v1/messages":
     get:
@@ -438,6 +459,19 @@ components:
           minimum: 0
           maximum: 65535
           example: 1
+
+    QueriedSubnet:
+      description: Information about a subnet currently being queried
+      type: object
+      properties:
+        subnet:
+          description: The overlay subnet which we are currently querying
+          type: string
+          example: 503:5478:df06:d79a::/64
+        expiration:
+          description: The amount of seconds until the query expires
+          type: string
+          example: "37"
 
     InboundMessage:
       description: A message received by the system
