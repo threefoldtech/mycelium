@@ -208,6 +208,12 @@ pub enum RoutesCommand {
         #[arg(long = "json", default_value_t = false)]
         json: bool,
     },
+    /// Print the currently queried subnets
+    Queried {
+        /// Print queried subnets in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -596,6 +602,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 RoutesCommand::Fallback { json } => {
                     return mycelium_cli::list_fallback_routes(cli.node_args.api_addr, json).await;
+                }
+                RoutesCommand::Queried { json } => {
+                    return mycelium_cli::list_queried_subnets(cli.node_args.api_addr, json).await;
                 }
             },
         },
