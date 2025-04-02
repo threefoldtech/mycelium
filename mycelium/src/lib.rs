@@ -12,7 +12,7 @@ use message::{
 };
 use metrics::Metrics;
 use peer_manager::{PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
-use routing_table::RouteEntry;
+use routing_table::{QueriedSubnet, RouteEntry};
 use subnet::Subnet;
 use tracing::{error, info, warn};
 
@@ -293,6 +293,11 @@ where
     /// List all fallback [`routes`](RouteEntry) in the system.
     pub fn fallback_routes(&self) -> Vec<RouteEntry> {
         self.router.load_fallback_routes()
+    }
+
+    /// List all [`queried subnets`](QueriedSubnet) in the system.
+    pub fn queried_subnets(&self) -> Vec<QueriedSubnet> {
+        self.router.load_queried_subnets()
     }
 
     /// Get public key from the IP of `Node`
