@@ -1,4 +1,4 @@
-use mycelium_api::{QueriedSubnet, Route};
+use mycelium_api::{NoRouteSubnet, QueriedSubnet, Route};
 use prettytable::{row, Table};
 use std::net::SocketAddr;
 
@@ -108,6 +108,40 @@ pub async fn list_queried_subnets(
 
                 for query in queries.iter() {
                     table.add_row(row![query.subnet, query.expiration,]);
+                }
+
+                table.printstd();
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn list_no_route_entries(
+    server_addr: SocketAddr,
+    json_print: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let request_url = format!("http://{server_addr}/api/v1/admin/routes/no_route");
+    match reqwest::get(&request_url).await {
+        Err(e) => {
+            error!("Failed to retrieve subnets with no route entries");
+            return Err(e.into());
+        }
+        Ok(resp) => {
+            debug!("Listing no route entries");
+
+            if json_print {
+                // API call returns routes in JSON format by default
+                let nrs = resp.text().await?;
+                println!("{nrs}");
+            } else {
+                // Print routes in table format
+                let no_routes: Vec<NoRouteSubnet> = resp.json().await?;
+                let mut table = Table::new();
+                table.add_row(row!["Subnet", "Entry expiration"]);
+
+                for nrs in no_routes.iter() {
+                    table.add_row(row![nrs.subnet, nrs.expiration,]);
                 }
 
                 table.printstd();
