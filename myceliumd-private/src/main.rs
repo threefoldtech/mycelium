@@ -214,6 +214,12 @@ pub enum RoutesCommand {
         #[arg(long = "json", default_value_t = false)]
         json: bool,
     },
+    /// Print all subnets which are explicitly marked as not having a route
+    NoRoute {
+        /// Print subnets in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -605,6 +611,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 RoutesCommand::Queried { json } => {
                     return mycelium_cli::list_queried_subnets(cli.node_args.api_addr, json).await;
+                }
+                RoutesCommand::NoRoute { json } => {
+                    return mycelium_cli::list_no_route_entries(cli.node_args.api_addr, json).await;
                 }
             },
         },
