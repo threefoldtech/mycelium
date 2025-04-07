@@ -56,6 +56,7 @@ impl Http {
             .route("/admin/routes/selected", get(get_selected_routes))
             .route("/admin/routes/fallback", get(get_fallback_routes))
             .route("/admin/routes/queried", get(get_queried_routes))
+            .route("/admin/routes/no_route", get(get_no_route_entries))
             .route("/pubkey/{ip}", get(get_pubk_from_ip))
             .with_state(server_state.clone());
         let app = Router::new().nest("/api/v1", admin_routes);
@@ -258,6 +259,44 @@ where
             subnet: qs.subnet().to_string(),
             expiration: qs
                 .query_expires()
+                .duration_since(Instant::now())
+                .as_secs()
+                .to_string(),
+        })
+        .collect();
+
+    Json(queries)
+}
+
+/// Info about a subnet with no route. This uses base types only to avoid having to introduce too
+/// many Serialize bounds in the core types.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct NoRouteSubnet {
+    /// We convert the [`subnet`](Subnet) to a string to avoid introducing a bound on the actual
+    /// type.
+    pub subnet: String,
+    /// The amount of time left before the query expires.
+    pub expiration: String,
+}
+
+async fn get_no_route_entries<M>(
+    State(state): State<HttpServerState<M>>,
+) -> Json<Vec<NoRouteSubnet>>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Loading queried subnets");
+    let queries = state
+        .node
+        .lock()
+        .await
+        .no_route_entries()
+        .into_iter()
+        .map(|nrs| NoRouteSubnet {
+            subnet: nrs.subnet().to_string(),
+            expiration: nrs
+                .entry_expires()
                 .duration_since(Instant::now())
                 .as_secs()
                 .to_string(),
