@@ -66,3 +66,35 @@ impl Iterator for RoutingTableQueryIter<'_> {
         None
     }
 }
+
+/// Iterator for entries which are explicitly marked as "no route"in the routing table.
+pub struct RoutingTableNoRouteIter<'a>(
+    ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<SubnetEntry>>,
+);
+
+impl<'a> RoutingTableNoRouteIter<'a> {
+    /// Create a new `RoutingTableNoRouteIter` which will iterate over all entries in a [`RoutingTable`]
+    /// which are explicitly marked as `NoRoute`
+    pub(super) fn new(
+        inner: ip_network_table_deps_treebitmap::Iter<'a, Ipv6Addr, Arc<SubnetEntry>>,
+    ) -> Self {
+        Self(inner)
+    }
+}
+
+impl Iterator for RoutingTableNoRouteIter<'_> {
+    type Item = QueriedSubnet;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for (ip, prefix_size, rl) in self.0.by_ref() {
+            if let SubnetEntry::Queried { query_timeout } = &**rl {
+                return Some(QueriedSubnet::new(
+                    Subnet::new(ip.into(), prefix_size as u8)
+                        .expect("Routing table contains valid subnets"),
+                    *query_timeout,
+                ));
+            }
+        }
+        None
+    }
+}
