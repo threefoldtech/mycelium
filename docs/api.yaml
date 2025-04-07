@@ -187,6 +187,27 @@ paths:
                 items:
                   $ref: "#/components/schemas/QueriedSubnet"
 
+  "/api/v1/admin/routes/no_route":
+    get:
+      tags:
+        - Admin
+        - Route
+      summary: List all subnets which are explicitly marked as no route
+      description: |
+        List all subnets in the system which are marked no route, and the amount of seconds until the query expires.
+        These subnets have recently been probed in the network, and no route for them was discovered in time. No more
+        route requests will be send for these subnets until the entry expires.
+      operationId: getNoRouteEntries
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NoRouteSubnet"
+
   "/api/v1/messages":
     get:
       tags:
@@ -470,6 +491,19 @@ components:
           example: 503:5478:df06:d79a::/64
         expiration:
           description: The amount of seconds until the query expires
+          type: string
+          example: "37"
+
+    NoRouteSubnet:
+      description: Information about a subnet which is marked as no route
+      type: object
+      properties:
+        subnet:
+          description: The overlay subnet which is marked
+          type: string
+          example: 503:5478:df06:d79a::/64
+        expiration:
+          description: The amount of seconds until the entry expires
           type: string
           example: "37"
 
