@@ -2,7 +2,7 @@ use std::{net::Ipv6Addr, sync::Arc};
 
 use crate::subnet::Subnet;
 
-use super::{subnet_entry::SubnetEntry, QueriedSubnet, RouteListReadGuard};
+use super::{subnet_entry::SubnetEntry, NoRouteSubnet, QueriedSubnet, RouteListReadGuard};
 
 /// An iterator over a [`routing table`](super::RoutingTable) giving read only access to
 /// [`RouteList`]'s.
@@ -83,15 +83,15 @@ impl<'a> RoutingTableNoRouteIter<'a> {
 }
 
 impl Iterator for RoutingTableNoRouteIter<'_> {
-    type Item = QueriedSubnet;
+    type Item = NoRouteSubnet;
 
     fn next(&mut self) -> Option<Self::Item> {
         for (ip, prefix_size, rl) in self.0.by_ref() {
-            if let SubnetEntry::Queried { query_timeout } = &**rl {
-                return Some(QueriedSubnet::new(
+            if let SubnetEntry::NoRoute { expiry } = &**rl {
+                return Some(NoRouteSubnet::new(
                     Subnet::new(ip.into(), prefix_size as u8)
                         .expect("Routing table contains valid subnets"),
-                    *query_timeout,
+                    *expiry,
                 ));
             }
         }
