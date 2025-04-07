@@ -5,7 +5,7 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use iter::RoutingTableQueryIter;
+use iter::{RoutingTableNoRouteIter, RoutingTableQueryIter};
 use subnet_entry::SubnetEntry;
 use tokio::{select, sync::mpsc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -389,6 +389,12 @@ impl RoutingTableReadGuard<'_> {
     /// Create an iterator for all queried subnets in the routing table
     pub fn iter_queries(&self) -> RoutingTableQueryIter {
         RoutingTableQueryIter::new(self.guard.table.iter())
+    }
+
+    /// Create an iterator for all subnets which are currently marked as `NoRoute` in the routing
+    /// table.
+    pub fn iter_no_route(&self) -> RoutingTableNoRouteIter {
+        RoutingTableNoRouteIter::new(self.guard.table.iter())
     }
 }
 
