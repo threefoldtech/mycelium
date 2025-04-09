@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read};
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::{
@@ -9,6 +9,7 @@ use std::{
 use std::{fmt::Display, str::FromStr};
 
 use clap::{Args, Parser, Subcommand};
+use mycelium::message::TopicConfig;
 use serde::{Deserialize, Deserializer};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -296,6 +297,14 @@ pub struct NodeArguments {
     /// increased to process updates in parallel.
     #[arg(long = "update-workers", default_value_t = 1)]
     update_workers: usize,
+
+    /// The topic configuration.
+    ///
+    /// A .toml file containing topic configuration. This is a default action in case the topic is
+    /// not listed, and an explicit whitelist for allowed subnets/ips which are otherwise allowed
+    /// to use a topic.
+    #[arg(long = "topic-config")]
+    topic_config: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -312,6 +321,7 @@ pub struct MergedNodeConfig {
     metrics_api_address: Option<SocketAddr>,
     firewall_mark: Option<u32>,
     update_workers: usize,
+    topic_config: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -329,6 +339,7 @@ struct MyceliumConfig {
     metrics_api_address: Option<SocketAddr>,
     firewall_mark: Option<u32>,
     update_workers: Option<usize>,
+    topic_config: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -410,7 +421,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             (cli.logging_format == LoggingFormat::Compact)
                 .then(|| tracing_subscriber::fmt::Layer::new().compact()),
         )
-        .with((cli.logging_format == LoggingFormat::Logfmt).then(|| tracing_logfmt::layer()))
+        .with((cli.logging_format == LoggingFormat::Logfmt).then(tracing_logfmt::layer))
         .init();
 
     let key_path = cli
@@ -420,6 +431,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match cli.command {
         None => {
             let merged_config = merge_config(cli.node_args, mycelium_config);
+            let topic_config = merged_config.topic_config.as_ref().and_then(|path| {
+                let mut content = String::new();
+                let mut file = std::fs::File::open(path).ok()?;
+                file.read_to_string(&mut content).ok()?;
+                toml::from_str::<TopicConfig>(&content).ok()
+            });
+
+            if topic_config.is_some() {
+                info!(path = ?merged_config.topic_config, "Loaded topic cofig");
+            }
 
             let node_keys = get_node_keys(&key_path).await?;
             let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
@@ -453,6 +474,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     metrics: metrics.clone(),
                     firewall_mark: merged_config.firewall_mark,
                     update_workers: merged_config.update_workers,
+                    topic_config,
                 };
                 metrics.spawn(metrics_api_addr);
                 let node = Node::new(config).await?;
@@ -478,6 +500,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     metrics: mycelium_metrics::NoMetrics,
                     firewall_mark: merged_config.firewall_mark,
                     update_workers: merged_config.update_workers,
+                    topic_config,
                 };
                 let node = Node::new(config).await?;
                 mycelium_api::Http::spawn(node, merged_config.api_addr)
@@ -693,6 +716,7 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
         } else {
             file_config.update_workers.unwrap_or(1)
         },
+        topic_config: cli_args.topic_config.or(file_config.topic_config),
     }
 }
 
