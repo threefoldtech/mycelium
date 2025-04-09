@@ -6,7 +6,7 @@ use serde::{
 };
 use std::collections::HashMap;
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TopicConfig {
     /// The default action to to take if no acl is defined for a topic.
     default: MessageAction,

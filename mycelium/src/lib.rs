@@ -6,6 +6,7 @@ use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
+use message::TopicConfig;
 #[cfg(feature = "message")]
 use message::{
     MessageId, MessageInfo, MessagePushResponse, MessageStack, PushMessageError, ReceivedMessage,
@@ -92,6 +93,9 @@ pub struct Config<M> {
     /// set this to a value which is higher than the amount of logical CPU cores available to the
     /// system.
     pub update_workers: usize,
+
+    /// Configuration for message topics, if this is not set the default config will be used.
+    pub topic_config: Option<TopicConfig>,
 }
 
 /// The Node is the main structure in mycelium. It governs the entire data flow.
