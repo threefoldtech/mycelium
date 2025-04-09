@@ -26,12 +26,14 @@ use crate::{
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
     metrics::Metrics,
-    subnet::Subnet,
 };
+
+pub use topic::TopicConfig;
 
 mod chunk;
 mod done;
 mod init;
+mod topic;
 
 /// The amount of time to try and send messages before we give up.
 const MESSAGE_SEND_WINDOW: Duration = Duration::from_secs(60 * 5);
@@ -100,25 +102,6 @@ pub struct MessageStack<M> {
     reply_subscribers: Arc<Mutex<HashMap<MessageId, watch::Sender<Option<ReceivedMessage>>>>>,
     /// Topic-specific configuration
     topic_config: TopicConfig,
-}
-
-#[derive(Default, Clone)]
-pub struct TopicConfig {
-    /// The default action to to take if no acl is defined for a topic.
-    default: MessageAction,
-    /// Explicitly configured whitelists for topics. Ip's which aren't part of the whitelist will
-    /// not be allowed to send messages to that topic. If a topic is not in this map, the default
-    /// action will be used.
-    whitelist: HashMap<Vec<u8>, Vec<Subnet>>,
-}
-
-#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize)]
-pub enum MessageAction {
-    /// Accept the message
-    #[default]
-    Accept,
-    /// Reject the message
-    Reject,
 }
 
 struct MessageOutbox {
@@ -401,7 +384,7 @@ where
             let mi = MessageInit::new(mp);
             // If this is not a reply, verify ACL
             if !is_reply {
-                if let Some(whitelist) = self.topic_config.whitelist.get(mi.topic()) {
+                if let Some(whitelist) = self.topic_config.whitelist().get(mi.topic()) {
                     debug!("Checking allow list for new message");
                     let mut allowed = false;
                     for subnet in whitelist {
@@ -415,7 +398,7 @@ where
                         return;
                     }
                 } else {
-                    debug!(action = ?self.topic_config.default, "Doing default action for message");
+                    debug!(action = ?self.topic_config.default(), "Doing default action for message");
                 }
                 // If we don't have a topic config accept everything
             }
