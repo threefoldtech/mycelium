@@ -1146,6 +1146,13 @@ impl MessageId {
     pub fn as_hex(&self) -> String {
         faster_hex::hex_string(&self.0)
     }
+
+    /// Decode a message id from hex.
+    pub fn from_hex(input: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut dst = [0; 8];
+        faster_hex::hex_decode(input, &mut dst)?;
+        Ok(Self(dst))
+    }
 }
 
 impl Serialize for MessageId {

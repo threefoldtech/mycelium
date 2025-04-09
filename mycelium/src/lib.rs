@@ -6,6 +6,7 @@ use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
 use endpoint::Endpoint;
+#[cfg(feature = "message")]
 use message::TopicConfig;
 #[cfg(feature = "message")]
 use message::{
@@ -95,6 +96,7 @@ pub struct Config<M> {
     pub update_workers: usize,
 
     /// Configuration for message topics, if this is not set the default config will be used.
+    #[cfg(feature = "message")]
     pub topic_config: Option<TopicConfig>,
 }
 
@@ -256,7 +258,7 @@ where
         };
 
         #[cfg(feature = "message")]
-        let ms = MessageStack::new(_data_plane, msg_receiver, None);
+        let ms = MessageStack::new(_data_plane, msg_receiver, config.topic_config);
 
         Ok(Node {
             router,

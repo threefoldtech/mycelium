@@ -1,0 +1,821 @@
+{
+  "openrpc": "1.2.6",
+  "info": {
+    "version": "1.0.0",
+    "title": "Mycelium JSON-RPC API",
+    "description": "This is the specification of the Mycelium JSON-RPC API. It is used to perform admin tasks on the system, and to perform administrative duties.",
+    "contact": {
+      "url": "https://github.com/threefoldtech/mycelium"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://github.com/threefoldtech/mycelium/blob/master/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8990",
+      "name": "Mycelium JSON-RPC API"
+    }
+  ],
+  "methods": [
+    {
+      "name": "getInfo",
+      "summary": "Get general info about the node",
+      "description": "Get general info about the node, which is not related to other more specific functionality",
+      "tags": [
+        {
+          "name": "Admin"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "info",
+        "description": "General information about the node",
+        "schema": {
+          "$ref": "#/components/schemas/Info"
+        }
+      }
+    },
+    {
+      "name": "getPeers",
+      "summary": "List known peers",
+      "description": "List all peers known in the system, and info about their connection. This includes the endpoint, how we know about the peer, the connection state, and if the connection is alive the amount of bytes we've sent to and received from the peer.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Peer"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "peers",
+        "description": "List of peers",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/PeerStats"
+          }
+        }
+      }
+    },
+    {
+      "name": "addPeer",
+      "summary": "Add a new peer",
+      "description": "Add a new peer identified by the provided endpoint. The peer is added to the list of known peers. It will eventually be connected to by the standard connection loop of the peer manager. This means that a peer which can't be connected to will stay in the system, as it might be reachable later on.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Peer"
+        }
+      ],
+      "params": [
+        {
+          "name": "endpoint",
+          "description": "The endpoint of the peer to add",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the peer was added successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "errors": [
+        {
+          "code": 400,
+          "message": "Malformed endpoint"
+        },
+        {
+          "code": 409,
+          "message": "Peer already exists"
+        }
+      ]
+    },
+    {
+      "name": "deletePeer",
+      "summary": "Remove an existing peer",
+      "description": "Remove an existing peer identified by the provided endpoint. The peer is removed from the list of known peers. If a connection to it is currently active, it will be closed.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Peer"
+        }
+      ],
+      "params": [
+        {
+          "name": "endpoint",
+          "description": "The endpoint of the peer to remove",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the peer was removed successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "errors": [
+        {
+          "code": 400,
+          "message": "Malformed endpoint"
+        },
+        {
+          "code": 404,
+          "message": "Peer doesn't exist"
+        }
+      ]
+    },
+    {
+      "name": "getSelectedRoutes",
+      "summary": "List all selected routes",
+      "description": "List all selected routes in the system, and their next hop identifier, metric and sequence number. It is possible for a route to be selected and have an infinite metric. This route will however not forward packets.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Route"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "routes",
+        "description": "List of selected routes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Route"
+          }
+        }
+      }
+    },
+    {
+      "name": "getFallbackRoutes",
+      "summary": "List all active fallback routes",
+      "description": "List all fallback routes in the system, and their next hop identifier, metric and sequence number. These routes are available to be selected in case the selected route for a destination suddenly fails, or gets retracted.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Route"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "routes",
+        "description": "List of fallback routes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Route"
+          }
+        }
+      }
+    },
+    {
+      "name": "getQueriedSubnets",
+      "summary": "List all currently queried subnets",
+      "description": "List all currently queried subnets in the system, and the amount of seconds until the query expires. These subnets are actively being probed in the network. If no route to them is discovered before the query expires, they will be marked as not reachable temporarily.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Route"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "subnets",
+        "description": "List of queried subnets",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/QueriedSubnet"
+          }
+        }
+      }
+    },
+    {
+      "name": "getNoRouteEntries",
+      "summary": "List all subnets which are explicitly marked as no route",
+      "description": "List all subnets in the system which are marked no route, and the amount of seconds until the query expires. These subnets have recently been probed in the network, and no route for them was discovered in time. No more route requests will be send for these subnets until the entry expires.",
+      "tags": [
+        {
+          "name": "Admin"
+        },
+        {
+          "name": "Route"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "subnets",
+        "description": "List of no route subnets",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/NoRouteSubnet"
+          }
+        }
+      }
+    },
+    {
+      "name": "popMessage",
+      "summary": "Get a message from the inbound message queue",
+      "description": "Get a message from the inbound message queue. By default, the message is removed from the queue and won't be shown again. If the peek parameter is set to true, the message will be peeked, and the next call to this method will show the same message. This method returns immediately by default: a message is returned if one is ready, and if there isn't nothing is returned. If the timeout parameter is set, this call won't return for the given amount of seconds, unless a message is received.",
+      "tags": [
+        {
+          "name": "Message"
+        }
+      ],
+      "params": [
+        {
+          "name": "peek",
+          "description": "Whether to peek the message or not. If this is true, the message won't be removed from the inbound queue when it is read",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "timeout",
+          "description": "Amount of seconds to wait for a message to arrive if one is not available. Setting this to 0 is valid and will return a message if present, or return immediately if there isn't",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "topic",
+          "description": "Optional filter for loading messages. If set, the system checks if the message has the given string at the start. This way a topic can be encoded.",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "format": "byte",
+            "minLength": 0,
+            "maxLength": 340
+          }
+        }
+      ],
+      "result": {
+        "name": "message",
+        "description": "The retrieved message",
+        "schema": {
+          "$ref": "#/components/schemas/InboundMessage"
+        }
+      },
+      "errors": [
+        {
+          "code": 204,
+          "message": "No message ready"
+        }
+      ]
+    },
+    {
+      "name": "pushMessage",
+      "summary": "Submit a new message to the system",
+      "description": "Push a new message to the systems outbound message queue. The system will continuously attempt to send the message until it is either fully transmitted, or the send deadline is expired.",
+      "tags": [
+        {
+          "name": "Message"
+        }
+      ],
+      "params": [
+        {
+          "name": "message",
+          "description": "The message to send",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/PushMessageBody"
+          }
+        },
+        {
+          "name": "reply_timeout",
+          "description": "Amount of seconds to wait for a reply to this message to come in. If not set, the system won't wait for a reply and return the ID of the message, which can be used later. If set, the system will wait for at most the given amount of seconds for a reply to come in. If a reply arrives, it is returned to the client. If not, the message ID is returned for later use.",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      ],
+      "result": {
+        "name": "response",
+        "description": "The response to the message push",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/InboundMessage"
+            },
+            {
+              "$ref": "#/components/schemas/PushMessageResponseId"
+            }
+          ]
+        }
+      },
+      "errors": [
+        {
+          "code": 408,
+          "message": "The system timed out waiting for a reply to the message"
+        }
+      ]
+    },
+    {
+      "name": "pushMessageReply",
+      "summary": "Reply to a message with the given ID",
+      "description": "Submits a reply message to the system, where ID is an id of a previously received message. If the sender is waiting for a reply, it will bypass the queue of open messages.",
+      "tags": [
+        {
+          "name": "Message"
+        }
+      ],
+      "params": [
+        {
+          "name": "id",
+          "description": "The ID of the message to reply to",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "hex",
+            "minLength": 16,
+            "maxLength": 16
+          }
+        },
+        {
+          "name": "message",
+          "description": "The reply message",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/PushMessageBody"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the reply was submitted successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "getMessageInfo",
+      "summary": "Get the status of an outbound message",
+      "description": "Get information about the current state of an outbound message. This can be used to check the transmission state, size and destination of the message.",
+      "tags": [
+        {
+          "name": "Message"
+        }
+      ],
+      "params": [
+        {
+          "name": "id",
+          "description": "The ID of the message to get info for",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "hex",
+            "minLength": 16,
+            "maxLength": 16
+          }
+        }
+      ],
+      "result": {
+        "name": "info",
+        "description": "Information about the message",
+        "schema": {
+          "$ref": "#/components/schemas/MessageStatusResponse"
+        }
+      },
+      "errors": [
+        {
+          "code": 404,
+          "message": "Message not found"
+        }
+      ]
+    },
+    {
+      "name": "getPublicKeyFromIp",
+      "summary": "Get the pubkey from node ip",
+      "description": "Get the node's public key from it's IP address.",
+      "tags": [
+        {
+          "name": "Admin"
+        }
+      ],
+      "params": [
+        {
+          "name": "mycelium_ip",
+          "description": "The IP address to get the public key for",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "ipv6"
+          }
+        }
+      ],
+      "result": {
+        "name": "pubkey",
+        "description": "The public key of the node",
+        "schema": {
+          "$ref": "#/components/schemas/PublicKeyResponse"
+        }
+      },
+      "errors": [
+        {
+          "code": 404,
+          "message": "Public key not found"
+        }
+      ]
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Info": {
+        "description": "General information about a node",
+        "type": "object",
+        "properties": {
+          "nodeSubnet": {
+            "description": "The subnet owned by the node and advertised to peers",
+            "type": "string",
+            "example": "54f:b680:ba6e:7ced::/64"
+          },
+          "nodePubkey": {
+            "description": "The public key of the node",
+            "type": "string",
+            "format": "hex",
+            "minLength": 64,
+            "maxLength": 64,
+            "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
+          }
+        }
+      },
+      "Endpoint": {
+        "description": "Identification to connect to a peer",
+        "type": "object",
+        "properties": {
+          "proto": {
+            "description": "Protocol used",
+            "type": "string",
+            "enum": [
+              "tcp",
+              "quic"
+            ],
+            "example": "tcp"
+          },
+          "socketAddr": {
+            "description": "The socket address used",
+            "type": "string",
+            "example": "192.0.2.6:9651"
+          }
+        }
+      },
+      "PeerStats": {
+        "description": "Info about a peer",
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "$ref": "#/components/schemas/Endpoint"
+          },
+          "type": {
+            "description": "How we know about this peer",
+            "type": "string",
+            "enum": [
+              "static",
+              "inbound",
+              "linkLocalDiscovery"
+            ],
+            "example": "static"
+          },
+          "connectionState": {
+            "description": "The current state of the connection to the peer",
+            "type": "string",
+            "enum": [
+              "alive",
+              "connecting",
+              "dead"
+            ],
+            "example": "alive"
+          },
+          "txBytes": {
+            "description": "The amount of bytes transmitted to this peer",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "example": 464531564
+          },
+          "rxBytes": {
+            "description": "The amount of bytes received from this peer",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "example": 64645089
+          }
+        }
+      },
+      "Route": {
+        "description": "Information about a route",
+        "type": "object",
+        "properties": {
+          "subnet": {
+            "description": "The overlay subnet for which this is the route",
+            "type": "string",
+            "example": "469:1348:ab0c:a1d8::/64"
+          },
+          "nextHop": {
+            "description": "A way to identify the next hop of the route, where forwarded packets will be sent",
+            "type": "string",
+            "example": "TCP 203.0.113.2:60128 <-> 198.51.100.27:9651"
+          },
+          "metric": {
+            "description": "The metric of the route, an estimation of how long the packet will take to arrive at its final destination",
+            "oneOf": [
+              {
+                "description": "A finite metric value",
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0,
+                "maximum": 65534,
+                "example": 13
+              },
+              {
+                "description": "An infinite (unreachable) metric. This is always `infinite`",
+                "type": "string",
+                "example": "infinite"
+              }
+            ]
+          },
+          "seqno": {
+            "description": "the sequence number advertised with this route by the source",
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "maximum": 65535,
+            "example": 1
+          }
+        }
+      },
+      "QueriedSubnet": {
+        "description": "Information about a subnet currently being queried",
+        "type": "object",
+        "properties": {
+          "subnet": {
+            "description": "The overlay subnet which we are currently querying",
+            "type": "string",
+            "example": "503:5478:df06:d79a::/64"
+          },
+          "expiration": {
+            "description": "The amount of seconds until the query expires",
+            "type": "string",
+            "example": "37"
+          }
+        }
+      },
+      "NoRouteSubnet": {
+        "description": "Information about a subnet which is marked as no route",
+        "type": "object",
+        "properties": {
+          "subnet": {
+            "description": "The overlay subnet which is marked",
+            "type": "string",
+            "example": "503:5478:df06:d79a::/64"
+          },
+          "expiration": {
+            "description": "The amount of seconds until the entry expires",
+            "type": "string",
+            "example": "37"
+          }
+        }
+      },
+      "InboundMessage": {
+        "description": "A message received by the system",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Id of the message, hex encoded",
+            "type": "string",
+            "format": "hex",
+            "minLength": 16,
+            "maxLength": 16,
+            "example": "0123456789abcdef"
+          },
+          "srcIp": {
+            "description": "Sender overlay IP address",
+            "type": "string",
+            "format": "ipv6",
+            "example": "449:abcd:0123:defa::1"
+          },
+          "srcPk": {
+            "description": "Sender public key, hex encoded",
+            "type": "string",
+            "format": "hex",
+            "minLength": 64,
+            "maxLength": 64,
+            "example": "fedbca9876543210fedbca9876543210fedbca9876543210fedbca9876543210"
+          },
+          "dstIp": {
+            "description": "Receiver overlay IP address",
+            "type": "string",
+            "format": "ipv6",
+            "example": "34f:b680:ba6e:7ced:355f:346f:d97b:eecb"
+          },
+          "dstPk": {
+            "description": "Receiver public key, hex encoded. This is the public key of the system",
+            "type": "string",
+            "format": "hex",
+            "minLength": 64,
+            "maxLength": 64,
+            "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
+          },
+          "topic": {
+            "description": "An optional message topic",
+            "type": "string",
+            "format": "byte",
+            "minLength": 0,
+            "maxLength": 340,
+            "example": "hpV+"
+          },
+          "payload": {
+            "description": "The message payload, encoded in standard alphabet base64",
+            "type": "string",
+            "format": "byte",
+            "example": "xuV+"
+          }
+        }
+      },
+      "PushMessageBody": {
+        "description": "A message to send to a given receiver",
+        "type": "object",
+        "properties": {
+          "dst": {
+            "$ref": "#/components/schemas/MessageDestination"
+          },
+          "topic": {
+            "description": "An optional message topic",
+            "type": "string",
+            "format": "byte",
+            "minLength": 0,
+            "maxLength": 340,
+            "example": "hpV+"
+          },
+          "payload": {
+            "description": "The message to send, base64 encoded",
+            "type": "string",
+            "format": "byte",
+            "example": "xuV+"
+          }
+        }
+      },
+      "MessageDestination": {
+        "oneOf": [
+          {
+            "description": "An IP in the subnet of the receiver node",
+            "type": "object",
+            "properties": {
+              "ip": {
+                "description": "The target IP of the message",
+                "type": "string",
+                "format": "ipv6",
+                "example": "449:abcd:0123:defa::1"
+              }
+            }
+          },
+          {
+            "description": "The hex encoded public key of the receiver node",
+            "type": "object",
+            "properties": {
+              "pk": {
+                "description": "The hex encoded public key of the target node",
+                "type": "string",
+                "minLength": 64,
+                "maxLength": 64,
+                "example": "bb39b4a3a4efd70f3e05e37887677e02efbda14681d0acd3882bc0f754792c32"
+              }
+            }
+          }
+        ]
+      },
+      "PushMessageResponseId": {
+        "description": "The ID generated for a message after pushing it to the system",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Id of the message, hex encoded",
+            "type": "string",
+            "format": "hex",
+            "minLength": 16,
+            "maxLength": 16,
+            "example": "0123456789abcdef"
+          }
+        }
+      },
+      "MessageStatusResponse": {
+        "description": "Information about an outbound message",
+        "type": "object",
+        "properties": {
+          "dst": {
+            "description": "IP address of the receiving node",
+            "type": "string",
+            "format": "ipv6",
+            "example": "449:abcd:0123:defa::1"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TransmissionState"
+          },
+          "created": {
+            "description": "Unix timestamp of when this message was created",
+            "type": "integer",
+            "format": "int64",
+            "example": 1649512789
+          },
+          "deadline": {
+            "description": "Unix timestamp of when this message will expire. If the message is not received before this, the system will give up",
+            "type": "integer",
+            "format": "int64",
+            "example": 1649513089
+          },
+          "msgLen": {
+            "description": "Length of the message in bytes",
+            "type": "integer",
+            "minimum": 0,
+            "example": 27
+          }
+        }
+      },
+      "TransmissionState": {
+        "description": "The state of an outbound message in it's lifetime",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "pending",
+              "received",
+              "read",
+              "aborted"
+            ],
+            "example": "received"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sending": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 5
+                  },
+                  "sent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 17
+                  },
+                  "acked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 3
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PublicKeyResponse": {
+        "description": "Public key requested based on a node's IP",
+        "type": "object",
+        "properties": {
+          "NodePubKey": {
+            "type": "string",
+            "format": "hex",
+            "minLength": 64,
+            "maxLength": 64,
+            "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
+          }
+        }
+      }
+    }
+  }
+}

@@ -25,6 +25,11 @@ mod message;
 #[cfg(feature = "message")]
 pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
+pub use rpc::JsonRpc;
+
+// JSON-RPC API implementation
+pub mod rpc;
+
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
 /// the server is terminated.
 pub struct Http {
@@ -35,20 +40,18 @@ pub struct Http {
 
 #[derive(Clone)]
 /// Shared state accessible in HTTP endpoint handlers.
-struct HttpServerState<M> {
+pub struct ServerState<M> {
     /// Access to the (`node`)(mycelium::Node) state.
-    node: Arc<Mutex<mycelium::Node<M>>>,
+    pub node: Arc<Mutex<mycelium::Node<M>>>,
 }
 
 impl Http {
     /// Spawns a new HTTP API server on the provided listening address.
-    pub fn spawn<M>(node: mycelium::Node<M>, listen_addr: SocketAddr) -> Self
+    pub fn spawn<M>(node: Arc<Mutex<mycelium::Node<M>>>, listen_addr: SocketAddr) -> Self
     where
         M: Metrics + Clone + Send + Sync + 'static,
     {
-        let server_state = HttpServerState {
-            node: Arc::new(Mutex::new(node)),
-        };
+        let server_state = ServerState { node };
         let admin_routes = Router::new()
             .route("/admin", get(get_info))
             .route("/admin/peers", get(get_peers).post(add_peer))
@@ -89,7 +92,7 @@ impl Http {
 }
 
 /// Get the stats of the current known peers
-async fn get_peers<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<PeerStats>>
+async fn get_peers<M>(State(state): State<ServerState<M>>) -> Json<Vec<PeerStats>>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -106,7 +109,7 @@ pub struct AddPeer {
 
 /// Add a new peer to the system
 async fn add_peer<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Json(payload): Json<AddPeer>,
 ) -> Result<StatusCode, (StatusCode, String)>
 where
@@ -132,7 +135,7 @@ where
 
 /// remove an existing peer from the system
 async fn delete_peer<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Path(endpoint): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)>
 where
@@ -179,7 +182,7 @@ pub struct Route {
 }
 
 /// List all currently selected routes.
-async fn get_selected_routes<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<Route>>
+async fn get_selected_routes<M>(State(state): State<ServerState<M>>) -> Json<Vec<Route>>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -206,7 +209,7 @@ where
 }
 
 /// List all active fallback routes.
-async fn get_fallback_routes<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<Route>>
+async fn get_fallback_routes<M>(State(state): State<ServerState<M>>) -> Json<Vec<Route>>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -244,7 +247,7 @@ pub struct QueriedSubnet {
     pub expiration: String,
 }
 
-async fn get_queried_routes<M>(State(state): State<HttpServerState<M>>) -> Json<Vec<QueriedSubnet>>
+async fn get_queried_routes<M>(State(state): State<ServerState<M>>) -> Json<Vec<QueriedSubnet>>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -280,9 +283,7 @@ pub struct NoRouteSubnet {
     pub expiration: String,
 }
 
-async fn get_no_route_entries<M>(
-    State(state): State<HttpServerState<M>>,
-) -> Json<Vec<NoRouteSubnet>>
+async fn get_no_route_entries<M>(State(state): State<ServerState<M>>) -> Json<Vec<NoRouteSubnet>>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -317,7 +318,7 @@ pub struct Info {
 }
 
 /// Get general info about the node.
-async fn get_info<M>(State(state): State<HttpServerState<M>>) -> Json<Info>
+async fn get_info<M>(State(state): State<ServerState<M>>) -> Json<Info>
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -338,7 +339,7 @@ pub struct PubKey {
 
 /// Get public key from IP.
 async fn get_pubk_from_ip<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Path(ip): Path<IpAddr>,
 ) -> Result<Json<PubKey>, StatusCode>
 where
