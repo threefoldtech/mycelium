@@ -15,13 +15,13 @@ use mycelium::{
     metrics::Metrics,
 };
 
-use super::HttpServerState;
+use super::ServerState;
 
 /// Default amount of time to try and send a message if it is not explicitly specified.
 const DEFAULT_MESSAGE_TRY_DURATION: Duration = Duration::from_secs(60 * 5);
 
 /// Return a router which has message endpoints and their handlers mounted.
-pub fn message_router_v1<M>(server_state: HttpServerState<M>) -> Router
+pub fn message_router_v1<M>(server_state: ServerState<M>) -> Router
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -101,7 +101,7 @@ impl GetMessageQuery {
 }
 
 async fn get_message<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Query(query): Query<GetMessageQuery>,
 ) -> Result<Json<MessageReceiveInfo>, StatusCode>
 where
@@ -146,7 +146,7 @@ where
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageIdReply {
-    id: MessageId,
+    pub id: MessageId,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -175,7 +175,7 @@ impl PushMessageQuery {
 }
 
 async fn push_message<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Query(query): Query<PushMessageQuery>,
     Json(message_info): Json<MessageSendInfo>,
 ) -> Result<(StatusCode, Json<PushMessageResponse>), StatusCode>
@@ -244,7 +244,7 @@ where
 }
 
 async fn reply_message<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Path(id): Path<MessageId>,
     Json(message_info): Json<MessageSendInfo>,
 ) -> StatusCode
@@ -270,7 +270,7 @@ where
 }
 
 async fn message_status<M>(
-    State(state): State<HttpServerState<M>>,
+    State(state): State<ServerState<M>>,
     Path(id): Path<MessageId>,
 ) -> Result<Json<MessageInfo>, StatusCode>
 where
