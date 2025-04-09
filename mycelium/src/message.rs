@@ -26,6 +26,7 @@ use crate::{
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
     metrics::Metrics,
+    subnet::Subnet,
 };
 
 mod chunk;
@@ -97,6 +98,27 @@ pub struct MessageStack<M> {
     /// This takes an Option as value to avoid the hassle of constructing a dummy value when
     /// creating the watch channel.
     reply_subscribers: Arc<Mutex<HashMap<MessageId, watch::Sender<Option<ReceivedMessage>>>>>,
+    /// Topic-specific configuration
+    topic_config: TopicConfig,
+}
+
+#[derive(Default, Clone)]
+pub struct TopicConfig {
+    /// The default action to to take if no acl is defined for a topic.
+    default: MessageAction,
+    /// Explicitly configured whitelists for topics. Ip's which aren't part of the whitelist will
+    /// not be allowed to send messages to that topic. If a topic is not in this map, the default
+    /// action will be used.
+    whitelist: HashMap<Vec<u8>, Vec<Subnet>>,
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize)]
+pub enum MessageAction {
+    /// Accept the message
+    #[default]
+    Accept,
+    /// Reject the message
+    Reject,
 }
 
 struct MessageOutbox {
@@ -226,7 +248,11 @@ where
     /// Create a new `MessageStack`. This uses the provided [`DataPlane`] to inject message
     /// packets. Received packets must be injected into the `MessageStack` through the provided
     /// [`Stream`].
-    pub fn new<S>(data_plane: DataPlane<M>, message_packet_stream: S) -> Self
+    pub fn new<S>(
+        data_plane: DataPlane<M>,
+        message_packet_stream: S,
+        topic_config: Option<TopicConfig>,
+    ) -> Self
     where
         S: Stream<Item = (PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
     {
@@ -237,6 +263,7 @@ where
             outbox: Arc::new(Mutex::new(MessageOutbox::new())),
             subscriber,
             reply_subscribers: Arc::new(Mutex::new(HashMap::new())),
+            topic_config: topic_config.unwrap_or_default(),
         };
 
         tokio::task::spawn(
@@ -371,6 +398,27 @@ where
         let flags = header.flags();
         let reply = if flags.init() {
             let is_reply = flags.reply();
+            let mi = MessageInit::new(mp);
+            // If this is not a reply, verify ACL
+            if !is_reply {
+                if let Some(whitelist) = self.topic_config.whitelist.get(mi.topic()) {
+                    debug!("Checking allow list for new message");
+                    let mut allowed = false;
+                    for subnet in whitelist {
+                        if subnet.contains_ip(src) {
+                            allowed = true;
+                            break;
+                        }
+                    }
+                    if !allowed {
+                        debug!("Dropping message whos src isn't allowed by ACL");
+                        return;
+                    }
+                } else {
+                    debug!(action = ?self.topic_config.default, "Doing default action for message");
+                }
+                // If we don't have a topic config accept everything
+            }
             // We receive a new message with an ID. If we already have a complete message, ignore
             // it.
             let mut inbox = self.inbox.lock().unwrap();
@@ -380,7 +428,6 @@ where
             }
             // Otherwise unilaterally reset the state. The message id space is large enough to
             // avoid accidental collisions.
-            let mi = MessageInit::new(mp);
             let expected_chunks = (mi.length() as usize).div_ceil(AVERAGE_CHUNK_SIZE);
             let chunks = vec![None; expected_chunks];
             let message = ReceivedMessageInfo {
@@ -1056,6 +1103,7 @@ impl<M> Clone for MessageStack<M> {
             outbox: self.outbox.clone(),
             subscriber: self.subscriber.clone(),
             reply_subscribers: self.reply_subscribers.clone(),
+            topic_config: self.topic_config.clone(),
         }
     }
 }

@@ -252,7 +252,7 @@ where
         };
 
         #[cfg(feature = "message")]
-        let ms = MessageStack::new(_data_plane, msg_receiver);
+        let ms = MessageStack::new(_data_plane, msg_receiver, None);
 
         Ok(Node {
             router,
