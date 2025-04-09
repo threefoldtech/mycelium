@@ -1,0 +1,827 @@
+{
+  "openrpc": "1.2.6",
+  "info": {
+    "version": "0.5.7",
+    "title": "Mycelium API",
+    "description": "API for interacting with a Mycelium node",
+    "license": {
+      "name": "See LICENSE file",
+      "url": "https://github.com/threefoldtech/mycelium/blob/main/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:9651",
+      "name": "Default Mycelium API Server"
+    }
+  ],
+  "methods": [
+    {
+      "name": "getInfo",
+      "summary": "Get general info about the node",
+      "description": "Returns information about the node, including its subnet and public key",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "Info",
+        "description": "General information about the node",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "nodeSubnet": {
+              "type": "string",
+              "description": "The overlay subnet in use by the node"
+            },
+            "nodePubkey": {
+              "type": "string",
+              "description": "The public key of the node"
+            }
+          }
+        }
+      },
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/admin",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L244"
+      }
+    },
+    {
+      "name": "getPeers",
+      "summary": "Get the stats of current known peers",
+      "description": "Returns a list of all peers known to the node with their statistics",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "PeerStats",
+        "description": "List of peer statistics",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "endpoint": {
+                "type": "string",
+                "description": "The endpoint of the peer"
+              },
+              "publicKey": {
+                "type": "string",
+                "description": "The public key of the peer"
+              },
+              "subnet": {
+                "type": "string",
+                "description": "The subnet of the peer"
+              },
+              "state": {
+                "type": "string",
+                "description": "The current state of the peer connection",
+                "enum": ["connected", "disconnected", "connecting"]
+              },
+              "lastSeen": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the peer was last seen"
+              },
+              "rxBytes": {
+                "type": "integer",
+                "description": "Number of bytes received from this peer"
+              },
+              "txBytes": {
+                "type": "integer",
+                "description": "Number of bytes transmitted to this peer"
+              }
+            }
+          }
+        }
+      },
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/admin/peers",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L90"
+      }
+    },
+    {
+      "name": "addPeer",
+      "summary": "Add a new peer to the system",
+      "description": "Adds a new peer to the node using the provided endpoint",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "endpoint",
+          "description": "The endpoint used to connect to the peer",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "Success",
+        "description": "Indicates if the peer was successfully added",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "errors": [
+        {
+          "code": 409,
+          "message": "A peer identified by that endpoint already exists"
+        },
+        {
+          "code": 400,
+          "message": "Invalid endpoint format"
+        }
+      ],
+      "externalDocs": {
+        "description": "HTTP POST /api/v1/admin/peers",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L106"
+      }
+    },
+    {
+      "name": "deletePeer",
+      "summary": "Remove an existing peer from the system",
+      "description": "Removes a peer from the node using the provided endpoint",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "endpoint",
+          "description": "The endpoint of the peer to remove",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "Success",
+        "description": "Indicates if the peer was successfully removed",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "errors": [
+        {
+          "code": 404,
+          "message": "A peer identified by that endpoint does not exist"
+        },
+        {
+          "code": 400,
+          "message": "Invalid endpoint format"
+        }
+      ],
+      "externalDocs": {
+        "description": "HTTP DELETE /api/v1/admin/peers/{endpoint}",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L132"
+      }
+    },
+    {
+      "name": "getSelectedRoutes",
+      "summary": "List all currently selected routes",
+      "description": "Returns a list of all currently selected routes in the routing table",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "Routes",
+        "description": "List of selected routes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "subnet": {
+                "type": "string",
+                "description": "The subnet of the route"
+              },
+              "nextHop": {
+                "type": "string",
+                "description": "Next hop of the route, in the underlay"
+              },
+              "metric": {
+                "type": ["string", "integer"],
+                "description": "Computed metric of the route (integer or 'infinite')"
+              },
+              "seqno": {
+                "type": "integer",
+                "description": "Sequence number of the route"
+              }
+            }
+          }
+        }
+      },
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/admin/routes/selected",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L180"
+      }
+    },
+    {
+      "name": "getFallbackRoutes",
+      "summary": "List all active fallback routes",
+      "description": "Returns a list of all active fallback routes in the routing table",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "Routes",
+        "description": "List of fallback routes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "subnet": {
+                "type": "string",
+                "description": "The subnet of the route"
+              },
+              "nextHop": {
+                "type": "string",
+                "description": "Next hop of the route, in the underlay"
+              },
+              "metric": {
+                "type": ["string", "integer"],
+                "description": "Computed metric of the route (integer or 'infinite')"
+              },
+              "seqno": {
+                "type": "integer",
+                "description": "Sequence number of the route"
+              }
+            }
+          }
+        }
+      },
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/admin/routes/fallback",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L207"
+      }
+    },
+    {
+      "name": "getPubkeyFromIp",
+      "summary": "Get public key from IP",
+      "description": "Returns the public key associated with the given IP address",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "ip",
+          "description": "The IP address to look up",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "ipv4 or ipv6"
+          }
+        }
+      ],
+      "result": {
+        "name": "PubKey",
+        "description": "The public key associated with the IP",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "publicKey": {
+              "type": "string",
+              "description": "The public key from the node"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 404,
+          "message": "No public key found for the given IP"
+        }
+      ],
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/pubkey/{ip}",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/lib.rs#L264"
+      }
+    },
+    {
+      "name": "getMessage",
+      "summary": "Get a message",
+      "description": "Retrieves a message from the message queue, with options for peeking and timeout",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "peek",
+          "description": "Whether to peek at the message without removing it",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "name": "timeout",
+          "description": "Number of seconds to wait for a message if none is available",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 0
+          }
+        },
+        {
+          "name": "topic",
+          "description": "Optional filter for message topic (base64 encoded)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "format": "base64"
+          }
+        }
+      ],
+      "result": {
+        "name": "MessageReceiveInfo",
+        "description": "Information about the received message",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Unique identifier of the message"
+            },
+            "srcIp": {
+              "type": "string",
+              "format": "ipv4 or ipv6",
+              "description": "Source IP address"
+            },
+            "srcPk": {
+              "type": "string",
+              "description": "Source public key"
+            },
+            "dstIp": {
+              "type": "string",
+              "format": "ipv4 or ipv6",
+              "description": "Destination IP address"
+            },
+            "dstPk": {
+              "type": "string",
+              "description": "Destination public key"
+            },
+            "topic": {
+              "type": "string",
+              "format": "base64",
+              "description": "Optional message topic"
+            },
+            "payload": {
+              "type": "string",
+              "format": "base64",
+              "description": "Message payload data"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 204,
+          "message": "No message available"
+        }
+      ],
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/messages",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/message.rs#L103"
+      }
+    },
+    {
+      "name": "pushMessage",
+      "summary": "Push a new message",
+      "description": "Sends a new message to a destination, with optional reply waiting",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "replyTimeout",
+          "description": "Number of seconds to wait for a reply",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "message",
+          "description": "Message information",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "dst": {
+                "type": "object",
+                "description": "Message destination",
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ip": {
+                        "type": "string",
+                        "format": "ipv4 or ipv6"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "pk": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "topic": {
+                "type": "string",
+                "format": "base64",
+                "description": "Optional message topic"
+              },
+              "payload": {
+                "type": "string",
+                "format": "base64",
+                "description": "Message payload data"
+              }
+            },
+            "required": ["dst", "payload"]
+          }
+        }
+      ],
+      "result": {
+        "name": "PushMessageResponse",
+        "description": "Response to a push message request",
+        "schema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Unique identifier of the message"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Unique identifier of the message"
+                },
+                "srcIp": {
+                  "type": "string",
+                  "format": "ipv4 or ipv6",
+                  "description": "Source IP address"
+                },
+                "srcPk": {
+                  "type": "string",
+                  "description": "Source public key"
+                },
+                "dstIp": {
+                  "type": "string",
+                  "format": "ipv4 or ipv6",
+                  "description": "Destination IP address"
+                },
+                "dstPk": {
+                  "type": "string",
+                  "description": "Destination public key"
+                },
+                "topic": {
+                  "type": "string",
+                  "format": "base64",
+                  "description": "Optional message topic"
+                },
+                "payload": {
+                  "type": "string",
+                  "format": "base64",
+                  "description": "Message payload data"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "errors": [
+        {
+          "code": 400,
+          "message": "Invalid message format or destination"
+        },
+        {
+          "code": 408,
+          "message": "Timeout waiting for reply"
+        },
+        {
+          "code": 500,
+          "message": "Internal server error"
+        }
+      ],
+      "externalDocs": {
+        "description": "HTTP POST /api/v1/messages",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/message.rs#L177"
+      }
+    },
+    {
+      "name": "replyMessage",
+      "summary": "Reply to a message",
+      "description": "Sends a reply to a specific message",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "id",
+          "description": "ID of the message to reply to",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "message",
+          "description": "Message information",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "dst": {
+                "type": "object",
+                "description": "Message destination",
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ip": {
+                        "type": "string",
+                        "format": "ipv4 or ipv6"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "pk": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "topic": {
+                "type": "string",
+                "format": "base64",
+                "description": "Optional message topic"
+              },
+              "payload": {
+                "type": "string",
+                "format": "base64",
+                "description": "Message payload data"
+              }
+            },
+            "required": ["dst", "payload"]
+          }
+        }
+      ],
+      "result": {
+        "name": "Success",
+        "description": "Indicates if the reply was successfully sent",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "externalDocs": {
+        "description": "HTTP POST /api/v1/messages/reply/{id}",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/message.rs#L246"
+      }
+    },
+    {
+      "name": "messageStatus",
+      "summary": "Get message status",
+      "description": "Retrieves the status of a specific message",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "id",
+          "description": "ID of the message to check",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "MessageInfo",
+        "description": "Information about the message status",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Unique identifier of the message"
+            },
+            "status": {
+              "type": "string",
+              "description": "Current status of the message",
+              "enum": ["pending", "delivered", "failed"]
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the message was created"
+            },
+            "updated": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the message status was last updated"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 404,
+          "message": "Message not found"
+        }
+      ],
+      "externalDocs": {
+        "description": "HTTP GET /api/v1/messages/status/{id}",
+        "url": "https://github.com/threefoldtech/mycelium/blob/main/mycelium-api/src/message.rs#L272"
+      }
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Info": {
+        "type": "object",
+        "properties": {
+          "nodeSubnet": {
+            "type": "string",
+            "description": "The overlay subnet in use by the node"
+          },
+          "nodePubkey": {
+            "type": "string",
+            "description": "The public key of the node"
+          }
+        }
+      },
+      "PeerStats": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "description": "The endpoint of the peer"
+          },
+          "publicKey": {
+            "type": "string",
+            "description": "The public key of the peer"
+          },
+          "subnet": {
+            "type": "string",
+            "description": "The subnet of the peer"
+          },
+          "state": {
+            "type": "string",
+            "description": "The current state of the peer connection",
+            "enum": ["connected", "disconnected", "connecting"]
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the peer was last seen"
+          },
+          "rxBytes": {
+            "type": "integer",
+            "description": "Number of bytes received from this peer"
+          },
+          "txBytes": {
+            "type": "integer",
+            "description": "Number of bytes transmitted to this peer"
+          }
+        }
+      },
+      "Route": {
+        "type": "object",
+        "properties": {
+          "subnet": {
+            "type": "string",
+            "description": "The subnet of the route"
+          },
+          "nextHop": {
+            "type": "string",
+            "description": "Next hop of the route, in the underlay"
+          },
+          "metric": {
+            "type": ["string", "integer"],
+            "description": "Computed metric of the route (integer or 'infinite')"
+          },
+          "seqno": {
+            "type": "integer",
+            "description": "Sequence number of the route"
+          }
+        }
+      },
+      "PubKey": {
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": "string",
+            "description": "The public key from the node"
+          }
+        }
+      },
+      "MessageReceiveInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier of the message"
+          },
+          "srcIp": {
+            "type": "string",
+            "format": "ipv4 or ipv6",
+            "description": "Source IP address"
+          },
+          "srcPk": {
+            "type": "string",
+            "description": "Source public key"
+          },
+          "dstIp": {
+            "type": "string",
+            "format": "ipv4 or ipv6",
+            "description": "Destination IP address"
+          },
+          "dstPk": {
+            "type": "string",
+            "description": "Destination public key"
+          },
+          "topic": {
+            "type": "string",
+            "format": "base64",
+            "description": "Optional message topic"
+          },
+          "payload": {
+            "type": "string",
+            "format": "base64",
+            "description": "Message payload data"
+          }
+        }
+      },
+      "MessageSendInfo": {
+        "type": "object",
+        "properties": {
+          "dst": {
+            "type": "object",
+            "description": "Message destination",
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "ip": {
+                    "type": "string",
+                    "format": "ipv4 or ipv6"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "pk": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "topic": {
+            "type": "string",
+            "format": "base64",
+            "description": "Optional message topic"
+          },
+          "payload": {
+            "type": "string",
+            "format": "base64",
+            "description": "Message payload data"
+          }
+        },
+        "required": ["dst", "payload"]
+      },
+      "MessageIdReply": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier of the message"
+          }
+        }
+      },
+      "MessageInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier of the message"
+          },
+          "status": {
+            "type": "string",
+            "description": "Current status of the message",
+            "enum": ["pending", "delivered", "failed"]
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the message was created"
+          },
+          "updated": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the message status was last updated"
+          }
+        }
+      }
+    }
+  }
+}

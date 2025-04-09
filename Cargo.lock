@@ -605,6 +605,15 @@ dependencies = [
 
 [[package]]
 name = "faster-hex"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239f7bfb930f820ab16a9cd95afc26f88264cf6905c960b340a615384aa3338a"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "faster-hex"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7223ae2d2f179b803433d9c830478527e92b8117eab39460edae7f1614d9fb73"
@@ -1353,7 +1362,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "etherparse",
- "faster-hex",
+ "faster-hex 0.10.0",
  "futures",
  "ip_network_table-deps-treebitmap",
  "ipnet",
@@ -1387,6 +1396,8 @@ version = "0.5.7"
 dependencies = [
  "axum",
  "base64",
+ "faster-hex 0.8.1",
+ "hex",
  "mycelium",
  "mycelium-metrics",
  "serde",

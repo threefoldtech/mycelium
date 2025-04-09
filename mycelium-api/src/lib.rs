@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{net::IpAddr, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc};
 
 use axum::{
     extract::{Path, State},
@@ -25,10 +25,23 @@ mod message;
 #[cfg(feature = "message")]
 pub use message::{MessageDestination, MessageReceiveInfo, MessageSendInfo, PushMessageResponse};
 
+// Unix socket OpenRPC server
+#[cfg(feature = "message")]
+mod unix_socket;
+
 /// Http API server handle. The server is spawned in a background task. If this handle is dropped,
 /// the server is terminated.
 pub struct Http {
     /// Channel to send cancellation to the http api server. We just keep a reference to it since
+    /// dropping it will also cancel the receiver and thus the server.
+    _cancel_tx: tokio::sync::oneshot::Sender<()>,
+}
+
+/// Unix socket OpenRPC server handle. The server is spawned in a background task. If this handle is dropped,
+/// the server is terminated.
+#[cfg(feature = "message")]
+pub struct UnixSocket {
+    /// Channel to send cancellation to the unix socket server. We just keep a reference to it since
     /// dropping it will also cancel the receiver and thus the server.
     _cancel_tx: tokio::sync::oneshot::Sender<()>,
 }
@@ -65,7 +78,10 @@ impl Http {
 
         tokio::spawn(async move {
             let listener = match tokio::net::TcpListener::bind(listen_addr).await {
-                Ok(listener) => listener,
+                Ok(listener) => {
+                    tracing::info!("HTTP API server listening on {}", listen_addr);
+                    listener
+                },
                 Err(e) => {
                     error!(err=%e, "Failed to bind listener for Http Api server");
                     error!("API disabled");
@@ -83,6 +99,20 @@ impl Http {
             }
         });
         Http { _cancel_tx }
+    }
+}
+
+#[cfg(feature = "message")]
+impl UnixSocket {
+    /// Spawns a new Unix socket OpenRPC server on the provided socket path.
+    pub fn spawn<M>(node: mycelium::Node<M>, socket_path: impl Into<PathBuf>) -> Self
+    where
+        M: Metrics + Clone + Send + Sync + 'static,
+    {
+        let server = unix_socket::UnixSocketServer::spawn(node, socket_path.into());
+        UnixSocket {
+            _cancel_tx: server._cancel_tx,
+        }
     }
 }
 

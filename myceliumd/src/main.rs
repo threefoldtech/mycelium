@@ -5,8 +5,10 @@ use std::{
     error::Error,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    sync::{Arc, Mutex},
 };
 use std::{fmt::Display, str::FromStr};
+use std::env;
 
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Deserializer};
@@ -32,6 +34,9 @@ const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9650;
 /// The default listening address for the HTTP API.
 const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
+
+/// Default Unix socket path for the OpenRPC API
+const DEFAULT_UNIX_SOCKET_PATH: &str = "/tmp/mycelium.sock";
 
 const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 
@@ -244,6 +249,10 @@ pub struct NodeArguments {
     #[arg(long = "api-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
     api_addr: SocketAddr,
 
+    /// Path for the Unix socket OpenRPC API.
+    #[arg(long = "unix-socket-path", default_value = DEFAULT_UNIX_SOCKET_PATH)]
+    unix_socket_path: String,
+
     /// Run without creating a TUN interface.
     ///
     /// The system will participate in the network as usual, but won't be able to send out L3
@@ -298,6 +307,7 @@ pub struct MergedNodeConfig {
     no_tun: bool,
     tun_name: String,
     metrics_api_address: Option<SocketAddr>,
+    unix_socket_path: String,
     firewall_mark: Option<u32>,
     update_workers: usize,
 }
@@ -315,6 +325,7 @@ struct MyceliumConfig {
     peer_discovery_port: Option<u16>,
     api_addr: Option<SocketAddr>,
     metrics_api_address: Option<SocketAddr>,
+    unix_socket_path: Option<String>,
     firewall_mark: Option<u32>,
     update_workers: Option<usize>,
 }
@@ -444,7 +455,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
                 metrics.spawn(metrics_api_addr);
                 let node = Node::new(config).await?;
-                mycelium_api::Http::spawn(node, merged_config.api_addr)
+                info!("Unix socket OpenRPC API path: {}", merged_config.unix_socket_path);
+                
+                let http_api = mycelium_api::Http::spawn(node, merged_config.api_addr);
+                
+                #[cfg(feature = "message")]
+                let unix_socket_api = mycelium_api::UnixSocket::spawn(node, &merged_config.unix_socket_path);
+                
+                (http_api,
+                #[cfg(feature = "message")]
+                unix_socket_api)
             } else {
                 let config = mycelium::Config {
                     node_key: node_secret_key,
@@ -468,7 +488,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     update_workers: merged_config.update_workers,
                 };
                 let node = Node::new(config).await?;
-                mycelium_api::Http::spawn(node, merged_config.api_addr)
+                info!("Unix socket OpenRPC API path: {}", merged_config.unix_socket_path);
+                
+                let http_api = mycelium_api::Http::spawn(node, merged_config.api_addr);
+                
+                #[cfg(feature = "message")]
+                let unix_socket_api = mycelium_api::UnixSocket::spawn(node, &merged_config.unix_socket_path);
+                
+                (http_api,
+                #[cfg(feature = "message")]
+                unix_socket_api)
             };
 
             // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
@@ -657,6 +686,13 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
             file_config
                 .api_addr
                 .unwrap_or(DEFAULT_HTTP_API_SERVER_ADDRESS)
+        },
+        unix_socket_path: if cli_args.unix_socket_path != DEFAULT_UNIX_SOCKET_PATH {
+            cli_args.unix_socket_path
+        } else {
+            file_config
+                .unix_socket_path
+                .unwrap_or_else(|| DEFAULT_UNIX_SOCKET_PATH.to_string())
         },
         no_tun: cli_args.no_tun || file_config.no_tun.unwrap_or(false),
         tun_name: if let Some(tun_name_cli) = cli_args.tun_name {
