@@ -707,7 +707,11 @@ where
     }
 
     /// Set the forward socket for a topic. Creates the topic if it doesn't exist.
-    pub fn set_topic_forward_socket(&self, topic: Vec<u8>, socket_path: Option<std::path::PathBuf>) {
+    pub fn set_topic_forward_socket(
+        &self,
+        topic: Vec<u8>,
+        socket_path: Option<std::path::PathBuf>,
+    ) {
         self.topic_config
             .write()
             .expect("Can lock topic config for writing")
@@ -716,17 +720,6 @@ where
 
     /// Get the forward socket for a topic, if any.
     pub fn get_topic_forward_socket(&self, topic: &Vec<u8>) -> Option<std::path::PathBuf> {
-        self.topic_config
-            .read()
-            .expect("Can get read lock on topic config")
-            .get_topic_forward_socket(topic)
-            .cloned()
-    }
-
-    /// Get the forward socket for a specific topic's whitelist config, if any.
-    ///
-    /// This method directly exposes the `forward_socket` method from the `TopicWhitelistConfig`.
-    pub fn forward_socket(&self, topic: &Vec<u8>) -> Option<std::path::PathBuf> {
         self.topic_config
             .read()
             .expect("Can get read lock on topic config")
