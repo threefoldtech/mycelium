@@ -11,7 +11,7 @@ use std::{
     marker::PhantomData,
     net::IpAddr,
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::{self, Duration},
 };
 
@@ -19,6 +19,7 @@ use futures::{Stream, StreamExt};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use tokio::sync::watch;
+use topic::MessageAction;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -101,7 +102,7 @@ pub struct MessageStack<M> {
     /// creating the watch channel.
     reply_subscribers: Arc<Mutex<HashMap<MessageId, watch::Sender<Option<ReceivedMessage>>>>>,
     /// Topic-specific configuration
-    topic_config: TopicConfig,
+    topic_config: Arc<RwLock<TopicConfig>>,
 }
 
 struct MessageOutbox {
@@ -246,7 +247,7 @@ where
             outbox: Arc::new(Mutex::new(MessageOutbox::new())),
             subscriber,
             reply_subscribers: Arc::new(Mutex::new(HashMap::new())),
-            topic_config: topic_config.unwrap_or_default(),
+            topic_config: Arc::new(RwLock::new(topic_config.unwrap_or_default())),
         };
 
         tokio::task::spawn(
@@ -383,24 +384,9 @@ where
             let is_reply = flags.reply();
             let mi = MessageInit::new(mp);
             // If this is not a reply, verify ACL
-            if !is_reply {
-                if let Some(whitelist) = self.topic_config.whitelist().get(mi.topic()) {
-                    debug!("Checking allow list for new message");
-                    let mut allowed = false;
-                    for subnet in whitelist {
-                        if subnet.contains_ip(src) {
-                            allowed = true;
-                            break;
-                        }
-                    }
-                    if !allowed {
-                        debug!("Dropping message whos src isn't allowed by ACL");
-                        return;
-                    }
-                } else {
-                    debug!(action = ?self.topic_config.default(), "Doing default action for message");
-                }
-                // If we don't have a topic config accept everything
+            if !is_reply && !self.topic_allowed(mi.topic(), src) {
+                debug!("Dropping message whos src isn't allowed by ACL");
+                return;
             }
             // We receive a new message with an ID. If we already have a complete message, ignore
             // it.
@@ -614,6 +600,33 @@ where
                 }
                 _ => debug!("can only reply to message fragments if both src and dst are IPv6"),
             }
+        }
+    }
+
+    /// Check if a topic is allowed for a given src
+    fn topic_allowed(&self, topic: &[u8], src: IpAddr) -> bool {
+        if let Some(whitelist) = self
+            .topic_config
+            .read()
+            .expect("Can get read lock on topic config")
+            .whitelist()
+            .get(topic)
+        {
+            debug!(?topic, %src, "Checking allow list for topic");
+            for subnet in whitelist {
+                if subnet.contains_ip(src) {
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            let action = self
+                .topic_config
+                .read()
+                .expect("Can get read lock on topic config")
+                .default();
+            debug!(?action, ?topic, "Default action for topic");
+            matches!(action, MessageAction::Accept)
         }
     }
 }
