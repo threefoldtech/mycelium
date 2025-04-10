@@ -109,6 +109,8 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         ))]
         tun_fd: Some(tun_fd),
         update_workers: 1,
+        #[cfg(feature = "message")]
+        topic_config: None,
     };
     let _node = match Node::new(config).await {
         Ok(node) => {
