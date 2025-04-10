@@ -79,12 +79,11 @@ impl TopicConfig {
         self.whitelist.entry(topic).or_default();
     }
 
-    /// Set the forward socket for a topic. Creates the topic if it doesn't exist.
+    /// Set the forward socket for a topic. Does nothing if the topic doesn't exist.
     pub fn set_topic_forward_socket(&mut self, topic: Vec<u8>, socket_path: Option<PathBuf>) {
         self.whitelist
             .entry(topic)
-            .or_default()
-            .set_forward_socket(socket_path);
+            .and_modify(|c| c.set_forward_socket(socket_path));
     }
 
     /// Get the forward socket for a topic, if any.

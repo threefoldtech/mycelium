@@ -662,6 +662,17 @@ where
             .0
     }
 
+    /// Gets whether unconfigured topics are accepted or not.
+    pub fn get_default_topic_action(&self) -> bool {
+        matches!(
+            self.topic_config
+                .read()
+                .expect("Can get read lock on topic config")
+                .default(),
+            MessageAction::Accept
+        )
+    }
+
     /// Set the default action to take for an unconfigured topic (accept or reject)
     pub fn set_default_topic_action(&self, accept: bool) {
         self.topic_config
@@ -706,7 +717,7 @@ where
             .remove_topic_whitelist_src(&topic, src);
     }
 
-    /// Set the forward socket for a topic. Creates the topic if it doesn't exist.
+    /// Set the forward socket for a topic. Does nothing if the topic doesn't exist.
     pub fn set_topic_forward_socket(
         &self,
         topic: Vec<u8>,
@@ -725,17 +736,6 @@ where
             .expect("Can get read lock on topic config")
             .get_topic_forward_socket(topic)
             .cloned()
-    }
-
-    /// Set the forward socket for a specific topic's whitelist config.
-    ///
-    /// This method directly exposes the `set_forward_socket` method from the `TopicWhitelistConfig`.
-    /// Creates the topic if it doesn't exist.
-    pub fn set_forward_socket(&self, topic: Vec<u8>, socket_path: Option<std::path::PathBuf>) {
-        self.topic_config
-            .write()
-            .expect("Can lock topic config for writing")
-            .set_topic_forward_socket(topic, socket_path);
     }
 
     /// Subscribe to a new message with the given ID. In practice, this will be a reply.
