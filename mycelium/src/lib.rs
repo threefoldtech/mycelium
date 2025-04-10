@@ -388,4 +388,51 @@ where
         self.message_stack
             .reply_message(id, dst, data, try_duration)
     }
+
+    /// Sets the default topic action to accept or reject. This decides how topics which don't have
+    /// an explicit whitelist get handled.
+    pub fn accept_unconfigured_topic(&self, accept: bool) {
+        self.message_stack.set_default_topic_action(accept)
+    }
+
+    /// Whether a topic without default configuration is accepted or not.
+    pub fn unconfigure_topic_action(&self) -> bool {
+        self.message_stack.get_default_topic_action()
+    }
+
+    /// Add a topic to the whitelist without any configured allowed sources.
+    pub fn add_topic_whitelist(&self, topic: Vec<u8>) {
+        self.message_stack.add_topic_whitelist(topic)
+    }
+
+    /// Remove a topic from the whitelist. Future messages will follow the default action.
+    pub fn remove_topic_whitelist(&self, topic: Vec<u8>) {
+        self.message_stack.remove_topic_whitelist(topic)
+    }
+
+    /// Add a new whitelisted source for a topic. This creates the topic if it does not exist yet.
+    pub fn add_topic_whitelist_src(&self, topic: Vec<u8>, src: Subnet) {
+        self.message_stack.add_topic_whitelist_src(topic, src)
+    }
+
+    /// Remove a whitelisted source for a topic.
+    pub fn remove_topic_whitelist_src(&self, topic: Vec<u8>, src: Subnet) {
+        self.message_stack.remove_topic_whitelist_src(topic, src)
+    }
+
+    /// Set the forward socket for a topic. Creates the topic if it doesn't exist.
+    pub fn set_topic_forward_socket(&self, topic: Vec<u8>, socket_path: std::path::PathBuf) {
+        self.message_stack
+            .set_topic_forward_socket(topic, Some(socket_path))
+    }
+
+    /// Get the forward socket for a topic, if any.
+    pub fn get_topic_forward_socket(&self, topic: &Vec<u8>) -> Option<std::path::PathBuf> {
+        self.message_stack.get_topic_forward_socket(topic)
+    }
+
+    /// Removes the forward socket for the topic, if one exists
+    pub fn delete_topic_forward_socket(&self, topic: Vec<u8>) {
+        self.message_stack.set_topic_forward_socket(topic, None)
+    }
 }
