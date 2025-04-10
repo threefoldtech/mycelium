@@ -1091,7 +1091,7 @@ impl<M> Clone for MessageStack<M> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageInfo {
     /// The receiver of this message.
@@ -1106,7 +1106,7 @@ pub struct MessageInfo {
     pub msg_len: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TransmissionProgress {
     /// Pending transmission, the remote has not yet acknowledged our init message.

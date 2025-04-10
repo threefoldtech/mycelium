@@ -32,7 +32,7 @@ where
         .with_state(server_state)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageSendInfo {
     pub dst: MessageDestination,
@@ -44,14 +44,14 @@ pub struct MessageSendInfo {
     pub payload: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MessageDestination {
     Ip(IpAddr),
     Pk(PublicKey),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageReceiveInfo {
     pub id: MessageId,
@@ -143,13 +143,13 @@ where
     })
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageIdReply {
     pub id: MessageId,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(untagged)]
 pub enum PushMessageResponse {
@@ -157,7 +157,7 @@ pub enum PushMessageResponse {
     Id(MessageIdReply),
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct PushMessageQuery {
     reply_timeout: Option<u64>,
 }
