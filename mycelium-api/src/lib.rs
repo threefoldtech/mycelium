@@ -308,7 +308,7 @@ where
 }
 
 /// General info about a node.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Info {
     /// The overlay subnet in use by the node.
