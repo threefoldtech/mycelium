@@ -22,9 +22,42 @@ impl TopicConfig {
         self.default
     }
 
+    /// Set the default [`action`](MessageAction) which does not have a whitelist configured.
+    pub fn set_default(&mut self, default: MessageAction) {
+        self.default = default;
+    }
+
     /// Get the fully configured whitelist
     pub fn whitelist(&self) -> &HashMap<Vec<u8>, Vec<Subnet>> {
         &self.whitelist
+    }
+
+    /// Insert a new topic in the whitelist, without any configured allowed sources.
+    pub fn add_topic_whitelist(&mut self, topic: Vec<u8>) {
+        self.whitelist.entry(topic).or_default();
+    }
+
+    /// Remove a topic from the whitelist. Future messages will follow the default action.
+    pub fn remove_topic_whitelist(&mut self, topic: &Vec<u8>) {
+        self.whitelist.remove(topic);
+    }
+
+    /// Adds a new whitelisted source for a topic. This creates the topic if it does not exist yet.
+    pub fn add_topic_whitelist_src(&mut self, topic: Vec<u8>, src: Subnet) {
+        self.whitelist.entry(topic).or_default().push(src)
+    }
+
+    /// Removes a whitelisted source for a topic.
+    ///
+    /// If the last source is removed for a topic, the entry remains, and must be cleared by calling
+    /// [`Self::remove_topic_whitelist`] to fall back to the default action. Note that an empty
+    /// whitelist effectively blocks all messages for a topic.
+    ///
+    /// This does nothing if the topic does not exist.
+    pub fn remove_topic_whitelist_src(&mut self, topic: &Vec<u8>, src: Subnet) {
+        if let Some(whitelist) = self.whitelist.get_mut(topic) {
+            whitelist.retain(|e| e != &src);
+        }
     }
 }
 

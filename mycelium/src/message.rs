@@ -618,7 +618,7 @@ where
                     return true;
                 }
             }
-            return false;
+            false;
         } else {
             let action = self
                 .topic_config
@@ -659,6 +659,19 @@ where
         self.push_message(Some(reply_to), dst, data, vec![], try_duration, false)
             .expect("Empty topic is never too large")
             .0
+    }
+
+    /// Set the default action to take for an unconfigured topic (accept or reject)
+    pub fn set_default_topic_action(&self, accept: bool) {
+        *self
+            .topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .set_default() = if accept {
+            MessageAction::Accept
+        } else {
+            MessageAction::Reject
+        }
     }
 
     /// Subscribe to a new message with the given ID. In practice, this will be a reply.
