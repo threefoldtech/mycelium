@@ -27,6 +27,7 @@ use crate::{
     data::DataPlane,
     message::{chunk::MessageChunk, done::MessageDone, init::MessageInit},
     metrics::Metrics,
+    subnet::Subnet,
 };
 
 pub use topic::TopicConfig;
@@ -618,7 +619,7 @@ where
                     return true;
                 }
             }
-            false;
+            false
         } else {
             let action = self
                 .topic_config
@@ -663,15 +664,46 @@ where
 
     /// Set the default action to take for an unconfigured topic (accept or reject)
     pub fn set_default_topic_action(&self, accept: bool) {
-        *self
-            .topic_config
+        self.topic_config
             .write()
             .expect("Can lock topic config for writing")
-            .set_default() = if accept {
-            MessageAction::Accept
-        } else {
-            MessageAction::Reject
-        }
+            .set_default(if accept {
+                MessageAction::Accept
+            } else {
+                MessageAction::Reject
+            });
+    }
+
+    /// Add a topic to the whitelist without any configured allowed sources.
+    pub fn add_topic_whitelist(&self, topic: Vec<u8>) {
+        self.topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .add_topic_whitelist(topic);
+    }
+
+    /// Remove a topic from the whitelist. Future messages will follow the default action.
+    pub fn remove_topic_whitelist(&self, topic: Vec<u8>) {
+        self.topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .remove_topic_whitelist(&topic);
+    }
+
+    /// Add a new whitelisted source for a topic. This creates the topic if it does not exist yet.
+    pub fn add_topic_whitelist_src(&self, topic: Vec<u8>, src: Subnet) {
+        self.topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .add_topic_whitelist_src(topic, src);
+    }
+
+    /// Remove a whitelisted source for a topic.
+    pub fn remove_topic_whitelist_src(&self, topic: Vec<u8>, src: Subnet) {
+        self.topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .remove_topic_whitelist_src(&topic, src);
     }
 
     /// Subscribe to a new message with the given ID. In practice, this will be a reply.
