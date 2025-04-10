@@ -662,6 +662,28 @@ where
             .0
     }
 
+    /// Get a list of all configured topics
+    pub fn topics(&self) -> Vec<Vec<u8>> {
+        self.topic_config
+            .read()
+            .expect("Can get read lock on topic config")
+            .whitelist()
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /// Get all allowed sources for a topic. If the topic does not exist, None is returned. If the
+    /// topic exists without any sources, Some is returend with an empty list.
+    pub fn topic_allowed_sources(&self, topic: &Vec<u8>) -> Option<Vec<Subnet>> {
+        self.topic_config
+            .read()
+            .expect("Can get read lock on topic config")
+            .whitelist()
+            .get(topic)
+            .map(|tc| tc.subnets().clone())
+    }
+
     /// Gets whether unconfigured topics are accepted or not.
     pub fn get_default_topic_action(&self) -> bool {
         matches!(

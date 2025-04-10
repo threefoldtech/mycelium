@@ -14,6 +14,12 @@ use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::{ErrorCode, ErrorObject};
+#[cfg(feature = "message")]
+use mycelium::subnet::Subnet;
+#[cfg(feature = "message")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "message")]
+use std::path::PathBuf;
 use tokio::sync::Mutex;
 #[cfg(feature = "message")]
 use tokio::time::Duration;
@@ -26,6 +32,16 @@ use mycelium::metrics::Metrics;
 use mycelium::peer_manager::{PeerExists, PeerNotFound, PeerStats};
 
 use self::spec::OPENRPC_SPEC;
+
+// Topic configuration struct for RPC API
+#[cfg(feature = "message")]
+#[derive(Clone, Serialize, Deserialize)]
+struct TopicInfo {
+    topic: String,
+    sources: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    forward_socket: Option<String>,
+}
 
 // Define the base RPC API trait using jsonrpsee macros
 #[rpc(server)]
@@ -94,6 +110,41 @@ pub trait MyceliumMessageApi {
 
     #[method(name = "getMessageInfo")]
     async fn get_message_info(&self, id: String) -> RpcResult<mycelium::message::MessageInfo>;
+
+    // Topic configuration methods
+    #[method(name = "getDefaultTopicAction")]
+    async fn get_default_topic_action(&self) -> RpcResult<bool>;
+
+    #[method(name = "setDefaultTopicAction")]
+    async fn set_default_topic_action(&self, accept: bool) -> RpcResult<bool>;
+
+    #[method(name = "getTopics")]
+    async fn get_topics(&self) -> RpcResult<Vec<String>>;
+
+    #[method(name = "addTopic")]
+    async fn add_topic(&self, topic: String) -> RpcResult<bool>;
+
+    #[method(name = "removeTopic")]
+    async fn remove_topic(&self, topic: String) -> RpcResult<bool>;
+
+    #[method(name = "getTopicSources")]
+    async fn get_topic_sources(&self, topic: String) -> RpcResult<Vec<String>>;
+
+    #[method(name = "addTopicSource")]
+    async fn add_topic_source(&self, topic: String, subnet: String) -> RpcResult<bool>;
+
+    #[method(name = "removeTopicSource")]
+    async fn remove_topic_source(&self, topic: String, subnet: String) -> RpcResult<bool>;
+
+    #[method(name = "getTopicForwardSocket")]
+    async fn get_topic_forward_socket(&self, topic: String) -> RpcResult<Option<String>>;
+
+    #[method(name = "setTopicForwardSocket")]
+    async fn set_topic_forward_socket(&self, topic: String, socket_path: String)
+        -> RpcResult<bool>;
+
+    #[method(name = "removeTopicForwardSocket")]
+    async fn remove_topic_forward_socket(&self, topic: String) -> RpcResult<bool>;
 }
 
 // Implement the API trait
@@ -453,6 +504,189 @@ where
             Some(info) => Ok(info),
             None => Err(ErrorObject::from(ErrorCode::from(-32019))),
         }
+    }
+
+    // Topic configuration methods implementation
+    async fn get_default_topic_action(&self) -> RpcResult<bool> {
+        debug!("Getting default topic action via RPC");
+        let accept = self.state.node.lock().await.unconfigure_topic_action();
+        Ok(accept)
+    }
+
+    async fn set_default_topic_action(&self, accept: bool) -> RpcResult<bool> {
+        debug!(accept=%accept, "Setting default topic action via RPC");
+        self.state
+            .node
+            .lock()
+            .await
+            .accept_unconfigured_topic(accept);
+        Ok(true)
+    }
+
+    async fn get_topics(&self) -> RpcResult<Vec<String>> {
+        debug!("Getting all whitelisted topics via RPC");
+
+        let topics = self
+            .state
+            .node
+            .lock()
+            .await
+            .topics()
+            .into_iter()
+            .map(|topic| base64::engine::general_purpose::STANDARD.encode(&topic))
+            .collect();
+
+        // For now, we'll return an empty list
+        Ok(topics)
+    }
+
+    async fn add_topic(&self, topic: String) -> RpcResult<bool> {
+        debug!("Adding topic to whitelist via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        self.state
+            .node
+            .lock()
+            .await
+            .add_topic_whitelist(topic_bytes);
+        Ok(true)
+    }
+
+    async fn remove_topic(&self, topic: String) -> RpcResult<bool> {
+        debug!("Removing topic from whitelist via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        self.state
+            .node
+            .lock()
+            .await
+            .remove_topic_whitelist(topic_bytes);
+        Ok(true)
+    }
+
+    async fn get_topic_sources(&self, topic: String) -> RpcResult<Vec<String>> {
+        debug!("Getting sources for topic via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        let subnets = self
+            .state
+            .node
+            .lock()
+            .await
+            .topic_allowed_sources(&topic_bytes)
+            .ok_or(ErrorObject::from(ErrorCode::from(-32030)))?
+            .into_iter()
+            .map(|subnet| subnet.to_string())
+            .collect();
+
+        Ok(subnets)
+    }
+
+    async fn add_topic_source(&self, topic: String, subnet: String) -> RpcResult<bool> {
+        debug!("Adding source to topic whitelist via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        // Parse the subnet
+        let subnet_obj = subnet
+            .parse::<Subnet>()
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32023)))?;
+
+        self.state
+            .node
+            .lock()
+            .await
+            .add_topic_whitelist_src(topic_bytes, subnet_obj);
+        Ok(true)
+    }
+
+    async fn remove_topic_source(&self, topic: String, subnet: String) -> RpcResult<bool> {
+        debug!("Removing source from topic whitelist via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        // Parse the subnet
+        let subnet_obj = subnet
+            .parse::<Subnet>()
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32023)))?;
+
+        self.state
+            .node
+            .lock()
+            .await
+            .remove_topic_whitelist_src(topic_bytes, subnet_obj);
+        Ok(true)
+    }
+
+    async fn get_topic_forward_socket(&self, topic: String) -> RpcResult<Option<String>> {
+        debug!("Getting forward socket for topic via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        let node = self.state.node.lock().await;
+        let socket_path = node
+            .get_topic_forward_socket(&topic_bytes)
+            .map(|p| p.to_string_lossy().to_string());
+
+        Ok(socket_path)
+    }
+
+    async fn set_topic_forward_socket(
+        &self,
+        topic: String,
+        socket_path: String,
+    ) -> RpcResult<bool> {
+        debug!("Setting forward socket for topic via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        let path = PathBuf::from(socket_path);
+        self.state
+            .node
+            .lock()
+            .await
+            .set_topic_forward_socket(topic_bytes, path);
+        Ok(true)
+    }
+
+    async fn remove_topic_forward_socket(&self, topic: String) -> RpcResult<bool> {
+        debug!("Removing forward socket for topic via RPC");
+
+        // Decode the base64 topic
+        let topic_bytes = base64::engine::general_purpose::STANDARD
+            .decode(topic.as_bytes())
+            .map_err(|_| ErrorObject::from(ErrorCode::from(-32021)))?;
+
+        self.state
+            .node
+            .lock()
+            .await
+            .delete_topic_forward_socket(topic_bytes);
+        Ok(true)
     }
 }
 

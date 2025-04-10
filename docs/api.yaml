@@ -26,6 +26,8 @@ tags:
     description: Operations related to network routes
   - name: Message
     description: Operations on the embedded message subsystem
+  - name: Topic
+    description: Operations related to message topic configuration
 
 servers:
   - url: "http://localhost:8989"
@@ -306,7 +308,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PushMessageResponseId"
 
-  "/api/v1/messsages/reply/{id}":
+  "/api/v1/messages/reply/{id}":
     post:
       tags:
         - Message
@@ -363,6 +365,259 @@ paths:
         "404":
           description: Message not found
 
+  "/api/v1/messages/topics/default":
+    get:
+      tags:
+        - Message
+        - Topic
+      summary: Get the default topic action
+      description: |
+        Get the default action for topics that are not explicitly configured (accept or reject).
+      operationId: getDefaultTopicAction
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultTopicActionResponse"
+    put:
+      tags:
+        - Message
+        - Topic
+      summary: Set the default topic action
+      description: |
+        Set the default action for topics that are not explicitly configured (accept or reject).
+      operationId: setDefaultTopicAction
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DefaultTopicActionRequest"
+      responses:
+        "204":
+          description: Default topic action set successfully
+
+  "/api/v1/messages/topics":
+    get:
+      tags:
+        - Message
+        - Topic
+      summary: Get all configured topics
+      description: |
+        Get all topics that are explicitly configured in the system.
+      operationId: getTopics
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TopicInfo"
+    post:
+      tags:
+        - Message
+        - Topic
+      summary: Add a new topic
+      description: |
+        Add a new topic to the system's whitelist.
+      operationId: addTopic
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: byte
+              description: The topic to add
+      responses:
+        "201":
+          description: Topic added successfully
+
+  "/api/v1/messages/topics/{topic}":
+    delete:
+      tags:
+        - Message
+        - Topic
+      summary: Remove a topic
+      description: |
+        Remove a topic from the system's whitelist.
+      operationId: removeTopic
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to remove (base64 encoded)
+      responses:
+        "204":
+          description: Topic removed successfully
+        "400":
+          description: Invalid topic format
+
+  "/api/v1/messages/topics/{topic}/sources":
+    get:
+      tags:
+        - Message
+        - Topic
+      summary: Get sources for a topic
+      description: |
+        Get all sources (subnets) that are allowed to send messages for a specific topic.
+      operationId: getTopicSources
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to get sources for (base64 encoded)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                  description: Subnet in CIDR notation
+        "400":
+          description: Invalid topic format
+    post:
+      tags:
+        - Message
+        - Topic
+      summary: Add a source to a topic
+      description: |
+        Add a source (subnet) that is allowed to send messages for a specific topic.
+      operationId: addTopicSource
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to add a source to (base64 encoded)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopicSourceRequest"
+      responses:
+        "204":
+          description: Source added successfully
+        "400":
+          description: Invalid topic format or subnet
+
+  "/api/v1/messages/topics/{topic}/sources/{subnet}":
+    delete:
+      tags:
+        - Message
+        - Topic
+      summary: Remove a source from a topic
+      description: |
+        Remove a source (subnet) that is allowed to send messages for a specific topic.
+      operationId: removeTopicSource
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to remove a source from (base64 encoded)
+        - in: path
+          name: subnet
+          required: true
+          schema:
+            type: string
+          description: The subnet to remove as a source
+      responses:
+        "204":
+          description: Source removed successfully
+        "400":
+          description: Invalid topic format or subnet
+
+  "/api/v1/messages/topics/{topic}/forward":
+    get:
+      tags:
+        - Message
+        - Topic
+      summary: Get the forward socket for a topic
+      description: |
+        Get the socket path where messages for a specific topic are forwarded to.
+      operationId: getTopicForwardSocket
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to get the forward socket for (base64 encoded)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: string
+                nullable: true
+                description: The socket path where messages are forwarded to
+        "400":
+          description: Invalid topic format
+    put:
+      tags:
+        - Message
+        - Topic
+      summary: Set the forward socket for a topic
+      description: |
+        Set the socket path where messages for a specific topic should be forwarded to.
+      operationId: setTopicForwardSocket
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to set the forward socket for (base64 encoded)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopicForwardSocketRequest"
+      responses:
+        "204":
+          description: Forward socket set successfully
+        "400":
+          description: Invalid topic format
+    delete:
+      tags:
+        - Message
+        - Topic
+      summary: Remove the forward socket for a topic
+      description: |
+        Remove the socket path where messages for a specific topic are forwarded to.
+      operationId: removeTopicForwardSocket
+      parameters:
+        - in: path
+          name: topic
+          required: true
+          schema:
+            type: string
+            format: byte
+          description: The topic to remove the forward socket for (base64 encoded)
+      responses:
+        "204":
+          description: Forward socket removed successfully
+        "400":
+          description: Invalid topic format
   "/api/v1/pubkey/{mycelium_ip}":
     get:
       summary: Get the pubkey from node ip
@@ -397,6 +652,13 @@ components:
           description: The subnet owned by the node and advertised to peers
           type: string
           example: 54f:b680:ba6e:7ced::/64
+        nodePubkey:
+          description: The public key of the node
+          type: string
+          format: hex
+          minLength: 64
+          maxLength: 64
+          example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf
 
     Endpoint:
       description: Identification to connect to a peer
@@ -667,3 +929,60 @@ components:
           minLength: 64
           maxLength: 64
           example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf
+
+    DefaultTopicActionResponse:
+      description: Response for the default topic action
+      type: object
+      properties:
+        accept:
+          description: Whether unconfigured topics are accepted by default
+          type: boolean
+          example: true
+
+    DefaultTopicActionRequest:
+      description: Request to set the default topic action
+      type: object
+      properties:
+        accept:
+          description: Whether to accept unconfigured topics by default
+          type: boolean
+          example: true
+
+    TopicInfo:
+      description: Information about a configured topic
+      type: object
+      properties:
+        topic:
+          description: The topic identifier (base64 encoded)
+          type: string
+          format: byte
+          example: "ZXhhbXBsZS50b3BpYw=="
+        sources:
+          description: List of subnets that are allowed to send messages for this topic
+          type: array
+          items:
+            type: string
+            example: "503:5478:df06:d79a::/64"
+        forward_socket:
+          description: Optional socket path where messages for this topic are forwarded to
+          type: string
+          nullable: true
+          example: "/var/run/mycelium/topic_socket"
+
+    TopicSourceRequest:
+      description: Request to add a source to a topic whitelist
+      type: object
+      properties:
+        subnet:
+          description: The subnet to add as a source in CIDR notation
+          type: string
+          example: "503:5478:df06:d79a::/64"
+
+    TopicForwardSocketRequest:
+      description: Request to set a forward socket for a topic
+      type: object
+      properties:
+        socket_path:
+          description: The socket path where messages should be forwarded to
+          type: string
+          example: "/var/run/mycelium/topic_socket"
