@@ -492,7 +492,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
 
                 // Initialize the JSON-RPC server
-                let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr);
+                let rpc_api =
+                    mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
 
                 (http_api, rpc_api)
             } else {
@@ -522,7 +523,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
 
                 // Initialize the JSON-RPC server
-                let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr);
+                let rpc_api =
+                    mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
 
                 (http_api, rpc_api)
             };
