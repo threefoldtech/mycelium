@@ -723,6 +723,28 @@ where
             .cloned()
     }
 
+    /// Get the forward socket for a specific topic's whitelist config, if any.
+    ///
+    /// This method directly exposes the `forward_socket` method from the `TopicWhitelistConfig`.
+    pub fn forward_socket(&self, topic: &Vec<u8>) -> Option<std::path::PathBuf> {
+        self.topic_config
+            .read()
+            .expect("Can get read lock on topic config")
+            .get_topic_forward_socket(topic)
+            .cloned()
+    }
+
+    /// Set the forward socket for a specific topic's whitelist config.
+    ///
+    /// This method directly exposes the `set_forward_socket` method from the `TopicWhitelistConfig`.
+    /// Creates the topic if it doesn't exist.
+    pub fn set_forward_socket(&self, topic: Vec<u8>, socket_path: Option<std::path::PathBuf>) {
+        self.topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .set_topic_forward_socket(topic, socket_path);
+    }
+
     /// Subscribe to a new message with the given ID. In practice, this will be a reply.
     pub fn subscribe_id(&self, id: MessageId) -> watch::Receiver<Option<ReceivedMessage>> {
         let mut subscribers = self.reply_subscribers.lock().unwrap();
