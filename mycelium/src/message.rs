@@ -606,7 +606,7 @@ where
 
     /// Check if a topic is allowed for a given src
     fn topic_allowed(&self, topic: &[u8], src: IpAddr) -> bool {
-        if let Some(whitelist) = self
+        if let Some(whitelist_config) = self
             .topic_config
             .read()
             .expect("Can get read lock on topic config")
@@ -614,7 +614,7 @@ where
             .get(topic)
         {
             debug!(?topic, %src, "Checking allow list for topic");
-            for subnet in whitelist {
+            for subnet in whitelist_config.subnets() {
                 if subnet.contains_ip(src) {
                     return true;
                 }
@@ -704,6 +704,23 @@ where
             .write()
             .expect("Can lock topic config for writing")
             .remove_topic_whitelist_src(&topic, src);
+    }
+
+    /// Set the forward socket for a topic. Creates the topic if it doesn't exist.
+    pub fn set_topic_forward_socket(&self, topic: Vec<u8>, socket_path: Option<std::path::PathBuf>) {
+        self.topic_config
+            .write()
+            .expect("Can lock topic config for writing")
+            .set_topic_forward_socket(topic, socket_path);
+    }
+
+    /// Get the forward socket for a topic, if any.
+    pub fn get_topic_forward_socket(&self, topic: &Vec<u8>) -> Option<std::path::PathBuf> {
+        self.topic_config
+            .read()
+            .expect("Can get read lock on topic config")
+            .get_topic_forward_socket(topic)
+            .cloned()
     }
 
     /// Subscribe to a new message with the given ID. In practice, this will be a reply.
