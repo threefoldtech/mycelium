@@ -448,6 +448,348 @@
           "message": "Public key not found"
         }
       ]
+    },
+    {
+      "name": "getDefaultTopicAction",
+      "summary": "Get the default topic action",
+      "description": "Get the default action for topics that are not explicitly configured (accept or reject).",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "accept",
+        "description": "Whether unconfigured topics are accepted by default",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "setDefaultTopicAction",
+      "summary": "Set the default topic action",
+      "description": "Set the default action for topics that are not explicitly configured (accept or reject).",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "accept",
+          "description": "Whether to accept unconfigured topics by default",
+          "required": true,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the default topic action was set successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "getTopics",
+      "summary": "Get all configured topics",
+      "description": "Get all topics that are explicitly configured in the system.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [],
+      "result": {
+        "name": "topics",
+        "description": "List of configured topics",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/TopicInfo"
+          }
+        }
+      }
+    },
+    {
+      "name": "addTopic",
+      "summary": "Add a new topic",
+      "description": "Add a new topic to the system's whitelist.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to add",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the topic was added successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "removeTopic",
+      "summary": "Remove a topic",
+      "description": "Remove a topic from the system's whitelist.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to remove",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the topic was removed successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "getTopicSources",
+      "summary": "Get sources for a topic",
+      "description": "Get all sources (subnets) that are allowed to send messages for a specific topic.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to get sources for",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "sources",
+        "description": "List of sources (subnets) for the topic",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "addTopicSource",
+      "summary": "Add a source to a topic",
+      "description": "Add a source (subnet) that is allowed to send messages for a specific topic.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to add a source to",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "subnet",
+          "description": "The subnet to add as a source",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the source was added successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "removeTopicSource",
+      "summary": "Remove a source from a topic",
+      "description": "Remove a source (subnet) that is allowed to send messages for a specific topic.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to remove a source from",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "subnet",
+          "description": "The subnet to remove as a source",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the source was removed successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "getTopicForwardSocket",
+      "summary": "Get the forward socket for a topic",
+      "description": "Get the socket path where messages for a specific topic are forwarded to.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to get the forward socket for",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "socket_path",
+        "description": "The socket path where messages are forwarded to",
+        "schema": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    {
+      "name": "setTopicForwardSocket",
+      "summary": "Set the forward socket for a topic",
+      "description": "Set the socket path where messages for a specific topic should be forwarded to.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to set the forward socket for",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "socket_path",
+          "description": "The socket path where messages should be forwarded to",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the forward socket was set successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "removeTopicForwardSocket",
+      "summary": "Remove the forward socket for a topic",
+      "description": "Remove the socket path where messages for a specific topic are forwarded to.",
+      "tags": [
+        {
+          "name": "Message"
+        },
+        {
+          "name": "Topic"
+        }
+      ],
+      "params": [
+        {
+          "name": "topic",
+          "description": "The topic to remove the forward socket for",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Whether the forward socket was removed successfully",
+        "schema": {
+          "type": "boolean"
+        }
+      }
     }
   ],
   "components": {
@@ -468,6 +810,31 @@
             "minLength": 64,
             "maxLength": 64,
             "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
+          },
+          "TopicInfo": {
+            "description": "Information about a configured topic",
+            "type": "object",
+            "properties": {
+              "topic": {
+                "description": "The topic identifier",
+                "type": "string",
+                "format": "byte",
+                "example": "example.topic"
+              },
+              "sources": {
+                "description": "List of subnets that are allowed to send messages for this topic",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "example": "503:5478:df06:d79a::/64"
+                }
+              },
+              "forward_socket": {
+                "description": "Optional socket path where messages for this topic are forwarded to",
+                "type": ["string", "null"],
+                "example": "/var/run/mycelium/topic_socket"
+              }
+            }
           }
         }
       },

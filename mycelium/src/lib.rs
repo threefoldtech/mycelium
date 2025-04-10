@@ -389,6 +389,15 @@ where
             .reply_message(id, dst, data, try_duration)
     }
 
+    /// Get a list of all configured topics
+    pub fn topics(&self) -> Vec<Vec<u8>> {
+        self.message_stack.topics()
+    }
+
+    pub fn topic_allowed_sources(&self, topic: &Vec<u8>) -> Option<Vec<Subnet>> {
+        self.message_stack.topic_allowed_sources(topic)
+    }
+
     /// Sets the default topic action to accept or reject. This decides how topics which don't have
     /// an explicit whitelist get handled.
     pub fn accept_unconfigured_topic(&self, accept: bool) {

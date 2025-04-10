@@ -12,6 +12,7 @@ use core::fmt;
 use std::{
     hash::Hash,
     net::{IpAddr, Ipv6Addr},
+    str::FromStr,
 };
 
 use ipnet::IpNet;
@@ -148,6 +149,50 @@ impl Subnet {
 impl From<Ipv6Addr> for Subnet {
     fn from(value: Ipv6Addr) -> Self {
         Self::new(value.into(), 128).expect("128 is a valid subnet size for an IPv6 address; qed")
+    }
+}
+
+#[derive(Debug, Clone)]
+/// An error indicating a malformed subnet
+pub struct SubnetParseError {
+    _private: (),
+}
+
+impl SubnetParseError {
+    /// Create a new SubnetParseError
+    fn new() -> Self {
+        Self { _private: () }
+    }
+}
+
+impl core::fmt::Display for SubnetParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad("malformed subnet")
+    }
+}
+
+impl std::error::Error for SubnetParseError {}
+
+impl FromStr for Subnet {
+    type Err = SubnetParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(ipnet) = s.parse::<ipnet::IpNet>() {
+            return Ok(
+                Subnet::new(ipnet.addr(), ipnet.prefix_len()).expect("Parsed subnet size is valid")
+            );
+        }
+
+        // Try to parse as an IP address (convert to /32 or /128 subnet)
+        if let Ok(ip) = s.parse::<std::net::IpAddr>() {
+            let prefix_len = match ip {
+                std::net::IpAddr::V4(_) => 32,
+                std::net::IpAddr::V6(_) => 128,
+            };
+            return Ok(Subnet::new(ip, prefix_len).expect("Static subnet sizes are valid"));
+        }
+
+        Err(SubnetParseError::new())
     }
 }
 
