@@ -415,7 +415,9 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/TopicInfo"
+                  type: string
+                  format: byte
+                  description: Base64 encoded topic identifier
     post:
       tags:
         - Message
