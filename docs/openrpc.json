@@ -519,7 +519,9 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "#/components/schemas/TopicInfo"
+            "type": "string",
+            "format": "byte",
+            "description": "Base64 encoded topic identifier"
           }
         }
       }
@@ -810,31 +812,6 @@
             "minLength": 64,
             "maxLength": 64,
             "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
-          },
-          "TopicInfo": {
-            "description": "Information about a configured topic",
-            "type": "object",
-            "properties": {
-              "topic": {
-                "description": "The topic identifier",
-                "type": "string",
-                "format": "byte",
-                "example": "example.topic"
-              },
-              "sources": {
-                "description": "List of subnets that are allowed to send messages for this topic",
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "example": "503:5478:df06:d79a::/64"
-                }
-              },
-              "forward_socket": {
-                "description": "Optional socket path where messages for this topic are forwarded to",
-                "type": ["string", "null"],
-                "example": "/var/run/mycelium/topic_socket"
-              }
-            }
           }
         }
       },
@@ -855,6 +832,31 @@
             "description": "The socket address used",
             "type": "string",
             "example": "192.0.2.6:9651"
+          }
+        }
+      },
+      "TopicInfo": {
+        "description": "Information about a configured topic",
+        "type": "object",
+        "properties": {
+          "topic": {
+            "description": "The topic identifier",
+            "type": "string",
+            "format": "byte",
+            "example": "example.topic"
+          },
+          "sources": {
+            "description": "List of subnets that are allowed to send messages for this topic",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "example": "503:5478:df06:d79a::/64"
+            }
+          },
+          "forward_socket": {
+            "description": "Optional socket path where messages for this topic are forwarded to",
+            "type": ["string", "null"],
+            "example": "/var/run/mycelium/topic_socket"
           }
         }
       },
