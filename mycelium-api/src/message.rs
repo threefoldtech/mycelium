@@ -209,7 +209,7 @@ where
     debug!(
         message.dst=%dst,
         message.len=message_info.payload.len(),
-        "Pushing new reply to message stack",
+        "Pushing new message to stack",
     );
 
     let (id, sub) = match state.node.lock().await.push_message(
