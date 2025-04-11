@@ -45,7 +45,7 @@ mod topic;
 const MESSAGE_SEND_WINDOW: Duration = Duration::from_secs(60 * 5);
 
 /// The amount of time to wait before sending a chunk again if receipt is not acknowledged.
-const RETRANSMISSION_DELAY: Duration = Duration::from_secs(1);
+const RETRANSMISSION_DELAY: Duration = Duration::from_millis(100);
 
 /// Amount of time between sweeps of the subscriber list to clear orphaned subscribers.
 const REPLY_SUBSCRIBER_CLEAR_DELAY: Duration = Duration::from_secs(60);
