@@ -8,9 +8,11 @@
 use core::fmt;
 use std::{
     collections::{HashMap, VecDeque},
+    io,
     marker::PhantomData,
     net::IpAddr,
     ops::{Deref, DerefMut},
+    path::PathBuf,
     sync::{Arc, Mutex, RwLock},
     time::{self, Duration},
 };
@@ -18,6 +20,8 @@ use std::{
 use futures::{Stream, StreamExt};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
 use tokio::sync::watch;
 use topic::MessageAction;
 use tracing::{debug, error, trace, warn};
@@ -45,6 +49,9 @@ const RETRANSMISSION_DELAY: Duration = Duration::from_secs(1);
 
 /// Amount of time between sweeps of the subscriber list to clear orphaned subscribers.
 const REPLY_SUBSCRIBER_CLEAR_DELAY: Duration = Duration::from_secs(60);
+
+/// Default timeout for waiting for a reply from a socket.
+const SOCKET_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The average size of a single chunk. This is mainly intended to preallocate the chunk array on
 /// the receiver size. This value should allow reasonable overhead for standard MTU.
@@ -544,7 +551,7 @@ where
                 // Use remove here since we are done with the subscriber
                 // TODO: only check this if the is_reply flag is set?
                 if let Some(sub) = subscribers.remove(&message.id) {
-                    if let Err(e) = sub.send(Some(message)) {
+                    if let Err(e) = sub.send(Some(message.clone())) {
                         debug!("Subscriber quit before we could send the reply");
                         // Move message to be read if there were no subscribers.
                         inbox.complete_msges.push_back(e.0.unwrap());
@@ -554,10 +561,71 @@ where
                         debug!("Informed subscriber of message reply");
                     }
                 } else {
-                    // Move message to be read if there were no subscribers.
-                    inbox.complete_msges.push_back(message);
-                    // Notify subscribers we have a new message.
-                    inbox.notify.send_replace(());
+                    // Check if the topic has a configured socket path
+                    let socket_path = self
+                        .topic_config
+                        .read()
+                        .expect("Can get read lock on topic config")
+                        .get_topic_forward_socket(&message.topic)
+                        .cloned();
+
+                    if let Some(socket_path) = socket_path {
+                        debug!(
+                            "Forwarding message {} to socket {}",
+                            message.id.as_hex(),
+                            socket_path.display()
+                        );
+
+                        // Clone the message for use in the async task
+                        let message_clone = message.clone();
+                        let message_stack = self.clone();
+
+                        // Drop the inbox lock before spawning the task to avoid deadlocks
+                        std::mem::drop(inbox);
+                        std::mem::drop(subscribers);
+
+                        // Spawn a task to handle the socket communication
+                        tokio::task::spawn(async move {
+                            // Forward the message to the socket
+                            match message_stack
+                                .forward_to_socket(
+                                    &message_clone,
+                                    &socket_path,
+                                    SOCKET_REPLY_TIMEOUT,
+                                )
+                                .await
+                            {
+                                Ok(reply_data) => {
+                                    debug!(message_id = message_clone.id.as_hex(), "Received reply from socket, sending back to original sender");
+
+                                    // Send the reply back to the original sender
+                                    message_stack.reply_message(
+                                        message_clone.id,
+                                        message_clone.src_ip,
+                                        reply_data,
+                                        MESSAGE_SEND_WINDOW,
+                                    );
+                                }
+                                Err(e) => {
+                                    // Log the error
+                                    error!(err = % e, "Failed to forward message to socket");
+
+                                    // Fall back to pushing to the queue
+                                    let mut inbox = message_stack.inbox.lock().unwrap();
+                                    inbox.complete_msges.push_back(message_clone);
+                                    inbox.notify.send_replace(());
+                                }
+                            }
+                        });
+
+                        // Re-acquire the inbox lock to continue processing
+                        inbox = self.inbox.lock().unwrap();
+                    } else {
+                        // No socket path configured, push to the queue as usual
+                        inbox.complete_msges.push_back(message);
+                        // Notify subscribers we have a new message.
+                        inbox.notify.send_replace(());
+                    }
                 }
                 inbox.pending_msges.remove(&message_id);
 
@@ -630,6 +698,77 @@ where
             matches!(action, MessageAction::Accept)
         }
     }
+
+    /// Forward a message to a Unix domain socket and wait for a reply
+    async fn forward_to_socket(
+        &self,
+        message: &ReceivedMessage,
+        socket_path: &PathBuf,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, SocketError> {
+        // Connect to the socket
+        let mut stream = UnixStream::connect(socket_path).await.map_err(|e| {
+            error!(
+                "Failed to connect to socket {}: {}",
+                socket_path.display(),
+                e
+            );
+            SocketError::IoError(e)
+        })?;
+
+        // Send the message data, wrap in a timeout as we can't set read timeout on the socket
+        tokio::time::timeout(timeout, stream.write_all(&message.data))
+            .await
+            .map_err(|_| SocketError::Timeout)?
+            .map_err(|e| {
+                error!("Failed to write to socket: {}", e);
+                SocketError::IoError(e)
+            })?;
+
+        // Read the reply
+        let mut reply = Vec::new();
+        match stream.read_to_end(&mut reply).await {
+            Ok(0) => {
+                debug!("Socket connection closed without sending a reply");
+                Err(SocketError::ConnectionClosed)
+            }
+            Ok(_) => {
+                debug!(reply_len = reply.len(), "Received reply from socket");
+                Ok(reply)
+            }
+            Err(e)
+                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
+            {
+                debug!("Timeout waiting for socket reply");
+                Err(SocketError::Timeout)
+            }
+            Err(e) => {
+                error!(err = %e, "Error reading from socket");
+                Err(SocketError::IoError(e))
+            }
+        }
+    }
+}
+
+/// Error type for socket communication
+#[derive(Debug)]
+enum SocketError {
+    /// I/O error occurred during socket communication
+    IoError(io::Error),
+    /// Timeout occurred while waiting for a reply
+    Timeout,
+    /// Socket connection was closed unexpectedly
+    ConnectionClosed,
+}
+
+impl core::fmt::Display for SocketError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IoError(e) => write!(f, "I/O Error {}", e),
+            Self::Timeout => f.pad("timeout waiting for reply"),
+            Self::ConnectionClosed => f.pad("socket closed before we read a reply"),
+        }
+    }
 }
 
 impl<M> MessageStack<M>
@@ -657,6 +796,7 @@ where
         data: Vec<u8>,
         try_duration: Duration,
     ) -> MessageId {
+        debug!(reply_to = reply_to.as_hex(), %dst, data_size = data.len(), "Sending reply to message");
         self.push_message(Some(reply_to), dst, data, vec![], try_duration, false)
             .expect("Empty topic is never too large")
             .0
