@@ -8,21 +8,72 @@ the data in any way. When using the binary, the message is slightly modified to 
 topic at the start of the message. Note that in the HTTP API, all messages are encoded in base64. This
 might make it difficult to consume these messages without additional tooling.
 
-## Curl examples
+Messages can be categorized by topics, which can be configured with whitelisted subnets and socket forwarding paths.
+For detailed information on how to configure topics, see the [Topic Configuration Guide](./topic_configuration.md).
+
+## JSON-RPC API Examples
 
 These examples assume you have at least 2 nodes running, and that they are both part of the same network.
 
 Send a message on node1, waiting up to 2 minutes for a possible reply:
 
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "pushMessage",
+  "params": [
+    {
+      "dst": {"pk": "bb39b4a3a4efd70f3e05e37887677e02efbda14681d0acd3882bc0f754792c32"},
+      "payload": "xuV+"
+    },
+    120
+  ],
+  "id": 1
+}
+```
+
+Using curl:
+
 ```bash
-curl -v -H 'Content-Type: application/json' -d '{"dst": {"pk": "bb39b4a3a4efd70f3e05e37887677e02efbda14681d0acd3882bc0f754792c32"}, "payload": "xuV+"}' http://localhost:8989/api/v1/messages\?reply_timeout\=120
+curl -X POST http://localhost:8990/rpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "pushMessage",
+    "params": [
+      {
+        "dst": {"pk": "bb39b4a3a4efd70f3e05e37887677e02efbda14681d0acd3882bc0f754792c32"},
+        "payload": "xuV+"
+      },
+      120
+    ],
+    "id": 1
+  }'
 ```
 
 Listen for a message on node2. Note that messages received while nothing is listening are added to
 a queue for later consumption. Wait for up to 1 minute.
 
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "popMessage",
+  "params": [false, 60, null],
+  "id": 1
+}
+```
+
+Using curl:
+
 ```bash
-curl -v http://localhost:8989/api/v1/messages\?timeout\=60\
+curl -X POST http://localhost:8990/rpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "popMessage",
+    "params": [false, 60, null],
+    "id": 1
+  }'
 ```
 
 The system will (immediately) receive our previously sent message:
@@ -34,8 +85,38 @@ The system will (immediately) receive our previously sent message:
 To send a reply, we can post a message on the reply path, with the received message `id` (still on
 node2):
 
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "pushMessageReply",
+  "params": [
+    "e47b25063912f4a9",
+    {
+      "dst": {"pk":"955bf6bea5e1150fd8e270c12e5b2fc08f08f7c5f3799d10550096cc137d671b"},
+      "payload": "xuC+"
+    }
+  ],
+  "id": 1
+}
+```
+
+Using curl:
+
 ```bash
-curl -H 'Content-Type: application/json' -d '{"dst": {"pk":"955bf6bea5e1150fd8e270c12e5b2fc08f08f7c5f3799d10550096cc137d671b"}, "payload": "xuC+"}' http://localhost:8989/api/v1/messages/reply/e47b25063912f4a9
+curl -X POST http://localhost:8990/rpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "pushMessageReply",
+    "params": [
+      "e47b25063912f4a9",
+      {
+        "dst": {"pk":"955bf6bea5e1150fd8e270c12e5b2fc08f08f7c5f3799d10550096cc137d671b"},
+        "payload": "xuC+"
+      }
+    ],
+    "id": 1
+  }'
 ```
 
 If you did this fast enough, the initial sender (node1) will now receive the reply.

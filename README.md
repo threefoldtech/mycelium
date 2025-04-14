@@ -148,9 +148,12 @@ tries to send (part of) the message, until it either succeeds, or the deadline e
 similar to the way TCP handles data. Messages are transmitted in chunks, which are embedded in the
 same data stream used by L3 packets. As such, intermediate nodes can't distinguish between regular L3
 and message data.
-
 The primary way to interact with the message system is through [the API](#api). The message API is
 documented in [an OpenAPI spec in the docs folder](docs/api.yaml). For some more info about how to
+use the message system, see [the message docs](/docs/message.md).
+
+Messages can be categorized by topics, which can be configured with whitelisted subnets and socket forwarding paths.
+For detailed information on how to configure topics, see the [Topic Configuration Guide](/docs/topic_configuration.md).
 use the message system, see [the message docs](/docs/message.md).
 
 ## Inspecting node keys
