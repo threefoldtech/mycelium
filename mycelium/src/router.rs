@@ -36,6 +36,8 @@ const IHU_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3);
 /// Max time used in UPDATE packets. For local (static) routes this is the timeout they are
 /// advertised with.
 const UPDATE_INTERVAL: Duration = Duration::from_secs(HELLO_INTERVAL * 3 * 5);
+/// Time between selected route announcements to peers.
+const ROUTE_PROPAGATION_INTERVAL: Duration = UPDATE_INTERVAL;
 /// Amount of seconds that can elapse before we consider a [`Peer`] as dead from the routers POV.
 /// Since IHU's are sent in response to HELLO packets, this MUST be greater than the
 /// [`HELLO_INTERVAL`].
@@ -161,6 +163,8 @@ where
             router.clone(),
             router_data_rx,
         ));
+
+        tokio::spawn(Router::propagate_static_routes(router.clone()));
 
         tokio::spawn(Router::check_for_dead_peers(router.clone()));
 
@@ -1780,6 +1784,19 @@ where
                 "Failed to send update to dead peer {}",
                 peer.connection_identifier()
             );
+        }
+    }
+
+    /// Task to propagate the static routes periodically
+    async fn propagate_static_routes(self) {
+        loop {
+            tokio::time::sleep(ROUTE_PROPAGATION_INTERVAL).await;
+
+            trace!("Propagating static routes");
+
+            for peer in self.peer_interfaces.read().unwrap().iter() {
+                self.propagate_static_route_to_peer(peer)
+            }
         }
     }
 
