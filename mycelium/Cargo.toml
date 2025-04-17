@@ -21,6 +21,7 @@ tokio = { version = "1.44.0", features = [
   "net",
   "sync",
   "time",
+  "rt-multi-thread", # FIXME: remove once tokio::task::block_in_place calls are resolved
 ] }
 tokio-util = { version = "0.7.13", features = ["codec"] }
 futures = "0.3.31"
