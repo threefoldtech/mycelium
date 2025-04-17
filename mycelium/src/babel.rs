@@ -27,7 +27,7 @@ mod update;
 /// Magic byte to identify babel protocol packet.
 const BABEL_MAGIC: u8 = 42;
 /// The version of the protocol we are currently using.
-const BABEL_VERSION: u8 = 2;
+const BABEL_VERSION: u8 = 3;
 
 /// Size of a babel header on the wire.
 const HEADER_WIRE_SIZE: usize = 4;
