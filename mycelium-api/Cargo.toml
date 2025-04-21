@@ -9,7 +9,7 @@ readme = "../README.md"
 message = ["mycelium/message"]
 
 [dependencies]
-axum = { version = "0.8.1", default-features = false, features = [
+axum = { version = "0.8.3", default-features = false, features = [
   "http1",
   "http2",
   "json",
@@ -18,7 +18,7 @@ axum = { version = "0.8.1", default-features = false, features = [
 ] }
 base64 = "0.22.1"
 tracing = "0.1.41"
-tokio = { version = "1.44.0", default-features = false, features = [
+tokio = { version = "1.44.2", default-features = false, features = [
   "net",
   "rt",
 ] }

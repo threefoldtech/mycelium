@@ -14,7 +14,7 @@ mactunfd = [
 ] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
 
 [dependencies]
-tokio = { version = "1.44.0", features = [
+tokio = { version = "1.44.2", features = [
   "io-util",
   "fs",
   "macros",
@@ -25,7 +25,7 @@ tokio = { version = "1.44.0", features = [
 tokio-util = { version = "0.7.13", features = ["codec"] }
 futures = "0.3.31"
 serde = { version = "1.0.219", features = ["derive"] }
-rand = "0.9.0"
+rand = "0.9.1"
 bytes = "1.10.1"
 x25519-dalek = { version = "2.0.1", features = ["getrandom", "static_secrets"] }
 aes-gcm = "0.10.3"
@@ -37,16 +37,16 @@ tokio-stream = { version = "0.1.17", features = ["sync"] }
 left-right = "0.11.5"
 ipnet = "2.11.0"
 ip_network_table-deps-treebitmap = "0.5.0"
-blake3 = "1.6.1"
+blake3 = "1.8.2"
 etherparse = "0.17.0"
-quinn = { version = "0.11.6", default-features = false, features = [
+quinn = { version = "0.11.7", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
-rustls = { version = "0.23.25", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.26", default-features = false, features = ["ring"] }
 rcgen = "0.13.2"
-netdev = "0.33.0"
-openssl = { version = "0.10.71", optional = true }
+netdev = "0.34.0"
+openssl = { version = "0.10.72", optional = true }
 tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.7.1"
 dashmap = { version = "6.1.0", features = ["inline"] }
@@ -59,7 +59,7 @@ nix = { version = "0.29.0", features = ["socket"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
-libc = "0.2.171"
+libc = "0.2.172"
 nix = { version = "0.29.0", features = ["net", "socket", "ioctl"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
