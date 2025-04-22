@@ -48,7 +48,7 @@ impl RouteRequest {
     pub fn wire_size(&self) -> u8 {
         ROUTE_REQUEST_BASE_WIRE_SIZE
             + (if let Some(prefix) = self.prefix {
-                (prefix.prefix_len() + 7) / 8
+                prefix.prefix_len().div_ceil(8)
             } else {
                 0
             })
@@ -65,7 +65,7 @@ impl RouteRequest {
         let ae = src.get_u8();
         let plen = src.get_u8();
 
-        let prefix_size = ((plen + 7) / 8) as usize;
+        let prefix_size = plen.div_ceil(8) as usize;
 
         let prefix_ip = match ae {
             AE_WILDCARD => None,
@@ -122,7 +122,7 @@ impl RouteRequest {
                 IpAddr::V6(_) => AE_IPV6,
             });
             dst.put_u8(prefix.prefix_len());
-            let prefix_len = ((prefix.prefix_len() + 7) / 8) as usize;
+            let prefix_len = prefix.prefix_len().div_ceil(8) as usize;
             match prefix.address() {
                 IpAddr::V4(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
                 IpAddr::V6(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
