@@ -44,6 +44,7 @@
                   ./myceliumd
                   ./myceliumd-private
                   ./mobile
+                  ./docs
                 ];
               };
 
@@ -91,6 +92,7 @@
                   ./myceliumd
                   ./myceliumd-private
                   ./mobile
+                  ./docs
                 ];
               };
 
