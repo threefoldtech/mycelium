@@ -77,7 +77,7 @@ impl SeqNoRequest {
 
     /// Calculates the size on the wire of this `Update`.
     pub fn wire_size(&self) -> u8 {
-        SEQNO_REQUEST_BASE_WIRE_SIZE + (self.prefix.prefix_len() + 7) / 8
+        SEQNO_REQUEST_BASE_WIRE_SIZE + self.prefix.prefix_len().div_ceil(8)
         // TODO: Wildcard should be encoded differently
     }
 
