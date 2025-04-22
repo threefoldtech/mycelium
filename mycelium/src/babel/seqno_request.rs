@@ -12,7 +12,7 @@ use super::{AE_IPV4, AE_IPV6, AE_IPV6_LL, AE_WILDCARD};
 
 /// The default HOP COUNT value used in new SeqNo requests, as per https://datatracker.ietf.org/doc/html/rfc8966#section-3.8.2.1
 // SAFETY: value is not zero.
-const DEFAULT_HOP_COUNT: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(64) };
+const DEFAULT_HOP_COUNT: NonZeroU8 = NonZeroU8::new(64).unwrap();
 
 /// Base wire size of a [`SeqNoRequest`] without variable length address encoding.
 const SEQNO_REQUEST_BASE_WIRE_SIZE: u8 = 6 + RouterId::BYTE_SIZE as u8;
@@ -101,7 +101,7 @@ impl SeqNoRequest {
 
         let router_id = RouterId::from(router_id_bytes);
 
-        let prefix_size = ((plen + 7) / 8) as usize;
+        let prefix_size = plen.div_ceil(8) as usize;
 
         let prefix = match ae {
             AE_WILDCARD => {
@@ -180,7 +180,7 @@ impl SeqNoRequest {
         // Write "reserved" value.
         dst.put_u8(0);
         dst.put_slice(&self.router_id.as_bytes()[..]);
-        let prefix_len = ((self.prefix.prefix_len() + 7) / 8) as usize;
+        let prefix_len = self.prefix.prefix_len().div_ceil(8) as usize;
         match self.prefix.address() {
             IpAddr::V4(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
             IpAddr::V6(ip) => dst.put_slice(&ip.octets()[..prefix_len]),

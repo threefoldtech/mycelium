@@ -86,7 +86,7 @@ impl Update {
 
     /// Calculates the size on the wire of this `Update`.
     pub fn wire_size(&self) -> u8 {
-        let address_bytes = (self.subnet.prefix_len() + 7) / 8;
+        let address_bytes = self.subnet.prefix_len().div_ceil(8);
         UPDATE_BASE_WIRE_SIZE + address_bytes
     }
 
@@ -111,7 +111,7 @@ impl Update {
         let interval = src.get_u16();
         let seqno = src.get_u16().into();
         let metric = src.get_u16().into();
-        let prefix_size = ((plen + 7) / 8) as usize;
+        let prefix_size = plen.div_ceil(8) as usize;
         let prefix = match ae {
             AE_WILDCARD => {
                 if prefix_size != 0 {
@@ -190,7 +190,7 @@ impl Update {
         dst.put_u16(self.interval);
         dst.put_u16(self.seqno.into());
         dst.put_u16(self.metric.into());
-        let prefix_len = ((self.subnet.prefix_len() + 7) / 8) as usize;
+        let prefix_len = self.subnet.prefix_len().div_ceil(8) as usize;
         match self.subnet.address() {
             IpAddr::V4(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
             IpAddr::V6(ip) => dst.put_slice(&ip.octets()[..prefix_len]),
