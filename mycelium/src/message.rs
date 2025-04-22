@@ -21,6 +21,7 @@ use futures::{Stream, StreamExt};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(target_family = "unix")]
 use tokio::net::UnixStream;
 use tokio::sync::watch;
 use topic::MessageAction;
@@ -589,6 +590,7 @@ where
                         std::mem::drop(subscribers);
 
                         // Spawn a task to handle the socket communication
+                        #[cfg(target_family = "unix")]
                         tokio::task::spawn(async move {
                             // Forward the message to the socket
                             match message_stack
@@ -621,6 +623,13 @@ where
                                 }
                             }
                         });
+
+                        #[cfg(not(target_family = "unix"))]
+                        {
+                            let mut inbox = message_stack.inbox.lock().unwrap();
+                            inbox.complete_msges.push_back(message_clone);
+                            inbox.notify.send_replace(());
+                        }
 
                         // Re-acquire the inbox lock to continue processing
                         inbox = self.inbox.lock().unwrap();
@@ -704,6 +713,7 @@ where
     }
 
     /// Forward a message to a Unix domain socket and wait for a reply
+    #[cfg(target_family = "unix")]
     async fn forward_to_socket(
         &self,
         message: &ReceivedMessage,
