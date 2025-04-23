@@ -7,10 +7,11 @@
 
 use core::fmt;
 #[cfg(target_family = "unix")]
+use std::io;
+#[cfg(target_family = "unix")]
 use std::path::PathBuf;
 use std::{
     collections::{HashMap, VecDeque},
-    io,
     marker::PhantomData,
     net::IpAddr,
     ops::{Deref, DerefMut},
