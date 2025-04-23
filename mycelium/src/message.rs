@@ -6,13 +6,14 @@
 //! possible.
 
 use core::fmt;
+#[cfg(target_family = "unix")]
+use std::path::PathBuf;
 use std::{
     collections::{HashMap, VecDeque},
     io,
     marker::PhantomData,
     net::IpAddr,
     ops::{Deref, DerefMut},
-    path::PathBuf,
     sync::{Arc, Mutex, RwLock},
     time::{self, Duration},
 };
@@ -20,6 +21,7 @@ use std::{
 use futures::{Stream, StreamExt};
 use rand::Fill;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
+#[cfg(target_family = "unix")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::net::UnixStream;
@@ -52,6 +54,7 @@ const RETRANSMISSION_DELAY: Duration = Duration::from_millis(100);
 const REPLY_SUBSCRIBER_CLEAR_DELAY: Duration = Duration::from_secs(60);
 
 /// Default timeout for waiting for a reply from a socket.
+#[cfg(target_family = "unix")]
 const SOCKET_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The average size of a single chunk. This is mainly intended to preallocate the chunk array on
@@ -766,6 +769,7 @@ where
 
 /// Error type for socket communication
 #[derive(Debug)]
+#[cfg(target_family = "unix")]
 enum SocketError {
     /// I/O error occurred during socket communication
     IoError(io::Error),
