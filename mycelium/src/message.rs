@@ -779,6 +779,7 @@ enum SocketError {
     ConnectionClosed,
 }
 
+#[cfg(target_family = "unix")]
 impl core::fmt::Display for SocketError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
