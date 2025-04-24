@@ -9,16 +9,16 @@ readme = "../README.md"
 prometheus = ["dep:axum", "dep:prometheus", "dep:tokio", "dep:tracing"]
 
 [dependencies]
-axum = { version = "0.8.1", default-features = false, optional = true, features = [
+axum = { version = "0.8.3", default-features = false, optional = true, features = [
   "http1",
   "http2",
   "tokio",
 ] }
 mycelium = { path = "../mycelium", default-features = false }
-prometheus = { version = "0.13.4", default-features = false, optional = true, features = [
+prometheus = { version = "0.14.0", default-features = false, optional = true, features = [
   "process",
 ] }
-tokio = { version = "1.44.0", default-features = false, optional = true, features = [
+tokio = { version = "1.44.2", default-features = false, optional = true, features = [
   "net",
   "rt",
 ] }
