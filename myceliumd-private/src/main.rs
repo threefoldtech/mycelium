@@ -1,6 +1,7 @@
 use std::io::{self, Read};
 use std::net::Ipv4Addr;
 use std::path::Path;
+use std::sync::Arc;
 use std::{
     error::Error,
     net::{IpAddr, SocketAddr},
@@ -15,6 +16,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_family = "unix")]
 use tokio::signal::{self, unix::SignalKind};
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crypto::PublicKey;
@@ -33,6 +35,9 @@ const DEFAULT_PEER_DISCOVERY_PORT: u16 = 9650;
 /// The default listening address for the HTTP API.
 const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8989);
+/// The default listening address for the JSON-RPC API.
+const DEFAULT_JSONRPC_API_SERVER_ADDRESS: SocketAddr =
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8990);
 
 const DEFAULT_KEY_FILE: &str = "priv_key.bin";
 
@@ -257,6 +262,10 @@ pub struct NodeArguments {
     #[arg(long = "api-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
     api_addr: SocketAddr,
 
+    /// Address of the JSON-RPC API server.
+    #[arg(long = "jsonrpc-addr", default_value_t = DEFAULT_JSONRPC_API_SERVER_ADDRESS)]
+    jsonrpc_addr: SocketAddr,
+
     /// Run without creating a TUN interface.
     ///
     /// The system will participate in the network as usual, but won't be able to send out L3
@@ -333,6 +342,7 @@ pub struct MergedNodeConfig {
     peer_discovery_port: u16,
     disable_peer_discovery: bool,
     api_addr: SocketAddr,
+    jsonrpc_addr: SocketAddr,
     no_tun: bool,
     tun_name: String,
     metrics_api_address: Option<SocketAddr>,
@@ -355,6 +365,7 @@ struct MyceliumConfig {
     disable_peer_discovery: Option<bool>,
     peer_discovery_port: Option<u16>,
     api_addr: Option<SocketAddr>,
+    jsonrpc_addr: Option<SocketAddr>,
     metrics_api_address: Option<SocketAddr>,
     network_name: Option<String>,
     network_key_file: Option<PathBuf>,
@@ -508,8 +519,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     topic_config,
                 };
                 metrics.spawn(metrics_api_addr);
-                let node = Node::new(config).await?;
-                mycelium_api::Http::spawn(node, merged_config.api_addr)
+
+                let node = Arc::new(Mutex::new(Node::new(config).await?));
+                let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
+
+                // Initialize the JSON-RPC server
+                let rpc_api =
+                    mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
+
+                (http_api, rpc_api)
             } else {
                 let config = mycelium::Config {
                     node_key: node_secret_key,
@@ -533,8 +551,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     update_workers: merged_config.update_workers,
                     topic_config,
                 };
-                let node = Node::new(config).await?;
-                mycelium_api::Http::spawn(node, merged_config.api_addr)
+
+                let node = Arc::new(Mutex::new(Node::new(config).await?));
+                let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
+
+                // Initialize the JSON-RPC server
+                let rpc_api =
+                    mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
+
+                (http_api, rpc_api)
             };
 
             // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
@@ -729,6 +754,13 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
             file_config
                 .api_addr
                 .unwrap_or(DEFAULT_HTTP_API_SERVER_ADDRESS)
+        },
+        jsonrpc_addr: if cli_args.jsonrpc_addr != DEFAULT_JSONRPC_API_SERVER_ADDRESS {
+            cli_args.jsonrpc_addr
+        } else {
+            file_config
+                .jsonrpc_addr
+                .unwrap_or(DEFAULT_JSONRPC_API_SERVER_ADDRESS)
         },
         no_tun: cli_args.no_tun || file_config.no_tun.unwrap_or(false),
         tun_name: if let Some(tun_name_cli) = cli_args.tun_name {
