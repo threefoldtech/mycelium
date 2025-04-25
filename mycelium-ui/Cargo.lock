@@ -3405,7 +3405,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "aes-gcm",
  "ahash",
@@ -3442,7 +3442,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-api"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -3458,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-metrics"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "axum",
  "mycelium",
@@ -3469,7 +3469,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-ui"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "dioxus 0.6.3",
  "dioxus-charts",
