@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-04-25
+
 This is a breaking change, check the main README file for update info.
 
 ### Added
@@ -571,4 +573,5 @@ This is a breaking change, check the main README file for update info.
 [0.5.5]: https://github.com/threefoldtech/mycelium/compare/v0.5.4...v0.5.5
 [0.5.6]: https://github.com/threefoldtech/mycelium/compare/v0.5.5...v0.5.6
 [0.5.7]: https://github.com/threefoldtech/mycelium/compare/v0.5.6...v0.5.7
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.5.7...HEAD
+[0.6.0]: https://github.com/threefoldtech/mycelium/compare/v0.5.7...v0.6.0
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.6.0...HEAD
