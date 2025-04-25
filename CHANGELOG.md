@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This is a breaking change, check the main README file for update info.
+
+### Added
+
+- Json-rpc based API, see the docs for more info.
+- Message forwarding to unix sockets if configured.
+- Config file support to handle messages, if this is enabled.
+
 ### Changed
 
+- Routing has been reworked. We no longer advertise selected subnets (which aren't
+  our own). Now if a subnet is needed, we perform a route request for that subnet,
+  memorizing state and responses. The current imlementation expires routes every 5
+  minutes but does not yet refresh active routes before they expire.
 - Before we process a seqno request for a subnet, check the seqno cache to see if
   we recently forwarded an entry for it.
 - Discard Update TLV's if there are too many in the queue already. This binds memory
