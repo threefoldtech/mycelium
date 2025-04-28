@@ -82,6 +82,10 @@ pub struct RoutingTable {
     writer: Arc<Mutex<left_right::WriteHandle<RoutingTableInner, RoutingTableOplogEntry>>>,
     reader: left_right::ReadHandle<RoutingTableInner>,
 
+    shared: Arc<RoutingTableShared>,
+}
+
+struct RoutingTableShared {
     expired_route_entry_sink: mpsc::Sender<RouteKey>,
     cancel_token: CancellationToken,
 }
@@ -120,12 +124,15 @@ impl RoutingTable {
         let writer = Arc::new(Mutex::new(writer));
 
         let cancel_token = CancellationToken::new();
+        let shared = Arc::new(RoutingTableShared {
+            expired_route_entry_sink,
+            cancel_token,
+        });
 
         RoutingTable {
             writer,
             reader,
-            expired_route_entry_sink,
-            cancel_token,
+            shared,
         }
     }
 
@@ -185,8 +192,8 @@ impl RoutingTable {
                 .reader
                 .enter()
                 .expect("Write handle is saved on RoutingTable, so this is always Some; qed"),
-            expired_route_entry_sink: self.expired_route_entry_sink.clone(),
-            cancel_token: self.cancel_token.clone(),
+            expired_route_entry_sink: self.shared.expired_route_entry_sink.clone(),
+            cancel_token: self.shared.cancel_token.clone(),
         }
     }
 
@@ -214,8 +221,8 @@ impl RoutingTable {
                 value,
                 exists: true,
                 subnet,
-                expired_route_entry_sink: self.expired_route_entry_sink.clone(),
-                cancellation_token: self.cancel_token.clone(),
+                expired_route_entry_sink: self.shared.expired_route_entry_sink.clone(),
+                cancellation_token: self.shared.cancel_token.clone(),
             })
         } else {
             None
@@ -239,8 +246,8 @@ impl RoutingTable {
             value,
             exists: false,
             subnet,
-            expired_route_entry_sink: self.expired_route_entry_sink.clone(),
-            cancellation_token: self.cancel_token.clone(),
+            expired_route_entry_sink: self.shared.expired_route_entry_sink.clone(),
+            cancellation_token: self.shared.cancel_token.clone(),
         }
     }
 
@@ -283,7 +290,7 @@ impl RoutingTable {
         {
             // We only need the write handle in the task
             let writer = self.writer.clone();
-            let cancel_token = self.cancel_token.clone();
+            let cancel_token = self.shared.cancel_token.clone();
             tokio::task::spawn(async move {
                 select! {
                     _ = cancel_token.cancelled() => {
@@ -636,7 +643,7 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
     }
 }
 
-impl Drop for RoutingTable {
+impl Drop for RoutingTableShared {
     fn drop(&mut self) {
         self.cancel_token.cancel();
     }

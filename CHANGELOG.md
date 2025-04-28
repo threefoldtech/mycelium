@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed an unsoundness issue in the routing table clone implementation
+
 ## [0.6.0] - 2025-04-25
 
 This is a breaking change, check the main README file for update info.
