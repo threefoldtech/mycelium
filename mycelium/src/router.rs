@@ -545,6 +545,7 @@ where
                 break;
             }
             self.handle_dead_peer(&tx_buf[..received]);
+            tx_buf.clear();
         }
         warn!("Processing of dead peers halted");
     }
