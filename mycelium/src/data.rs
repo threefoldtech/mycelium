@@ -102,6 +102,8 @@ where
         T: Sink<PacketBuffer> + Clone + Send + Unpin + 'static,
         T::Error: std::fmt::Display,
     {
+        let node_subnet = self.router.node_tun_subnet();
+
         while let Some(packet) = l3_packet_stream.next().await {
             let mut packet = match packet {
                 Err(e) => {
@@ -145,6 +147,31 @@ where
                 <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[24..40])
                     .expect("Static range bounds on slice are correct length"),
             );
+
+            // If this is a packet for our own Subnet, it means there is no local configuration for
+            // the destination ip or /64 subnet, and the IP is unreachable
+            if node_subnet.contains_ip(dst_ip.into()) {
+                trace!(
+                    "Replying to local packet for unexisting address: {}",
+                    dst_ip
+                );
+
+                let mut icmp_packet = PacketBuffer::new();
+                let host = self.router.node_public_key().address().octets();
+                let icmp = PacketBuilder::ipv6(host, src_ip.octets(), 64).icmpv6(
+                    Icmpv6Type::DestinationUnreachable(DestUnreachableCode::Address),
+                );
+                icmp_packet.set_size(icmp.size(packet.len().min(1280 - 48)));
+                let mut writer = &mut icmp_packet.buffer_mut()[..];
+                if let Err(e) = icmp.write(&mut writer, &packet[..packet.len().min(1280 - 48)]) {
+                    error!("Failed to construct ICMP packet: {e}");
+                    continue;
+                }
+                if let Err(e) = l3_packet_sink.send(icmp_packet).await {
+                    error!("Failed to send ICMP packet to host: {e}");
+                }
+                continue;
+            }
 
             trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
             // Check if the source address is part of 400::/7

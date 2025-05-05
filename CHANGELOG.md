@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed an unsoundness issue in the routing table clone implementation.
 - Clear dead peer buffer once peers have been removed from the routing table.
+- Properly reply with an address unreachable ICMP when pinging an IP in the local
+  subnet which does not exist.
 
 ## [0.6.0] - 2025-04-25
 
