@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clear dead peer buffer once peers have been removed from the routing table.
 - Properly reply with an address unreachable ICMP when pinging an IP in the local
   subnet which does not exist.
+- Verify a packet has sufficient TTL to be routed before injecting it, and reply
+  with a TTL exceeded otherwise. This fixes an issue where packets with a TTL of
+  1 and 0 originating locally would not result in a proper ICMP reply. This happens
+  for instance when using `traceroute`.
 
 ## [0.6.0] - 2025-04-25
 

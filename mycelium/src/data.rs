@@ -1,6 +1,9 @@
 use std::net::{IpAddr, Ipv6Addr};
 
-use etherparse::{icmpv6::DestUnreachableCode, Icmpv6Type, PacketBuilder};
+use etherparse::{
+    icmpv6::{DestUnreachableCode, TimeExceededCode},
+    Icmpv6Type, PacketBuilder,
+};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, trace, warn};
@@ -241,13 +244,45 @@ where
         hop_limit: u8,
         packet: PacketBuffer,
     ) -> Option<PacketBuffer> {
+        // If the packet only has a TTL of 1, we won't be able to route it to the destination
+        // regardless, so just reply with an unencrypted TTL exceeded ICMP.
+        if hop_limit < 2 {
+            debug!(
+                packet.ttl = hop_limit,
+                packet.src = %src_ip,
+                packet.dst = %dst_ip,
+                "Attempting to route packet with insufficient TTL",
+            );
+
+            let mut pb = PacketBuffer::new();
+            // From self to self
+            let icmp = PacketBuilder::ipv6(src_ip.octets(), src_ip.octets(), hop_limit)
+                .icmpv6(Icmpv6Type::TimeExceeded(TimeExceededCode::HopLimitExceeded));
+            // Scale to max size if needed
+            let orig_buf_end = packet
+                .buffer()
+                .len()
+                .min(MIN_IPV6_MTU - IPV6_MIN_HEADER_SIZE - ICMP6_HEADER_SIZE);
+            pb.set_size(icmp.size(orig_buf_end));
+            let mut b = pb.buffer_mut();
+            if let Err(e) = icmp.write(&mut b, &packet.buffer()[..orig_buf_end]) {
+                error!("Failed to construct time exceeded ICMP packet {e}");
+                return None;
+            }
+
+            return Some(pb);
+        }
+
         // Get shared secret from node and dest address
         let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip.into()) {
             Some(ss) => ss,
+            // If we don't have a route to the destination subnet, reply with ICMP no route to
+            // host. Do this here as well to avoid encrypting the ICMP to ourselves.
             None => {
                 debug!(
-                    "No entry found for destination address {}, dropping packet",
-                    dst_ip
+                    packet.src = %src_ip,
+                    packet.dst = %dst_ip,
+                    "No entry found for destination address, dropping packet",
                 );
 
                 let mut pb = PacketBuffer::new();
