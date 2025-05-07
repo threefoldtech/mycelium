@@ -1493,7 +1493,18 @@ where
             }
         };
 
+        // Don't overload peers with request for the same source key
+        let already_received = self.seqno_cache.get(&srck).unwrap_or_default();
+
         for peer in targets {
+            if already_received.contains(&peer) {
+                trace!(
+                    peer = peer.connection_identifier(),
+                    "Don't send seqno request to peer which already received it recently"
+                );
+                continue;
+            }
+
             debug!(
                 "Sending seqno_request to {} for seqno {} of {}",
                 peer.connection_identifier(),

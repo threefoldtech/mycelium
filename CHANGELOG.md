@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a TTL exceeded otherwise. This fixes an issue where packets with a TTL of
   1 and 0 originating locally would not result in a proper ICMP reply. This happens
   for instance when using `traceroute`.
+- Check the local seqno request cache before sending a seqno request to a peer,
+  to avoid spamming in certain occasions.
 
 ## [0.6.0] - 2025-04-25
 
@@ -551,7 +553,7 @@ This is a breaking change, check the main README file for update info.
 
 - Remove trailing 'e' character from release archive names
 
-## \[0.1.0\] - 2023-11-15
+## [0.1.0] - 2023-11-15
 
 ### Added
 
