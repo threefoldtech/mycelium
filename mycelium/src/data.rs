@@ -274,7 +274,7 @@ where
         }
 
         // Get shared secret from node and dest address
-        let shared_secret = match self.router.get_shared_secret_from_dest(dst_ip.into()) {
+        let shared_secret = match self.router.get_shared_secret_if_selected(dst_ip.into()) {
             Some(ss) => ss,
             // If we don't have a route to the destination subnet, reply with ICMP no route to
             // host. Do this here as well to avoid encrypting the ICMP to ourselves.

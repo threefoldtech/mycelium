@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for instance when using `traceroute`.
 - Check the local seqno request cache before sending a seqno request to a peer,
   to avoid spamming in certain occasions.
+- Don't accept packet for a destination if we only have fallback routes for said
+  destination.
 
 ## [0.6.0] - 2025-04-25
 
