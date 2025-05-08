@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - When a route is used which is about to expire, we now send a route request to
   try and refresh its duration before it expires.
+- We now track when a peer was fist discovered and when we last connected to it.
+  This info is displayed in the CLI when listing peers.
 
 ### Fixed
 

@@ -27,7 +27,7 @@ use std::{collections::hash_map::Entry, future::IntoFuture};
 use tokio::net::TcpStream;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::AbortHandle;
-use tokio::time::MissedTickBehavior;
+use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, error, info, instrument, trace, warn};
 
 /// Magic bytes to identify a multicast UDP packet used in link local peer discovery.
@@ -88,6 +88,10 @@ struct PeerInfo {
     connection_attempts: usize,
     /// Keep track of the amount of bytes we've sent to and received from this peer.
     con_traffic: ConnectionTraffic,
+    /// The moment in time we learned about this peer.
+    discovered: Instant,
+    /// The moment we last connected to this peer.
+    connected: Option<Instant>,
 }
 
 /// Counters for the amount of traffic written to and received from a [`Peer`].
@@ -126,6 +130,10 @@ pub struct PeerStats {
     pub tx_bytes: u64,
     /// Amount of bytes received from this [`Peer`].
     pub rx_bytes: u64,
+    /// Amount of time which passed since the system learned about this [`Peer`], in seconds.
+    pub discovered: u64,
+    /// Amount of seconds since the last succesfull connection to this [`Peer`].
+    pub last_connected: Option<u64>,
 }
 
 impl PeerInfo {
@@ -212,6 +220,7 @@ where
                         // loop will perform the actual check and figure out they are dead, then
                         // (re)connect.
                         .map(|s| {
+                            let now = tokio::time::Instant::now();
                             (
                                 s,
                                 PeerInfo {
@@ -223,6 +232,8 @@ where
                                         tx_bytes: Arc::new(AtomicU64::new(0)),
                                         rx_bytes: Arc::new(AtomicU64::new(0)),
                                     },
+                                    discovered: now,
+                                    connected: None,
                                 },
                             )
                         })
@@ -281,6 +292,7 @@ where
         if peer_map.contains_key(&peer) {
             return Err(PeerExists);
         }
+        let now = tokio::time::Instant::now();
         peer_map.insert(
             peer,
             PeerInfo {
@@ -292,6 +304,8 @@ where
                     tx_bytes: Arc::new(AtomicU64::new(0)),
                     rx_bytes: Arc::new(AtomicU64::new(0)),
                 },
+                discovered: now,
+                connected: None,
             },
         );
 
@@ -333,6 +347,8 @@ where
                 connection_state,
                 tx_bytes: peer_info.written(),
                 rx_bytes: peer_info.read(),
+                discovered: peer_info.discovered.elapsed().as_secs(),
+                last_connected: peer_info.connected.map(|i| i.elapsed().as_secs()),
             });
         }
         pi
@@ -382,6 +398,7 @@ where
 
                             // We successfully connected, reset the connection_attempts counter to 0
                             pi.connection_attempts = 0;
+                            pi.connected = Some(tokio::time::Instant::now());
                         } else {
                             // Only log with error level on the first connection failure, to avoid spamming the logs
                             if pi.connection_attempts == 0 {
@@ -916,6 +933,7 @@ where
             }
         }
         // Only if we don't know it yet.
+        let now = tokio::time::Instant::now();
         if let Entry::Vacant(e) = peers.entry(endpoint) {
             e.insert(PeerInfo {
                 pt: discovery_type,
@@ -927,6 +945,8 @@ where
                 },
                 connection_attempts: 0,
                 con_traffic,
+                discovered: now,
+                connected: if peer.is_some() { Some(now) } else { None },
             });
             if let Some(p) = peer {
                 self.router.lock().unwrap().add_peer_interface(p);
@@ -936,6 +956,10 @@ where
             // We got an inbound peer with a duplicate entry. This is possible if the sending port
             // is the same as the previous one, which generally happens with our Quic setup. In
             // this case, the old connection needs to be replaced.
+            let discovered = peers
+                .get(&endpoint)
+                .map(|epi| epi.discovered)
+                .unwrap_or(now);
             let old_peer_info = peers.insert(
                 endpoint,
                 PeerInfo {
@@ -948,6 +972,8 @@ where
                     },
                     connection_attempts: 0,
                     con_traffic,
+                    discovered,
+                    connected: Some(now),
                 },
             );
             // If we have a new peer notify insert the new one in the router, then notify it that

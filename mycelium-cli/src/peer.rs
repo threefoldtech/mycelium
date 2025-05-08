@@ -37,7 +37,9 @@ pub async fn list_peers(
                             "Type",
                             "Connection",
                             "Rx total",
-                            "Tx total"
+                            "Tx total",
+                            "Discovered",
+                            "Last connection"
                         ]);
                         for peer in peers.iter() {
                             table.add_row(row![
@@ -47,6 +49,10 @@ pub async fn list_peers(
                                 peer.connection_state,
                                 format_bytes(peer.rx_bytes),
                                 format_bytes(peer.tx_bytes),
+                                format_seconds(peer.discovered),
+                                peer.last_connected
+                                    .map(format_seconds)
+                                    .unwrap_or("Never connected".to_string()),
                             ]);
                         }
                         table.printstd();
@@ -67,6 +73,24 @@ fn format_bytes(bytes: u64) -> String {
         adjusted_byte.get_value(),
         adjusted_byte.get_unit()
     )
+}
+
+/// Convert an amount of seconds into a human readable string.
+fn format_seconds(total_seconds: u64) -> String {
+    let seconds = total_seconds % 60;
+    let minutes = (total_seconds / 60) % 60;
+    let hours = (total_seconds / 3600) % 60;
+    let days = (total_seconds / 86400) % 60;
+
+    if days > 0 {
+        format!("{days}d {hours}h {minutes}m {seconds}s")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 /// Remove peer(s) by (underlay) IP
