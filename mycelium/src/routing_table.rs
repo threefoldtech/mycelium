@@ -336,7 +336,7 @@ impl RoutingTable {
         }
 
         let mut write_handle = self.writer.lock().expect("Can lock writer");
-        write_handle.append(RoutingTableOplogEntry::Upsert(
+        write_handle.append(RoutingTableOplogEntry::Queried(
             subnet,
             Arc::new(SubnetEntry::Queried { query_timeout }),
         ));
@@ -534,6 +534,8 @@ impl Drop for WriteGuard<'_> {
 enum RoutingTableOplogEntry {
     /// Insert or Update the value for the given subnet.
     Upsert(Subnet, Arc<SubnetEntry>),
+    /// Mark a subnet as queried.
+    Queried(Subnet, Arc<SubnetEntry>),
     /// Delete the entry for the given subnet.
     Delete(Subnet),
     /// The route request for a subnet expired, if it is still in query state mark it as not
@@ -562,6 +564,24 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                     subnet.prefix_len().into(),
                     Arc::clone(list),
                 );
+            }
+
+            RoutingTableOplogEntry::Queried(subnet, se) => {
+                // Mark a query only if we don't have a valid entry
+                let entry = self
+                    .table
+                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
+                    .map(Arc::deref);
+
+                // If we have no route, transition to query, if we have a route or existing query,
+                // do nothing
+                if matches!(entry, None | Some(SubnetEntry::NoRoute { .. })) {
+                    self.table.insert(
+                        expect_ipv6(subnet.address()),
+                        subnet.prefix_len().into(),
+                        Arc::clone(se),
+                    );
+                }
             }
             RoutingTableOplogEntry::Delete(subnet) => {
                 self.table
@@ -609,6 +629,23 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                     subnet.prefix_len().into(),
                     list,
                 );
+            }
+            RoutingTableOplogEntry::Queried(subnet, se) => {
+                // Mark a query only if we don't have a valid entry
+                let entry = self
+                    .table
+                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
+                    .map(Arc::deref);
+
+                // If we have no route, transition to query, if we have a route or existing query,
+                // do nothing
+                if matches!(entry, None | Some(SubnetEntry::NoRoute { .. })) {
+                    self.table.insert(
+                        expect_ipv6(subnet.address()),
+                        subnet.prefix_len().into(),
+                        se,
+                    );
+                }
             }
             RoutingTableOplogEntry::Delete(subnet) => {
                 self.table
