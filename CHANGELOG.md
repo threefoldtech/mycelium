@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- When a route is used which is about to expire, we now send a route request to
+  try and refresh its duration before it expires.
+
 ### Fixed
 
 - Fixed an unsoundness issue in the routing table clone implementation.

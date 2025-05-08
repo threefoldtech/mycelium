@@ -73,6 +73,9 @@ const ROUTE_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 // TODO: Remove once proper feedback is in place
 const QUERY_CHECK_DURATION: Duration = Duration::from_millis(100);
 
+/// The threshold for route expiry under which we want to send a route requets for a subnet if it is used.
+const ROUTE_ALMOST_EXPIRED_TRESHOLD: tokio::time::Duration = Duration::from_secs(15);
+
 pub struct Router<M> {
     routing_table: RoutingTable,
     peer_interfaces: Arc<RwLock<Vec<Peer>>>,
@@ -1601,7 +1604,20 @@ where
             match self.routing_table.best_routes(data_packet.dst_ip.into()) {
                 Routes::Exist(routes) => match routes.selected() {
                     Some(route_entry) => {
+                        // Prematurely send a route request if the route is almost expired
+                        if route_entry
+                            .expires()
+                            .duration_since(tokio::time::Instant::now())
+                            < ROUTE_ALMOST_EXPIRED_TRESHOLD
+                        {
+                            self.send_route_request(
+                                Subnet::new(data_packet.dst_ip.into(), 64)
+                                    .expect("64 is a valid subnet size for IPv6, qed;"),
+                            );
+                        }
+
                         self.metrics.router_route_packet_forward();
+
                         if let Err(e) = route_entry.neighbour().send_data_packet(data_packet) {
                             error!(
                                 "Error sending data packet to peer {}: {:?}",
