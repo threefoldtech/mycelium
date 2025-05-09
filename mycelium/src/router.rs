@@ -10,6 +10,7 @@ use crate::{
     routing_table::{
         NoRouteSubnet, QueriedSubnet, RouteEntry, RouteKey, RouteList, Routes, RoutingTable,
     },
+    rr_cache::RouteRequestCache,
     seqno_cache::{SeqnoCache, SeqnoRequestCacheKey},
     sequence_number::SeqNo,
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
@@ -95,6 +96,7 @@ pub struct Router<M> {
     /// Channel to notify the router of expired SourceKey's.
     expired_source_key_sink: mpsc::Sender<SourceKey>,
     seqno_cache: SeqnoCache,
+    rr_cache: RouteRequestCache,
     update_workers: usize,
     metrics: M,
 }
@@ -136,6 +138,7 @@ where
         let router_id = RouterId::new(node_keypair.1);
 
         let seqno_cache = SeqnoCache::new();
+        let rr_cache = RouteRequestCache::new(ROUTE_ALMOST_EXPIRED_TRESHOLD);
 
         let router = Router {
             routing_table,
@@ -152,6 +155,7 @@ where
             dead_peer_sink,
             expired_source_key_sink,
             seqno_cache,
+            rr_cache,
             update_filters: Arc::new(update_filters),
             update_workers,
             metrics,
@@ -939,14 +943,28 @@ where
                             tokio::time::Instant::now() + ROUTE_QUERY_TIMEOUT,
                         );
 
+                        let received_peers =
+                            if let Some((gen, received_peers)) = self.rr_cache.info(subnet) {
+                                // If this route request has a smaller generation than the one we
+                                // recently sent, send regardless
+                                if route_request.generation() < gen {
+                                    vec![]
+                                } else {
+                                    received_peers
+                                }
+                            } else {
+                                vec![]
+                            };
+
+                        let peers = self.peer_interfaces();
+
                         // Now transmit to all our peers, except the sender
-                        for peer in self
-                            .peer_interfaces
-                            .read()
-                            .expect("Can read router peer interfaces")
-                            .iter()
-                            .filter(|p| *p != &source_peer)
-                        {
+                        for peer in peers.iter().filter(|p| *p != &source_peer) {
+                            if received_peers.contains(peer) {
+                                trace!(%subnet, peer = peer.connection_identifier(), "Not forwarding route request to peer who recently got a request from us");
+                                continue;
+                            }
+
                             if peer
                                 .send_control_packet(route_request.clone().into())
                                 .is_err()
@@ -959,6 +977,8 @@ where
                                 );
                             }
                         }
+
+                        self.rr_cache.sent_route_request(route_request, peers);
 
                         return;
                     }
@@ -1663,12 +1683,27 @@ where
         self.routing_table
             .mark_queried(subnet, tokio::time::Instant::now() + ROUTE_QUERY_TIMEOUT);
 
-        for peer in self
-            .peer_interfaces
-            .read()
-            .expect("Can read peer interfaces")
-            .iter()
-        {
+        // Don't care about generation here
+        let received_peers = if let Some((gen, receivers)) = self.rr_cache.info(subnet) {
+            // If the previous request was a higher generation, send the reques with lower
+            // generation to all our peers again
+            if gen > 0 {
+                vec![]
+            } else {
+                receivers
+            }
+        } else {
+            vec![]
+        };
+
+        let peers = self.peer_interfaces();
+
+        for peer in peers.iter() {
+            if received_peers.contains(peer) {
+                trace!(%subnet, peer = peer.connection_identifier(), "Not forwarding route request to peer who recently got a request from us");
+                continue;
+            }
+
             if peer
                 .send_control_packet(route_request.clone().into())
                 .is_err()
@@ -1676,6 +1711,8 @@ where
                 debug!(subnet = %subnet, "Could not send route request to peer");
             }
         }
+
+        self.rr_cache.sent_route_request(route_request, peers);
     }
 
     /// Handle a received data packet.
@@ -2010,6 +2047,7 @@ where
             dead_peer_sink: self.dead_peer_sink.clone(),
             expired_source_key_sink: self.expired_source_key_sink.clone(),
             seqno_cache: self.seqno_cache.clone(),
+            rr_cache: self.rr_cache.clone(),
             update_workers: self.update_workers,
             metrics: self.metrics.clone(),
         }

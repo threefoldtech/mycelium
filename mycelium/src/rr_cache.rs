@@ -21,12 +21,13 @@ const GLOBAL_SUBNET_IP: IpAddr = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0
 const GLOBAL_SUBNET_PREFIX_SIZE: u8 = 0;
 
 /// A self cleaning cache for route requests.
+#[derive(Clone)]
 pub struct RouteRequestCache {
     /// The actual cache, mapping an instance of a route request to the peers which we've sent this
     /// to.
     cache: Arc<DashMap<Subnet, RouteRequestInfo, ahash::RandomState>>,
 
-    _cleanup_task: AbortHandle,
+    _cleanup_task: Arc<AbortHandle>,
 }
 
 struct RouteRequestInfo {
@@ -46,27 +47,29 @@ impl RouteRequestCache {
     pub fn new(expiration: Duration) -> Self {
         let cache = Arc::new(DashMap::with_hasher(ahash::RandomState::new()));
 
-        let _cleanup_task = tokio::spawn({
-            let cache = cache.clone();
-            async move {
-                loop {
-                    tokio::time::sleep(CACHE_CLEANING_INTERVAL).await;
+        let _cleanup_task = Arc::new(
+            tokio::spawn({
+                let cache = cache.clone();
+                async move {
+                    loop {
+                        tokio::time::sleep(CACHE_CLEANING_INTERVAL).await;
 
-                    trace!("Cleaning route request cache");
+                        trace!("Cleaning route request cache");
 
-                    cache.retain(|subnet, info: &mut RouteRequestInfo| {
-                        if info.sent.elapsed() < expiration {
-                            false
-                        } else {
-                            trace!(%subnet, "Removing exired route request from cache");
-                            true
-                        }
-                    });
+                        cache.retain(|subnet, info: &mut RouteRequestInfo| {
+                            if info.sent.elapsed() < expiration {
+                                false
+                            } else {
+                                trace!(%subnet, "Removing exired route request from cache");
+                                true
+                            }
+                        });
+                    }
                 }
-            }
-        })
-        .abort_handle()
-        .into();
+            })
+            .abort_handle()
+            .into(),
+        );
 
         Self {
             cache,

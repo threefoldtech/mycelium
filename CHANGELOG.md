@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   try and refresh its duration before it expires.
 - We now track when a peer was fist discovered and when we last connected to it.
   This info is displayed in the CLI when listing peers.
+- We now maintain a cache of recently sent route requests, so we can avoid spamming
+  peers with duplicate requests.
 
 ### Fixed
 
