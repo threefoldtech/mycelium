@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - We now maintain a cache of recently sent route requests, so we can avoid spamming
   peers with duplicate requests.
 
+### Changed
+
+- Only keep a record of retracted routes for 6 seconds instead of 60. We'll track
+  how this affects the route propagation before removing this altogether.
+
 ### Fixed
 
 - Fixed an unsoundness issue in the routing table clone implementation.

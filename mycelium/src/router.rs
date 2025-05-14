@@ -59,10 +59,10 @@ const BIG_METRIC_CHANGE_TRESHOLD: Metric = Metric::new(10);
 const SIGNIFICANT_METRIC_IMPROVEMENT: Metric = Metric::new(10);
 
 /// Hold retracted routes for 1 minute before purging them from the [`RoutingTable`].
-const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(60);
+const RETRACTED_ROUTE_HOLD_TIME: Duration = Duration::from_secs(6);
 
 /// The interval specified in updates if the update won't be repeated.
-const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(60);
+const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(6);
 
 /// The maximum generation of a [`RouteRequest`] we are still willing to transmit.
 const MAX_RR_GENERATION: u8 = 16;
