@@ -53,6 +53,8 @@ const TUN_NAME: &str = "utun0";
 enum LoggingFormat {
     Compact,
     Logfmt,
+    /// Same as Logfmt but with color statically disabled
+    Plain,
 }
 
 impl Display for LoggingFormat {
@@ -63,6 +65,7 @@ impl Display for LoggingFormat {
             match self {
                 LoggingFormat::Compact => "compact",
                 LoggingFormat::Logfmt => "logfmt",
+                LoggingFormat::Plain => "plain",
             }
         )
     }
@@ -75,6 +78,7 @@ impl FromStr for LoggingFormat {
         Ok(match s {
             "compact" => LoggingFormat::Compact,
             "logfmt" => LoggingFormat::Logfmt,
+            "plain" => LoggingFormat::Plain,
             _ => return Err("invalid logging format"),
         })
     }
@@ -454,6 +458,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .then(|| tracing_subscriber::fmt::Layer::new().compact()),
         )
         .with((cli.logging_format == LoggingFormat::Logfmt).then(tracing_logfmt::layer))
+        .with((cli.logging_format == LoggingFormat::Plain).then(|| {
+            tracing_logfmt::builder()
+                // Explicitly force color off
+                .with_ansi_color(false)
+                .layer()
+        }))
         .init();
 
     let key_path = cli

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New log format option `plain`, this option is the same as logfmt, but with colors
+  always disabled.
+
 ## [0.6.1] - 2025-05-14
 
 ### Added
