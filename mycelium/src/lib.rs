@@ -19,6 +19,7 @@ use subnet::Subnet;
 use tracing::{error, info, warn};
 
 mod babel;
+pub mod cdn;
 mod connection;
 pub mod crypto;
 pub mod data;
