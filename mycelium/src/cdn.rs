@@ -1,10 +1,17 @@
 use std::path::PathBuf;
 
-use axum::{extract::Query, http::StatusCode, response::IntoResponse, routing::get, Router};
+use axum::{
+    extract::Query,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
 use axum_extra::extract::Host;
+use reqwest::header::CONTENT_TYPE;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 /// Cdn functionality. Urls of specific format lead to donwnlaoding of metadata from the registry,
 /// and serving of chunks.
@@ -68,5 +75,70 @@ async fn cdn(
         return Err(metadata_reply.status());
     }
 
+    let encrypted_metadata = metadata_reply
+        .bytes()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let metadata = if query.key.is_some() {
+        todo!();
+    } else {
+        encrypted_metadata
+    };
+
+    // If the metadata is not decodable, this is not really our fault, but also not the necessarily
+    // the users fault.
+    let (meta, consumed) =
+        cdn_meta::Metadata::from_binary(&metadata).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    if consumed != metadata.len() {
+        warn!(
+            metadata_length = metadata.len(),
+            consumed, "Trailing binary metadata which wasn't decoded"
+        );
+    }
+
+    let mut headers = HeaderMap::new();
+    match meta {
+        cdn_meta::Metadata::File(file) => {
+            //
+            if let Some(mime) = file.mime {
+                headers.append(
+                    CONTENT_TYPE,
+                    mime.parse().map_err(|_| {
+                        warn!("Not serving file with unprocessable mime type");
+                        StatusCode::UNPROCESSABLE_ENTITY
+                    })?,
+                );
+            }
+
+            // File recombination
+            for block in file.blocks {
+                // TODO: Download shards
+                // recombine
+                // decrypt
+            }
+        }
+        cdn_meta::Metadata::Directory(dir) => {
+            // TODO: Technically this mime type is deprecated
+            headers.append(
+                CONTENT_TYPE,
+                "text/directory"
+                    .parse()
+                    .expect("Can parse \"text/directory\" to content-type"),
+            );
+            //
+            for file_hash in dir.files {
+                todo!();
+            }
+        }
+    }
+
     todo!();
+}
+
+impl Drop for Cdn {
+    fn drop(&mut self) {
+        self.cancel_token.cancel();
+        todo!()
+    }
 }
