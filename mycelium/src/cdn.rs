@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use aes_gcm::{aead::Aead, KeyInit};
 use axum::{
     extract::Query,
     http::{HeaderMap, StatusCode},
@@ -8,6 +9,7 @@ use axum::{
     Router,
 };
 use axum_extra::extract::Host;
+use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::header::CONTENT_TYPE;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -47,7 +49,7 @@ struct DecryptionKeyQuery {
 async fn cdn(
     Host(host): Host,
     Query(query): Query<DecryptionKeyQuery>,
-) -> Result<Vec<u8>, StatusCode> {
+) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
     debug!("Received request at {host}");
     let mut parts = host.split('.');
     let prefix = parts
@@ -112,11 +114,64 @@ async fn cdn(
             }
 
             // File recombination
+            let mut content = vec![];
             for block in file.blocks {
-                // TODO: Download shards
+                // TODO: Rank based on expected latency
+                // FIXME: Only download ther required amount
+                let mut shard_stream =
+                    block
+                        .shards
+                        .iter()
+                        .enumerate()
+                        .map(|(i, loc)| async move {
+                            (i, download_shard(loc, &block.encrypted_hash).await)
+                        })
+                        .collect::<FuturesUnordered<_>>();
+                let mut shards = vec![None; block.shards.len()];
+                while let Some((idx, shard)) = shard_stream.next().await {
+                    let shard = shard.map_err(|err| {
+                        warn!(err, "Could not load shard");
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+                    shards[idx] = Some(shard);
+                }
                 // recombine
-                // decrypt
+                let encoder = reed_solomon_erasure::galois_8::ReedSolomon::new(
+                    block.required_shards as usize,
+                    block.shards.len() - block.required_shards as usize,
+                )
+                .map_err(|err| {
+                    error!(%err, "Failed to construct erausre codec");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+                encoder.reconstruct_data(&mut shards).map_err(|err| {
+                    error!(%err, "Shard recombination failed");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+                // SAFETY: Since decoding was succesfull, the first shards (data shards) must be
+                // Option::Some
+                let mut encrypted_data = shards
+                    .into_iter()
+                    .map(Option::unwrap)
+                    .take(block.required_shards as usize)
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                let padding_len = encrypted_data[encrypted_data.len() - 1] as usize;
+                encrypted_data.resize(encrypted_data.len() - padding_len, 0);
+
+                let decryptor = aes_gcm::Aes256Gcm::new(&block.content_hash.into());
+                let c = decryptor
+                    .decrypt(&block.nonce.into(), encrypted_data.as_slice())
+                    .map_err(|err| {
+                        warn!(%err, "Decryption of content block failed");
+                        StatusCode::UNPROCESSABLE_ENTITY
+                    })?;
+                content.extend_from_slice(&c);
             }
+            Ok((headers, content))
         }
         cdn_meta::Metadata::Directory(dir) => {
             // TODO: Technically this mime type is deprecated
@@ -130,10 +185,9 @@ async fn cdn(
             for file_hash in dir.files {
                 todo!();
             }
+            Ok((headers, vec![]))
         }
     }
-
-    todo!();
 }
 
 impl Drop for Cdn {
@@ -141,4 +195,20 @@ impl Drop for Cdn {
         self.cancel_token.cancel();
         todo!()
     }
+}
+
+/// Download a shard from a 0-db.
+async fn download_shard(
+    location: &cdn_meta::Location,
+    key: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let client = redis::Client::open(format!("redis://{}", location.host))?;
+    let mut con = client.get_multiplexed_async_connection().await?;
+
+    redis::cmd("SELECT")
+        .arg(&location.namespace)
+        .query_async::<()>(&mut con)
+        .await?;
+
+    Ok(redis::cmd("GET").arg(key).query_async(&mut con).await?)
 }
