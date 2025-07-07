@@ -4,7 +4,6 @@ use aes_gcm::{aead::Aead, KeyInit};
 use axum::{
     extract::Query,
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
     routing::get,
     Router,
 };
@@ -62,42 +61,18 @@ async fn cdn(
     let mut hash = [0; 32];
     faster_hex::hex_decode(prefix.as_bytes(), &mut hash).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let mut registry_url = parts.collect::<Vec<_>>().join(".");
-    registry_url.push_str(&format!("/api/v1/metadata/{prefix}"));
+    let registry_url = parts.collect::<Vec<_>>().join(".");
 
-    debug!(url = registry_url, "Fetching chunk");
-
-    let metadata_reply = reqwest::get(registry_url).await.map_err(|err| {
-        error!(%err, "Could not load metadata from registry");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // TODO: Should we just check if status code is success here?
-    if metadata_reply.status() != StatusCode::OK {
-        return Err(metadata_reply.status());
-    }
-
-    let encrypted_metadata = metadata_reply
-        .bytes()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let metadata = if query.key.is_some() {
-        todo!();
+    let decryption_key = if let Some(query_key) = query.key {
+        let mut key = [0; 32];
+        faster_hex::hex_decode(query_key.as_bytes(), &mut key)
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        Some(key)
     } else {
-        encrypted_metadata
+        None
     };
 
-    // If the metadata is not decodable, this is not really our fault, but also not the necessarily
-    // the users fault.
-    let (meta, consumed) =
-        cdn_meta::Metadata::from_binary(&metadata).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
-    if consumed != metadata.len() {
-        warn!(
-            metadata_length = metadata.len(),
-            consumed, "Trailing binary metadata which wasn't decoded"
-        );
-    }
+    let meta = load_meta(registry_url.clone(), hash, decryption_key).await?;
 
     let mut headers = HeaderMap::new();
     match meta {
@@ -117,7 +92,7 @@ async fn cdn(
             let mut content = vec![];
             for block in file.blocks {
                 // TODO: Rank based on expected latency
-                // FIXME: Only download ther required amount
+                // FIXME: Only download the required amount
                 let mut shard_stream =
                     block
                         .shards
@@ -175,25 +150,77 @@ async fn cdn(
         }
         cdn_meta::Metadata::Directory(dir) => {
             // TODO: Technically this mime type is deprecated
+            // TODO: Swap to text/html and serve raw html for dir listing
             headers.append(
                 CONTENT_TYPE,
                 "text/directory"
                     .parse()
                     .expect("Can parse \"text/directory\" to content-type"),
             );
-            //
-            for file_hash in dir.files {
-                todo!();
+            let mut out = String::new();
+            for (file_hash, encryption_key) in dir.files {
+                let meta = load_meta(registry_url.clone(), file_hash, encryption_key).await?;
+                let name = match meta {
+                    cdn_meta::Metadata::File(file) => file.name,
+                    cdn_meta::Metadata::Directory(dir) => dir.name,
+                };
+                out.push_str(&name);
+                out.push('\n');
             }
-            Ok((headers, vec![]))
+            Ok((headers, out.into()))
         }
     }
+}
+
+/// Load a metadata blob from a metadata repository.
+async fn load_meta(
+    mut registry_url: String,
+    hash: [u8; 32],
+    encryption_key: Option<[u8; 32]>,
+) -> Result<cdn_meta::Metadata, StatusCode> {
+    let hex_hash = faster_hex::hex_string(&hash);
+    registry_url.push_str(&format!("/api/v1/metadata/{hex_hash}"));
+
+    debug!(url = registry_url, "Fetching chunk");
+
+    let metadata_reply = reqwest::get(registry_url).await.map_err(|err| {
+        error!(%err, "Could not load metadata from registry");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // TODO: Should we just check if status code is success here?
+    if metadata_reply.status() != StatusCode::OK {
+        return Err(metadata_reply.status());
+    }
+
+    let encrypted_metadata = metadata_reply
+        .bytes()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let metadata = if encryption_key.is_some() {
+        todo!();
+    } else {
+        encrypted_metadata
+    };
+
+    // If the metadata is not decodable, this is not really our fault, but also not the necessarily
+    // the users fault.
+    let (meta, consumed) =
+        cdn_meta::Metadata::from_binary(&metadata).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    if consumed != metadata.len() {
+        warn!(
+            metadata_length = metadata.len(),
+            consumed, "Trailing binary metadata which wasn't decoded"
+        );
+    }
+
+    Ok(meta)
 }
 
 impl Drop for Cdn {
     fn drop(&mut self) {
         self.cancel_token.cancel();
-        todo!()
     }
 }
 
