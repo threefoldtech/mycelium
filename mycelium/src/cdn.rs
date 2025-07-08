@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use aes_gcm::{aead::Aead, KeyInit};
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
     routing::get,
     Router,
@@ -21,6 +21,12 @@ pub struct Cdn {
     cancel_token: CancellationToken,
 }
 
+/// Cache for reconstructed blocks
+#[derive(Clone)]
+struct Cache {
+    base: PathBuf,
+}
+
 impl Cdn {
     pub fn new(cache: PathBuf) -> Self {
         let cancel_token = CancellationToken::new();
@@ -32,7 +38,10 @@ impl Cdn {
 
     /// Start the Cdn server. This future runs until the server is stopped.
     pub async fn start(&self, listener: TcpListener) -> Result<(), Box<dyn std::error::Error>> {
-        let router = Router::new().route("/", get(cdn));
+        let state = Cache {
+            base: self.cache.clone(),
+        };
+        let router = Router::new().route("/", get(cdn)).with_state(state);
         Ok(axum::serve(listener, router)
             .with_graceful_shutdown(self.cancel_token.clone().cancelled_owned())
             .await?)
@@ -44,10 +53,11 @@ struct DecryptionKeyQuery {
     key: Option<String>,
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(cache))]
 async fn cdn(
     Host(host): Host,
     Query(query): Query<DecryptionKeyQuery>,
+    State(cache): State<Cache>,
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
     debug!("Received request at {host}");
     let mut parts = host.split('.');
@@ -91,60 +101,7 @@ async fn cdn(
             // File recombination
             let mut content = vec![];
             for block in file.blocks {
-                // TODO: Rank based on expected latency
-                // FIXME: Only download the required amount
-                let mut shard_stream =
-                    block
-                        .shards
-                        .iter()
-                        .enumerate()
-                        .map(|(i, loc)| async move {
-                            (i, download_shard(loc, &block.encrypted_hash).await)
-                        })
-                        .collect::<FuturesUnordered<_>>();
-                let mut shards = vec![None; block.shards.len()];
-                while let Some((idx, shard)) = shard_stream.next().await {
-                    let shard = shard.map_err(|err| {
-                        warn!(err, "Could not load shard");
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?;
-                    shards[idx] = Some(shard);
-                }
-                // recombine
-                let encoder = reed_solomon_erasure::galois_8::ReedSolomon::new(
-                    block.required_shards as usize,
-                    block.shards.len() - block.required_shards as usize,
-                )
-                .map_err(|err| {
-                    error!(%err, "Failed to construct erausre codec");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-
-                encoder.reconstruct_data(&mut shards).map_err(|err| {
-                    error!(%err, "Shard recombination failed");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-
-                // SAFETY: Since decoding was succesfull, the first shards (data shards) must be
-                // Option::Some
-                let mut encrypted_data = shards
-                    .into_iter()
-                    .map(Option::unwrap)
-                    .take(block.required_shards as usize)
-                    .flatten()
-                    .collect::<Vec<_>>();
-
-                let padding_len = encrypted_data[encrypted_data.len() - 1] as usize;
-                encrypted_data.resize(encrypted_data.len() - padding_len, 0);
-
-                let decryptor = aes_gcm::Aes256Gcm::new(&block.content_hash.into());
-                let c = decryptor
-                    .decrypt(&block.nonce.into(), encrypted_data.as_slice())
-                    .map_err(|err| {
-                        warn!(%err, "Decryption of content block failed");
-                        StatusCode::UNPROCESSABLE_ENTITY
-                    })?;
-                content.extend_from_slice(&c);
+                content.extend_from_slice(cache.fetch_block(&block).await?.as_slice());
             }
             Ok((headers, content))
         }
@@ -238,4 +195,78 @@ async fn download_shard(
         .await?;
 
     Ok(redis::cmd("GET").arg(key).query_async(&mut con).await?)
+}
+
+impl Cache {
+    async fn fetch_block(&self, block: &cdn_meta::Block) -> Result<Vec<u8>, StatusCode> {
+        let mut cached_file_path = self.base.clone();
+        cached_file_path.push(faster_hex::hex_string(&block.encrypted_hash));
+        // If we have the file in cache, just open it, load it, and return from there.
+        if cached_file_path.exists() {
+            return tokio::fs::read(&cached_file_path).await.map_err(|err| {
+                error!(%err, "Could not load cached file");
+                StatusCode::INTERNAL_SERVER_ERROR
+            });
+        }
+
+        // File is not in cache, download and save
+
+        // TODO: Rank based on expected latency
+        // FIXME: Only download the required amount
+        let mut shard_stream = block
+            .shards
+            .iter()
+            .enumerate()
+            .map(|(i, loc)| async move { (i, download_shard(loc, &block.encrypted_hash).await) })
+            .collect::<FuturesUnordered<_>>();
+        let mut shards = vec![None; block.shards.len()];
+        while let Some((idx, shard)) = shard_stream.next().await {
+            let shard = shard.map_err(|err| {
+                warn!(err, "Could not load shard");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            shards[idx] = Some(shard);
+        }
+        // recombine
+        let encoder = reed_solomon_erasure::galois_8::ReedSolomon::new(
+            block.required_shards as usize,
+            block.shards.len() - block.required_shards as usize,
+        )
+        .map_err(|err| {
+            error!(%err, "Failed to construct erausre codec");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        encoder.reconstruct_data(&mut shards).map_err(|err| {
+            error!(%err, "Shard recombination failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        // SAFETY: Since decoding was succesfull, the first shards (data shards) must be
+        // Option::Some
+        let mut encrypted_data = shards
+            .into_iter()
+            .map(Option::unwrap)
+            .take(block.required_shards as usize)
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let padding_len = encrypted_data[encrypted_data.len() - 1] as usize;
+        encrypted_data.resize(encrypted_data.len() - padding_len, 0);
+
+        let decryptor = aes_gcm::Aes256Gcm::new(&block.content_hash.into());
+        let c = decryptor
+            .decrypt(&block.nonce.into(), encrypted_data.as_slice())
+            .map_err(|err| {
+                warn!(%err, "Decryption of content block failed");
+                StatusCode::UNPROCESSABLE_ENTITY
+            })?;
+
+        // Save file to cache, this is not critical if it fails
+        if let Err(err) = tokio::fs::write(&cached_file_path, &c).await {
+            warn!(%err, "Could not write block to cache");
+        };
+
+        Ok(c)
+    }
 }
