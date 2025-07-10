@@ -1,7 +1,9 @@
 use std::net::{IpAddr, Ipv6Addr};
+use std::path::PathBuf;
 #[cfg(feature = "message")]
 use std::{future::Future, time::Duration};
 
+use crate::cdn::Cdn;
 use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
@@ -16,6 +18,7 @@ use metrics::Metrics;
 use peer_manager::{PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
 use routing_table::{NoRouteSubnet, QueriedSubnet, RouteEntry};
 use subnet::Subnet;
+use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
 mod babel;
@@ -97,6 +100,8 @@ pub struct Config<M> {
     /// system.
     pub update_workers: usize,
 
+    pub cdn_cache: Option<PathBuf>,
+
     /// Configuration for message topics, if this is not set the default config will be used.
     #[cfg(feature = "message")]
     pub topic_config: Option<TopicConfig>,
@@ -106,6 +111,7 @@ pub struct Config<M> {
 pub struct Node<M> {
     router: router::Router<M>,
     peer_manager: peer_manager::PeerManager<M>,
+    _cdn: Option<Cdn>,
     #[cfg(feature = "message")]
     message_stack: message::MessageStack<M>,
 }
@@ -259,12 +265,19 @@ where
             }
         };
 
+        let cdn = config.cdn_cache.map(Cdn::new);
+        if let Some(ref cdn) = cdn {
+            let listener = TcpListener::bind("localhost:80").await?;
+            cdn.start(listener)?;
+        }
+
         #[cfg(feature = "message")]
         let ms = MessageStack::new(_data_plane, msg_receiver, config.topic_config);
 
         Ok(Node {
             router,
             peer_manager: pm,
+            _cdn: cdn,
             #[cfg(feature = "message")]
             message_stack: ms,
         })
