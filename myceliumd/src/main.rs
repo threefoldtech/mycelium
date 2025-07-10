@@ -318,6 +318,13 @@ pub struct NodeArguments {
     /// to use a topic.
     #[arg(long = "topic-config")]
     topic_config: Option<PathBuf>,
+
+    /// The cache directory for the mycelium CDN module
+    ///
+    /// This directory will be used to cache reconstructed content blocks which were loaded through
+    /// the CDN functionallity for faster access next time.
+    #[arg(long = "cdn-cache")]
+    cdn_cache: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -336,6 +343,7 @@ pub struct MergedNodeConfig {
     firewall_mark: Option<u32>,
     update_workers: usize,
     topic_config: Option<PathBuf>,
+    cdn_cache: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -355,6 +363,7 @@ struct MyceliumConfig {
     firewall_mark: Option<u32>,
     update_workers: Option<usize>,
     topic_config: Option<PathBuf>,
+    cdn_cache: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -496,6 +505,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     firewall_mark: merged_config.firewall_mark,
                     update_workers: merged_config.update_workers,
                     topic_config,
+                    cdn_cache: merged_config.cdn_cache,
                 };
                 metrics.spawn(metrics_api_addr);
                 let node = Arc::new(Mutex::new(Node::new(config).await?));
@@ -528,6 +538,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     firewall_mark: merged_config.firewall_mark,
                     update_workers: merged_config.update_workers,
                     topic_config,
+                    cdn_cache: merged_config.cdn_cache,
                 };
                 let node = Arc::new(Mutex::new(Node::new(config).await?));
                 let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
@@ -757,6 +768,7 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
             file_config.update_workers.unwrap_or(1)
         },
         topic_config: cli_args.topic_config.or(file_config.topic_config),
+        cdn_cache: cli_args.cdn_cache.or(file_config.cdn_cache),
     }
 }
 
