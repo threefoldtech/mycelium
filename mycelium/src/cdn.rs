@@ -37,14 +37,24 @@ impl Cdn {
     }
 
     /// Start the Cdn server. This future runs until the server is stopped.
-    pub async fn start(&self, listener: TcpListener) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start(&self, listener: TcpListener) -> Result<(), Box<dyn std::error::Error>> {
         let state = Cache {
             base: self.cache.clone(),
         };
         let router = Router::new().route("/", get(cdn)).with_state(state);
-        Ok(axum::serve(listener, router)
-            .with_graceful_shutdown(self.cancel_token.clone().cancelled_owned())
-            .await?)
+
+        let cancel_token = self.cancel_token.clone();
+
+        tokio::spawn(async {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(cancel_token.cancelled_owned())
+                .await
+                .map_err(|err| {
+                    warn!(%err, "Cdn server error");
+                })
+        });
+
+        Ok(())
     }
 }
 
