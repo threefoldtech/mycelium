@@ -74,17 +74,17 @@ async fn cdn(
     let prefix = parts
         .next()
         .expect("Splitting a String always yields at least 1 result; Qed.");
-    if prefix.len() != 64 {
+    if prefix.len() != 32 {
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut hash = [0; 32];
+    let mut hash = [0; 16];
     faster_hex::hex_decode(prefix.as_bytes(), &mut hash).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let registry_url = parts.collect::<Vec<_>>().join(".");
 
     let decryption_key = if let Some(query_key) = query.key {
-        let mut key = [0; 32];
+        let mut key = [0; 16];
         faster_hex::hex_decode(query_key.as_bytes(), &mut key)
             .map_err(|_| StatusCode::BAD_REQUEST)?;
         Some(key)
@@ -93,12 +93,14 @@ async fn cdn(
     };
 
     let meta = load_meta(registry_url.clone(), hash, decryption_key).await?;
+    debug!("Metadata loaded");
 
     let mut headers = HeaderMap::new();
     match meta {
         cdn_meta::Metadata::File(file) => {
             //
             if let Some(mime) = file.mime {
+                debug!(%mime, "Setting mime type");
                 headers.append(
                     CONTENT_TYPE,
                     mime.parse().map_err(|_| {
@@ -141,34 +143,64 @@ async fn cdn(
 
 /// Load a metadata blob from a metadata repository.
 async fn load_meta(
-    mut registry_url: String,
-    hash: [u8; 32],
-    encryption_key: Option<[u8; 32]>,
+    registry_url: String,
+    hash: cdn_meta::Hash,
+    encryption_key: Option<cdn_meta::Hash>,
 ) -> Result<cdn_meta::Metadata, StatusCode> {
+    let mut r_url = reqwest::Url::parse(&format!("http://{registry_url}")).map_err(|err| {
+        error!(%err, "Could not parse registry URL");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let hex_hash = faster_hex::hex_string(&hash);
-    registry_url.push_str(&format!("/api/v1/metadata/{hex_hash}"));
+    r_url.set_path(&format!("/api/v1/metadata/{hex_hash}"));
+    r_url.set_scheme("http").map_err(|_| {
+        error!("Could not set HTTP scheme");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
-    debug!(url = registry_url, "Fetching chunk");
+    debug!(url = %r_url, "Fetching chunk");
 
-    let metadata_reply = reqwest::get(registry_url).await.map_err(|err| {
+    let metadata_reply = reqwest::get(r_url).await.map_err(|err| {
         error!(%err, "Could not load metadata from registry");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
     // TODO: Should we just check if status code is success here?
     if metadata_reply.status() != StatusCode::OK {
+        debug!(
+            status = %metadata_reply.status(),
+            "Registry replied with non-OK status code"
+        );
         return Err(metadata_reply.status());
     }
 
-    let encrypted_metadata = metadata_reply
-        .bytes()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let encrypted_metadata = metadata_reply.bytes().await.map_err(|err| {
+        error!(%err, "Could not load metadata response from registry");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
-    let metadata = if encryption_key.is_some() {
-        todo!();
+    let metadata = if let Some(encryption_key) = encryption_key {
+        if encrypted_metadata.len() < 12 {
+            debug!("Attempting to decrypt metadata with inufficient size");
+            return Err(StatusCode::UNPROCESSABLE_ENTITY);
+        }
+
+        let decryptor = aes_gcm::Aes128Gcm::new(&encryption_key.into());
+        let plaintext = decryptor
+            .decrypt(
+                encrypted_metadata[encrypted_metadata.len() - 12..].into(),
+                &encrypted_metadata[..encrypted_metadata.len() - 12],
+            )
+            .map_err(|_| {
+                warn!("Decryption of block failed");
+                // Either the decryption key is wrong or the blob is corrupt, we assume the
+                // registry is not a fault so the decryption key is wrong, which is a user error.
+                StatusCode::UNPROCESSABLE_ENTITY
+            })?;
+
+        plaintext
     } else {
-        encrypted_metadata
+        encrypted_metadata.into()
     };
 
     // If the metadata is not decodable, this is not really our fault, but also not the necessarily
@@ -264,7 +296,7 @@ impl Cache {
         let padding_len = encrypted_data[encrypted_data.len() - 1] as usize;
         encrypted_data.resize(encrypted_data.len() - padding_len, 0);
 
-        let decryptor = aes_gcm::Aes256Gcm::new(&block.content_hash.into());
+        let decryptor = aes_gcm::Aes128Gcm::new(&block.content_hash.into());
         let c = decryptor
             .decrypt(&block.nonce.into(), encrypted_data.as_slice())
             .map_err(|err| {

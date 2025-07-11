@@ -466,7 +466,7 @@ dependencies = [
 [[package]]
 name = "cdn-meta"
 version = "0.1.0"
-source = "git+https://github.com/threefoldtech/mycelium-cdn-registry#f1e5e82959d87d93d3f187a6c669b658d4c479a7"
+source = "git+https://github.com/threefoldtech/mycelium-cdn-registry#059ab4a5c6c729e19d40e796e1feaa6b459c30f4"
 dependencies = [
  "aes-gcm",
  "bincode",
