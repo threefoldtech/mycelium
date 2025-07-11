@@ -12,7 +12,7 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::header::CONTENT_TYPE;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Cdn functionality. Urls of specific format lead to donwnlaoding of metadata from the registry,
 /// and serving of chunks.
@@ -41,6 +41,16 @@ impl Cdn {
         let state = Cache {
             base: self.cache.clone(),
         };
+
+        if !self.cache.exists() {
+            info!(dir = %self.cache.display(), "Creating cache dir");
+            std::fs::create_dir(&self.cache)?;
+        }
+
+        if !self.cache.is_dir() {
+            return Err("Cache dir is not a directory".into());
+        }
+
         let router = Router::new().route("/", get(cdn)).with_state(state);
 
         let cancel_token = self.cancel_token.clone();
