@@ -118,24 +118,38 @@ async fn cdn(
             Ok((headers, content))
         }
         cdn_meta::Metadata::Directory(dir) => {
-            // TODO: Technically this mime type is deprecated
-            // TODO: Swap to text/html and serve raw html for dir listing
+            let mut out = r#"
+<!DOCTYPE html>
+
+<html i18n-values="dir:textdirection;lang:language">
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<ul>"#
+                .to_string();
             headers.append(
                 CONTENT_TYPE,
-                "text/directory"
+                "text/html"
                     .parse()
-                    .expect("Can parse \"text/directory\" to content-type"),
+                    .expect("Can parse \"text/html\" to content-type"),
             );
-            let mut out = String::new();
             for (file_hash, encryption_key) in dir.files {
                 let meta = load_meta(registry_url.clone(), file_hash, encryption_key).await?;
                 let name = match meta {
                     cdn_meta::Metadata::File(file) => file.name,
                     cdn_meta::Metadata::Directory(dir) => dir.name,
                 };
-                out.push_str(&name);
-                out.push('\n');
+                out.push_str(&format!(
+                    "<li><a href=\"http://{}.{registry_url}/?key={}\">{name}</a></li>\n",
+                    faster_hex::hex_string(&file_hash),
+                    &encryption_key
+                        .map(|ek| faster_hex::hex_string(&ek))
+                        .unwrap_or_else(String::new),
+                ));
             }
+
+            out.push_str("</ul></body></html>");
             Ok((headers, out.into()))
         }
     }
