@@ -1615,14 +1615,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mycelium-cdn-meta"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "serde",
-]
-
-[[package]]
 name = "mycelium-cli"
 version = "0.6.1"
 dependencies = [
