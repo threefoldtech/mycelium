@@ -95,7 +95,7 @@ impl fmt::Display for EndpointParseError {
         match self {
             Self::MissingProtocol => f.write_str("missing leading protocol identifier"),
             Self::UnknownProtocol => f.write_str("protocol for endpoint is not supported"),
-            Self::Address(e) => f.write_fmt(format_args!("failed to parse address: {}", e)),
+            Self::Address(e) => f.write_fmt(format_args!("failed to parse address: {e}")),
         }
     }
 }

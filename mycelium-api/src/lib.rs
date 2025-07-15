@@ -385,7 +385,7 @@ impl<'de> Deserialize<'de> for Metric {
                     INFINITE_STR => Ok(Metric::Infinite),
                     _ => Err(serde::de::Error::invalid_value(
                         serde::de::Unexpected::Str(value),
-                        &format!("expected '{}'", INFINITE_STR).as_str(),
+                        &format!("expected '{INFINITE_STR}'").as_str(),
                     )),
                 }
             }
@@ -411,8 +411,8 @@ impl<'de> Deserialize<'de> for Metric {
 impl fmt::Display for Metric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Value(val) => write!(f, "{}", val),
-            Self::Infinite => write!(f, "{}", INFINITE_STR),
+            Self::Value(val) => write!(f, "{val}"),
+            Self::Infinite => write!(f, "{INFINITE_STR}"),
         }
     }
 }
@@ -435,7 +435,7 @@ mod tests {
         let metric = super::Metric::Infinite;
         let s = serde_json::to_string(&metric).expect("can encode infinite metric");
 
-        assert_eq!(format!("\"{}\"", INFINITE_STR), s);
+        assert_eq!(format!("\"{INFINITE_STR}\""), s);
     }
 
     #[test]

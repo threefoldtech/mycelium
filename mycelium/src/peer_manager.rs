@@ -1233,10 +1233,8 @@ fn set_fw_mark<S: AsFd>(socket: S, mark: Option<u32>) -> io::Result<S> {
     use nix::sys::socket::{setsockopt, sockopt};
 
     if let Some(mark) = mark {
-        setsockopt(&socket, sockopt::Mark, &mark).map_or_else(
-            |errno| Err(io::Error::new(io::ErrorKind::Other, errno)),
-            |_| Ok(socket),
-        )
+        setsockopt(&socket, sockopt::Mark, &mark)
+            .map_or_else(|errno| Err(io::Error::other(errno)), |_| Ok(socket))
     } else {
         Ok(socket)
     }
