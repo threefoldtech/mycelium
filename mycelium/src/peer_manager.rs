@@ -1191,7 +1191,7 @@ fn make_quic_endpoint(
     // TODO: sign with router keys
     let cert = rcgen::generate_simple_self_signed(vec![format!("{router_id}")])?;
     let certificate_der = CertificateDer::from(cert.cert);
-    let private_key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+    let private_key = PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der());
     let certificate_chain = vec![certificate_der];
 
     let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key.into())?;
