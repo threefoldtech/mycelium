@@ -335,6 +335,13 @@ pub struct NodeArguments {
     /// to use a topic.
     #[arg(long = "topic-config")]
     topic_config: Option<PathBuf>,
+
+    /// The cache directory for the mycelium CDN module
+    ///
+    /// This directory will be used to cache reconstructed content blocks which were loaded through
+    /// the CDN functionallity for faster access next time.
+    #[arg(long = "cdn-cache")]
+    cdn_cache: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -355,6 +362,7 @@ pub struct MergedNodeConfig {
     firewall_mark: Option<u32>,
     update_workers: usize,
     topic_config: Option<PathBuf>,
+    cdn_cache: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -376,6 +384,7 @@ struct MyceliumConfig {
     firewall_mark: Option<u32>,
     update_workers: Option<usize>,
     topic_config: Option<PathBuf>,
+    cdn_cache: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -397,7 +406,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             mycelium_config = config.try_deserialize()?;
         } else {
-            let error_msg = format!("Config file {:?} not found", config_file_path);
+            let error_msg = format!("Config file {config_file_path:?} not found");
             return Err(io::Error::new(io::ErrorKind::NotFound, error_msg).into());
         }
     } else if let Some(mut conf) = dirs::config_dir() {
@@ -410,6 +419,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .join("mycelium.toml")
         };
         // Linux: $HOME/.config/mycelium/mycelium.conf
+        #[allow(clippy::unnecessary_operation)]
         #[cfg(target_os = "linux")]
         {
             conf = conf.join("mycelium").join("mycelium.toml")
@@ -527,6 +537,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     firewall_mark: merged_config.firewall_mark,
                     update_workers: merged_config.update_workers,
                     topic_config,
+                    cdn_cache: merged_config.cdn_cache,
                 };
                 metrics.spawn(metrics_api_addr);
 
@@ -560,6 +571,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     firewall_mark: merged_config.firewall_mark,
                     update_workers: merged_config.update_workers,
                     topic_config,
+                    cdn_cache: merged_config.cdn_cache,
                 };
 
                 let node = Arc::new(Mutex::new(Node::new(config).await?));
@@ -792,6 +804,7 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
             file_config.update_workers.unwrap_or(1)
         },
         topic_config: cli_args.topic_config.or(file_config.topic_config),
+        cdn_cache: cli_args.cdn_cache.or(file_config.cdn_cache),
     }
 }
 
