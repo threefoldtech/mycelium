@@ -109,7 +109,7 @@ pub async fn new(
 fn wintun_to_io_error(err: wintun::Error) -> io::Error {
     match err {
         wintun::Error::Io(e) => e,
-        _ => io::Error::new(io::ErrorKind::Other, "unknown wintun error"),
+        _ => io::Error::other("unknown wintun error"),
     }
 }
 
@@ -145,8 +145,8 @@ fn set_adapter_mtu(name: &str, mtu: usize) -> Result<(), io::Error> {
         "ipv6",
         "set",
         "subinterface",
-        &format!("\"{}\"", name),
-        &format!("mtu={}", mtu),
+        &format!("\"{name}\""),
+        &format!("mtu={mtu}"),
         "store=persistent",
     ];
 
