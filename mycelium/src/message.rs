@@ -784,7 +784,7 @@ enum SocketError {
 impl core::fmt::Display for SocketError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IoError(e) => write!(f, "I/O Error {}", e),
+            Self::IoError(e) => write!(f, "I/O Error {e}"),
             Self::Timeout => f.pad("timeout waiting for reply"),
             Self::ConnectionClosed => f.pad("socket closed before we read a reply"),
         }

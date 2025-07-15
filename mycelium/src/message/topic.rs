@@ -134,7 +134,7 @@ where
     // Try to parse as a subnet (with prefix)
     if let Ok(ipnet) = s.parse::<ipnet::IpNet>() {
         return Subnet::new(ipnet.addr(), ipnet.prefix_len())
-            .map_err(|e| serde::de::Error::custom(format!("Invalid subnet prefix length: {}", e)));
+            .map_err(|e| serde::de::Error::custom(format!("Invalid subnet prefix length: {e}")));
     }
 
     // Try to parse as an IP address (convert to /32 or /128 subnet)
@@ -144,12 +144,11 @@ where
             std::net::IpAddr::V6(_) => 128,
         };
         return Subnet::new(ip, prefix_len)
-            .map_err(|e| serde::de::Error::custom(format!("Invalid subnet prefix length: {}", e)));
+            .map_err(|e| serde::de::Error::custom(format!("Invalid subnet prefix length: {e}")));
     }
 
     Err(serde::de::Error::custom(format!(
-        "Invalid subnet or IP address: {}",
-        s
+        "Invalid subnet or IP address: {s}",
     )))
 }
 
