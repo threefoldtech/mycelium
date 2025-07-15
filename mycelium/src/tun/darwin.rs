@@ -100,11 +100,7 @@ pub async fn new(
     tokio::spawn(async move {
         let mut buf_hold = None;
         loop {
-            let mut buf = if let Some(buf) = buf_hold.take() {
-                buf
-            } else {
-                PacketBuffer::new()
-            };
+            let mut buf: PacketBuffer = buf_hold.take().unwrap_or_default();
 
             select! {
                 data = sink_receiver.recv() => {
