@@ -26,8 +26,8 @@ mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
 mycelium-api = { path = "../mycelium-api", features = ["message"] }
 mycelium-cli = { path = "../mycelium-cli/", features = ["message"] }
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
-tokio = { version = "1.46.1", features = [
+serde_json = "1.0.141"
+tokio = { version = "1.47.0", features = [
   "macros",
   "rt-multi-thread",
   "signal",
@@ -36,4 +36,4 @@ reqwest = { version = "0.12.9", default-features = false, features = ["json"] }
 base64 = "0.22.1"
 config = "0.15.13"
 dirs = "6.0.0"
-toml = "0.9.2"
+toml = "0.9.3"
