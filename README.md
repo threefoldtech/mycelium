@@ -28,6 +28,8 @@ network will receive an overlay network IP in the 400::/7 range.
 Get an useable binary, either by downloading [an artifact from a release](https://github.com/threefoldtech/mycelium/releases),
 or by [checking out and building the code yourself](#developing).
 
+> On Mac: make sure to use `xattr` on the archive before extracting it e.g `xattr -cr  mycelium-aarch64-apple-darwin.tar.gz`
+
 ### Windows
 
 Download the [mycelium_installer.msi](https://github.com/threefoldtech/mycelium/releases/latest/download/mycelium_installer.msi) and run the installer.
