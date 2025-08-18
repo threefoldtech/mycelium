@@ -39,8 +39,6 @@ const DEFAULT_HTTP_API_SERVER_ADDRESS: SocketAddr =
 const DEFAULT_JSONRPC_API_SERVER_ADDRESS: SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8990);
 
-const DEFAULT_KEY_FILE: &str = "priv_key.bin";
-
 /// Default name of tun interface
 #[cfg(not(target_os = "macos"))]
 const TUN_NAME: &str = "mycelium";
@@ -476,9 +474,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }))
         .init();
 
-    let key_path = cli
-        .key_file
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_KEY_FILE));
+    let key_path = cli.key_file.unwrap_or_else(|| {
+        let mut key_path = dirs::data_local_dir().unwrap_or_else(|| ".".into());
+        // Windows: %LOCALAPPDATA%/ThreeFold Tech/Mycelium/priv_key.bin
+        #[cfg(target_os = "windows")]
+        {
+            key_path = key_path.join("ThreeFold Tech").join("Mycelium")
+        };
+        // Linux: $HOME/.local/share/mycelium/priv_key.bin
+        #[allow(clippy::unnecessary_operation)]
+        #[cfg(target_os = "linux")]
+        {
+            key_path = key_path.join("mycelium")
+        };
+        // MacOS: $HOME/Library/Application Support/ThreeFold Tech/Mycelium/priv_key.bin
+        #[cfg(target_os = "macos")]
+        {
+            key_path = key_path.join("ThreeFold Tech").join("Mycelium")
+        };
+
+        // If the dir does not exist, create it
+        if !key_path.exists() {
+            info!(
+                data_dir = key_path.to_str().unwrap(),
+                "Data config dir does not exist, create it"
+            );
+            if let Err(err) = std::fs::create_dir(&key_path) {
+                error!(%err, data_dir = key_path.to_str().unwrap(), "Could not create data directory");
+                std::process::exit(1);
+            }
+        }
+
+        key_path = key_path.join("priv_key.bin");
+
+        if key_path.exists() {
+            info!(key_path = key_path.to_str().unwrap(), "Using key file",);
+        }
+
+        key_path
+    });
 
     match cli.command {
         None => {
@@ -725,7 +759,7 @@ async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
             .create(true)
             .truncate(true)
             .write(true)
-            .mode(0o600) // rw by the owner, not readable by group or others
+            .mode(0o644)
             .open(path)
             .await?;
         file.write_all(key.as_bytes()).await?;
