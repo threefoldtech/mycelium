@@ -1493,7 +1493,7 @@ impl MessagePacket {
     }
 
     /// Get a read only reference to the header of the `MessagePacket`.
-    pub fn header(&self) -> MessagePacketHeader {
+    pub fn header(&self) -> MessagePacketHeader<'_> {
         MessagePacketHeader {
             header: self.packet.buffer()[..MESSAGE_HEADER_SIZE]
                 .try_into()
@@ -1502,7 +1502,7 @@ impl MessagePacket {
     }
 
     /// Get a mutable reference to the header of the `MessagePacket`.
-    pub fn header_mut(&mut self) -> MessagePacketHeaderMut {
+    pub fn header_mut(&mut self) -> MessagePacketHeaderMut<'_> {
         MessagePacketHeaderMut {
             header: <&mut [u8] as TryInto<&mut [u8; MESSAGE_HEADER_SIZE]>>::try_into(
                 &mut self.packet.buffer_mut()[..MESSAGE_HEADER_SIZE],
