@@ -172,7 +172,7 @@ impl RoutingTable {
 
     /// Gets continued read access to the `RoutingTable`. While the returned
     /// [`guard`](RoutingTableReadGuard) is held, updates to the `RoutingTable` will be blocked.
-    pub fn read(&self) -> RoutingTableReadGuard {
+    pub fn read(&self) -> RoutingTableReadGuard<'_> {
         RoutingTableReadGuard {
             guard: self
                 .reader
@@ -185,7 +185,7 @@ impl RoutingTable {
     /// [`guard`](RoutingTableWriteGuard) is held, methods trying to mutate the `RoutingTable`, or
     /// get mutable access otherwise, will be blocked. When the [`guard`](`RoutingTableWriteGuard`)
     /// is dropped, all queued changes will be applied.
-    pub fn write(&self) -> RoutingTableWriteGuard {
+    pub fn write(&self) -> RoutingTableWriteGuard<'_> {
         RoutingTableWriteGuard {
             write_guard: self.writer.lock().unwrap(),
             read_guard: self
@@ -198,7 +198,7 @@ impl RoutingTable {
     }
 
     /// Get mutable access to the list of routes for the given [`Subnet`].
-    pub fn routes_mut(&self, subnet: Subnet) -> Option<WriteGuard> {
+    pub fn routes_mut(&self, subnet: Subnet) -> Option<WriteGuard<'_>> {
         let subnet_address = if let IpAddr::V6(ip) = subnet.address() {
             ip
         } else {
@@ -232,7 +232,7 @@ impl RoutingTable {
     /// Adds a new [`Subnet`] to the `RoutingTable`. The returned [`WriteGuard`] can be used to
     /// insert entries. If no entry is inserted before the guard is dropped, the [`Subnet`] won't
     /// be added.
-    pub fn add_subnet(&self, subnet: Subnet, shared_secret: SharedSecret) -> WriteGuard {
+    pub fn add_subnet(&self, subnet: Subnet, shared_secret: SharedSecret) -> WriteGuard<'_> {
         if !matches!(subnet.address(), IpAddr::V6(_)) {
             panic!("IP v4 addresses are not supported")
         };
@@ -389,18 +389,18 @@ pub struct RoutingTableReadGuard<'a> {
 }
 
 impl RoutingTableReadGuard<'_> {
-    pub fn iter(&self) -> RoutingTableIter {
+    pub fn iter(&self) -> RoutingTableIter<'_> {
         RoutingTableIter::new(self.guard.table.iter())
     }
 
     /// Create an iterator for all queried subnets in the routing table
-    pub fn iter_queries(&self) -> RoutingTableQueryIter {
+    pub fn iter_queries(&self) -> RoutingTableQueryIter<'_> {
         RoutingTableQueryIter::new(self.guard.table.iter())
     }
 
     /// Create an iterator for all subnets which are currently marked as `NoRoute` in the routing
     /// table.
-    pub fn iter_no_route(&self) -> RoutingTableNoRouteIter {
+    pub fn iter_no_route(&self) -> RoutingTableNoRouteIter<'_> {
         RoutingTableNoRouteIter::new(self.guard.table.iter())
     }
 }

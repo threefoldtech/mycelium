@@ -52,14 +52,14 @@ impl RouteList {
     /// Returns an iterator over the `RouteList`.
     ///
     /// The iterator yields all [`route entries`](RouteEntry) in the list.
-    pub fn iter(&self) -> RouteListIter {
+    pub fn iter(&self) -> RouteListIter<'_> {
         RouteListIter::new(self)
     }
 
     /// Returns an iterator over the `RouteList` yielding mutable access to the elements.
     ///
     /// The iterator yields all [`route entries`](RouteEntry) in the list.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = RouteGuard> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = RouteGuard<'_>> {
         self.list.iter_mut().map(|item| RouteGuard { item })
     }
 
