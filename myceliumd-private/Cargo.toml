@@ -17,7 +17,7 @@ path = "src/main.rs"
 clap = { version = "4.5.45", features = ["derive"] }
 tracing = { version = "0.1.41", features = ["release_max_level_debug"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
-tracing-subscriber = { version = "0.3.19", features = [
+tracing-subscriber = { version = "0.3.20", features = [
   "env-filter",
   "nu-ansi-term",
 ] }
