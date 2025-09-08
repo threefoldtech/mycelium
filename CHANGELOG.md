@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default key path (which is used if the `--key-file` flag isn't set) is changed
   to a fixed path on the system in application data, instead of the old local file.
 
+### Fixed
+
+- The RPC API now returns an empty result instead of an error when popMessage does
+  not have any message to return within the specified timeout.
+
 ## [0.6.1] - 2025-05-14
 
 ### Added

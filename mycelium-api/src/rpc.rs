@@ -92,7 +92,7 @@ pub trait MyceliumMessageApi {
         peek: Option<bool>,
         timeout: Option<u64>,
         topic: Option<String>,
-    ) -> RpcResult<crate::message::MessageReceiveInfo>;
+    ) -> RpcResult<Option<crate::message::MessageReceiveInfo>>;
 
     #[method(name = "pushMessage")]
     async fn push_message(
@@ -328,7 +328,7 @@ where
         peek: Option<bool>,
         timeout: Option<u64>,
         topic: Option<String>,
-    ) -> RpcResult<crate::message::MessageReceiveInfo> {
+    ) -> RpcResult<Option<crate::message::MessageReceiveInfo>> {
         debug!(
             "Attempt to get message via RPC, peek {}, timeout {} seconds",
             peek.unwrap_or(false),
@@ -358,7 +358,7 @@ where
         .await;
 
         match result {
-            Ok(m) => Ok(crate::message::MessageReceiveInfo {
+            Ok(m) => Ok(Some(crate::message::MessageReceiveInfo {
                 id: m.id,
                 src_ip: m.src_ip,
                 src_pk: m.src_pk,
@@ -370,8 +370,8 @@ where
                     Some(m.topic)
                 },
                 payload: m.data,
-            }),
-            _ => Err(ErrorObject::from(ErrorCode::from(-32014))),
+            })),
+            Err(_) => Ok(None),
         }
     }
 
