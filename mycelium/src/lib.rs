@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::{future::Future, time::Duration};
 
 use crate::cdn::Cdn;
+use crate::proxy::Proxy;
 use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
@@ -36,6 +37,7 @@ pub mod metrics;
 pub mod packet;
 mod peer;
 pub mod peer_manager;
+mod proxy;
 pub mod router;
 mod router_id;
 mod routing_table;
@@ -112,6 +114,7 @@ pub struct Node<M> {
     router: router::Router<M>,
     peer_manager: peer_manager::PeerManager<M>,
     _cdn: Option<Cdn>,
+    proxy: Proxy<M>,
     #[cfg(feature = "message")]
     message_stack: message::MessageStack<M>,
 }
@@ -271,6 +274,8 @@ where
             cdn.start(listener)?;
         }
 
+        let proxy = Proxy::new(router.clone());
+
         #[cfg(feature = "message")]
         let ms = MessageStack::new(_data_plane, msg_receiver, config.topic_config);
 
@@ -278,6 +283,7 @@ where
             router,
             peer_manager: pm,
             _cdn: cdn,
+            proxy,
             #[cfg(feature = "message")]
             message_stack: ms,
         })
