@@ -2,7 +2,7 @@ use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 #[cfg(feature = "message")]
-use std::{future::Future, time::Duration};
+use std::time::Duration;
 
 use crate::cdn::Cdn;
 use crate::proxy::{ConnectionError, Proxy};

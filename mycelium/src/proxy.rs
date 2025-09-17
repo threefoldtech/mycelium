@@ -301,6 +301,12 @@ where
             .chosen_remote
             .lock()
             .expect("Can lock chosen remote; qed");
+        if target.is_none() {
+            warn!("Can't start proxy if target is none, this should not happen");
+            return;
+        }
+        let target = target.unwrap();
+        info!(%target, "Starting Socks5 proxy forwarding");
         // First cancel the old token, then set a new token
         let mut old_token = self.proxy_token.lock().expect("Can lock proxy token; qed");
         old_token.cancel();
@@ -321,17 +327,11 @@ where
                             Err(err) => {
                                 error!(%err, "Proxy listener accept error");
                                 return Err(err)
-                           }
+                            }
                             Ok((mut stream, source)) => {
                                 trace!(%source, "Got new proxy stream");
                                 let proxy_token = proxy_token.clone();
-                                let target = target;
-                                if target.is_none() {
-                                    warn!("Refusing to proxy Socks5 stream as we have no remote set - this should not happen");
-                                    break
-                                }
                                 // Unwrap is safe since we checked the none variant above
-                                let target = target.unwrap();
                                tokio::spawn(async move {
                                     let mut con = TcpStream::connect(target).await?;
                                     select! {
