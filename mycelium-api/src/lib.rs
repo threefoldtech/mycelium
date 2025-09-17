@@ -1,9 +1,14 @@
 use core::fmt;
-use std::{net::IpAddr, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+    str::FromStr,
+    sync::Arc,
+};
 
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    response::IntoResponse,
     routing::{delete, get},
     Json, Router,
 };
@@ -60,6 +65,13 @@ impl Http {
             .route("/admin/routes/fallback", get(get_fallback_routes))
             .route("/admin/routes/queried", get(get_queried_routes))
             .route("/admin/routes/no_route", get(get_no_route_entries))
+            .route(
+                "/admin/proxy",
+                get(list_proxies)
+                    .post(connect_proxy)
+                    .delete(disconnect_proxy),
+            )
+            .route("/admin/proxy/probe", get(start_probe).delete(stop_probe))
             .route("/pubkey/{ip}", get(get_pubk_from_ip))
             .with_state(server_state.clone());
         let app = Router::new().nest("/api/v1", admin_routes);
@@ -305,6 +317,64 @@ where
         .collect();
 
     Json(queries)
+}
+
+async fn list_proxies<M>(State(state): State<ServerState<M>>) -> Json<Vec<Ipv6Addr>>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Listing known proxies");
+    Json(state.node.lock().await.known_proxies())
+}
+
+async fn connect_proxy<M>(
+    State(state): State<ServerState<M>>,
+    Json(remote): Json<Option<SocketAddr>>,
+) -> impl IntoResponse
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Attempting to connect remote proxy");
+    state
+        .node
+        .lock()
+        .await
+        .connect_proxy(remote)
+        .await
+        .map(Json)
+        // An error indicates we don't have a valid good auto discovered proxy -> No proxy no
+        // content
+        .map_err(|_| StatusCode::NOT_FOUND)
+}
+
+async fn disconnect_proxy<M>(State(state): State<ServerState<M>>) -> impl IntoResponse
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Disconnecting from connect remote proxy");
+    state.node.lock().await.disconnect_proxy();
+
+    StatusCode::NO_CONTENT
+}
+
+async fn start_probe<M>(State(state): State<ServerState<M>>) -> impl IntoResponse
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Starting proxy probe");
+    state.node.lock().await.start_proxy_scan();
+
+    StatusCode::NO_CONTENT
+}
+
+async fn stop_probe<M>(State(state): State<ServerState<M>>) -> impl IntoResponse
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Stopping proxy probe");
+    state.node.lock().await.stop_proxy_scan();
+
+    StatusCode::NO_CONTENT
 }
 
 /// General info about a node.

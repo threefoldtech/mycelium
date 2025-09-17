@@ -43,8 +43,9 @@ const SOCKS5_SERVER_CHOICE_DENIED: [u8; 2] = [
 
 /// Proxy implementations scans known IPs from the [`Router`](crate::router::Router), to see if
 /// there is an (open) SOCKS5 proxy listening on the default port on that IP.
+#[derive(Clone)]
 pub struct Proxy<M> {
-    router: Router<M>,
+    router: Arc<Mutex<Router<M>>>,
     proxy_cache: Arc<RwLock<HashMap<Ipv6Addr, ProxyProbeStatus>>>,
     chosen_remote: Arc<Mutex<Option<SocketAddr>>>,
     /// Cancellation token used for scanning routines
@@ -74,7 +75,7 @@ where
     /// Create a new `Proxy` implementation.
     pub fn new(router: Router<M>) -> Self {
         Self {
-            router,
+            router: Arc::new(Mutex::new(router)),
             proxy_cache: Arc::new(RwLock::new(HashMap::new())),
             chosen_remote: Arc::new(Mutex::new(None)),
             scan_token: Arc::new(Mutex::new(CancellationToken::new())),
@@ -125,7 +126,10 @@ where
                     }
                 }
 
-                let routes = router.load_selected_routes();
+                let routes = router
+                    .lock()
+                    .expect("Can lock router; qed")
+                    .load_selected_routes();
 
                 for route in routes {
                     let proxy_cache = proxy_cache.clone();

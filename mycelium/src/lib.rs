@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 #[cfg(feature = "message")]
@@ -354,15 +355,16 @@ where
 
     /// Connect to a remote Socks5 proxy. If [no remote is given](Option::None), the system will
     /// try to select a known proxy with the lowest latency.
-    pub async fn connect_proxy(
+    pub fn connect_proxy(
         &self,
         remote: Option<SocketAddr>,
-    ) -> Result<SocketAddr, ConnectionError> {
-        self.proxy.connect(remote).await
+    ) -> impl Future<Output = Result<SocketAddr, ConnectionError>> + Send {
+        let proxy = self.proxy.clone();
+        async move { proxy.connect(remote).await }
     }
 
     /// Disconnect from a remote Socks5 proxy, stopping all proxied connections as well.
-    pub fn disconnect(&self) {
+    pub fn disconnect_proxy(&self) {
         self.proxy.disconnect()
     }
 
