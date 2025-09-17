@@ -327,9 +327,14 @@ where
     Json(state.node.lock().await.known_proxies())
 }
 
+#[derive(Deserialize)]
+pub struct ConnectProxyInput {
+    remote: Option<SocketAddr>,
+}
+
 async fn connect_proxy<M>(
     State(state): State<ServerState<M>>,
-    Json(remote): Json<Option<SocketAddr>>,
+    Json(ConnectProxyInput { remote }): Json<ConnectProxyInput>,
 ) -> impl IntoResponse
 where
     M: Metrics + Clone + Send + Sync + 'static,
