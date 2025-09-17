@@ -314,7 +314,11 @@ where
         *old_token = proxy_token.clone();
 
         tokio::spawn(async move {
-            let listener = TcpListener::bind(("[::]", DEFAULT_SOCKS5_PORT)).await?;
+            let listener = TcpListener::bind(("::", DEFAULT_SOCKS5_PORT))
+                .await
+                .inspect_err(|err| {
+                    error!(%err, "Could not bind TCP listener");
+                })?;
 
             loop {
                 select! {
