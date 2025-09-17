@@ -1,10 +1,10 @@
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 #[cfg(feature = "message")]
 use std::{future::Future, time::Duration};
 
 use crate::cdn::Cdn;
-use crate::proxy::Proxy;
+use crate::proxy::{ConnectionError, Proxy};
 use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
@@ -335,6 +335,40 @@ where
     /// Get public key from the IP of `Node`
     pub fn get_pubkey_from_ip(&self, ip: IpAddr) -> Option<crypto::PublicKey> {
         self.router.get_pubkey(ip)
+    }
+}
+
+impl<M> Node<M>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    /// Starts probing for Socks5 proxies on the network
+    pub fn start_proxy_scan(&self) {
+        self.proxy.start_probing()
+    }
+
+    /// Stops any ongoing Socks5 proxy probes on the network
+    pub fn stop_proxy_scan(&self) {
+        self.proxy.stop_probing()
+    }
+
+    /// Connect to a remote Socks5 proxy. If [no remote is given](Option::None), the system will
+    /// try to select a known proxy with the lowest latency.
+    pub async fn connect_proxy(
+        &self,
+        remote: Option<SocketAddr>,
+    ) -> Result<SocketAddr, ConnectionError> {
+        self.proxy.connect(remote).await
+    }
+
+    /// Disconnect from a remote Socks5 proxy, stopping all proxied connections as well.
+    pub fn disconnect(&self) {
+        self.proxy.disconnect()
+    }
+
+    /// Get a list of all proxies discovered by the system
+    pub fn known_proxies(&self) -> Vec<Ipv6Addr> {
+        self.proxy.known_proxies()
     }
 }
 

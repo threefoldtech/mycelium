@@ -8,7 +8,7 @@ use crate::{metrics::Metrics, router::Router};
 use futures::stream::FuturesUnordered;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpSocket, TcpStream},
+    net::{TcpListener, TcpStream},
     select,
     time::{self, timeout, Duration},
 };
@@ -80,6 +80,22 @@ where
             scan_token: Arc::new(Mutex::new(CancellationToken::new())),
             proxy_token: Arc::new(Mutex::new(CancellationToken::new())),
         }
+    }
+
+    /// Get a list of all known proxies we discovered.
+    pub fn known_proxies(&self) -> Vec<Ipv6Addr> {
+        self.proxy_cache
+            .read()
+            .expect("Can read lock proxy cache; qed")
+            .iter()
+            .filter_map(|(addr, s)| {
+                if matches!(s, ProxyProbeStatus::Valid) {
+                    Some(*addr)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Starst a background task which periodically scans the [`Router`](crate::router::Router)
@@ -196,7 +212,7 @@ where
     }
 
     /// Stops any ongoing probes.
-    pub fn stop_scanning(&self) {
+    pub fn stop_probing(&self) {
         info!("Stopping Socks5 proxy probing");
         self.scan_token
             .lock()
@@ -257,11 +273,13 @@ where
             .lock()
             .expect("Can lock chosen remote; qed") = Some(target);
 
+        self.start_proxy();
+
         Ok(target)
     }
 
     /// Disconnects from the proxy, if any is connected
-    pub async fn disconnect(&self) {
+    pub fn disconnect(&self) {
         self.proxy_token
             .lock()
             .expect("Can lock proxy token; qed")
