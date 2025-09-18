@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New log format option `plain`, this option is the same as logfmt, but with colors
   always disabled.
+- Added auto discovery of Socks5 proxies on the overlay, and the ability to proxy
+  local Socks5 connections to a chosen (manual or automatic) remote.
 
 ### Changed
 
