@@ -2,7 +2,7 @@
 
 mod spec;
 
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Ipv6Addr};
 #[cfg(feature = "message")]
 use std::ops::Deref;
 use std::str::FromStr;
@@ -75,6 +75,22 @@ pub trait MyceliumApi {
 
     #[method(name = "getNoRouteEntries")]
     async fn get_no_route_entries(&self) -> RpcResult<Vec<NoRouteSubnet>>;
+
+    // Proxy methods
+    #[method(name = "getProxies")]
+    async fn get_proxies(&self) -> RpcResult<Vec<Ipv6Addr>>;
+
+    #[method(name = "connectProxy")]
+    async fn connect_proxy(&self, remote: Option<SocketAddr>) -> RpcResult<SocketAddr>;
+
+    #[method(name = "disconnectProxy")]
+    async fn disconnect_proxy(&self) -> RpcResult<bool>;
+
+    #[method(name = "startProxyProbe")]
+    async fn start_proxy_probe(&self) -> RpcResult<bool>;
+
+    #[method(name = "stopProxyProbe")]
+    async fn stop_proxy_probe(&self) -> RpcResult<bool>;
 
     // OpenRPC discovery
     #[method(name = "rpc.discover")]
@@ -307,6 +323,48 @@ where
             .collect();
 
         Ok(entries)
+    }
+
+    async fn get_proxies(&self) -> RpcResult<Vec<Ipv6Addr>> {
+        debug!("Listing known proxies via RPC");
+        let proxies = self.state.node.lock().await.known_proxies();
+        Ok(proxies)
+    }
+
+    async fn connect_proxy(&self, remote: Option<SocketAddr>) -> RpcResult<SocketAddr> {
+        debug!(?remote, "Attempting to connect remote proxy via RPC");
+
+        // Attempt to connect; map error to "no proxy available/valid" like HTTP 404 counterpart
+        let res = self
+            .state
+            .node
+            .lock()
+            .await
+            .connect_proxy(remote)
+            .await;
+
+        match res {
+            Ok(addr) => Ok(addr),
+            Err(_) => Err(ErrorObject::from(ErrorCode::from(-32032))),
+        }
+    }
+
+    async fn disconnect_proxy(&self) -> RpcResult<bool> {
+        debug!("Disconnecting from remote proxy via RPC");
+        self.state.node.lock().await.disconnect_proxy();
+        Ok(true)
+    }
+
+    async fn start_proxy_probe(&self) -> RpcResult<bool> {
+        debug!("Starting proxy probe via RPC");
+        self.state.node.lock().await.start_proxy_scan();
+        Ok(true)
+    }
+
+    async fn stop_proxy_probe(&self) -> RpcResult<bool> {
+        debug!("Stopping proxy probe via RPC");
+        self.state.node.lock().await.stop_proxy_scan();
+        Ok(true)
     }
 
     async fn discover(&self) -> RpcResult<serde_json::Value> {
