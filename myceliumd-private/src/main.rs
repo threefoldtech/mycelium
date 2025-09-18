@@ -143,6 +143,12 @@ pub enum Command {
         #[command(subcommand)]
         command: RoutesCommand,
     },
+
+    /// Actions related to the SOCKS5 proxy
+    Proxy {
+        #[command(subcommand)]
+        command: ProxyCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -228,6 +234,40 @@ pub enum RoutesCommand {
         #[arg(long = "json", default_value_t = false)]
         json: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProxyCommand {
+    /// List known proxies
+    List {
+        /// Print in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Connect to a proxy, optionally specifying a remote [IPV6]:PORT
+    Connect {
+        /// Optional remote socket address, e.g. [407:...]:1080
+        #[arg(long = "remote")]
+        remote: Option<String>,
+        /// Print in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
+    /// Disconnect from the current proxy
+    Disconnect,
+    /// Manage background proxy probing
+    Probe {
+        #[command(subcommand)]
+        command: ProxyProbeCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProxyProbeCommand {
+    /// Start background proxy probing
+    Start,
+    /// Stop background proxy probing
+    Stop,
 }
 
 #[derive(Debug, Args)]
@@ -719,6 +759,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 RoutesCommand::NoRoute { json } => {
                     return mycelium_cli::list_no_route_entries(cli.node_args.api_addr, json).await;
                 }
+            },
+            Command::Proxy { command } => match command {
+                ProxyCommand::List { json } => {
+                    return mycelium_cli::list_proxies(cli.node_args.api_addr, json).await;
+                }
+                ProxyCommand::Connect { remote, json } => {
+                    let remote_parsed = if let Some(r) = remote {
+                        match r.parse::<SocketAddr>() {
+                            Ok(addr) => Some(addr),
+                            Err(e) => {
+                                error!("Invalid --remote value '{r}': {e}");
+                                return Err(io::Error::new(
+                                    io::ErrorKind::InvalidInput,
+                                    format!("invalid --remote socket address: {e}"),
+                                )
+                                .into());
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    return mycelium_cli::connect_proxy(
+                        cli.node_args.api_addr,
+                        remote_parsed,
+                        json,
+                    )
+                    .await;
+                }
+                ProxyCommand::Disconnect => {
+                    return mycelium_cli::disconnect_proxy(cli.node_args.api_addr).await;
+                }
+                ProxyCommand::Probe { command } => match command {
+                    ProxyProbeCommand::Start => {
+                        return mycelium_cli::start_proxy_probe(cli.node_args.api_addr).await;
+                    }
+                    ProxyProbeCommand::Stop => {
+                        return mycelium_cli::stop_proxy_probe(cli.node_args.api_addr).await;
+                    }
+                },
             },
         },
     }
