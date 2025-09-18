@@ -158,6 +158,17 @@ Messages can be categorized by topics, which can be configured with whitelisted 
 For detailed information on how to configure topics, see the [Topic Configuration Guide](/docs/topic_configuration.md).
 use the message system, see [the message docs](/docs/message.md).
 
+## SOCKS5 Proxy
+
+Mycelium can expose a local SOCKS5 listener and forward all traffic to a remote SOCKS5 server running on a peer in the overlay. This enables applications to use a local proxy while the actual SOCKS handshake and traffic termination happen on the selected remote node.
+
+- Discovery: the node can probe peers for open SOCKS5 services on port 1080 (no-auth). Start/stop scanning via the API (startProxyProbe / stopProxyProbe).
+- Connect: choose the best discovered proxy automatically or connect to a specific remote with connectProxy(remote?).
+- Local listener: once connected, Mycelium binds [::]:1080 and proxies connections bidirectionally to the remote SOCKS5 server.
+- Disconnect: stop forwarding with disconnectProxy.
+
+See the detailed guide in [docs/proxy.md](docs/proxy.md). API references: [docs/api.yaml](docs/api.yaml) and [docs/openrpc.json](docs/openrpc.json).
+
 ## Inspecting node keys
 
 Using the `inspect` subcommand, you can view the address associated with a public key. If no public key is provided, the node will show
