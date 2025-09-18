@@ -28,6 +28,8 @@ tags:
     description: Operations on the embedded message subsystem
   - name: Topic
     description: Operations related to message topic configuration
+  - name: Proxy
+    description: Operations related to proxy management
 
 servers:
   - url: "http://localhost:8989"
@@ -210,6 +212,82 @@ paths:
                 items:
                   $ref: "#/components/schemas/NoRouteSubnet"
 
+  "/api/v1/admin/proxy":
+    get:
+      tags:
+        - Admin
+        - Proxy
+      summary: List known proxies
+      description: |
+        List overlay IPv6 addresses of known proxies discovered by the node.
+      operationId: getProxies
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ipv6Address"
+    post:
+      tags:
+        - Admin
+        - Proxy
+      summary: Connect to a proxy
+      description: |
+        Connect to a proxy. When no remote is provided, the node attempts to connect to the best known proxy.
+        When a remote is provided, it attempts to connect to that address.
+      operationId: connectProxy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectProxyRequest"
+      responses:
+        "200":
+          description: Connected to proxy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocketAddr"
+        "404":
+          description: No valid proxy available or connection failed
+    delete:
+      tags:
+        - Admin
+        - Proxy
+      summary: Disconnect from the current proxy
+      description: |
+        Disconnect from the currently connected proxy if any.
+      operationId: disconnectProxy
+      responses:
+        "204":
+          description: Disconnected
+
+  "/api/v1/admin/proxy/probe":
+    get:
+      tags:
+        - Admin
+        - Proxy
+      summary: Start proxy probe
+      description: |
+        Start scanning/probing for proxies on the network.
+      operationId: startProxyProbe
+      responses:
+        "204":
+          description: Probe started
+    delete:
+      tags:
+        - Admin
+        - Proxy
+      summary: Stop proxy probe
+      description: |
+        Stop scanning/probing for proxies on the network.
+      operationId: stopProxyProbe
+      responses:
+        "204":
+          description: Probe stopped
   "/api/v1/messages":
     get:
       tags:
@@ -988,3 +1066,24 @@ components:
           description: The socket path where messages should be forwarded to
           type: string
           example: "/var/run/mycelium/topic_socket"
+
+    Ipv6Address:
+      description: IPv6 address in the overlay
+      type: string
+      format: ipv6
+      example: "5fd:7636:b80:9ad0::1"
+
+    SocketAddr:
+      description: Network socket address in the form host:port or [IPv6]:port
+      type: string
+      example: "[2a01:4f8:212:fa6::2]:9651"
+
+    ConnectProxyRequest:
+      description: Request body for connecting to a proxy
+      type: object
+      properties:
+        remote:
+          description: Optional remote socket address of the proxy to connect to. If omitted, the node will attempt to connect to the best known proxy.
+          type: string
+          nullable: true
+          example: "[2a01:4f8:212:fa6::2]:9651"

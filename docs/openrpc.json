@@ -793,6 +793,98 @@
         }
       }
     }
+    ,
+    {
+      "name": "getProxies",
+      "summary": "List known proxies",
+      "description": "List overlay IPv6 addresses of known proxies discovered by the node.",
+      "tags": [
+        { "name": "Admin" },
+        { "name": "Proxy" }
+      ],
+      "params": [],
+      "result": {
+        "name": "proxies",
+        "description": "List of known proxies",
+        "schema": {
+          "type": "array",
+          "items": { "type": "string", "format": "ipv6" }
+        }
+      }
+    },
+    {
+      "name": "connectProxy",
+      "summary": "Connect to a proxy",
+      "description": "Connect to a proxy. When no remote is provided, the node attempts to connect to the best known proxy. When a remote is provided, it attempts to connect to that address.",
+      "tags": [
+        { "name": "Admin" },
+        { "name": "Proxy" }
+      ],
+      "params": [
+        {
+          "name": "remote",
+          "description": "Optional remote proxy socket address (host:port or [IPv6]:port)",
+          "required": false,
+          "schema": { "type": "string" }
+        }
+      ],
+      "result": {
+        "name": "socket",
+        "description": "Connected proxy socket address",
+        "schema": { "type": "string" }
+      },
+      "errors": [
+        {
+          "code": -32032,
+          "message": "No valid proxy available or connection failed"
+        }
+      ]
+    },
+    {
+      "name": "disconnectProxy",
+      "summary": "Disconnect from the current proxy",
+      "description": "Disconnect from the currently connected proxy if any.",
+      "tags": [
+        { "name": "Admin" },
+        { "name": "Proxy" }
+      ],
+      "params": [],
+      "result": {
+        "name": "success",
+        "description": "Whether the disconnect operation was triggered",
+        "schema": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "startProxyProbe",
+      "summary": "Start proxy probe",
+      "description": "Start scanning/probing for proxies on the network.",
+      "tags": [
+        { "name": "Admin" },
+        { "name": "Proxy" }
+      ],
+      "params": [],
+      "result": {
+        "name": "success",
+        "description": "Whether probe was started",
+        "schema": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "stopProxyProbe",
+      "summary": "Stop proxy probe",
+      "description": "Stop scanning/probing for proxies on the network.",
+      "tags": [
+        { "name": "Admin" },
+        { "name": "Proxy" }
+      ],
+      "params": [],
+      "result": {
+        "name": "success",
+        "description": "Whether probe was stopped",
+        "schema": { "type": "boolean" }
+      }
+    }
   ],
   "components": {
     "schemas": {
