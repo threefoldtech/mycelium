@@ -10,7 +10,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     select,
-    time::{self, timeout, Duration},
+    time::{self, timeout, Duration, MissedTickBehavior},
 };
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -116,9 +116,12 @@ where
             .clone();
 
         tokio::spawn(async move {
+            let mut probe_interval = time::interval(PROXY_PROBE_INTERVAL);
+            probe_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
             loop {
                 select! {
-                 _ = time::sleep(PROXY_PROBE_INTERVAL) => {
+                 _ = probe_interval.tick() => {
                         debug!("Starting proxy probes");
                     },
                 _ = cancel_token.cancelled() => {
