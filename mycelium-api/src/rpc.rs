@@ -2,7 +2,7 @@
 
 mod spec;
 
-use std::net::{SocketAddr, Ipv6Addr};
+use std::net::{Ipv6Addr, SocketAddr};
 #[cfg(feature = "message")]
 use std::ops::Deref;
 use std::str::FromStr;
@@ -335,13 +335,7 @@ where
         debug!(?remote, "Attempting to connect remote proxy via RPC");
 
         // Attempt to connect; map error to "no proxy available/valid" like HTTP 404 counterpart
-        let res = self
-            .state
-            .node
-            .lock()
-            .await
-            .connect_proxy(remote)
-            .await;
+        let res = self.state.node.lock().await.connect_proxy(remote).await;
 
         match res {
             Ok(addr) => Ok(addr),
