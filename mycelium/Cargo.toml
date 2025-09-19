@@ -56,7 +56,12 @@ dashmap = { version = "6.1.0", features = ["inline"] }
 ahash = "0.8.11"
 axum = "0.8.4"
 axum-extra = "0.10.1"
-reqwest = "0.12.23"
+reqwest = { version = "0.12.23", default-features = false, features = [
+  "charset",
+  "http2",
+  "system-proxy",
+  "rustls-tls",
+] }
 redis = { version = "0.32.5", features = ["tokio-comp"] }
 reed-solomon-erasure = "6.0.0"
 [target.'cfg(target_os = "linux")'.dependencies]
