@@ -76,10 +76,7 @@ pub async fn connect_proxy(
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
                 error!("Proxy connect failed, status {status}, body: {body}");
-                Err(
-                    std::io::Error::other(format!("HTTP {status}"))
-                        .into(),
-                )
+                Err(std::io::Error::other(format!("HTTP {status}")).into())
             }
         }
     }
