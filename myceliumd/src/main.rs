@@ -126,6 +126,14 @@ pub enum Command {
         key: Option<String>,
     },
 
+    /// Generate a set of new keys for the system at the default path, or the path provided by the
+    /// --key-file parameter
+    GenerateKeys {
+        /// Force generating new keys, removing any existing key in the process
+        #[arg(long = "force")]
+        force: bool,
+    },
+
     /// Actions on the message subsystem
     Message {
         #[command(subcommand)]
@@ -664,6 +672,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 return Ok(());
             }
+            Command::GenerateKeys { force } => {
+                let node_keys = get_node_keys(&key_path).await?;
+                if node_keys.is_none() || force {
+                    info!(?key_path, "Generating new node keys");
+                    let secret_key = crypto::SecretKey::new();
+                    save_key_file(&secret_key, &key_path).await?;
+                } else {
+                    warn!(?key_path, "Refusing to generate new keys as key file already exists, use `--force` to generate them anyway");
+                }
+            }
             Command::Message { command } => match command {
                 MessageCommand::Send {
                     wait,
@@ -796,6 +814,7 @@ where
     Ok(T::from(secret_bytes))
 }
 
+/// Save a key to a file at the given path. If the file already exists, it will be overwritten.
 async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<()> {
     #[cfg(target_family = "unix")]
     {

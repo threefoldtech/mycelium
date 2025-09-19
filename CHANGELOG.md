@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always disabled.
 - Added auto discovery of Socks5 proxies on the overlay, and the ability to proxy
   local Socks5 connections to a chosen (manual or automatic) remote.
+- New `generate-keys` subcommand which generates the key file without running a
+  daemon. It can also be used to generate fresh keys, should that be needed.
 
 ### Changed
 
