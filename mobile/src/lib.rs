@@ -1,5 +1,6 @@
 use std::convert::TryFrom;
 use std::io;
+use std::net::{IpAddr, SocketAddr};
 
 use tracing::{error, info};
 
@@ -12,6 +13,10 @@ use tokio::time::{sleep, timeout, Duration};
 
 const CHANNEL_MSG_OK: &str = "ok";
 const CHANNEL_TIMEOUT: u64 = 2;
+
+/// Default Socks5 port.
+// TODO: Port should be included in mycelium response
+const DEFAULT_SOCKS_PORT: u16 = 1080;
 
 #[cfg(target_os = "android")]
 fn setup_logging() {
@@ -143,6 +148,35 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
                         }
                         send_response(vec).await;
                     }
+                    CmdType::ProxyProbeStart => {
+                        info!("Received proxy probe start command");
+                        _node.start_proxy_scan();
+                        send_response(vec![CHANNEL_MSG_OK.to_string()]).await;
+                    },
+                    CmdType::ProxyProbeStop => {
+                        info!("Received proxy probe stop command");
+                        _node.stop_proxy_scan();
+                        send_response(vec![CHANNEL_MSG_OK.to_string()]).await;
+                    },
+                    CmdType::ProxyList => {
+                        info!("Received proxy list command");
+                        let known_proxies = _node.known_proxies();
+                        send_response(known_proxies.into_iter().map(|ip| SocketAddr::from((IpAddr::from(ip), DEFAULT_SOCKS_PORT)).to_string()).collect()).await;
+                    },
+                    CmdType::ProxyConnect(remote) => {
+                        info!(?remote, "Received proxy connect command");
+                        let res = match _node.connect_proxy(remote).await {
+                            Ok(v) => v.to_string(),
+                            Err(e) => e.to_string(),
+                        };
+                        send_response(vec![res]).await;
+                    },
+                    CmdType::ProxyDisconnect => {
+                        info!("Received proxy disconnect command");
+                        _node.disconnect_proxy();
+                        send_response(vec![CHANNEL_MSG_OK.to_string()]).await;
+                    },
+
                 }
             }
         }
@@ -157,6 +191,11 @@ struct Cmd {
 enum CmdType {
     Stop,
     Status,
+    ProxyProbeStart,
+    ProxyProbeStop,
+    ProxyList,
+    ProxyConnect(Option<SocketAddr>),
+    ProxyDisconnect,
 }
 
 struct Response {
@@ -182,6 +221,94 @@ pub async fn stop_mycelium() -> String {
 #[tokio::main]
 pub async fn get_peer_status() -> Vec<String> {
     if let Err(e) = send_command(CmdType::Status).await {
+        return vec![e.to_string()];
+    }
+
+    match recv_response().await {
+        Ok(mut resp) => {
+            resp.insert(0, CHANNEL_MSG_OK.to_string());
+            resp
+        }
+        Err(e) => vec![e.to_string()],
+    }
+}
+
+#[tokio::main]
+pub async fn start_proxy_probe() -> Vec<String> {
+    if let Err(e) = send_command(CmdType::ProxyProbeStart).await {
+        return vec![e.to_string()];
+    }
+
+    match recv_response().await {
+        Ok(mut resp) => {
+            resp.insert(0, CHANNEL_MSG_OK.to_string());
+            resp
+        }
+        Err(e) => vec![e.to_string()],
+    }
+}
+
+#[tokio::main]
+pub async fn stop_proxy_probe() -> Vec<String> {
+    if let Err(e) = send_command(CmdType::ProxyProbeStop).await {
+        return vec![e.to_string()];
+    }
+
+    match recv_response().await {
+        Ok(mut resp) => {
+            resp.insert(0, CHANNEL_MSG_OK.to_string());
+            resp
+        }
+        Err(e) => vec![e.to_string()],
+    }
+}
+
+#[tokio::main]
+pub async fn list_proxies() -> Vec<String> {
+    if let Err(e) = send_command(CmdType::ProxyList).await {
+        return vec![e.to_string()];
+    }
+
+    match recv_response().await {
+        Ok(mut resp) => {
+            resp.insert(0, CHANNEL_MSG_OK.to_string());
+            resp
+        }
+        Err(e) => vec![e.to_string()],
+    }
+}
+
+/// Conenct to the given proxy. Remote must either be an empty string, or a valid socket address
+/// (e.g. "[400:abcd:efgh::1]:1080").
+#[tokio::main]
+pub async fn proxy_connect(remote: String) -> Vec<String> {
+    let remote = if remote.is_empty() {
+        None
+    } else {
+        match remote.parse::<SocketAddr>() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return vec![e.to_string()];
+            }
+        }
+    };
+
+    if let Err(e) = send_command(CmdType::ProxyConnect(remote)).await {
+        return vec![e.to_string()];
+    }
+
+    match recv_response().await {
+        Ok(mut resp) => {
+            resp.insert(0, CHANNEL_MSG_OK.to_string());
+            resp
+        }
+        Err(e) => vec![e.to_string()],
+    }
+}
+
+#[tokio::main]
+pub async fn proxy_disconnect() -> Vec<String> {
+    if let Err(e) = send_command(CmdType::ProxyDisconnect).await {
         return vec![e.to_string()];
     }
 
