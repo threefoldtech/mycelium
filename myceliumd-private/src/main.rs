@@ -547,7 +547,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 data_dir = key_path.to_str().unwrap(),
                 "Data config dir does not exist, create it"
             );
-            if let Err(err) = std::fs::create_dir(&key_path) {
+            if let Err(err) = std::fs::create_dir_all(&key_path) {
                 error!(%err, data_dir = key_path.to_str().unwrap(), "Could not create data directory");
                 std::process::exit(1);
             }
