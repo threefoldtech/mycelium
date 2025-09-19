@@ -1785,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "aes-gcm",
  "ahash 0.8.11",
@@ -1831,7 +1831,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-api"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-cli"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "base64 0.22.1",
  "byte-unit",
@@ -1864,7 +1864,7 @@ dependencies = [
 
 [[package]]
 name = "mycelium-metrics"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "axum",
  "mycelium",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "myceliumd-private"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "base64 0.22.1",
  "clap",

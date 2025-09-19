@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2025-09-19
+
 **IMPORTANT**
 
 This release changes the default location of the private key used to derive the
@@ -632,4 +634,5 @@ This is a breaking change, check the main README file for update info.
 [0.5.7]: https://github.com/threefoldtech/mycelium/compare/v0.5.6...v0.5.7
 [0.6.0]: https://github.com/threefoldtech/mycelium/compare/v0.5.7...v0.6.0
 [0.6.1]: https://github.com/threefoldtech/mycelium/compare/v0.6.0...v0.6.1
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.6.1...HEAD
+[0.6.2]: https://github.com/threefoldtech/mycelium/compare/v0.6.1...v0.6.2
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.6.2...HEAD
