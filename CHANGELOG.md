@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**IMPORTANT**
+
+This release changes the default location of the private key used to derive the
+local IP address. If you upgrade to this version and want to keep your IP/subnet,
+and don't set the `-k/--key-file` flag, move your key file to the new default
+location or add the flag pointing to your existing key file.
+
 ### Added
 
 - New log format option `plain`, this option is the same as logfmt, but with colors
