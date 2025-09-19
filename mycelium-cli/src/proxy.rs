@@ -65,23 +65,21 @@ pub async fn connect_proxy(
                     println!("{addr}");
                 }
                 Ok(())
+            } else if resp.status().as_u16() == 404 {
+                error!("No valid proxy available or connection failed");
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No valid proxy available or connection failed",
+                )
+                .into())
             } else {
-                if resp.status().as_u16() == 404 {
-                    error!("No valid proxy available or connection failed");
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "No valid proxy available or connection failed",
-                    )
-                    .into())
-                } else {
-                    let status = resp.status();
-                    let body = resp.text().await.unwrap_or_default();
-                    error!("Proxy connect failed, status {status}, body: {body}");
-                    Err(
-                        std::io::Error::new(std::io::ErrorKind::Other, format!("HTTP {status}"))
-                            .into(),
-                    )
-                }
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                error!("Proxy connect failed, status {status}, body: {body}");
+                Err(
+                    std::io::Error::other(format!("HTTP {status}"))
+                        .into(),
+                )
             }
         }
     }
