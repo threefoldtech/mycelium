@@ -144,7 +144,18 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
                     CmdType::Status => {
                         let mut vec: Vec<String> = Vec::new();
                         for info in _node.peer_info() {
-                            vec.push(info.endpoint.proto().to_string() + ","+ info.endpoint.address().to_string().as_str()+","+ &info.connection_state.to_string());
+                            // Create a JSON object with detailed peer statistics
+                            let peer_json = serde_json::json!({
+                                "protocol": info.endpoint.proto().to_string(),
+                                "address": info.endpoint.address().to_string(),
+                                "peerType": info.pt.to_string(),
+                                "connectionState": info.connection_state.to_string(),
+                                "rxBytes": info.rx_bytes,
+                                "txBytes": info.tx_bytes,
+                                "discoveredSeconds": info.discovered,
+                                "lastConnectedSeconds": info.last_connected
+                            });
+                            vec.push(peer_json.to_string());
                         }
                         send_response(vec).await;
                     }
