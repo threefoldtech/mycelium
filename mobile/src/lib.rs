@@ -7,9 +7,10 @@ use tracing::{error, info};
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
 use mycelium::{crypto, metrics, Config, Node};
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{sleep, timeout, Duration};
+use std::sync::Arc;
 
 const CHANNEL_MSG_OK: &str = "ok";
 const CHANNEL_TIMEOUT: u64 = 2;
@@ -19,7 +20,7 @@ const CHANNEL_TIMEOUT: u64 = 2;
 const DEFAULT_SOCKS_PORT: u16 = 1080;
 
 #[cfg(target_os = "android")]
-fn setup_logging() {
+fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::filter::Targets;
     use tracing_subscriber::layer::SubscriberExt;
@@ -28,13 +29,14 @@ fn setup_logging() {
         .with_default(LevelFilter::INFO)
         .with_target("mycelium::router", LevelFilter::WARN);
     tracing_subscriber::registry()
-        .with(tracing_android::layer("mycelium").expect("failed to setup logger"))
+        .with(tracing_android::layer("mycelium")?)
         .with(targets)
-        .init();
+        .try_init()?;
+    Ok(())
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
-fn setup_logging() {
+fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
     use tracing::level_filters::LevelFilter;
     use tracing_oslog::OsLogger;
     use tracing_subscriber::filter::Targets;
@@ -46,12 +48,13 @@ fn setup_logging() {
     tracing_subscriber::registry()
         .with(OsLogger::new("mycelium", "default"))
         .with(targets)
-        .init();
+        .try_init()?;
+    Ok(())
 }
 
 #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 static INIT_LOG: Lazy<()> = Lazy::new(|| {
-    setup_logging();
+    let _ = setup_logging();
 });
 
 #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
@@ -76,9 +79,27 @@ static RESPONSE_CHANNEL: Lazy<ResponseChannelType> = Lazy::new(|| {
     (Mutex::new(tx_resp), Mutex::new(rx_resp))
 });
 
-#[tokio::main]
+// Shared tokio runtime for all async operations
+static RUNTIME: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
+
+fn get_runtime() -> &'static tokio::runtime::Runtime {
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Runtime::new().expect("Failed to create tokio runtime")
+    })
+}
+
+// Task handle to track mycelium node
+static MYCELIUM_HANDLE: Lazy<Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>> = Lazy::new(|| {
+    Arc::new(Mutex::new(None))
+});
+
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
-pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
+pub fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
+    let rt = get_runtime();
+    rt.block_on(start_mycelium_async(peers, tun_fd, priv_key));
+}
+
+async fn start_mycelium_async(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) {
     #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     setup_logging_once();
 
@@ -193,6 +214,17 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>) 
         }
     }
     info!("mycelium stopped");
+    
+    // Clear the task handle when mycelium stops
+    let handle_guard = MYCELIUM_HANDLE.lock().await;
+    if let Some(handle) = handle_guard.as_ref() {
+        if !handle.is_finished() {
+            handle.abort();
+        }
+    }
+    drop(handle_guard);
+    let mut handle_guard = MYCELIUM_HANDLE.lock().await;
+    *handle_guard = None;
 }
 
 struct Cmd {
@@ -214,8 +246,12 @@ struct Response {
 }
 
 // stop_mycelium returns string with the status of the command
-#[tokio::main]
-pub async fn stop_mycelium() -> String {
+pub fn stop_mycelium() -> String {
+    let rt = get_runtime();
+    rt.block_on(stop_mycelium_async())
+}
+
+async fn stop_mycelium_async() -> String {
     if let Err(e) = send_command(CmdType::Stop).await {
         return e.to_string();
     }
@@ -229,8 +265,12 @@ pub async fn stop_mycelium() -> String {
 // get_peer_status returns vector of string
 // first element is always the status of the command (ok or error)
 // next elements are the peer status
-#[tokio::main]
-pub async fn get_peer_status() -> Vec<String> {
+pub fn get_peer_status() -> Vec<String> {
+    let rt = get_runtime();
+    rt.block_on(get_peer_status_async())
+}
+
+async fn get_peer_status_async() -> Vec<String> {
     if let Err(e) = send_command(CmdType::Status).await {
         return vec![e.to_string()];
     }
@@ -244,8 +284,12 @@ pub async fn get_peer_status() -> Vec<String> {
     }
 }
 
-#[tokio::main]
-pub async fn start_proxy_probe() -> Vec<String> {
+pub fn start_proxy_probe() -> Vec<String> {
+    let rt = get_runtime();
+    rt.block_on(start_proxy_probe_async())
+}
+
+async fn start_proxy_probe_async() -> Vec<String> {
     if let Err(e) = send_command(CmdType::ProxyProbeStart).await {
         return vec![e.to_string()];
     }
@@ -259,8 +303,12 @@ pub async fn start_proxy_probe() -> Vec<String> {
     }
 }
 
-#[tokio::main]
-pub async fn stop_proxy_probe() -> Vec<String> {
+pub fn stop_proxy_probe() -> Vec<String> {
+    let rt = get_runtime();
+    rt.block_on(stop_proxy_probe_async())
+}
+
+async fn stop_proxy_probe_async() -> Vec<String> {
     if let Err(e) = send_command(CmdType::ProxyProbeStop).await {
         return vec![e.to_string()];
     }
@@ -274,8 +322,12 @@ pub async fn stop_proxy_probe() -> Vec<String> {
     }
 }
 
-#[tokio::main]
-pub async fn list_proxies() -> Vec<String> {
+pub fn list_proxies() -> Vec<String> {
+    let rt = get_runtime();
+    rt.block_on(list_proxies_async())
+}
+
+async fn list_proxies_async() -> Vec<String> {
     if let Err(e) = send_command(CmdType::ProxyList).await {
         return vec![e.to_string()];
     }
@@ -291,8 +343,12 @@ pub async fn list_proxies() -> Vec<String> {
 
 /// Conenct to the given proxy. Remote must either be an empty string, or a valid socket address
 /// (e.g. "[400:abcd:efgh::1]:1080").
-#[tokio::main]
-pub async fn proxy_connect(remote: String) -> Vec<String> {
+pub fn proxy_connect(remote: String) -> Vec<String> {
+    let rt = get_runtime();
+    rt.block_on(proxy_connect_async(remote))
+}
+
+async fn proxy_connect_async(remote: String) -> Vec<String> {
     let remote = if remote.is_empty() {
         None
     } else {
@@ -317,8 +373,12 @@ pub async fn proxy_connect(remote: String) -> Vec<String> {
     }
 }
 
-#[tokio::main]
-pub async fn proxy_disconnect() -> Vec<String> {
+pub fn proxy_disconnect() -> Vec<String> {
+    let rt = get_runtime();
+    rt.block_on(proxy_disconnect_async())
+}
+
+async fn proxy_disconnect_async() -> Vec<String> {
     if let Err(e) = send_command(CmdType::ProxyDisconnect).await {
         return vec![e.to_string()];
     }
@@ -332,8 +392,12 @@ pub async fn proxy_disconnect() -> Vec<String> {
     }
 }
 
-#[tokio::main]
-pub async fn get_status() -> Result<String, NodeError> {
+pub fn get_status() -> Result<String, NodeError> {
+    let rt = get_runtime();
+    rt.block_on(get_status_async())
+}
+
+async fn get_status_async() -> Result<String, NodeError> {
     Err(NodeError::NodeDead)
 }
 
