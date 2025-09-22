@@ -22,7 +22,7 @@ jsonrpsee = { version = "0.26.0", features = [
   "macros",
   "jsonrpsee-types",
 ] }
-serde_json = "1.0.143"
+serde_json = "1.0.145"
 tracing = "0.1.41"
 tokio = { version = "1.47.1", default-features = false, features = [
   "net",
@@ -30,8 +30,8 @@ tokio = { version = "1.47.1", default-features = false, features = [
 ] }
 mycelium = { path = "../mycelium" }
 mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0.226", features = ["derive"] }
 async-trait = "0.1.89"
 
 [dev-dependencies]
-serde_json = "1.0.143"
+serde_json = "1.0.145"
