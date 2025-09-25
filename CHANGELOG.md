@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Return actuall amount of bytes sent to peers instead of the amount of bytes received
+  from them.
+
 ## [0.6.2] - 2025-09-19
 
 **IMPORTANT**

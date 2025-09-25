@@ -146,7 +146,7 @@ impl PeerInfo {
     /// Return the amount of bytes written to this peer.
     #[inline]
     fn written(&self) -> u64 {
-        self.con_traffic.rx_bytes.load(Ordering::Relaxed)
+        self.con_traffic.tx_bytes.load(Ordering::Relaxed)
     }
 }
 
