@@ -34,6 +34,6 @@ tokio = { version = "1.47.1", features = [
 ] }
 reqwest = { version = "0.12.23", default-features = false, features = ["json"] }
 base64 = "0.22.1"
-config = "0.15.17"
+config = "0.15.18"
 dirs = "6.0.0"
 toml = "0.9.7"
