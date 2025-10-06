@@ -54,15 +54,15 @@ tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.7.1"
 dashmap = { version = "6.1.0", features = ["inline"] }
 ahash = "0.8.11"
-axum = "0.8.5"
-axum-extra = "0.10.2"
+axum = "0.8.6"
+axum-extra = "0.10.3"
 reqwest = { version = "0.12.23", default-features = false, features = [
   "charset",
   "http2",
   "system-proxy",
   "rustls-tls",
 ] }
-redis = { version = "0.32.6", features = ["tokio-comp"] }
+redis = { version = "0.32.7", features = ["tokio-comp"] }
 reed-solomon-erasure = "6.0.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.18.1"
