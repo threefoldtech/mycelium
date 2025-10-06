@@ -239,9 +239,9 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
 name = "axum"
-version = "0.8.4"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
+checksum = "8a18ed336352031311f4e0b4dd2ff392d4fbb370777c9d18d7fc9d7359f73871"
 dependencies = [
  "axum-core",
  "bytes",
@@ -258,8 +258,7 @@ dependencies = [
  "mime",
  "percent-encoding",
  "pin-project-lite",
- "rustversion",
- "serde",
+ "serde_core",
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
@@ -273,9 +272,9 @@ dependencies = [
 
 [[package]]
 name = "axum-core"
-version = "0.5.2"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68464cd0412f486726fb3373129ef5d2993f90c34bc2bc1c1e9943b2f4fc7ca6"
+checksum = "59446ce19cd142f8833f856eb31f3eb097812d1479ab224f54d72428ca21ea22"
 dependencies = [
  "bytes",
  "futures-core",
@@ -284,7 +283,6 @@ dependencies = [
  "http-body-util",
  "mime",
  "pin-project-lite",
- "rustversion",
  "sync_wrapper",
  "tower-layer",
  "tower-service",
@@ -293,9 +291,9 @@ dependencies = [
 
 [[package]]
 name = "axum-extra"
-version = "0.10.1"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45bf463831f5131b7d3c756525b305d40f1185b688565648a92e1392ca35713d"
+checksum = "9963ff19f40c6102c76756ef0a46004c0d58957d87259fc9208ff8441c12ab96"
 dependencies = [
  "axum",
  "axum-core",
@@ -307,10 +305,10 @@ dependencies = [
  "mime",
  "pin-project-lite",
  "rustversion",
- "serde",
- "tower",
+ "serde_core",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -2312,9 +2310,9 @@ checksum = "0c2cdeb66e45e9f36bfad5bbdb4d2384e70936afbee843c6f6543f0c551ebb25"
 
 [[package]]
 name = "libc"
-version = "0.2.175"
+version = "0.2.176"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
+checksum = "58f929b4d672ea937a23a1ab494143d968337a5f47e56d0815df1e0890ddf174"
 
 [[package]]
 name = "libloading"
@@ -3390,9 +3388,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.32.5"
+version = "0.32.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cd3650deebc68526b304898b192fa4102a4ef0b9ada24da096559cb60e0eef8"
+checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
 dependencies = [
  "bytes",
  "cfg-if",
