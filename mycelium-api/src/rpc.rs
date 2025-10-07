@@ -17,8 +17,6 @@ use jsonrpsee::types::{ErrorCode, ErrorObject};
 #[cfg(feature = "message")]
 use mycelium::subnet::Subnet;
 #[cfg(feature = "message")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "message")]
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 #[cfg(feature = "message")]
