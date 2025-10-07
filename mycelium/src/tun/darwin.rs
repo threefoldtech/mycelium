@@ -3,7 +3,7 @@
 use std::{
     ffi::CString,
     io::{self, IoSlice},
-    net::IpAddr,
+    net::{IpAddr, Ipv6Addr},
     os::fd::AsRawFd,
     str::FromStr,
 };
@@ -124,6 +124,19 @@ pub async fn new(
                         buf.set_size(n-4);
                         buf
                     });
+
+
+                    // On Mac, packets from the tun ip to the tun ip (e.g. ping tun ip) need to be
+                    // passed explicitly to the TUN interface again for them to be picked up by the
+                    // kernel, since they are not routed on the loopback interface.
+                    if let Ok(ref buf) = rr {
+                        if buf.len() >= 40 &&  tun_config.node_subnet.contains_ip(IpAddr::V6(Ipv6Addr::from(<[u8;16] as TryFrom<&[u8]>>::try_from(&buf[24..40]).expect("Valid 16 byte buffer; qed")))) {
+                            if let Err(err) = tun.write_vectored(&[IoSlice::new(&HEADER), IoSlice::new(&buf)]).await {
+                                error!(%err, "Failed to send data to tun interface");
+                            }
+                        }
+                    }
+
 
 
                     if tun_stream.send(rr).is_err() {

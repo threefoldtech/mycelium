@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Return actuall amount of bytes sent to peers instead of the amount of bytes received
   from them.
+- Improve handling of completely local packets on MacOS. This will allow the kernel
+  to reply to ping packets send from the local system to the TUN interface, among
+  other things.
 
 ## [0.6.2] - 2025-09-19
 
