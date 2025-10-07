@@ -33,16 +33,6 @@ use mycelium::peer_manager::{PeerExists, PeerNotFound, PeerStats};
 
 use self::spec::OPENRPC_SPEC;
 
-// Topic configuration struct for RPC API
-#[cfg(feature = "message")]
-#[derive(Clone, Serialize, Deserialize)]
-struct TopicInfo {
-    topic: String,
-    sources: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    forward_socket: Option<String>,
-}
-
 // Define the base RPC API trait using jsonrpsee macros
 #[rpc(server)]
 pub trait MyceliumApi {
