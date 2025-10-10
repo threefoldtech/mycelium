@@ -28,6 +28,7 @@ pub mod cdn;
 mod connection;
 pub mod crypto;
 pub mod data;
+mod dns;
 pub mod endpoint;
 pub mod filters;
 mod interval;
@@ -105,6 +106,9 @@ pub struct Config<M> {
 
     pub cdn_cache: Option<PathBuf>,
 
+    /// Enable dns resolver. This binds to port 53
+    pub enable_dns: bool,
+
     /// Configuration for message topics, if this is not set the default config will be used.
     #[cfg(feature = "message")]
     pub topic_config: Option<TopicConfig>,
@@ -114,6 +118,7 @@ pub struct Config<M> {
 pub struct Node<M> {
     router: router::Router<M>,
     peer_manager: peer_manager::PeerManager<M>,
+    _dns: Option<dns::Resolver>,
     _cdn: Option<Cdn>,
     proxy: Proxy<M>,
     #[cfg(feature = "message")]
@@ -269,6 +274,12 @@ where
             }
         };
 
+        let dns = if config.enable_dns {
+            Some(dns::Resolver::new().await)
+        } else {
+            None
+        };
+
         let cdn = config.cdn_cache.map(Cdn::new);
         if let Some(ref cdn) = cdn {
             let listener = TcpListener::bind("localhost:80").await?;
@@ -283,6 +294,7 @@ where
         Ok(Node {
             router,
             peer_manager: pm,
+            _dns: dns,
             _cdn: cdn,
             proxy,
             #[cfg(feature = "message")]

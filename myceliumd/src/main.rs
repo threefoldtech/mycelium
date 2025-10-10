@@ -375,6 +375,14 @@ pub struct NodeArguments {
     /// the CDN functionallity for faster access next time.
     #[arg(long = "cdn-cache")]
     cdn_cache: Option<PathBuf>,
+
+    /// Enable the dns resolver
+    ///
+    /// When the DNS resolver is enabled, it will bind a UDP socket on port 53. If this fails, the
+    /// system will not continue starting. All queries sent to this resolver will be forwarded to
+    /// the system resolvers.
+    #[arg(long = "enable-dns")]
+    enable_dns: bool,
 }
 
 #[cfg(feature = "hero")]
@@ -434,6 +442,7 @@ pub struct MergedNodeConfig {
     update_workers: usize,
     topic_config: Option<PathBuf>,
     cdn_cache: Option<PathBuf>,
+    enable_dns: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -454,6 +463,7 @@ struct MyceliumConfig {
     update_workers: Option<usize>,
     topic_config: Option<PathBuf>,
     cdn_cache: Option<PathBuf>,
+    enable_dns: Option<bool>,
 }
 
 #[tokio::main]
@@ -738,6 +748,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     update_workers: merged_config.update_workers,
                     topic_config,
                     cdn_cache: merged_config.cdn_cache,
+                    enable_dns: merged_config.enable_dns,
                 };
                 metrics.spawn(metrics_api_addr);
                 let node = Arc::new(Mutex::new(Node::new(config).await?));
@@ -771,6 +782,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     update_workers: merged_config.update_workers,
                     topic_config,
                     cdn_cache: merged_config.cdn_cache,
+                    enable_dns: merged_config.enable_dns,
                 };
                 let node = Arc::new(Mutex::new(Node::new(config).await?));
                 let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
@@ -1051,6 +1063,7 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
         },
         topic_config: cli_args.topic_config.or(file_config.topic_config),
         cdn_cache: cli_args.cdn_cache.or(file_config.cdn_cache),
+        enable_dns: cli_args.enable_dns || file_config.enable_dns.unwrap_or(false),
     }
 }
 
