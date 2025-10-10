@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional DNS resolver. When enabled this will bind UDP port 53 on the system.
+  For now, this uses the system configured resolvers to resolve queries. In the
+  future, this will be expanded to redirect queries for certain TLD's to alternative
+  backend.
+
 ### Fixed
 
 - Return actuall amount of bytes sent to peers instead of the amount of bytes received
