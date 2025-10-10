@@ -27,7 +27,9 @@ use std::{
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
-use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{
+    self, error::TrySendError, Receiver, Sender, UnboundedReceiver, UnboundedSender,
+};
 use tracing::{debug, error, info, trace, warn};
 
 /// Time between HELLO messags, in seconds
@@ -250,7 +252,7 @@ where
         // TODO: proper fix
         match self.routing_table.best_routes(dest) {
             Routes::Exist(routes) => Some(routes.shared_secret().clone()),
-            Routes::Queried => {
+            Routes::Queried(_) => {
                 tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
                 self.get_shared_secret_from_dest(dest)
             }
@@ -296,7 +298,7 @@ where
                     None
                 }
             }
-            Routes::Queried => {
+            Routes::Queried(_) => {
                 tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
                 self.get_shared_secret_if_selected(dest)
             }
@@ -906,7 +908,7 @@ where
                     }
                     // If the route is queried already we don't have to do anything.
                     // TODO: metric
-                    Routes::Queried => return,
+                    Routes::Queried(_) => return,
                     Routes::NoRoute => {
                         // We explicitly don't have a route for this subnet, so send a retraction to
                         // notify our peer as soon as possible not to expect anything.
@@ -1651,11 +1653,24 @@ where
                         self.no_route_to_host(data_packet);
                     }
                 },
-                Routes::Queried => {
-                    // Wait for query resolution
-                    // TODO: proper fix
-                    tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
-                    self.route_packet(data_packet);
+                Routes::Queried(queue) => {
+                    match queue.try_send(data_packet) {
+                        Err(TrySendError::Closed(data_packet)) => {
+                            // Sanity check: this would indicate a race condition
+                            warn!(dst = %data_packet.dst_ip, "Queue for queried subnet is closed, this is not expected");
+                            self.route_packet(data_packet)
+                        }
+                        Err(TrySendError::Full(data_packet)) => {
+                            // Ideally we should drop here, but for now we will block and see how
+                            // this affects the system flow
+                            warn!(dst = %data_packet.dst_ip, "Blocking while routing as queried subnet packet queue is full");
+                            tokio::task::block_in_place(|| {
+                                std::thread::sleep(QUERY_CHECK_DURATION)
+                            });
+                            self.route_packet(data_packet);
+                        }
+                        Ok(()) => {}
+                    }
                 }
                 Routes::NoRoute => {
                     self.metrics.router_route_packet_no_route();

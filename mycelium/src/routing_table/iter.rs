@@ -55,7 +55,7 @@ impl Iterator for RoutingTableQueryIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         for (ip, prefix_size, rl) in self.0.by_ref() {
-            if let SubnetEntry::Queried { query_timeout } = &**rl {
+            if let SubnetEntry::Queried { query_timeout, .. } = &**rl {
                 return Some(QueriedSubnet::new(
                     Subnet::new(ip.into(), prefix_size as u8)
                         .expect("Routing table contains valid subnets"),

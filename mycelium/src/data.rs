@@ -1,11 +1,14 @@
-use std::net::{IpAddr, Ipv6Addr};
+use std::{
+    net::{IpAddr, Ipv6Addr},
+    sync::Arc,
+};
 
 use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
     Icmpv6Type, PacketBuilder,
 };
-use futures::{Sink, SinkExt, Stream, StreamExt};
-use tokio::sync::mpsc::UnboundedReceiver;
+use futures::{stream::FuturesUnordered, Sink, SinkExt, Stream, StreamExt};
+use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use tracing::{debug, error, trace, warn};
 
 use crate::{crypto::PacketBuffer, metrics::Metrics, packet::DataPacket, router::Router};
@@ -72,7 +75,7 @@ where
     ) -> Self
     where
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
-        T: Sink<PacketBuffer> + Clone + Send + Unpin + 'static,
+        T: Sink<PacketBuffer> + Clone + Send + Sync + Unpin + 'static,
         T::Error: std::fmt::Display,
         U: Sink<(PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
         U::Error: std::fmt::Display,
@@ -97,120 +100,148 @@ where
         &self.router
     }
 
-    async fn inject_l3_packet_loop<S, T>(self, mut l3_packet_stream: S, mut l3_packet_sink: T)
+    async fn inject_l3_packet_loop<S, T>(self, mut l3_packet_stream: S, l3_packet_sink: T)
     where
         // TODO: no result
         // TODO: should IP extraction be handled higher up?
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
-        T: Sink<PacketBuffer> + Clone + Send + Unpin + 'static,
+        T: Sink<PacketBuffer> + Clone + Send + Sync + Unpin + 'static,
         T::Error: std::fmt::Display,
     {
         let node_subnet = self.router.node_tun_subnet();
+        let host = self.router.node_public_key().address().octets();
+        let shareable_data_plane = Arc::new(Mutex::new(self));
+        let mut processing_queue = FuturesUnordered::new();
 
-        while let Some(packet) = l3_packet_stream.next().await {
-            let mut packet = match packet {
-                Err(e) => {
-                    error!("Failed to read packet from TUN interface {e}");
-                    continue;
+        let process_packet = |packet: Result<PacketBuffer, std::io::Error>| {
+            let mut l3_packet_sink = l3_packet_sink.clone();
+            let sdp = shareable_data_plane.clone();
+
+            async move {
+                let mut packet = match packet {
+                    Err(e) => {
+                        error!("Failed to read packet from TUN interface {e}");
+                        return;
+                    }
+                    Ok(packet) => packet,
+                };
+
+                trace!("Received packet from tun");
+
+                // Parse an IPv6 header. We don't care about the full header in reality. What we want
+                // to know is:
+                // - This is an IPv6 header
+                // - Hop limit
+                // - Source address
+                // - Destination address
+                // This translates to the following requirements:
+                // - at least 40 bytes of data, as that is the minimum size of an IPv6 header
+                // - first 4 bits (version) are the constant 6 (0b0110)
+                // - src is byte 9-24 (8-23 0 indexed).
+                // - dst is byte 25-40 (24-39 0 indexed).
+
+                if packet.len() < IPV6_MIN_HEADER_SIZE {
+                    trace!("Packet can't contain an IPv6 header");
+                    return;
                 }
-                Ok(packet) => packet,
-            };
 
-            trace!("Received packet from tun");
+                if packet[0] & IP_VERSION_MASK != IPV6_VERSION_BYTE {
+                    trace!("Packet is not IPv6");
+                    return;
+                }
 
-            // Parse an IPv6 header. We don't care about the full header in reality. What we want
-            // to know is:
-            // - This is an IPv6 header
-            // - Hop limit
-            // - Source address
-            // - Destination address
-            // This translates to the following requirements:
-            // - at least 40 bytes of data, as that is the minimum size of an IPv6 header
-            // - first 4 bits (version) are the constant 6 (0b0110)
-            // - src is byte 9-24 (8-23 0 indexed).
-            // - dst is byte 25-40 (24-39 0 indexed).
+                let hop_limit = u8::from_be_bytes([packet[7]]);
 
-            if packet.len() < IPV6_MIN_HEADER_SIZE {
-                trace!("Packet can't contain an IPv6 header");
-                continue;
-            }
-
-            if packet[0] & IP_VERSION_MASK != IPV6_VERSION_BYTE {
-                trace!("Packet is not IPv6");
-                continue;
-            }
-
-            let hop_limit = u8::from_be_bytes([packet[7]]);
-
-            let src_ip = Ipv6Addr::from(
-                <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[8..24])
-                    .expect("Static range bounds on slice are correct length"),
-            );
-            let dst_ip = Ipv6Addr::from(
-                <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[24..40])
-                    .expect("Static range bounds on slice are correct length"),
-            );
-
-            // If this is a packet for our own Subnet, it means there is no local configuration for
-            // the destination ip or /64 subnet, and the IP is unreachable
-            if node_subnet.contains_ip(dst_ip.into()) {
-                trace!(
-                    "Replying to local packet for unexisting address: {}",
-                    dst_ip
+                let src_ip = Ipv6Addr::from(
+                    <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[8..24])
+                        .expect("Static range bounds on slice are correct length"),
+                );
+                let dst_ip = Ipv6Addr::from(
+                    <&[u8] as TryInto<[u8; 16]>>::try_into(&packet[24..40])
+                        .expect("Static range bounds on slice are correct length"),
                 );
 
-                let mut icmp_packet = PacketBuffer::new();
-                let host = self.router.node_public_key().address().octets();
-                let icmp = PacketBuilder::ipv6(host, src_ip.octets(), 64).icmpv6(
-                    Icmpv6Type::DestinationUnreachable(DestUnreachableCode::Address),
-                );
-                icmp_packet.set_size(icmp.size(packet.len().min(1280 - 48)));
-                let mut writer = &mut icmp_packet.buffer_mut()[..];
-                if let Err(e) = icmp.write(&mut writer, &packet[..packet.len().min(1280 - 48)]) {
-                    error!("Failed to construct ICMP packet: {e}");
-                    continue;
+                // If this is a packet for our own Subnet, it means there is no local configuration for
+                // the destination ip or /64 subnet, and the IP is unreachable
+                if node_subnet.contains_ip(dst_ip.into()) {
+                    trace!(
+                        "Replying to local packet for unexisting address: {}",
+                        dst_ip
+                    );
+
+                    let mut icmp_packet = PacketBuffer::new();
+                    let icmp = PacketBuilder::ipv6(host, src_ip.octets(), 64).icmpv6(
+                        Icmpv6Type::DestinationUnreachable(DestUnreachableCode::Address),
+                    );
+                    icmp_packet.set_size(icmp.size(packet.len().min(1280 - 48)));
+                    let mut writer = &mut icmp_packet.buffer_mut()[..];
+                    if let Err(e) = icmp.write(&mut writer, &packet[..packet.len().min(1280 - 48)])
+                    {
+                        error!("Failed to construct ICMP packet: {e}");
+                        return;
+                    }
+                    if let Err(e) = l3_packet_sink.send(icmp_packet).await {
+                        error!("Failed to send ICMP packet to host: {e}");
+                    }
+                    return;
                 }
-                if let Err(e) = l3_packet_sink.send(icmp_packet).await {
-                    error!("Failed to send ICMP packet to host: {e}");
+
+                trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
+                // Check if the source address is part of 400::/7
+                let first_src_byte = src_ip.segments()[0] >> 8;
+                if !(0x04..0x06).contains(&first_src_byte) {
+                    let mut icmp_packet = PacketBuffer::new();
+                    let icmp = PacketBuilder::ipv6(host, src_ip.octets(), 64).icmpv6(
+                        Icmpv6Type::DestinationUnreachable(
+                            DestUnreachableCode::SourceAddressFailedPolicy,
+                        ),
+                    );
+                    icmp_packet.set_size(icmp.size(packet.len().min(1280 - 48)));
+                    let mut writer = &mut icmp_packet.buffer_mut()[..];
+                    if let Err(e) = icmp.write(&mut writer, &packet[..packet.len().min(1280 - 48)])
+                    {
+                        error!("Failed to construct ICMP packet: {e}");
+                        return;
+                    }
+                    if let Err(e) = l3_packet_sink.send(icmp_packet).await {
+                        error!("Failed to send ICMP packet to host: {e}");
+                    }
+                    return;
                 }
-                continue;
+
+                // No need to verify destination address, if it is not part of the global subnet there
+                // should not be a route for it, and therefore the route step will generate the
+                // appropriate ICMP.
+
+                let mut header = packet.header_mut();
+                header[0] = USER_DATA_VERSION;
+                header[1] = USER_DATA_L3_TYPE;
+
+                let _ = tokio::task::spawn_blocking(move || async move {
+                    if let Some(icmp) = sdp
+                        .lock()
+                        .await
+                        .encrypt_and_route_packet(src_ip, dst_ip, hop_limit, packet)
+                    {
+                        if let Err(e) = l3_packet_sink.send(icmp).await {
+                            error!("Could not forward icmp packet back to TUN interface {e}");
+                        }
+                    }
+                })
+                .await;
             }
+        };
 
-            trace!("Received packet from TUN with dest addr: {:?}", dst_ip);
-            // Check if the source address is part of 400::/7
-            let first_src_byte = src_ip.segments()[0] >> 8;
-            if !(0x04..0x06).contains(&first_src_byte) {
-                let mut icmp_packet = PacketBuffer::new();
-                let host = self.router.node_public_key().address().octets();
-                let icmp = PacketBuilder::ipv6(host, src_ip.octets(), 64).icmpv6(
-                    Icmpv6Type::DestinationUnreachable(
-                        DestUnreachableCode::SourceAddressFailedPolicy,
-                    ),
-                );
-                icmp_packet.set_size(icmp.size(packet.len().min(1280 - 48)));
-                let mut writer = &mut icmp_packet.buffer_mut()[..];
-                if let Err(e) = icmp.write(&mut writer, &packet[..packet.len().min(1280 - 48)]) {
-                    error!("Failed to construct ICMP packet: {e}");
-                    continue;
+        loop {
+            tokio::select! {
+                mp = l3_packet_stream.next() => {
+                    match mp {
+                        Some(packet) => processing_queue.push(process_packet(packet)),
+                        None => break,
+                    }
                 }
-                if let Err(e) = l3_packet_sink.send(icmp_packet).await {
-                    error!("Failed to send ICMP packet to host: {e}");
-                }
-                continue;
-            }
-
-            // No need to verify destination address, if it is not part of the global subnet there
-            // should not be a route for it, and therefore the route step will generate the
-            // appropriate ICMP.
-
-            let mut header = packet.header_mut();
-            header[0] = USER_DATA_VERSION;
-            header[1] = USER_DATA_L3_TYPE;
-
-            if let Some(icmp) = self.encrypt_and_route_packet(src_ip, dst_ip, hop_limit, packet) {
-                if let Err(e) = l3_packet_sink.send(icmp).await {
-                    error!("Could not forward icmp packet back to TUN interface {e}");
-                }
+                // Simply drive the queue
+                _ = processing_queue.next() => {},
             }
         }
 

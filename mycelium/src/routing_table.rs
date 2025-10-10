@@ -11,7 +11,7 @@ use tokio::{select, sync::mpsc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, trace};
 
-use crate::{crypto::SharedSecret, peer::Peer, subnet::Subnet};
+use crate::{crypto::SharedSecret, packet::DataPacket, peer::Peer, subnet::Subnet};
 
 pub use iter::RoutingTableIter;
 pub use iter_mut::RoutingTableIterMut;
@@ -31,10 +31,20 @@ mod route_list;
 mod subnet_entry;
 
 const NO_ROUTE_EXPIRATION: Duration = Duration::from_secs(60);
+/// The maximum amount of packets to queue for subnets which are being discovered. If no route is
+/// found, these packets will be dropped. Otherwise, they will be sent once a route is discovered.
+///
+/// This value is largely experimental and subject to further tweaking. Notably, for tcp, this
+/// value should be more than enough since a single tcp stream should only send 1 packet (initial
+/// SYN) to a subnet we need to query (so once which hasn't been uced recently). On the other
+/// hand, UDP might send a stream of packets initially, so we need some more capacity. Here, a
+/// limit of 1000 means that, at an average packet size of 1KiB, 1MiB would be queued until
+/// resolution finishes, which seems sufficient.
+const QUERIED_SUBNET_PACKET_QUEUE_CAPACITY: usize = 1000;
 
 pub enum Routes {
     Exist(RouteListReadGuard),
-    Queried,
+    Queried(mpsc::Sender<DataPacket>),
     NoRoute,
     None,
 }
@@ -61,7 +71,7 @@ impl From<&SubnetEntry> for Routes {
             SubnetEntry::Exists { list } => {
                 Routes::Exist(RouteListReadGuard { inner: list.load() })
             }
-            SubnetEntry::Queried { .. } => Routes::Queried,
+            SubnetEntry::Queried { queue_tx, .. } => Routes::Queried(queue_tx.clone()),
             SubnetEntry::NoRoute { .. } => Routes::NoRoute,
         }
     }
@@ -336,9 +346,14 @@ impl RoutingTable {
         }
 
         let mut write_handle = self.writer.lock().expect("Can lock writer");
+        let (tx, rx) = mpsc::channel(QUERIED_SUBNET_PACKET_QUEUE_CAPACITY);
         write_handle.append(RoutingTableOplogEntry::Queried(
             subnet,
-            Arc::new(SubnetEntry::Queried { query_timeout }),
+            Arc::new(SubnetEntry::Queried {
+                query_timeout,
+                queue_tx: tx,
+                queue_rx: rx,
+            }),
         ));
         write_handle.flush();
     }
