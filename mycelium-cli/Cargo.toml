@@ -21,6 +21,6 @@ tokio = { version = "1.47.1", default-features = false, features = [
   "rt",
   "fs",
 ] }
-reqwest = { version = "0.12.23", default-features = false, features = ["json"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["json"] }
 byte-unit = "5.1.6"
 urlencoding = "2.1.3"
