@@ -299,7 +299,7 @@ async fn get_no_route_entries<M>(State(state): State<ServerState<M>>) -> Json<Ve
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
-    debug!("Loading queried subnets");
+    debug!("Loading no-route subnets");
     let queries = state
         .node
         .lock()
