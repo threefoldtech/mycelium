@@ -247,70 +247,74 @@ where
 
     /// Gets the cached [`SharedSecret`] for the remote.
     pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
-        // TODO: proper fix
-        match self.routing_table.best_routes(dest) {
-            Routes::Exist(routes) => Some(routes.shared_secret().clone()),
-            Routes::Queried => {
-                tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
-                self.get_shared_secret_from_dest(dest)
+        // TODO: Make properly async
+        for _ in 0..50 {
+            match self.routing_table.best_routes(dest) {
+                Routes::Exist(routes) => return Some(routes.shared_secret().clone()),
+                Routes::Queried => {}
+                Routes::NoRoute => return None,
+                Routes::None => {
+                    // NOTE: we request the full /64 subnet
+                    self.send_route_request(
+                        Subnet::new(dest, 64)
+                            .expect("64 is a valid subnet size for an IPv6 address; qed"),
+                    );
+                }
             }
-            Routes::NoRoute => None,
-            Routes::None => {
-                // NOTE: we request the full /64 subnet
-                self.send_route_request(
-                    Subnet::new(dest, 64)
-                        .expect("64 is a valid subnet size for an IPv6 address; qed"),
-                );
-                tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
-                self.get_shared_secret_from_dest(dest)
-            }
+
+            tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
         }
+
+        None
     }
 
     /// Get a [`SharedSecret`] for a remote, if a selected route exists to the remote.
     // TODO: Naming
     pub fn get_shared_secret_if_selected(&self, dest: IpAddr) -> Option<SharedSecret> {
-        // TODO: proper fix
-        match self.routing_table.best_routes(dest) {
-            Routes::Exist(routes) => {
-                if routes.selected().is_some() {
-                    Some(routes.shared_secret().clone())
-                } else {
-                    // Optimistically try to fetch a new route for the subnet for next time.
-                    // TODO: this can likely be handled better, but that relies on continuously
-                    // quering routes in use, and handling unfeasible routes
-                    if let Some(route_entry) = routes.iter().next() {
-                        // We have a fallback route, use the source key from that to do a seqno
-                        // request. Since the next hop might be dead, just do a broadcast. This
-                        // might be blocked by the seqno request cache.
-                        self.send_seqno_request(route_entry.source(), None, None);
+        // TODO: Make properly async
+        for _ in 0..50 {
+            match self.routing_table.best_routes(dest) {
+                Routes::Exist(routes) => {
+                    if routes.selected().is_some() {
+                        return Some(routes.shared_secret().clone());
                     } else {
-                        // We don't have any routes, so send a route request. this might fail due
-                        // to the source table.
-                        self.send_route_request(
-                            Subnet::new(dest, 64)
-                                .expect("64 is a valid subnet size for an IPv6 address; qed"),
-                        );
-                    }
+                        // Optimistically try to fetch a new route for the subnet for next time.
+                        // TODO: this can likely be handled better, but that relies on continuously
+                        // quering routes in use, and handling unfeasible routes
+                        if let Some(route_entry) = routes.iter().next() {
+                            // We have a fallback route, use the source key from that to do a seqno
+                            // request. Since the next hop might be dead, just do a broadcast. This
+                            // might be blocked by the seqno request cache.
+                            self.send_seqno_request(route_entry.source(), None, None);
+                        } else {
+                            // We don't have any routes, so send a route request. this might fail due
+                            // to the source table.
+                            self.send_route_request(
+                                Subnet::new(dest, 64)
+                                    .expect("64 is a valid subnet size for an IPv6 address; qed"),
+                            );
+                        }
 
-                    None
+                        return None;
+                    }
+                }
+                Routes::Queried => {}
+                Routes::NoRoute => {
+                    return None;
+                }
+                Routes::None => {
+                    // NOTE: we request the full /64 subnet
+                    self.send_route_request(
+                        Subnet::new(dest, 64)
+                            .expect("64 is a valid subnet size for an IPv6 address; qed"),
+                    );
                 }
             }
-            Routes::Queried => {
-                tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
-                self.get_shared_secret_if_selected(dest)
-            }
-            Routes::NoRoute => None,
-            Routes::None => {
-                // NOTE: we request the full /64 subnet
-                self.send_route_request(
-                    Subnet::new(dest, 64)
-                        .expect("64 is a valid subnet size for an IPv6 address; qed"),
-                );
-                tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
-                self.get_shared_secret_if_selected(dest)
-            }
+
+            tokio::task::block_in_place(|| std::thread::sleep(QUERY_CHECK_DURATION));
         }
+
+        None
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
