@@ -14,7 +14,7 @@ name = "mycelium-private"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.50", features = ["derive"] }
+clap = { version = "4.5.52", features = ["derive"] }
 tracing = { version = "0.1.41", features = ["release_max_level_debug"] }
 tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
 tracing-subscriber = { version = "0.3.20", features = [
@@ -34,6 +34,6 @@ tokio = { version = "1.48.0", features = [
 ] }
 reqwest = { version = "0.12.24", default-features = false, features = ["json"] }
 base64 = "0.22.1"
-config = "0.15.18"
+config = "0.15.19"
 dirs = "6.0.0"
 toml = "0.9.8"
