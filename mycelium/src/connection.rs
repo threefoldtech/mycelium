@@ -14,7 +14,6 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 mod tracked;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::info;
 pub use tracked::Tracked;
 
 #[cfg(feature = "private-network")]

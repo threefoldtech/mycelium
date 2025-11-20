@@ -10,7 +10,7 @@ use tokio::{
     select,
     sync::{mpsc, Notify},
 };
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 use crate::{connection::Connection, packet::Packet};
 use crate::{
