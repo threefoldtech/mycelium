@@ -84,7 +84,6 @@ impl Peer {
             let peer = peer.clone();
 
             tokio::spawn(async move {
-                let mut needs_flush = false;
                 loop {
                     select! {
                         // Received over the TCP stream
@@ -140,12 +139,9 @@ impl Peer {
                                 }
                             }
 
-                            if needs_flush {
-                                if let Err(e) = connection.flush().await {
-                                    error!("Failed to flush buffered peer connection data packets: {e}");
-                                    break
-                                }
-                                needs_flush = false;
+                            if let Err(e) = connection.flush().await {
+                                error!("Failed to flush buffered peer connection data packets: {e}");
+                                break
                             }
                         }
 
@@ -180,12 +176,9 @@ impl Peer {
                                 }
                             }
 
-                            if needs_flush {
-                                if let Err(e) = connection.flush().await {
-                                    error!("Failed to flush buffered peer connection control packets: {e}");
-                                    break
-                                }
-                                needs_flush = false;
+                            if let Err(e) = connection.flush().await {
+                                error!("Failed to flush buffered peer connection control packets: {e}");
+                                break
                             }
                         }
 
