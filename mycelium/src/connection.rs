@@ -213,7 +213,7 @@ impl Connection for Quic {
 
         self.con
             .send_datagram(buffer.into())
-            .map_err(|sde| io::Error::new(io::ErrorKind::Other, sde))
+            .map_err(io::Error::other)
     }
 
     async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
