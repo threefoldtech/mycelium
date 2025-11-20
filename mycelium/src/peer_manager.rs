@@ -1218,17 +1218,17 @@ fn make_quic_endpoint(
     transport_config.max_idle_timeout(Some(Duration::from_secs(60).try_into()?));
     transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
     transport_config.keep_alive_interval(Some(Duration::from_secs(20)));
-    // we don't use datagrams.
     transport_config.datagram_receive_buffer_size(Some(16 << 20));
     transport_config.datagram_send_buffer_size(16 << 20);
     transport_config.initial_mtu(1500);
+    transport_config.enable_segmentation_offload(true);
     // TODO: further tweak this.
 
     let socket = std::net::UdpSocket::bind(("::", quic_listen_port))
         .and_then(|socket| set_fw_mark(socket, firewall_mark))?;
     debug!("Bound UDP socket for Quic");
 
-    //TODO tweak or confirm
+    // TODO: tweak or confirm
     let endpoint = quinn::Endpoint::new(
         quinn::EndpointConfig::default(),
         Some(server_config),
