@@ -9,7 +9,7 @@ use futures::{FutureExt, StreamExt};
 #[cfg(feature = "private-network")]
 use openssl::ssl::{Ssl, SslAcceptor, SslConnector, SslMethod};
 use quinn::crypto::rustls::QuicClientConfig;
-use quinn::{MtuDiscoveryConfig, ServerConfig, TransportConfig};
+use quinn::{congestion, MtuDiscoveryConfig, ServerConfig, TransportConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -1222,7 +1222,11 @@ fn make_quic_endpoint(
     transport_config.datagram_send_buffer_size(16 << 20);
     transport_config.initial_mtu(1500);
     transport_config.enable_segmentation_offload(true);
-    // TODO: further tweak this.
+    transport_config.send_window((8 * (10u32 << 20)).into());
+    transport_config.stream_receive_window((10u32 << 20).into());
+    let mut congestion_controller = congestion::CubicConfig::default();
+    congestion_controller.initial_window(1 << 22); // 4MiB
+                                                   // TODO: further tweak this.
 
     let socket = std::net::UdpSocket::bind(("::", quic_listen_port))
         .and_then(|socket| set_fw_mark(socket, firewall_mark))?;
