@@ -8,9 +8,9 @@ services:
     container_name: myceliumd
     restart: unless-stopped
     network_mode: host
-    volumes:
+    # volumes:
       # Data directory (keys)
-      - ${MYCELIUM_DATA_DIR}:/data:z
+      # - ${MYCELIUM_DATA_DIR}:/data:z
       
       # - ${CONFIG_FILE_PATH}:/mycelium.conf:z
 
