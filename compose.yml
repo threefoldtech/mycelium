@@ -8,8 +8,8 @@ services:
     container_name: myceliumd
     restart: unless-stopped
     network_mode: host
-    volumes:
-      - ${CONFIG_FILE_PATH}:/mycelium.conf:z
+    # volumes:
+      # - ${CONFIG_FILE_PATH}:/mycelium.conf:z
     command:
       - "--debug"
       # FIXME: Enable the below soon
