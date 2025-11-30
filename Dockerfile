@@ -27,13 +27,16 @@ RUN mv target/debug/mycelium /bin/mycelium
 FROM debian:latest AS base
 COPY --from=daemonBuild /bin/mycelium /bin/mycelium
 
-ENV MYCELIUM_PEERS_STRING=""
+# Bring in all environment variables
+ENV PEERS_STRING=""
 
 ENV QUIC_PORT=9651
 ENV TCP_PORT=9651
 ENV PD_PORT=9650
+
 ENV TUN_IFNAME=mycelium0
+
 ENV LOG_OPTION=debug
 
-# Command to run (FIXME: Remove `--debug`)
+# Command to run
 CMD /bin/mycelium, --$LOG_OPTION, --key-file, /data/private.key, --peers, $PEERS_STRING, --quic-listen-port, $QUIC_PORT, --tcp-listen-port, $TCP_PORT, --peer-discovery-port, $PD_PORT, --tun-name, $TUN_IFNAME
