@@ -16,6 +16,7 @@ WORKDIR /src
 
 # target: myceliumd - the routing daemon
 FROM build AS daemonBuild
+WORKDIR /src
 WORKDIR myceliumd/
 RUN cargo build
 COPY target/debug/mycelium /bin/mycelium
