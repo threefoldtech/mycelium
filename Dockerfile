@@ -25,7 +25,11 @@ RUN pwd && sleep 10
 RUN touch 1
 RUN pwd && sleep 10
 # COPY Cargo.toml /bruh
-COPY /src/mycelium/myceliumd/target/debug/mycelium /bin/mycelium
+
+COPY Cargo.toml /bruh
+RUN cat /bruh && sleep 20
+
+# COPY /src/mycelium/myceliumd/target/debug/mycelium /bin/mycelium
 
 # entrypoint
 ENTRYPOINT /bin/mycelium
