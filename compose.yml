@@ -9,8 +9,8 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      # Key file
-      - ${MYCELIUM_KEY_FILE}:/private.key:z
+      # Data directory (keys)
+      - ${MYCELIUM_DATA_DIR}:/data:z
       
       # - ${CONFIG_FILE_PATH}:/mycelium.conf:z
 
@@ -24,9 +24,9 @@ services:
       
     command:
       # NOTE: Don't change this unless you do the
-      # same on the container-side for the key-file
+      # same on the container-side for the data dir
       # volume-mount
-      - "--key-file ${MYCECLIUM_KEY_FILE_CONTAINER_SIDE:-/private.key}"
+      - "--key-file /data/private.key"
 
     
       - "--${MYCELIUM_LOG_LEVEL:-silent}"
