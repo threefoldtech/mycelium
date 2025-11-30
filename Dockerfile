@@ -35,14 +35,14 @@ ENV MYCELIUM_PD_PORT=9650
 ENV MYCELIUM_TUN_IFNAME=mycelium0
 
 # Command to run (FIXME: Remove `--debug`)
-CMD [
-			"/bin/mycelium", "--debug", 
-			"--key-file", "/data/private.key",
-			"--peers", $MYCELIUM_PEERS_STRING,
-
-			"--quic-listen-port", $MYCELIUM_QUIC_PORT,
-      "--tcp-listen-port", $MYCELIUM_TCP_PORT,
-      "--peer-discovery-port", $MYCELIUM_PD_PORT,
-  
-      "--tun-name", $MYCELIUM_TUN_IFNAME
+CMD [ \
+			"/bin/mycelium", "--debug", \
+			"--key-file", "/data/private.key", \
+			"--peers", $MYCELIUM_PEERS_STRING, \
+\
+			"--quic-listen-port", $MYCELIUM_QUIC_PORT, \
+      "--tcp-listen-port", $MYCELIUM_TCP_PORT, \
+      "--peer-discovery-port", $MYCELIUM_PD_PORT, \
+\
+      "--tun-name", $MYCELIUM_TUN_IFNAME \
 		]
