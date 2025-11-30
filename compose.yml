@@ -32,7 +32,8 @@ services:
       - "--${MYCELIUM_LOG_LEVEL:-silent}"
       # FIXME: Enable the below soon
       # - "--config-file ${MYCELIUM_CONFIG_FILE_PATH}"
-      - "--peers {$MYCELIUM_PEERS_STRING}"
+      - "--peers"
+      - "{$MYCELIUM_PEERS_STRING}"
 
       # QUIC listening port
       - "--quic-listen-port ${MYCELIUM_QUIC_PORT:-9651}"
