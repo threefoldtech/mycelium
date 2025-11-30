@@ -29,10 +29,11 @@ COPY --from=daemonBuild /bin/mycelium /bin/mycelium
 
 ENV MYCELIUM_PEERS_STRING=""
 
-ENV MYCELIUM_QUIC_PORT=9651
-ENV MYCELIUM_TCP_PORT=9651
-ENV MYCELIUM_PD_PORT=9650
-ENV MYCELIUM_TUN_IFNAME=mycelium0
+ENV QUIC_PORT=9651
+ENV TCP_PORT=9651
+ENV PD_PORT=9650
+ENV TUN_IFNAME=mycelium0
+ENV LOG_OPTION=debug
 
 # Command to run (FIXME: Remove `--debug`)
-CMD ["/bin/mycelium", "--debug", "--key-file", "/data/private.key", "--peers", $MYCELIUM_PEERS_STRING, "--quic-listen-port", $MYCELIUM_QUIC_PORT, "--tcp-listen-port", $MYCELIUM_TCP_PORT, "--peer-discovery-port", $MYCELIUM_PD_PORT, "--tun-name", $MYCELIUM_TUN_IFNAME ]
+CMD ["/bin/mycelium", "--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", $PEERS_STRING, "--quic-listen-port", $QUIC_PORT, "--tcp-listen-port", $TCP_PORT, "--peer-discovery-port", $PD_PORT, "--tun-name", $TUN_IFNAME ]
