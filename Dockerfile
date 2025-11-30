@@ -36,4 +36,4 @@ ENV TUN_IFNAME=mycelium0
 ENV LOG_OPTION=debug
 
 # Command to run (FIXME: Remove `--debug`)
-CMD ["/bin/mycelium", "--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", $PEERS_STRING, "--quic-listen-port", $QUIC_PORT, "--tcp-listen-port", $TCP_PORT, "--peer-discovery-port", $PD_PORT, "--tun-name", $TUN_IFNAME ]
+CMD ["/bin/mycelium", "--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", $PEERS_STRING, "--quic-listen-port", $QUIC_PORT, "--tcp-listen-port", $TCP_PORT, "--peer-discovery-port", $PD_PORT, "--tun-name", $TUN_IFNAME]
