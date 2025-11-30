@@ -28,6 +28,7 @@ services:
       # volume-mount
       - "--key-file"
       - "/data/private.key"
+      - poes
 
     
       - "--${MYCELIUM_LOG_LEVEL:-silent}"
