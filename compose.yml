@@ -21,31 +21,32 @@ services:
       # manipulation via the `/dev/tun` in order to
       # open tun adaptor
       - NET_ADMIN
-      
-    command:
-      - "--debug"
-
-      # NOTE: Don't change this unless you do the
-      # same on the container-side for the data dir
-      # volume-mount
-      - "--key-file /data/private.key"
-
-
-
-      # - "--${MYCELIUM_LOG_LEVEL:-silent}"
-      # FIXME: Enable the below soon
-      # - "--config-file ${MYCELIUM_CONFIG_FILE_PATH}"
-      - "--peers"
-      - "{$MYCELIUM_PEERS_STRING}"
-
-      # QUIC listening port
-      - "--quic-listen-port ${MYCELIUM_QUIC_PORT:-9651}"
-
-      # TCP listening port
-      - "--tcp-listen-port ${MYCELIUM_TCP_PORT:-9651}"
-
-      # Peer discovery (LAN multicast) port
-      - "--peer-discovery-port ${MYCELIUM_PD_PORT:-9650}"
-
-      # TUN adaptor name
-      - "--tun-name ${MYCELIUM_TUN_IFNAME:-mycelium0}"
+      # 
+    # entrypoint:
+      # - "/bin/mycelium"
+      # - "--debug"
+# 
+      # # NOTE: Don't change this unless you do the
+      # # same on the container-side for the data dir
+      # # volume-mount
+      # - "--key-file /data/private.key"
+# 
+# 
+# 
+      # # - "--${MYCELIUM_LOG_LEVEL:-silent}"
+      # # FIXME: Enable the below soon
+      # # - "--config-file ${MYCELIUM_CONFIG_FILE_PATH}"
+      # - "--peers"
+      # - "{$MYCELIUM_PEERS_STRING}"
+# 
+      # # QUIC listening port
+      # - "--quic-listen-port ${MYCELIUM_QUIC_PORT:-9651}"
+# 
+      # # TCP listening port
+      # - "--tcp-listen-port ${MYCELIUM_TCP_PORT:-9651}"
+# 
+      # # Peer discovery (LAN multicast) port
+      # - "--peer-discovery-port ${MYCELIUM_PD_PORT:-9650}"
+# 
+      # # TUN adaptor name
+      # - "--tun-name ${MYCELIUM_TUN_IFNAME:-mycelium0}"
