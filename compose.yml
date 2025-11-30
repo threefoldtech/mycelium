@@ -8,5 +8,10 @@ services:
     container_name: myceliumd
     restart: unless-stopped
     network_mode: host
+    volumes:
+      - ${CONFIG_FILE_PATH}:/mycelium.conf:z
     command:
       - "--debug"
+      # FIXME: Enable the below soon
+      # - "--config-file ${MYCELIUM_CONFIG_FILE_PATH}"
+      - "--peers {$MYCELIUM_PEERS_STRING}"
