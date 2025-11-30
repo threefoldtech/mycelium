@@ -8,8 +8,17 @@ services:
     container_name: myceliumd
     restart: unless-stopped
     network_mode: host
-    # volumes:
+    volumes:
       # - ${CONFIG_FILE_PATH}:/mycelium.conf:z
+
+     # Access to TUN/TAP control device node
+     - /dev/net/tun:/dev/net/tun:z
+    cap_add:
+      # Add capability for performing needed network
+      # manipulation via the `/dev/tun` in order to
+      # open tun adaptor
+      - NET_ADMIN
+      
     command:
       - "--debug"
       # FIXME: Enable the below soon
