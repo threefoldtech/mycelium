@@ -1,0 +1,12 @@
+services:
+  myceliumd:
+    # TODO: Replace with image soon
+    # image
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myceliumd
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - "--debug"
