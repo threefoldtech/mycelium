@@ -23,11 +23,11 @@ services:
       - NET_ADMIN
       
     command:
+      - "--debug"
+
       # NOTE: Don't change this unless you do the
       # same on the container-side for the data dir
       # volume-mount
-      - "--debug"
-      
       - "--key-file /data/private.key"
 
 
