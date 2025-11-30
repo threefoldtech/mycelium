@@ -42,7 +42,7 @@ ENV LOG_OPTION=debug
 ENTRYPOINT /bin/mycelium
 
 # Arguments to entry point
-CMD --$LOG_OPTION --key-file /data/private.key --peers $PEERS_STRING --quic-listen-port $QUIC_PORT --tcp-listen-port $TCP_PORT --peer-discovery-port $PD_PORT --tun-name $TUN_IFNAME
+CMD ["--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", "$PEERS_STRING", "--quic-listen-port", "$QUIC_PORT", "--tcp-listen-port", "$TCP_PORT", "--peer-discovery-port", "$PD_PORT", "--tun-name", "$TUN_IFNAME"]
 
 # TODO: Add health-check command
 # HEALTHCHECK /bin/mycelium
