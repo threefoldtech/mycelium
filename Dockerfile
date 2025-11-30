@@ -23,8 +23,8 @@ RUN mv target/debug/mycelium /bin/mycelium
 # TODO: Add copying across of other tools like cli management etc.
 # and probably build them seperately
 
-FROM debian:latest AS base
-COPY --from=daemonBuild /bin/mycelium /bin/mycelium
+# FROM debian:latest AS base
+# COPY --from=daemonBuild /bin/mycelium /bin/mycelium
 
 # entrypoint
 ENTRYPOINT /bin/mycelium
