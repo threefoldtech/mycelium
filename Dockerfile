@@ -20,6 +20,7 @@ WORKDIR myceliumd/
 RUN cargo build
 RUN mv target/debug/mycelium /bin/mycelium
 
+RUN echo 1 && sleep 2
 # TODO: Add copying across of other tools like cli management etc.
 # and probably build them seperately
 
@@ -38,11 +39,14 @@ ENV TUN_IFNAME=mycelium0
 
 ENV LOG_OPTION=debug
 
+RUN echo 1
+RUN echo 23232332
+
 # Entrypoint
-ENTRYPOINT /bin/mycelium
+ENTRYPOINT ["/bin/mycelium"]
 
 # Arguments to entry point
-CMD ["--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", "$PEERS_STRING", "--quic-listen-port", "$QUIC_PORT", "--tcp-listen-port", "$TCP_PORT", "--peer-discovery-port", "$PD_PORT", "--tun-name", "$TUN_IFNAME"]
+# CMD ["--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", "$PEERS_STRING", "--quic-listen-port", "$QUIC_PORT", "--tcp-listen-port", "$TCP_PORT", "--peer-discovery-port", "$PD_PORT", "--tun-name", "$TUN_IFNAME"]
 
 # TODO: Add health-check command
 # HEALTHCHECK /bin/mycelium
