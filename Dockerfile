@@ -21,7 +21,7 @@ RUN cargo build
 RUN ls -la target/ && sleep 4
 RUN ls -la target/debug && sleep 4
 RUN ls -la target/ && sleep 4
-COPY target/debug/mycelium /bin/mycelium
+# COPY target/debug/mycelium /bin/mycelium
 
 # entrypoint
 ENTRYPOINT /bin/mycelium
