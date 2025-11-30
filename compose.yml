@@ -8,14 +8,14 @@ services:
     container_name: myceliumd
     restart: unless-stopped
     network_mode: host
-    # volumes:
+    volumes:
       # Data directory (keys)
-      # - ${MYCELIUM_DATA_DIR}:/data:z
+      - ${MYCELIUM_DATA_DIR}:/data:z
       
       # - ${CONFIG_FILE_PATH}:/mycelium.conf:z
 
-     # Access to TUN/TAP control device node
-     - /dev/net/tun:/dev/net/tun:z
+      # Access to TUN/TAP control device node
+      - /dev/net/tun:/dev/net/tun:z
     cap_add:
       # Add capability for performing needed network
       # manipulation via the `/dev/tun` in order to
