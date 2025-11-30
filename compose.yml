@@ -24,7 +24,7 @@ services:
       # and setting to `silen` means -> `--silent`
       - LOG_OPTION=${MYCELIUM_LOG_OPTION:-debug}
 
-      - QUIC_PORT=${MYCELIUM_QUIC_PORT}
-      - TCP_PORT=${MYCELIUM_TCP_PORT}
-      - PD_PORT=${MYCELIUM_PD_PORT}
-      - TUN_IFNAME=${MYCELIUM_TUN_IFNAME}
+      - QUIC_PORT=${MYCELIUM_QUIC_PORT:-9651}
+      - TCP_PORT=${MYCELIUM_TCP_PORT:-9651}
+      - PD_PORT=${MYCELIUM_PD_PORT:-9650}
+      - TUN_IFNAME=${MYCELIUM_TUN_IFNAME:-mycelium0}
