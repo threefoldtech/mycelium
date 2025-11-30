@@ -20,7 +20,6 @@ WORKDIR myceliumd/
 RUN cargo build
 RUN mv target/debug/mycelium /bin/mycelium
 
-RUN echo 1 && sleep 2
 # TODO: Add copying across of other tools like cli management etc.
 # and probably build them seperately
 
@@ -29,24 +28,18 @@ FROM debian:latest AS base
 COPY --from=daemonBuild /bin/mycelium /bin/mycelium
 
 # Bring in all environment variables
-ENV PEERS_STRING=""
+# ENV PEERS_STRING=""
 
-ENV QUIC_PORT=9651
-ENV TCP_PORT=9651
-ENV PD_PORT=9650
+# ENV QUIC_PORT=9651
+# ENV TCP_PORT=9651
+# ENV PD_PORT=9650
 
-ENV TUN_IFNAME=mycelium0
+# ENV TUN_IFNAME=mycelium0
 
-ENV LOG_OPTION=debug
-
-RUN echo 1
-RUN echo 23232332
+# ENV LOG_OPTION=debug
 
 # Entrypoint
 ENTRYPOINT ["/bin/mycelium"]
-
-# Arguments to entry point
-# CMD ["--$LOG_OPTION", "--key-file", "/data/private.key", "--peers", "$PEERS_STRING", "--quic-listen-port", "$QUIC_PORT", "--tcp-listen-port", "$TCP_PORT", "--peer-discovery-port", "$PD_PORT", "--tun-name", "$TUN_IFNAME"]
 
 # TODO: Add health-check command
 # HEALTHCHECK /bin/mycelium
