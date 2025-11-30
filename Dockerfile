@@ -18,8 +18,7 @@ WORKDIR /src
 FROM build AS daemonBuild
 WORKDIR myceliumd/
 RUN cargo build
-RUN ls -la /src/myceliumd/target/debug/ && sleep 10
-COPY /src/myceliumd/target/debug/mycelium /bin/mycelium
+RUN mv target/debug/mycelium /bin/mycelium
 
 # entrypoint
 ENTRYPOINT /bin/mycelium
