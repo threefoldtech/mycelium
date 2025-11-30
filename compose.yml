@@ -20,7 +20,7 @@ services:
       - NET_ADMIN
       
     command:
-      - "--debug"
+      - "--${MYCELIUM_LOG_LEVEL:-silent}"
       # FIXME: Enable the below soon
       # - "--config-file ${MYCELIUM_CONFIG_FILE_PATH}"
       - "--peers {$MYCELIUM_PEERS_STRING}"
