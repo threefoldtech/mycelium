@@ -1,7 +1,6 @@
 services:
   myceliumd:
-    # TODO: Replace with image soon
-    # image
+    # TODO: You can put image here now, may as well
     build:
       context: .
       dockerfile: Dockerfile
