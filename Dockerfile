@@ -17,7 +17,7 @@ WORKDIR /src
 # target: myceliumd - the routing daemon
 FROM build AS daemonBuild
 WORKDIR myceliumd/
-RUN cargo build
+RUN cargo build --release
 RUN mv target/debug/mycelium /bin/mycelium
 
 # TODO: Add copying across of other tools like cli management etc.
