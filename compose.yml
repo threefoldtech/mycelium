@@ -26,7 +26,8 @@ services:
       # NOTE: Don't change this unless you do the
       # same on the container-side for the data dir
       # volume-mount
-      - "--key-file /data/private.key"
+      - "--key-file"
+      - "/data/private.key"
 
     
       - "--${MYCELIUM_LOG_LEVEL:-silent}"
