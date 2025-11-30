@@ -26,6 +26,7 @@ services:
       # NOTE: Don't change this unless you do the
       # same on the container-side for the data dir
       # volume-mount
+      - "--debug"
       
       - "--key-file /data/private.key"
 
@@ -38,13 +39,13 @@ services:
       # - "{$MYCELIUM_PEERS_STRING}"
 
       # QUIC listening port
-      # - "--quic-listen-port ${MYCELIUM_QUIC_PORT:-9651}"
+      - "--quic-listen-port ${MYCELIUM_QUIC_PORT:-9651}"
 
       # TCP listening port
-      # - "--tcp-listen-port ${MYCELIUM_TCP_PORT:-9651}"
+      - "--tcp-listen-port ${MYCELIUM_TCP_PORT:-9651}"
 
       # Peer discovery (LAN multicast) port
-      # - "--peer-discovery-port ${MYCELIUM_PD_PORT:-9650}"
+      - "--peer-discovery-port ${MYCELIUM_PD_PORT:-9650}"
 
       # TUN adaptor name
-      # - "--tun-name ${MYCELIUM_TUN_IFNAME:-mycelium0}"
+      - "--tun-name ${MYCELIUM_TUN_IFNAME:-mycelium0}"
