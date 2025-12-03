@@ -17,7 +17,7 @@ use tokio_util::codec::{Decoder, Encoder, Framed};
 pub use tracked::Tracked;
 
 #[cfg(feature = "private-network")]
-mod tls;
+pub mod tls;
 
 /// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.
 ///

@@ -1,3 +1,5 @@
+#[cfg(feature = "private-network")]
+use crate::connection::tls::TlsStream;
 use crate::connection::{Quic, TcpStream};
 use crate::endpoint::{Endpoint, Protocol};
 use crate::metrics::Metrics;
@@ -544,13 +546,31 @@ where
                         }
                         debug!("Completed TLS handshake");
 
+                        let tls_stream = match TlsStream::new(ssl_stream, ct.rx_bytes, ct.tx_bytes)
+                        {
+                            Ok(tls_stream) => tls_stream,
+                            Err(err) => {
+                                error!(%err, "Failed to create wrapped Tls stream");
+                                return (endpoint, None);
+                            }
+                        };
+
                         Peer::new(
                             router_data_tx,
                             router_control_tx,
-                            ssl_stream,
+                            tls_stream,
                             dead_peer_sink,
                         )
                     } else {
+                        let peer_stream =
+                            match TcpStream::new(peer_stream, ct.rx_bytes, ct.tx_bytes) {
+                                Ok(ps) => ps,
+                                Err(err) => {
+                                    error!(%err, "Failed to create wrapped tcp stream");
+                                    return (endpoint, None);
+                                }
+                            };
+
                         Peer::new(
                             router_data_tx,
                             router_control_tx,
@@ -757,17 +777,38 @@ where
                             }
                             debug!(%remote, "Accepted TLS handshake");
 
+                            let tls_stream = match TlsStream::new(
+                                ssl_stream,
+                                rx_bytes.clone(),
+                                tx_bytes.clone(),
+                            ) {
+                                Ok(tls_stream) => tls_stream,
+                                Err(err) => {
+                                    error!(%err, "Failed to create wrapped Tls stream");
+                                    continue;
+                                }
+                            };
+
                             Peer::new(
                                 router_data_tx.clone(),
                                 router_control_tx.clone(),
-                                ssl_stream,
+                                tls_stream,
                                 dead_peer_sink.clone(),
                             )
                         } else {
+                            let new_stream =
+                                match TcpStream::new(stream, rx_bytes.clone(), tx_bytes.clone()) {
+                                    Ok(ns) => ns,
+                                    Err(err) => {
+                                        error!(%err, "Failed to create wrapped tcp stream");
+                                        continue;
+                                    }
+                                };
+
                             Peer::new(
                                 router_data_tx.clone(),
                                 router_control_tx.clone(),
-                                stream,
+                                new_stream,
                                 dead_peer_sink.clone(),
                             )
                         };
@@ -775,7 +816,7 @@ where
                         #[cfg(not(feature = "private-network"))]
                         let new_peer = {
                             let new_stream =
-                                match TcpStream::new(stream, tx_bytes.clone(), rx_bytes.clone()) {
+                                match TcpStream::new(stream, rx_bytes.clone(), tx_bytes.clone()) {
                                     Ok(ns) => ns,
                                     Err(err) => {
                                         error!(%err, "Failed to create wrapped tcp stream");
