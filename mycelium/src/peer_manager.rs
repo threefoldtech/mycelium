@@ -549,8 +549,6 @@ where
                             router_control_tx,
                             ssl_stream,
                             dead_peer_sink,
-                            ct.tx_bytes,
-                            ct.rx_bytes,
                         )
                     } else {
                         Peer::new(
@@ -558,8 +556,6 @@ where
                             router_control_tx,
                             peer_stream,
                             dead_peer_sink,
-                            ct.tx_bytes,
-                            ct.rx_bytes,
                         )
                     }
                 };
@@ -766,8 +762,6 @@ where
                                 router_control_tx.clone(),
                                 ssl_stream,
                                 dead_peer_sink.clone(),
-                                tx_bytes.clone(),
-                                rx_bytes.clone(),
                             )
                         } else {
                             Peer::new(
@@ -775,8 +769,6 @@ where
                                 router_control_tx.clone(),
                                 stream,
                                 dead_peer_sink.clone(),
-                                tx_bytes.clone(),
-                                rx_bytes.clone(),
                             )
                         };
 
@@ -791,13 +783,15 @@ where
                                     }
                                 };
 
-                            let new_peer = Peer::new(
+                            Peer::new(
                                 router_data_tx.clone(),
                                 router_control_tx.clone(),
                                 new_stream,
                                 dead_peer_sink.clone(),
-                            );
+                            )
+                        };
 
+                        let new_peer = {
                             match new_peer {
                                 Ok(peer) => peer,
                                 Err(e) => {
