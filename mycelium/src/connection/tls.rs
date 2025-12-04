@@ -4,7 +4,10 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-use futures::{SinkExt, StreamExt};
+use futures::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
@@ -36,6 +39,9 @@ impl TlsStream {
 }
 
 impl super::Connection for TlsStream {
+    type ReadHalf = TlsStreamReadHalf;
+    type WriteHalf = TlsStreamWriteHalf;
+
     async fn feed_data_packet(&mut self, packet: crate::packet::DataPacket) -> io::Result<()> {
         self.framed.feed(Packet::DataPacket(packet)).await
     }
@@ -67,5 +73,48 @@ impl super::Connection for TlsStream {
             }
             SocketAddr::V6(_) => super::PACKET_PROCESSING_COST_IP6_TCP,
         })
+    }
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        let (tx, rx) = self.framed.split();
+
+        (
+            TlsStreamReadHalf { framed: rx },
+            TlsStreamWriteHalf { framed: tx },
+        )
+    }
+}
+
+pub struct TlsStreamReadHalf {
+    framed: SplitStream<Framed<Tracked<tokio_openssl::SslStream<TcpStream>>, packet::Codec>>,
+}
+
+pub struct TlsStreamWriteHalf {
+    framed: SplitSink<
+        Framed<Tracked<tokio_openssl::SslStream<TcpStream>>, packet::Codec>,
+        packet::Packet,
+    >,
+}
+
+impl super::ConnectionReadHalf for TlsStreamReadHalf {
+    async fn receive_packet(&mut self) -> Option<io::Result<crate::packet::Packet>> {
+        self.framed.next().await
+    }
+}
+
+impl super::ConnectionWriteHalf for TlsStreamWriteHalf {
+    async fn feed_data_packet(&mut self, packet: crate::packet::DataPacket) -> io::Result<()> {
+        self.framed.feed(Packet::DataPacket(packet)).await
+    }
+
+    async fn feed_control_packet(
+        &mut self,
+        packet: crate::packet::ControlPacket,
+    ) -> io::Result<()> {
+        self.framed.feed(Packet::ControlPacket(packet)).await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        self.framed.flush().await
     }
 }
