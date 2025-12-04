@@ -10,9 +10,12 @@ use tokio::{
     select,
     sync::{mpsc, Notify},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
-use crate::{connection::Connection, packet::Packet};
+use crate::{
+    connection::{Connection, ConnectionReadHalf, ConnectionWriteHalf},
+    packet::Packet,
+};
 use crate::{
     packet::{ControlPacket, DataPacket},
     sequence_number::SeqNo,
@@ -58,7 +61,7 @@ impl Peer {
     pub fn new<C: Connection + Unpin + Send + 'static>(
         router_data_tx: mpsc::Sender<DataPacket>,
         router_control_tx: mpsc::UnboundedSender<(ControlPacket, Peer)>,
-        mut connection: C,
+        connection: C,
         dead_peer_sink: mpsc::Sender<Peer>,
     ) -> Result<Self, io::Error> {
         // Data channel for peer
@@ -83,11 +86,14 @@ impl Peer {
         {
             let peer = peer.clone();
 
+            let (mut stream, mut sink) = connection.split();
+
+            let mut needs_flush = false;
+
             tokio::spawn(async move {
                 loop {
                     select! {
-                        // Received over the TCP stream
-                        packet = connection.receive_packet() => {
+                        packet = stream.receive_packet() => {
                             match packet {
                                 Some(Ok(packet)) => {
                                     match packet {
@@ -121,42 +127,44 @@ impl Peer {
                             }
                         }
 
-                        Some(packet) = from_routing_data.recv() => {
-                            if let Err(e) = connection.feed_data_packet(packet).await {
-                                error!("Failed to feed data packet to connection: {e}");
-                                break
-                            }
+                        rv = from_routing_data.recv(), if !needs_flush => {
+                            match rv {
+                                None => break,
+                                Some(packet) => {
+                                    needs_flush = true;
 
-
-                            for _ in 1..PACKET_COALESCE_WINDOW {
-                                // There can be 2 cases of errors here, empty channel and no more
-                                // senders. In both cases we don't really care at this point.
-                                if let Ok(packet) = from_routing_data.try_recv() {
-                                    if let Err(e) = connection.feed_data_packet(packet).await {
+                                    if let Err(e) = sink.feed_data_packet(packet).await {
                                         error!("Failed to feed data packet to connection: {e}");
                                         break
                                     }
-                                }
-                            }
 
-                            if let Err(e) = connection.flush().await {
-                                error!("Failed to flush buffered peer connection data packets: {e}");
-                                break
+
+                                    for _ in 1..PACKET_COALESCE_WINDOW {
+                                        // There can be 2 cases of errors here, empty channel and no more
+                                        // senders. In both cases we don't really care at this point.
+                                        if let Ok(packet) = from_routing_data.try_recv() {
+                                            if let Err(e) = sink.feed_data_packet(packet).await {
+                                                error!("Failed to feed data packet to connection: {e}");
+                                                break
+                                            }
+                                            trace!("Instantly queued ready packet to transfer to peer");
+                                        } else {
+                                            // no packets ready, flush currently buffered ones
+                                            break
+                                        }
+                                    }
+                                }
                             }
                         }
 
-                        Some(packet) = from_routing_control.recv() => {
-                            if let Err(e) = connection.feed_control_packet(packet).await {
-                                error!("Failed to feed control packet to connection: {e}");
-                                break
-                            }
+                        rv = from_routing_control.recv(), if !needs_flush => {
+                            match rv {
+                                None => break,
+                                Some(packet) => {
+                                    needs_flush = true;
 
-                            for _ in 1..PACKET_COALESCE_WINDOW {
-                                // There can be 2 cases of errors here, empty channel and no more
-                                // senders. In both cases we don't really care at this point.
-                                if let Ok(packet) = from_routing_control.try_recv() {
-                                    if let Err(e) = connection.feed_control_packet(packet).await {
-                                        error!("Failed to feed data packet to connection: {e}");
+                                    if let Err(e) = sink.feed_control_packet(packet).await {
+                                        error!("Failed to feed control packet to connection: {e}");
                                         break
                                     }
 
@@ -164,7 +172,7 @@ impl Peer {
                                         // There can be 2 cases of errors here, empty channel and no more
                                         // senders. In both cases we don't really care at this point.
                                         if let Ok(packet) = from_routing_control.try_recv() {
-                                            if let Err(e) = connection.feed_control_packet(packet).await {
+                                            if let Err(e) = sink.feed_control_packet(packet).await {
                                                 error!("Failed to feed data packet to connection: {e}");
                                                 break
                                             }
@@ -175,11 +183,14 @@ impl Peer {
                                     }
                                 }
                             }
+                        }
 
-                            if let Err(e) = connection.flush().await {
-                                error!("Failed to flush buffered peer connection control packets: {e}");
+                        r = sink.flush(), if needs_flush => {
+                            if let Err(e) = r {
+                                error!("Failed to flush buffered peer connection  packets: {e}");
                                 break
                             }
+                            needs_flush = false;
                         }
 
                         _ = death_watcher.notified() => {
