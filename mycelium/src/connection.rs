@@ -3,12 +3,15 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use crate::packet::{self, ControlPacket, DataPacket, Packet};
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -125,6 +128,8 @@ impl Connection for TcpStream {
 pub struct Quic {
     framed: Framed<Tracked<QuicStream>, packet::Codec>,
     con: quinn::Connection,
+    read: Arc<AtomicU64>,
+    write: Arc<AtomicU64>,
 }
 
 struct QuicStream {
@@ -143,10 +148,12 @@ impl Quic {
     ) -> Self {
         Quic {
             framed: Framed::new(
-                Tracked::new(read, write, QuicStream { tx, rx }),
+                Tracked::new(read.clone(), write.clone(), QuicStream { tx, rx }),
                 packet::Codec::new(),
             ),
             con,
+            read,
+            write,
         }
     }
 }
@@ -211,9 +218,11 @@ impl Connection for Quic {
         let mut buffer = BytesMut::with_capacity(1500);
         codec.encode(Packet::DataPacket(packet), &mut buffer)?;
 
-        self.con
-            .send_datagram(buffer.into())
-            .map_err(io::Error::other)
+        let data: Bytes = buffer.into();
+        let tx_len = data.len();
+        self.write.fetch_add(tx_len as u64, Ordering::Relaxed);
+
+        self.con.send_datagram(data).map_err(io::Error::other)
     }
 
     async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
@@ -227,6 +236,8 @@ impl Connection for Quic {
                     Ok(buffer) => buffer,
                     Err(e) => return Some(Err(e.into())),
                 };
+                let recv_len = datagram_bytes.len();
+                self.read.fetch_add(recv_len as u64, Ordering::Relaxed);
                 let mut codec = packet::Codec::new();
                 match codec.decode(&mut datagram_bytes.into()) {
                     Ok(Some(packet)) => Some(Ok(packet)),
