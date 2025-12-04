@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   future, this will be expanded to redirect queries for certain TLD's to alternative
   backend.
 
+### Changed
+
+- The Quic connection type now uses quic datagrams to transport __data__ (packets
+  coming from the TUN device) to the peer. Protocol traffic is still sent over a
+  bidirectional Quic stream (which supports retransmits).
+
 ### Fixed
 
 - Return actuall amount of bytes sent to peers instead of the amount of bytes received
