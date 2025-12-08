@@ -1,0 +1,23 @@
+services:
+  myceliumd:
+    # TODO: You can put image here now, may as well
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myceliumd
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      # Data directory (keys)
+      - ${MYCELIUM_DATA_DIR}:/data:z
+      
+      # Access to TUN/TAP control device node
+      - /dev/net/tun:/dev/net/tun:z
+    cap_add:
+      # Add capability for performing needed network
+      # manipulation via the `/dev/tun` in order to
+      # open tun adaptor
+      - NET_ADMIN
+    # user: ${USER_UID}:${USER_GID}
+    # Append the following to the entrypoint exec()
+    command: "--${MYCELIUM_LOG_OPTION:-debug} --key-file /data/private.key --peers ${MYCELIUM_PEERS_STRING:-\"\"} --quic-listen-port ${MYCELIUM_QUIC_PORT:-9651} --tcp-listen-port ${MYCELIUM_TCP_PORT:-9651} --peer-discovery-port ${MYCELIUM_PD_PORT:-9650} --tun-name ${MYCELIUM_TUN_IFNAME:-mycelium0}"
