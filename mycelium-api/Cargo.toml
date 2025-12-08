@@ -9,7 +9,7 @@ readme = "../README.md"
 message = ["mycelium/message"]
 
 [dependencies]
-axum = { version = "0.8.6", default-features = false, features = [
+axum = { version = "0.8.7", default-features = false, features = [
   "http1",
   "http2",
   "json",
@@ -23,7 +23,7 @@ jsonrpsee = { version = "0.26.0", features = [
   "jsonrpsee-types",
 ] }
 serde_json = "1.0.145"
-tracing = "0.1.41"
+tracing = "0.1.43"
 tokio = { version = "1.48.0", default-features = false, features = [
   "net",
   "rt",
