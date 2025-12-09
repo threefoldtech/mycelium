@@ -1,0 +1,92 @@
+name: ci
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check_fmt:
+    runs-on: docker
+    container:
+      image: ghcr.io/despiegk/builder:latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: https://github.com/dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - uses: https://github.com/clechasseur/rs-fmt-check@v2
+
+  clippy:
+    runs-on: docker
+    container:
+      image: ghcr.io/despiegk/builder:latest
+    steps:
+    - name: Set windows VCPKG_ROOT env variable
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      if: runner.os == 'Windows'
+    - name: Install windows openssl
+      run: vcpkg install openssl:x64-windows-static-md
+      if: runner.os == 'Windows'
+    - uses: actions/checkout@v4
+    - uses: https://github.com/dtolnay/rust-toolchain@stable
+    - name: Run Clippy
+      run: cargo clippy --all-features -- -Dwarnings
+
+  check_library:
+    runs-on: docker
+    container:
+      image: ghcr.io/despiegk/builder:latest
+    steps:
+    - name: Set windows VCPKG_ROOT env variable
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      if: runner.os == 'Windows'
+    - name: Install windows openssl
+      run: vcpkg install openssl:x64-windows-static-md
+      if: runner.os == 'Windows'
+    - uses: actions/checkout@v4
+    - uses: https://github.com/dtolnay/rust-toolchain@stable
+    - name: Build
+      run: cargo build -p mycelium --all-features --verbose
+    - name: Run tests
+      run: cargo test -p mycelium --all-features --verbose
+
+  check_binaries:
+    strategy:
+      matrix:
+        binary: [myceliumd, myceliumd-private]
+    runs-on: docker
+    container:
+      image: ghcr.io/despiegk/builder:latest
+    steps:
+    - name: Set windows VCPKG_ROOT env variable
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      if: runner.os == 'Windows'
+    - name: Install windows openssl
+      run: vcpkg install openssl:x64-windows-static-md
+      if: runner.os == 'Windows'
+    - uses: actions/checkout@v4
+    - uses: https://github.com/dtolnay/rust-toolchain@stable
+    - name: Change directory to binary
+      run: cd ${{ matrix.binary }}
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Run Clippy
+      run: cargo clippy --all-features -- -Dwarnings
+
+  check_flake:
+    runs-on: docker
+    container:
+      image: ghcr.io/despiegk/builder:latest
+    permissions:
+      id-token: "write"
+      contents: "read"
+    steps:
+    - uses: actions/checkout@v4
+    - uses: https://github.com/DeterminateSystems/nix-installer-action@main
+    - uses: https://github.com/DeterminateSystems/flake-checker-action@main
+    - name: Run `nix build`
+      run: nix build .
