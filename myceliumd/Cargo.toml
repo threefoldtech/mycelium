@@ -7,9 +7,6 @@ readme = "./README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[features]
-hero = ["dep:herodb"]
-
 [[bin]]
 name = "mycelium"
 path = "src/main.rs"
@@ -41,4 +38,3 @@ byte-unit = "5.1.6"
 config = "0.15.18"
 dirs = "6.0.0"
 toml = "0.9.8"
-herodb = { git = "https://git.ourworld.tf/herocode/herodb", rev = "77a53bae86", optional = true }

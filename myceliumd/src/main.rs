@@ -109,10 +109,6 @@ struct Cli {
     #[clap(flatten)]
     node_args: NodeArguments,
 
-    #[cfg(feature = "hero")]
-    #[clap(flatten)]
-    hero_args: HeroArgs,
-
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -385,46 +381,6 @@ pub struct NodeArguments {
     enable_dns: bool,
 }
 
-#[cfg(feature = "hero")]
-#[derive(Debug, Args)]
-struct HeroArgs {
-    /// The directory of Redis DB file
-    #[arg(long)]
-    hero_dir: PathBuf,
-
-    /// The port of the Redis server, default is 6379 if not specified
-    #[arg(long, default_value = "6379")]
-    hero_port: u16,
-
-    /// Enable debug mode
-    #[arg(long)]
-    hero_debug: bool,
-
-    /// Master encryption key for encrypted databases (deprecated; ignored for data DBs)
-    #[arg(long)]
-    hero_encryption_key: Option<String>,
-
-    /// Encrypt the database (deprecated; ignored for data DBs)
-    #[arg(long)]
-    hero_encrypt: bool,
-
-    /// Enable RPC management server
-    #[arg(long)]
-    hero_enable_rpc: bool,
-
-    /// RPC server port (default: 8080)
-    #[arg(long, default_value = "8080")]
-    hero_rpc_port: u16,
-
-    /// Use the sled backend
-    #[arg(long)]
-    hero_backend_sled: bool,
-
-    /// Admin secret used to encrypt DB 0 and authorize admin access (required)
-    #[arg(long)]
-    hero_admin_secret: String,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct MergedNodeConfig {
     peers: Vec<Endpoint>,
@@ -618,111 +574,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 save_key_file(&secret_key, &key_path).await?;
                 secret_key
             };
-
-            #[cfg(feature = "hero")]
-            // Start embedded herodb
-            tokio::spawn(async move {
-                // bind port
-                let port = cli.hero_args.hero_port;
-                info!(port, "Binding tcp listener for hero server");
-                let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
-                    .await
-                    .unwrap();
-
-                // deprecation warnings for legacy flags
-                if cli.hero_args.hero_encrypt || cli.hero_args.hero_encryption_key.is_some() {
-                    eprintln!("warning: --encrypt and --encryption-key are deprecated and ignored for data DBs. Admin DB 0 is always encrypted with --admin-secret.");
-                }
-                // basic validation for admin secret
-                if cli.hero_args.hero_admin_secret.trim().is_empty() {
-                    eprintln!("error: --admin-secret must not be empty");
-                    std::process::exit(2);
-                }
-
-                // new DB option
-                let option = herodb::options::DBOption {
-                    dir: cli.hero_args.hero_dir.clone(),
-                    port: cli.hero_args.hero_port,
-                    debug: cli.debug,
-                    encryption_key: cli.hero_args.hero_encryption_key,
-                    encrypt: cli.hero_args.hero_encrypt,
-                    backend: if cli.hero_args.hero_backend_sled {
-                        herodb::options::BackendType::Sled
-                    } else {
-                        herodb::options::BackendType::Redb
-                    },
-                    admin_secret: cli.hero_args.hero_admin_secret.clone(),
-                };
-
-                let backend = option.backend.clone();
-
-                // Bootstrap admin DB 0 before opening any server storage
-                if let Err(e) = herodb::admin_meta::ensure_bootstrap(
-                    &cli.hero_args.hero_dir,
-                    backend.clone(),
-                    &cli.hero_args.hero_admin_secret,
-                ) {
-                    eprintln!("Failed to bootstrap admin DB 0: {}", e.0);
-                    std::process::exit(2);
-                }
-
-                // new server
-                let server = herodb::server::Server::new(option).await;
-
-                // Add a small delay to ensure the port is ready
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-                // Start RPC server if enabled
-                let _rpc_handle = if cli.hero_args.hero_enable_rpc {
-                    let rpc_addr = format!("127.0.0.1:{}", cli.hero_args.hero_rpc_port)
-                        .parse()
-                        .unwrap();
-                    let base_dir = cli.hero_args.hero_dir;
-
-                    match herodb::rpc_server::start_rpc_server(
-                        rpc_addr,
-                        base_dir,
-                        backend,
-                        cli.hero_args.hero_admin_secret.clone(),
-                    )
-                    .await
-                    {
-                        Ok(handle) => {
-                            println!(
-                                "RPC management server started on port {}",
-                                cli.hero_args.hero_rpc_port
-                            );
-                            Some(handle)
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to start RPC server: {}", e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                // accept new connections
-                loop {
-                    let stream = listener.accept().await;
-                    match stream {
-                        Ok((stream, _)) => {
-                            println!("accepted new connection");
-
-                            let mut sc = server.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = sc.handle(stream).await {
-                                    println!("error: {:?}, will close the connection. Bye", e);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            println!("error: {}", e);
-                        }
-                    }
-                }
-            });
 
             let _api = if let Some(metrics_api_addr) = merged_config.metrics_api_address {
                 let metrics = mycelium_metrics::PrometheusExporter::new();
