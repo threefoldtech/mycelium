@@ -1,0 +1,106 @@
+name: Build
+
+on: [push, workflow_dispatch]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: docker
+    container:
+      image: ghcr.io/despiegk/builder:latest
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            artifact: linux-amd64
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            artifact: linux-arm64
+            cross: true
+            linker: aarch64-linux-gnu-gcc
+          - target: x86_64-apple-darwin
+            artifact: darwin-amd64
+            cross: true
+            zig: true
+          - target: aarch64-apple-darwin
+            artifact: darwin-arm64
+            cross: true
+            zig: true
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup toolchain
+        run: |
+          set -e
+          source $HOME/.cargo/env || source /root/.cargo/env || true
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            rustup target add ${{ matrix.target }}
+          fi
+
+          # Install linux cross-compiler if needed
+          if [ -n "${{ matrix.linker }}" ]; then
+            if ! command -v ${{ matrix.linker }} &> /dev/null; then
+              echo "Installing ${{ matrix.linker }}..."
+              apt-get update && apt-get install -y gcc-aarch64-linux-gnu
+            fi
+          fi
+
+          # Setup zig for macOS cross-compilation
+          if [ "${{ matrix.zig }}" = "true" ]; then
+            if ! command -v zig &> /dev/null; then
+              echo "Installing zig..."
+              curl -L https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz | tar -xJ
+              export PATH="$PWD/zig-linux-x86_64-0.11.0:$PATH"
+            fi
+            cargo install cargo-zigbuild || true
+          fi
+
+      - name: Build
+        run: |
+          set -e
+          source $HOME/.cargo/env || source /root/.cargo/env || true
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+
+          # Switch to proper dir
+          cd myceliumd
+
+          # Setup cross-compilation environment
+          if [ -n "${{ matrix.linker }}" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.linker }}
+          fi
+
+          # Build with zig for macOS
+          if [ "${{ matrix.zig }}" = "true" ]; then
+            if [ -d "zig-linux-x86_64-0.11.0" ]; then
+              export PATH="$PWD/zig-linux-x86_64-0.11.0:$PATH"
+            fi
+            cargo zigbuild --release --bin mycelium --target ${{ matrix.target }}
+            BIN="target/${{ matrix.target }}/release/myceliumd"
+          elif [ "${{ matrix.cross }}" = "true" ]; then
+            cargo build --release --bin myceliumd --target ${{ matrix.target }}
+            BIN="target/${{ matrix.target }}/release/mycelium"
+          else
+            cargo build --release --bin mycelium
+            BIN="target/release/mycelium"
+          fi
+
+          if [ ! -f "$BIN" ]; then
+            echo "ERROR: Binary $BIN not found"
+            exit 1
+          fi
+          echo "Build successful: $BIN"
+
