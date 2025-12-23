@@ -95,7 +95,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
         peers: endpoints,
         no_tun: false,
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
-        quic_listen_port: None,
+        quic_listen_port: Some(DEFAULT_QUIC_LISTEN_PORT),
         peer_discovery_port: None, // disable multicast discovery
         #[cfg(any(
             target_os = "linux",
@@ -397,6 +397,7 @@ impl Metrics for NoMetrics {}
 
 /// The default port on the underlay to listen on for incoming TCP connections.
 const DEFAULT_TCP_LISTEN_PORT: u16 = 9651;
+const DEFAULT_QUIC_LISTEN_PORT: u16 = 9651;
 
 fn convert_slice_to_array32(slice: &[u8]) -> Result<[u8; 32], std::array::TryFromSliceError> {
     <[u8; 32]>::try_from(slice)
