@@ -1231,9 +1231,12 @@ fn make_quic_endpoint(
     quic_listen_port: u16,
     firewall_mark: Option<u32>,
 ) -> Result<quinn::Endpoint, Box<dyn std::error::Error>> {
-    // Install ring crypto provider for rustls
-    rustls::crypto::CryptoProvider::install_default(rustls::crypto::ring::default_provider())
-        .expect("Crypto provider has not been installed yet");
+    // Install ring crypto provider for rustls (only if not already installed)
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        rustls::crypto::CryptoProvider::install_default(rustls::crypto::ring::default_provider())
+            .expect("Failed to install crypto provider");
+    }
+
     // Generate self signed certificate certificate.
     // TODO: sign with router keys
     let cert = rcgen::generate_simple_self_signed(vec![format!("{router_id}")])?;
