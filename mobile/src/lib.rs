@@ -96,10 +96,6 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
         .filter_map(|peer| peer.parse().ok())
         .collect();
 
-    // Check if any peers use QUIC protocol
-    let has_quic_peers = endpoints.iter().any(|ep| ep.proto() == mycelium::endpoint::Protocol::Quic);
-    info!("QUIC peers detected: {}", has_quic_peers);
-
     let secret_key = build_secret_key(priv_key).await.unwrap();
 
     let config = Config {
@@ -107,8 +103,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
         peers: endpoints,
         no_tun: false,
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
-        // Only enable QUIC port if there are QUIC peers
-        quic_listen_port: if has_quic_peers { Some(DEFAULT_QUIC_LISTEN_PORT) } else { None },
+        quic_listen_port: Some(DEFAULT_QUIC_LISTEN_PORT),
         peer_discovery_port: None, // disable multicast discovery
         #[cfg(any(
             target_os = "linux",
