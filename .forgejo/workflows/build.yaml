@@ -18,18 +18,18 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             artifact: linux-amd64
             cross: false
-          - target: aarch64-unknown-linux-gnu
-            artifact: linux-arm64
-            cross: true
-            linker: aarch64-linux-gnu-gcc
-          - target: x86_64-apple-darwin
-            artifact: darwin-amd64
-            cross: true
-            zig: true
-          - target: aarch64-apple-darwin
-            artifact: darwin-arm64
-            cross: true
-            zig: true
+          # - target: aarch64-unknown-linux-gnu
+          #   artifact: linux-arm64
+          #   cross: true
+          #   linker: aarch64-linux-gnu-gcc
+          # - target: x86_64-apple-darwin
+          #   artifact: darwin-amd64
+          #   cross: true
+          #   zig: true
+          # - target: aarch64-apple-darwin
+          #   artifact: darwin-arm64
+          #   cross: true
+          #   zig: true
 
     defaults:
       run:
@@ -104,3 +104,28 @@ jobs:
           fi
           echo "Build successful: $BIN"
 
+      - name: Publish
+        env:
+          TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          set -e
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            BIN_DIR="myceliumd/target/${{ matrix.target }}/release"
+          else
+            BIN_DIR="myceliumd/target/release"
+          fi
+
+          # Use OWNER from env if github.repository_owner is empty (local runs)
+          OWNER="${OWNER:-${{ github.repository_owner }}}"
+          SERVER="${{ github.server_url }}"
+          SERVER="${SERVER:-https://forge.ourworld.tf}"
+
+          ARTIFACT="mycelium-${{ matrix.artifact }}"
+          URL="${SERVER}/api/packages/${OWNER}/generic/mycelium_network/dev/$ARTIFACT"
+
+          # Delete existing package if it exists (ignore errors)
+          echo "Deleting existing package (if any)..."
+          curl -X DELETE -H "Authorization: token $TOKEN" "$URL" || true
+
+          echo "Uploading $BIN_DIR/mycelium to $URL from ${PWD}"
+          curl -X PUT -H "Authorization: token $TOKEN" --upload-file "$BIN_DIR/mycelium" --fail --show-error "$URL"
