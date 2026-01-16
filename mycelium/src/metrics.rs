@@ -192,4 +192,24 @@ pub trait Metrics {
     /// remote endpoint. The connection could have failed.
     #[inline]
     fn peer_manager_connection_finished(&self) {}
+
+    /// A packet was enqueued waiting for route discovery.
+    #[inline]
+    fn router_packet_enqueued(&self) {}
+
+    /// Packets were dequeued after a route was installed.
+    #[inline]
+    fn router_packets_dequeued(&self, _count: usize) {}
+
+    /// Packets were dropped because no route was found (query timeout).
+    #[inline]
+    fn router_packets_dropped_no_route(&self, _count: usize) {}
+
+    /// A packet could not be enqueued because the global queue limit was reached.
+    #[inline]
+    fn router_packet_queue_full_global(&self) {}
+
+    /// A packet could not be enqueued because the per-subnet queue limit was reached.
+    #[inline]
+    fn router_packet_queue_full_subnet(&self) {}
 }
