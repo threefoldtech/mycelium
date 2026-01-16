@@ -87,6 +87,8 @@ pub struct RoutingTable {
 
 struct RoutingTableShared {
     expired_route_entry_sink: mpsc::Sender<RouteKey>,
+    /// Channel to notify when a query times out (Queried → NoRoute transition).
+    query_timeout_sink: mpsc::Sender<Subnet>,
     cancel_token: CancellationToken,
 }
 
@@ -112,20 +114,24 @@ pub struct WriteGuard<'a> {
 }
 
 impl RoutingTable {
-    /// Create a new empty RoutingTable. The passed channel is used to notify an external observer
-    /// of route entry expiration events. It is the callers responsibility to ensure these events
-    /// are properly handled.
+    /// Create a new empty RoutingTable. The passed channels are used to notify an external observer
+    /// of route entry expiration events and query timeout events. It is the callers responsibility
+    /// to ensure these events are properly handled.
     ///
     /// # Panics
     ///
     /// This will panic if not executed in the context of a tokio runtime.
-    pub fn new(expired_route_entry_sink: mpsc::Sender<RouteKey>) -> Self {
+    pub fn new(
+        expired_route_entry_sink: mpsc::Sender<RouteKey>,
+        query_timeout_sink: mpsc::Sender<Subnet>,
+    ) -> Self {
         let (writer, reader) = left_right::new();
         let writer = Arc::new(Mutex::new(writer));
 
         let cancel_token = CancellationToken::new();
         let shared = Arc::new(RoutingTableShared {
             expired_route_entry_sink,
+            query_timeout_sink,
             cancel_token,
         });
 
@@ -291,6 +297,7 @@ impl RoutingTable {
             // We only need the write handle in the task
             let writer = self.writer.clone();
             let cancel_token = self.shared.cancel_token.clone();
+            let query_timeout_sink = self.shared.query_timeout_sink.clone();
             tokio::task::spawn(async move {
                 select! {
                     _ = cancel_token.cancelled() => {
@@ -315,6 +322,9 @@ impl RoutingTable {
                     ));
                     write_handle.flush();
                 }
+
+                // Notify the router that the query timed out so it can drop queued packets
+                let _ = query_timeout_sink.send(subnet).await;
 
                 // TODO: Check if we are indeed marked as NoRoute here, if we aren't this can be
                 // cancelled now

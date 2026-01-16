@@ -37,6 +37,7 @@ pub mod message;
 mod metric;
 pub mod metrics;
 pub mod packet;
+mod packet_queue;
 mod peer;
 pub mod peer_manager;
 mod proxy;
