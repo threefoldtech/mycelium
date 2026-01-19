@@ -16,10 +16,10 @@ use std::{
 use tracing::{debug, trace, warn};
 
 /// Default maximum packets per subnet.
-const DEFAULT_MAX_PER_SUBNET: usize = 10;
+const DEFAULT_MAX_PER_SUBNET: usize = 10_000; // 1.5KB * 10K -> 15MB
 
 /// Default maximum total packets across all subnets.
-const DEFAULT_MAX_TOTAL: usize = 1000;
+const DEFAULT_MAX_TOTAL: usize = 1_000_000; // 1.5KB * 1M -> 1.5GB. In practice this won't happen
 
 /// An unencrypted packet waiting to be encrypted and routed once a route is discovered.
 #[derive(Debug)]
@@ -137,7 +137,7 @@ impl PacketQueue {
         }
 
         // Check per-subnet limit
-        let mut entry = self.queue.entry(subnet).or_insert_with(Vec::new);
+        let mut entry = self.queue.entry(subnet).or_default();
         if entry.len() >= self.max_per_subnet {
             trace!(
                 subnet = %subnet,
