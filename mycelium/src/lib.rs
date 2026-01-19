@@ -165,7 +165,7 @@ where
         .expect("64 is a valid IPv6 prefix size; qed");
 
         // Creating a new Router instance
-        let router = match router::Router::new(
+        let (router, pending_packet_rx, timeout_packet_rx) = match router::Router::new(
             config.update_workers,
             tun_tx,
             node_subnet,
@@ -181,12 +181,12 @@ where
             ],
             config.metrics.clone(),
         ) {
-            Ok(router) => {
+            Ok((router, pending_packet_rx, timeout_packet_rx)) => {
                 info!(
                     "Router created. Pubkey: {:x}",
                     BytesMut::from(&router.node_public_key().as_bytes()[..])
                 );
-                router
+                (router, pending_packet_rx, timeout_packet_rx)
             }
             Err(e) => {
                 error!("Error creating router: {e}");
@@ -227,6 +227,8 @@ where
                 futures::sink::drain(),
                 msg_sender,
                 tun_rx,
+                pending_packet_rx,
+                timeout_packet_rx,
             )
         } else {
             #[cfg(not(any(
@@ -271,7 +273,15 @@ where
                 let (rxhalf, txhalf) = tun::new(tun_config).await?;
 
                 info!("Node overlay IP: {node_addr}");
-                DataPlane::new(router.clone(), rxhalf, txhalf, msg_sender, tun_rx)
+                DataPlane::new(
+                    router.clone(),
+                    rxhalf,
+                    txhalf,
+                    msg_sender,
+                    tun_rx,
+                    pending_packet_rx,
+                    timeout_packet_rx,
+                )
             }
         };
 

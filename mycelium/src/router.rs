@@ -5,7 +5,7 @@ use crate::{
     metric::Metric,
     metrics::Metrics,
     packet::{ControlPacket, DataPacket},
-    packet_queue::PacketQueue,
+    packet_queue::{PacketQueue, QueuedPacketData, UnencryptedPacket},
     peer::Peer,
     router_id::RouterId,
     routing_table::{
@@ -17,6 +17,17 @@ use crate::{
     source_table::{FeasibilityDistance, SourceKey, SourceTable},
     subnet::Subnet,
 };
+
+/// Result of looking up a shared secret for a destination.
+#[derive(Clone)]
+pub enum SharedSecretResult {
+    /// A route exists and the shared secret is available.
+    Found(SharedSecret),
+    /// A route query is in progress. The caller should queue the packet for later processing.
+    Resolving,
+    /// No route exists and no query is in progress. The destination is unreachable.
+    NoRoute,
+}
 use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
     Icmpv6Type,
@@ -97,6 +108,10 @@ pub struct Router<M> {
     update_workers: usize,
     /// Queue for packets waiting for route discovery.
     packet_queue: PacketQueue,
+    /// Channel for sending unencrypted packets back to the data plane when routes become available.
+    pending_packet_tx: UnboundedSender<UnencryptedPacket>,
+    /// Channel for sending timed-out unencrypted packets to the data plane for ICMP generation.
+    timeout_packet_tx: UnboundedSender<UnencryptedPacket>,
     metrics: M,
 }
 
@@ -109,6 +124,10 @@ where
     /// # Panics
     ///
     /// If update_workers is not in the range of [1..255], this will panic.
+    ///
+    /// Returns the Router and two receivers:
+    /// - `pending_packet_rx`: unencrypted packets that were queued and are now ready to be processed
+    /// - `timeout_packet_rx`: unencrypted packets that timed out waiting for route discovery (for ICMP generation)
     pub fn new(
         update_workers: usize,
         node_tun: UnboundedSender<DataPacket>,
@@ -117,7 +136,14 @@ where
         node_keypair: (SecretKey, PublicKey),
         update_filters: Vec<Box<dyn RouteUpdateFilter + Send + Sync>>,
         metrics: M,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<
+        (
+            Self,
+            UnboundedReceiver<UnencryptedPacket>,
+            UnboundedReceiver<UnencryptedPacket>,
+        ),
+        Box<dyn Error>,
+    > {
         // We could use a NonZeroU8 here, but for now just handle this manually as this might get
         // changed in the future.
         if !(1..255).contains(&update_workers) {
@@ -142,6 +168,11 @@ where
 
         let packet_queue = PacketQueue::new();
 
+        // Channel for sending unencrypted packets back to data plane when routes become available
+        let (pending_packet_tx, pending_packet_rx) = mpsc::unbounded_channel();
+        // Channel for sending timed-out unencrypted packets to data plane for ICMP generation
+        let (timeout_packet_tx, timeout_packet_rx) = mpsc::unbounded_channel();
+
         let router = Router {
             routing_table,
             peer_interfaces: Arc::new(RwLock::new(Vec::new())),
@@ -161,6 +192,8 @@ where
             update_filters: Arc::new(update_filters),
             update_workers,
             packet_queue,
+            pending_packet_tx,
+            timeout_packet_tx,
             metrics,
         };
 
@@ -195,7 +228,7 @@ where
             query_timeout_stream,
         ));
 
-        Ok(router)
+        Ok((router, pending_packet_rx, timeout_packet_rx))
     }
 
     pub fn router_control_tx(&self) -> UnboundedSender<(ControlPacket, Peer)> {
@@ -255,35 +288,33 @@ where
 
     /// Gets the cached [`SharedSecret`] for the remote.
     ///
-    /// Returns immediately with the shared secret if a route exists, or None if not.
-    /// If no route exists, a route request is sent and the caller should retry later
-    /// or rely on packet queueing to handle the delay.
-    pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> Option<SharedSecret> {
+    /// Returns a [`SharedSecretResult`] indicating whether a route exists, is being resolved,
+    /// or is unreachable. If no route exists, a route request is sent.
+    pub fn get_shared_secret_from_dest(&self, dest: IpAddr) -> SharedSecretResult {
         match self.routing_table.best_routes(dest) {
-            Routes::Exist(routes) => Some(routes.shared_secret().clone()),
-            Routes::Queried => None, // Query in progress, return immediately
-            Routes::NoRoute => None,
+            Routes::Exist(routes) => SharedSecretResult::Found(routes.shared_secret().clone()),
+            Routes::Queried => SharedSecretResult::Resolving, // Query in progress
+            Routes::NoRoute => SharedSecretResult::NoRoute,
             Routes::None => {
                 // NOTE: we request the full /64 subnet
                 self.send_route_request(
                     Subnet::new(dest, 64)
                         .expect("64 is a valid subnet size for an IPv6 address; qed"),
                 );
-                None
+                SharedSecretResult::Resolving
             }
         }
     }
 
     /// Get a [`SharedSecret`] for a remote, if a selected route exists to the remote.
     ///
-    /// Returns immediately with the shared secret if a selected route exists, or None if not.
-    /// If no route exists, a route request is sent. Callers should rely on packet queueing
-    /// to handle packets while waiting for route discovery.
-    pub fn get_shared_secret_if_selected(&self, dest: IpAddr) -> Option<SharedSecret> {
+    /// Returns a [`SharedSecretResult`] indicating whether a selected route exists, is being
+    /// resolved, or is unreachable. If no route exists, a route request is sent.
+    pub fn get_shared_secret_if_selected(&self, dest: IpAddr) -> SharedSecretResult {
         match self.routing_table.best_routes(dest) {
             Routes::Exist(routes) => {
                 if routes.selected().is_some() {
-                    Some(routes.shared_secret().clone())
+                    SharedSecretResult::Found(routes.shared_secret().clone())
                 } else {
                     // Optimistically try to fetch a new route for the subnet for next time.
                     if let Some(route_entry) = routes.iter().next() {
@@ -299,26 +330,58 @@ where
                                 .expect("64 is a valid subnet size for an IPv6 address; qed"),
                         );
                     }
-                    None
+                    SharedSecretResult::Resolving
                 }
             }
-            Routes::Queried => None, // Query in progress, return immediately
-            Routes::NoRoute => None,
+            Routes::Queried => SharedSecretResult::Resolving, // Query in progress
+            Routes::NoRoute => SharedSecretResult::NoRoute,
             Routes::None => {
                 // NOTE: we request the full /64 subnet
                 self.send_route_request(
                     Subnet::new(dest, 64)
                         .expect("64 is a valid subnet size for an IPv6 address; qed"),
                 );
-                None
+                SharedSecretResult::Resolving
             }
         }
     }
 
     /// Gets the cached [`SharedSecret`] based on the associated [`PublicKey`] of the remote.
     #[inline]
-    pub fn get_shared_secret_by_pubkey(&self, dest: &PublicKey) -> Option<SharedSecret> {
+    pub fn get_shared_secret_by_pubkey(&self, dest: &PublicKey) -> SharedSecretResult {
         self.get_shared_secret_from_dest(dest.address().into())
+    }
+
+    /// Enqueue an unencrypted packet waiting for route discovery.
+    ///
+    /// This is used by the data plane when it cannot encrypt a packet because
+    /// the route (and thus the shared secret) is not yet available.
+    /// When a route becomes available, the packet will be sent back to the data plane
+    /// via the pending packet channel for encryption and routing.
+    /// If the route query times out, packets will be sent to the timeout channel for ICMP generation.
+    pub fn enqueue_unencrypted_packet(
+        &self,
+        subnet: Subnet,
+        packet: UnencryptedPacket,
+    ) -> Result<(), UnencryptedPacket> {
+        self.packet_queue
+            .enqueue_unencrypted(subnet, packet, &self.metrics)
+    }
+
+    /// Drop all queued packets for a subnet and send unencrypted ones to timeout channel for ICMP.
+    ///
+    /// This is called when a route query times out or when we lose a route.
+    fn drop_queued_packets(&self, subnet: Subnet) {
+        let packets = self.packet_queue.drop_subnet(subnet, &self.metrics);
+        for packet_data in packets {
+            if let QueuedPacketData::Unencrypted(p) = packet_data {
+                if let Err(e) = self.timeout_packet_tx.send(p) {
+                    debug!("Failed to send timed-out packet to data plane: {e}");
+                }
+            }
+            // Encrypted packets that time out are just dropped - no ICMP needed since
+            // they're already encrypted and we can't generate proper ICMP for them
+        }
     }
 
     /// Get a reference to this `Router`s' dead peer sink.
@@ -462,7 +525,8 @@ where
     /// Process queued packets for a subnet after a route becomes available.
     ///
     /// This dequeues all packets waiting for the given subnet and forwards them
-    /// using the newly installed route.
+    /// using the newly installed route. Encrypted packets are routed directly,
+    /// while unencrypted packets are sent to the data plane for encryption.
     fn process_queued_packets(&self, subnet: Subnet) {
         let packets = self.packet_queue.dequeue(subnet, &self.metrics);
 
@@ -476,8 +540,18 @@ where
             "Forwarding queued packets after route installed"
         );
 
-        for packet in packets {
-            self.route_packet(packet);
+        for packet_data in packets {
+            match packet_data {
+                QueuedPacketData::Encrypted(packet) => {
+                    self.route_packet(packet);
+                }
+                QueuedPacketData::Unencrypted(packet) => {
+                    // Send to data plane for encryption and routing
+                    if let Err(e) = self.pending_packet_tx.send(packet) {
+                        debug!("Failed to send pending packet to data plane: {e}");
+                    }
+                }
+            }
         }
     }
 
@@ -551,7 +625,7 @@ where
         if should_process_queue {
             self.process_queued_packets(subnet);
         } else if should_drop_queue {
-            self.packet_queue.drop_subnet(subnet, &self.metrics);
+            self.drop_queued_packets(subnet);
         }
     }
 
@@ -571,8 +645,8 @@ where
     /// Handle query timeouts by dropping queued packets for subnets that transitioned to NoRoute.
     async fn process_query_timeouts(self, mut query_timeout_stream: mpsc::Receiver<Subnet>) {
         while let Some(subnet) = query_timeout_stream.recv().await {
-            debug!(subnet = %subnet, "Route query timed out, dropping queued packets");
-            self.packet_queue.drop_subnet(subnet, &self.metrics);
+            debug!(subnet = %subnet, "Route query timed out, sending ICMP for queued packets");
+            self.drop_queued_packets(subnet);
         }
         warn!("Query timeout processing halted");
     }
@@ -1554,7 +1628,7 @@ where
         if should_process_queue {
             self.process_queued_packets(subnet);
         } else if should_drop_queue {
-            self.packet_queue.drop_subnet(subnet, &self.metrics);
+            self.drop_queued_packets(subnet);
         }
     }
 
@@ -1734,14 +1808,10 @@ where
                     // Enqueue packet instead of blocking - it will be forwarded when route is found
                     let subnet = Subnet::new(data_packet.dst_ip.into(), 64)
                         .expect("64 is a valid subnet size for IPv6 addresses");
-                    let router = self.clone();
-                    if let Err(returned_packet) = self.packet_queue.enqueue(
-                        subnet,
-                        data_packet,
-                        ROUTE_QUERY_TIMEOUT,
-                        move |dp| router.no_route_to_host(dp),
-                        &self.metrics,
-                    ) {
+                    if let Err(returned_packet) =
+                        self.packet_queue
+                            .enqueue_encrypted(subnet, data_packet, &self.metrics)
+                    {
                         // Queue full - send ICMP immediately
                         self.metrics.router_route_packet_no_route();
                         self.no_route_to_host(returned_packet);
@@ -1759,14 +1829,10 @@ where
                     self.send_route_request(subnet);
 
                     // Enqueue packet instead of blocking - it will be forwarded when route is found
-                    let router = self.clone();
-                    if let Err(returned_packet) = self.packet_queue.enqueue(
-                        subnet,
-                        data_packet,
-                        ROUTE_QUERY_TIMEOUT,
-                        move |dp| router.no_route_to_host(dp),
-                        &self.metrics,
-                    ) {
+                    if let Err(returned_packet) =
+                        self.packet_queue
+                            .enqueue_encrypted(subnet, data_packet, &self.metrics)
+                    {
                         // Queue full - send ICMP immediately
                         self.metrics.router_route_packet_no_route();
                         self.no_route_to_host(returned_packet);
@@ -1882,8 +1948,8 @@ where
 
         // Get shared secret from node and dest address
         let shared_secret = match self.get_shared_secret_from_dest(data_packet.src_ip.into()) {
-            Some(ss) => ss,
-            None => {
+            SharedSecretResult::Found(ss) => ss,
+            _ => {
                 debug!(
                     "No entry found for destination address {}, dropping packet",
                     data_packet.src_ip
@@ -2150,6 +2216,8 @@ where
             rr_cache: self.rr_cache.clone(),
             update_workers: self.update_workers,
             packet_queue: self.packet_queue.clone(),
+            pending_packet_tx: self.pending_packet_tx.clone(),
+            timeout_packet_tx: self.timeout_packet_tx.clone(),
             metrics: self.metrics.clone(),
         }
     }

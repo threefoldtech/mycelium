@@ -8,7 +8,14 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, trace, warn};
 
-use crate::{crypto::PacketBuffer, metrics::Metrics, packet::DataPacket, router::Router};
+use crate::{
+    crypto::PacketBuffer,
+    metrics::Metrics,
+    packet::DataPacket,
+    packet_queue::UnencryptedPacket,
+    router::{Router, SharedSecretResult},
+    subnet::Subnet,
+};
 
 /// Current version of the user data header.
 const USER_DATA_VERSION: u8 = 1;
@@ -63,12 +70,18 @@ where
     ///
     /// `l3_packet_stream` is a stream of l3 packets from the host, usually read from a TUN interface.
     /// `l3_packet_sink` is a sink for l3 packets received from a romte, usually send to a TUN interface,
+    /// `pending_packet_rx` is a receiver for unencrypted packets that were queued waiting for route
+    /// discovery and are now ready to be encrypted and routed.
+    /// `timeout_packet_rx` is a receiver for unencrypted packets that timed out waiting for route
+    /// discovery and need ICMP unreachable responses.
     pub fn new<S, T, U>(
         router: Router<M>,
         l3_packet_stream: S,
         l3_packet_sink: T,
         message_packet_sink: U,
         host_packet_source: UnboundedReceiver<DataPacket>,
+        pending_packet_rx: UnboundedReceiver<UnencryptedPacket>,
+        timeout_packet_rx: UnboundedReceiver<UnencryptedPacket>,
     ) -> Self
     where
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
@@ -84,10 +97,18 @@ where
                 .inject_l3_packet_loop(l3_packet_stream, l3_packet_sink.clone()),
         );
         tokio::spawn(dp.clone().extract_packet_loop(
-            l3_packet_sink,
+            l3_packet_sink.clone(),
             message_packet_sink,
             host_packet_source,
         ));
+        tokio::spawn(
+            dp.clone()
+                .process_pending_packets_loop(l3_packet_sink.clone(), pending_packet_rx),
+        );
+        tokio::spawn(
+            dp.clone()
+                .process_timeout_packets_loop(l3_packet_sink, timeout_packet_rx),
+        );
 
         dp
     }
@@ -234,9 +255,12 @@ where
     /// Encrypt the content of a packet based on the destination key, and then inject the packet
     /// into the [`Router`] for processing.
     ///
-    /// If no key exists for the destination, the content can'be encrypted, the packet is not injected
-    /// into the router, and a packet is returned containing an ICMP packet. Note that a return
-    /// value of [`Option::None`] does not mean the packet was successfully forwarded;
+    /// If no key exists for the destination yet (route is being resolved), the packet is queued
+    /// and will be processed when the route becomes available.
+    ///
+    /// If no route exists (NoRoute), a packet is returned containing an ICMP packet.
+    /// Note that a return value of [`Option::None`] does not mean the packet was successfully
+    /// forwarded - it may have been queued.
     fn encrypt_and_route_packet(
         &self,
         src_ip: Ipv6Addr,
@@ -274,23 +298,82 @@ where
         }
 
         // Get shared secret from node and dest address
-        let shared_secret = match self.router.get_shared_secret_if_selected(dst_ip.into()) {
-            Some(ss) => ss,
-            // If we don't have a route to the destination subnet, reply with ICMP no route to
-            // host. Do this here as well to avoid encrypting the ICMP to ourselves.
-            None => {
+        match self.router.get_shared_secret_if_selected(dst_ip.into()) {
+            SharedSecretResult::Found(shared_secret) => {
+                self.router.route_packet(DataPacket {
+                    dst_ip,
+                    src_ip,
+                    hop_limit,
+                    raw_data: shared_secret.encrypt(packet),
+                });
+                None
+            }
+            SharedSecretResult::Resolving => {
+                // Route is being resolved - queue the packet for later processing
                 debug!(
                     packet.src = %src_ip,
                     packet.dst = %dst_ip,
-                    "No entry found for destination address, dropping packet",
+                    "Route being resolved, queueing packet for later",
+                );
+
+                let subnet = Subnet::new(dst_ip.into(), 64)
+                    .expect("64 is a valid subnet size for IPv6 addresses");
+
+                let unencrypted_packet = UnencryptedPacket {
+                    src_ip,
+                    dst_ip,
+                    hop_limit,
+                    packet,
+                };
+
+                // Try to queue the packet - on timeout, it will be sent to the timeout channel
+                if let Err(returned_packet) = self
+                    .router
+                    .enqueue_unencrypted_packet(subnet, unencrypted_packet)
+                {
+                    // Queue is full - generate ICMP
+                    debug!(
+                        packet.src = %src_ip,
+                        packet.dst = %dst_ip,
+                        "Packet queue full, dropping packet",
+                    );
+
+                    let mut pb = PacketBuffer::new();
+                    let icmp = PacketBuilder::ipv6(src_ip.octets(), src_ip.octets(), hop_limit)
+                        .icmpv6(Icmpv6Type::DestinationUnreachable(
+                            DestUnreachableCode::NoRoute,
+                        ));
+                    let orig_buf_end = returned_packet
+                        .packet
+                        .buffer()
+                        .len()
+                        .min(MIN_IPV6_MTU - IPV6_MIN_HEADER_SIZE - ICMP6_HEADER_SIZE);
+                    pb.set_size(icmp.size(orig_buf_end));
+                    let mut b = pb.buffer_mut();
+                    if let Err(e) =
+                        icmp.write(&mut b, &returned_packet.packet.buffer()[..orig_buf_end])
+                    {
+                        error!("Failed to construct no route ICMP packet {e}");
+                        return None;
+                    }
+                    return Some(pb);
+                }
+
+                // Packet queued successfully
+                None
+            }
+            SharedSecretResult::NoRoute => {
+                // No route exists - send ICMP unreachable
+                debug!(
+                    packet.src = %src_ip,
+                    packet.dst = %dst_ip,
+                    "No route to destination, sending ICMP unreachable",
                 );
 
                 let mut pb = PacketBuffer::new();
-                // From self to self
                 let icmp = PacketBuilder::ipv6(src_ip.octets(), src_ip.octets(), hop_limit).icmpv6(
                     Icmpv6Type::DestinationUnreachable(DestUnreachableCode::NoRoute),
                 );
-                // Scale to max size if needed
                 let orig_buf_end = packet
                     .buffer()
                     .len()
@@ -302,18 +385,94 @@ where
                     return None;
                 }
 
-                return Some(pb);
+                Some(pb)
             }
-        };
+        }
+    }
 
-        self.router.route_packet(DataPacket {
-            dst_ip,
-            src_ip,
-            hop_limit,
-            raw_data: shared_secret.encrypt(packet),
-        });
+    /// Process packets that were queued waiting for route discovery.
+    ///
+    /// When a route becomes available, packets are sent here from the router's packet queue.
+    /// We encrypt them and route them.
+    async fn process_pending_packets_loop<T>(
+        self,
+        mut l3_packet_sink: T,
+        mut pending_packet_rx: UnboundedReceiver<UnencryptedPacket>,
+    ) where
+        T: Sink<PacketBuffer> + Send + Unpin + 'static,
+        T::Error: std::fmt::Display,
+    {
+        while let Some(packet) = pending_packet_rx.recv().await {
+            debug!(
+                src = %packet.src_ip,
+                dst = %packet.dst_ip,
+                "Processing pending packet after route discovery"
+            );
 
-        None
+            // The packet already has its header set from when it was originally queued
+            if let Some(icmp) = self.encrypt_and_route_packet(
+                packet.src_ip,
+                packet.dst_ip,
+                packet.hop_limit,
+                packet.packet,
+            ) {
+                // If we still couldn't route (e.g., route disappeared), send ICMP
+                if let Err(e) = l3_packet_sink.send(icmp).await {
+                    error!("Could not forward ICMP packet back to TUN interface: {e}");
+                }
+            }
+        }
+
+        warn!("Pending packet processing loop ended");
+    }
+
+    /// Process packets that timed out waiting for route discovery.
+    ///
+    /// When a packet times out in the queue, it's sent here to generate an ICMP
+    /// unreachable response back to the sender.
+    async fn process_timeout_packets_loop<T>(
+        self,
+        mut l3_packet_sink: T,
+        mut timeout_packet_rx: UnboundedReceiver<UnencryptedPacket>,
+    ) where
+        T: Sink<PacketBuffer> + Send + Unpin + 'static,
+        T::Error: std::fmt::Display,
+    {
+        while let Some(packet) = timeout_packet_rx.recv().await {
+            debug!(
+                src = %packet.src_ip,
+                dst = %packet.dst_ip,
+                "Packet timed out waiting for route, sending ICMP unreachable"
+            );
+
+            // Generate ICMP no route to host
+            let mut pb = PacketBuffer::new();
+            let icmp = PacketBuilder::ipv6(
+                packet.src_ip.octets(),
+                packet.src_ip.octets(),
+                packet.hop_limit,
+            )
+            .icmpv6(Icmpv6Type::DestinationUnreachable(
+                DestUnreachableCode::NoRoute,
+            ));
+            let orig_buf_end = packet
+                .packet
+                .buffer()
+                .len()
+                .min(MIN_IPV6_MTU - IPV6_MIN_HEADER_SIZE - ICMP6_HEADER_SIZE);
+            pb.set_size(icmp.size(orig_buf_end));
+            let mut b = pb.buffer_mut();
+            if let Err(e) = icmp.write(&mut b, &packet.packet.buffer()[..orig_buf_end]) {
+                error!("Failed to construct ICMP no route packet: {e}");
+                continue;
+            }
+
+            if let Err(e) = l3_packet_sink.send(pb).await {
+                error!("Could not forward ICMP packet back to TUN interface: {e}");
+            }
+        }
+
+        warn!("Timeout packet processing loop ended");
     }
 
     async fn extract_packet_loop<T, U>(
@@ -329,14 +488,15 @@ where
     {
         while let Some(data_packet) = host_packet_source.recv().await {
             // decrypt & send to TUN interface
-            let shared_secret = if let Some(ss) = self
+            let shared_secret = match self
                 .router
                 .get_shared_secret_from_dest(data_packet.src_ip.into())
             {
-                ss
-            } else {
-                trace!("Received packet from unknown sender");
-                continue;
+                SharedSecretResult::Found(ss) => ss,
+                _ => {
+                    trace!("Received packet from unknown sender");
+                    continue;
+                }
             };
             let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
                 Ok(data) => data,
@@ -401,13 +561,13 @@ where
                     );
                     trace!("ICMP for original target {dec_ip}");
 
-                    let key =
-                        if let Some(key) = self.router.get_shared_secret_from_dest(dec_ip.into()) {
-                            key
-                        } else {
+                    let key = match self.router.get_shared_secret_from_dest(dec_ip.into()) {
+                        SharedSecretResult::Found(k) => k,
+                        _ => {
                             debug!("Can't decrypt OOB ICMP packet from unknown host");
                             continue;
-                        };
+                        }
+                    };
 
                     let (_, body) = match etherparse::IpHeaders::from_slice(&real_packet[16..]) {
                         Ok(r) => r,
