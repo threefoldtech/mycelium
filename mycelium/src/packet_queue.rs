@@ -229,6 +229,7 @@ impl PacketQueue {
     }
 
     /// Check if there are any packets queued for the given subnet.
+    #[cfg(test)]
     pub fn has_packets(&self, subnet: &Subnet) -> bool {
         self.queue
             .get(subnet)
@@ -237,6 +238,7 @@ impl PacketQueue {
     }
 
     /// Get the total number of packets currently queued.
+    #[cfg(test)]
     pub fn total_count(&self) -> usize {
         self.total_count.load(Ordering::Relaxed)
     }
