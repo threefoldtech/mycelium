@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- No longer block the router when a subnet is being queried until the query resolves
+  or times out.
+
 ## [0.7.1] - 2026-01-05
 
 ### Added
