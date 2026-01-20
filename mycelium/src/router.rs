@@ -128,6 +128,7 @@ where
     /// Returns the Router and two receivers:
     /// - `pending_packet_rx`: unencrypted packets that were queued and are now ready to be processed
     /// - `timeout_packet_rx`: unencrypted packets that timed out waiting for route discovery (for ICMP generation)
+    #[allow(clippy::type_complexity)]
     pub fn new(
         update_workers: usize,
         node_tun: UnboundedSender<DataPacket>,
