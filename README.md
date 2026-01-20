@@ -228,6 +228,11 @@ Refer to the README files in those directories for more info.
 In case a release build is required, the `--release` flag can be added to the cargo
 command (`cargo build --release`).
 
+### Windows
+
+On windows, you need to have a copy of [`wintun.dll`](https://www.wintun.net/)
+available.
+
 ## Cross compilation
 
 For cross compilation, it is advised to use the [`cross`](https://github.com/cross-rs/cross)
