@@ -17,7 +17,7 @@ use message::{
     MessageId, MessageInfo, MessagePushResponse, MessageStack, PushMessageError, ReceivedMessage,
 };
 use metrics::Metrics;
-use peer_manager::{PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
+use peer_manager::{PeerDiscoveryMode, PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
 use routing_table::{NoRouteSubnet, QueriedSubnet, RouteEntry};
 use subnet::Subnet;
 use tokio::net::TcpListener;
@@ -70,7 +70,9 @@ pub struct Config<M> {
     /// Listen port for Quic connections.
     pub quic_listen_port: Option<u16>,
     /// Udp port for peer discovery.
-    pub peer_discovery_port: Option<u16>,
+    pub peer_discovery_port: u16,
+    /// Mode for peer discovery (All, Disabled, or Filtered).
+    pub peer_discovery_mode: PeerDiscoveryMode,
     /// Name for the TUN device.
     #[cfg(any(
         target_os = "linux",
@@ -200,8 +202,8 @@ where
             config.peers,
             config.tcp_listen_port,
             config.quic_listen_port,
-            config.peer_discovery_port.unwrap_or_default(),
-            config.peer_discovery_port.is_none(),
+            config.peer_discovery_port,
+            config.peer_discovery_mode,
             config.private_network_config,
             config.metrics,
             config.firewall_mark,

@@ -76,6 +76,19 @@ pub enum PeerType {
     Inbound,
 }
 
+/// Defines how peer discovery operates regarding network interfaces.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PeerDiscoveryMode {
+    /// Discover peers on all qualifying interfaces (default behavior).
+    #[default]
+    All,
+    /// Peer discovery is completely disabled.
+    Disabled,
+    /// Only discover peers on interfaces whose names match the provided list.
+    Filtered(Vec<String>),
+}
+
 /// Local info about a peer.
 struct PeerInfo {
     /// Details how we found out about this peer.
@@ -186,7 +199,7 @@ where
         tcp_listen_port: u16,
         quic_listen_port: Option<u16>,
         peer_discovery_port: u16,
-        disable_peer_discovery: bool,
+        peer_discovery_mode: PeerDiscoveryMode,
         private_network_config: Option<(String, PrivateNetworkKey)>,
         metrics: M,
         firewall_mark: Option<u32>,
@@ -266,16 +279,30 @@ where
         let handle = tokio::spawn(peer_manager.inner.clone().connect_to_peers());
         peer_manager.abort_handles.push(handle.abort_handle());
 
-        // Discover local peers, this does not actually connect to them. That is handle by the
+        // Discover local peers, this does not actually connect to them. That is handled by the
         // connect_to_peers task.
-        if !disable_peer_discovery {
-            let handle = tokio::spawn(
-                peer_manager
-                    .inner
-                    .clone()
-                    .local_discovery(peer_discovery_port),
-            );
-            peer_manager.abort_handles.push(handle.abort_handle());
+        match peer_discovery_mode {
+            PeerDiscoveryMode::Disabled => {
+                // No discovery task spawned
+            }
+            PeerDiscoveryMode::All => {
+                let handle = tokio::spawn(
+                    peer_manager
+                        .inner
+                        .clone()
+                        .local_discovery(peer_discovery_port, None),
+                );
+                peer_manager.abort_handles.push(handle.abort_handle());
+            }
+            PeerDiscoveryMode::Filtered(interfaces) => {
+                let handle = tokio::spawn(
+                    peer_manager
+                        .inner
+                        .clone()
+                        .local_discovery(peer_discovery_port, Some(interfaces)),
+                );
+                peer_manager.abort_handles.push(handle.abort_handle());
+            }
         }
 
         Ok(peer_manager)
@@ -1046,7 +1073,12 @@ where
     }
 
     /// Use multicast discovery to find local peers.
-    async fn local_discovery(self: Arc<Self>, peer_discovery_port: u16) {
+    /// When `allowed_interfaces` is provided, only join multicast groups on those interfaces.
+    async fn local_discovery(
+        self: Arc<Self>,
+        peer_discovery_port: u16,
+        allowed_interfaces: Option<Vec<String>>,
+    ) {
         let rid = self.router.lock().unwrap().router_id();
 
         let multicast_destination = LL_PEER_DISCOVERY_GROUP
@@ -1077,7 +1109,7 @@ where
         let mut joined_interfaces = HashSet::new();
         // Join the multicast discovery group on newly detected interfaces.
         let join_new_interfaces = |joined_interfaces: &mut HashSet<_>| {
-            let ipv6_nics = list_ipv6_interface_ids()?;
+            let ipv6_nics = list_ipv6_interface_ids(allowed_interfaces.as_deref())?;
             // Keep the existing interfaces, removing interface ids we previously joined but are no
             // longer found when listing ids. We simply discard unknown ids, and assume if the
             // interface is gone (or it's IPv6), that we also implicitly left the group (i.e. no
@@ -1356,7 +1388,10 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
 }
 
 /// Get a list of the interface identifiers of every network interface with a local IPv6 IP.
-fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>> {
+/// When `allowed_interfaces` is provided, only interfaces with matching names are returned.
+fn list_ipv6_interface_ids(
+    allowed_interfaces: Option<&[String]>,
+) -> Result<HashSet<u32>, Box<dyn std::error::Error>> {
     let mut nics = HashSet::new();
     for nic in netdev::get_interfaces()
         .into_iter()
@@ -1367,6 +1402,12 @@ fn list_ipv6_interface_ids() -> Result<HashSet<u32>, Box<dyn std::error::Error>>
                 && !nic.is_point_to_point()
                 && nic.is_multicast()
                 && nic.is_up()
+        })
+        // Apply name filter if provided
+        .filter(|nic| {
+            allowed_interfaces
+                .map(|names| names.iter().any(|name| name == &nic.name))
+                .unwrap_or(true)
         })
     {
         for addr in nic.ipv6 {

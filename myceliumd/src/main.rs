@@ -21,6 +21,7 @@ use tracing::{debug, error, info, warn};
 
 use crypto::PublicKey;
 use mycelium::endpoint::Endpoint;
+use mycelium::peer_manager::PeerDiscoveryMode;
 use mycelium::{crypto, Node};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -308,6 +309,15 @@ pub struct NodeArguments {
     #[arg(long = "disable-peer-discovery", default_value_t = false)]
     disable_peer_discovery: bool,
 
+    /// Limit peer discovery to specific network interfaces.
+    ///
+    /// When specified, peer discovery will only operate on the named interfaces.
+    /// Can be specified multiple times. If not specified, discovery runs on all
+    /// qualifying interfaces (unless --disable-peer-discovery is set).
+    /// This flag is ignored if --disable-peer-discovery is set.
+    #[arg(long = "peer-discovery-interface")]
+    peer_discovery_interfaces: Vec<String>,
+
     /// Address of the HTTP API server.
     #[arg(long = "api-addr", default_value_t = DEFAULT_HTTP_API_SERVER_ADDRESS)]
     api_addr: SocketAddr,
@@ -389,6 +399,7 @@ pub struct MergedNodeConfig {
     quic_listen_port: u16,
     peer_discovery_port: u16,
     disable_peer_discovery: bool,
+    peer_discovery_interfaces: Vec<String>,
     api_addr: SocketAddr,
     jsonrpc_addr: SocketAddr,
     no_tun: bool,
@@ -412,6 +423,7 @@ struct MyceliumConfig {
     tun_name: Option<String>,
     disable_peer_discovery: Option<bool>,
     peer_discovery_port: Option<u16>,
+    peer_discovery_interfaces: Option<Vec<String>>,
     api_addr: Option<SocketAddr>,
     jsonrpc_addr: Option<SocketAddr>,
     metrics_api_address: Option<SocketAddr>,
@@ -565,6 +577,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!(path = ?merged_config.topic_config, "Loaded topic cofig");
             }
 
+            // Compute peer discovery mode from flags
+            let peer_discovery_mode = if merged_config.disable_peer_discovery {
+                if !merged_config.peer_discovery_interfaces.is_empty() {
+                    warn!("--disable-peer-discovery is set, ignoring --peer-discovery-interface values");
+                }
+                PeerDiscoveryMode::Disabled
+            } else if !merged_config.peer_discovery_interfaces.is_empty() {
+                PeerDiscoveryMode::Filtered(merged_config.peer_discovery_interfaces.clone())
+            } else {
+                PeerDiscoveryMode::All
+            };
+
             let node_keys = get_node_keys(&key_path).await?;
             let node_secret_key = if let Some((node_secret_key, _)) = node_keys {
                 node_secret_key
@@ -587,11 +611,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     } else {
                         Some(merged_config.quic_listen_port)
                     },
-                    peer_discovery_port: if merged_config.disable_peer_discovery {
-                        None
-                    } else {
-                        Some(merged_config.peer_discovery_port)
-                    },
+                    peer_discovery_port: merged_config.peer_discovery_port,
+                    peer_discovery_mode: peer_discovery_mode.clone(),
                     tun_name: merged_config.tun_name,
                     private_network_config: None,
                     metrics: metrics.clone(),
@@ -621,11 +642,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     } else {
                         Some(merged_config.quic_listen_port)
                     },
-                    peer_discovery_port: if merged_config.disable_peer_discovery {
-                        None
-                    } else {
-                        Some(merged_config.peer_discovery_port)
-                    },
+                    peer_discovery_port: merged_config.peer_discovery_port,
+                    peer_discovery_mode,
                     tun_name: merged_config.tun_name,
                     private_network_config: None,
                     metrics: mycelium_metrics::NoMetrics,
@@ -881,6 +899,11 @@ fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedN
         },
         disable_peer_discovery: cli_args.disable_peer_discovery
             || file_config.disable_peer_discovery.unwrap_or(false),
+        peer_discovery_interfaces: if !cli_args.peer_discovery_interfaces.is_empty() {
+            cli_args.peer_discovery_interfaces
+        } else {
+            file_config.peer_discovery_interfaces.unwrap_or_default()
+        },
         api_addr: if cli_args.api_addr != DEFAULT_HTTP_API_SERVER_ADDRESS {
             cli_args.api_addr
         } else {

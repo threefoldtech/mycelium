@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- You can now limit peer discovery to specific interfaces by specifying the `--peer-discovery-interface <interface_name>`.
+  The flag can be specified multiple times to allow multiple interfaces.
+
 ### Changed
 
 - No longer block the router when a subnet is being queried until the query resolves
