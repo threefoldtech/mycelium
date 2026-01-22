@@ -7,6 +7,7 @@ use tracing::{error, info};
 
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
+use mycelium::peer_manager::PeerDiscoveryMode;
 use mycelium::{crypto, metrics, Config, Node};
 use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, Mutex};
@@ -104,7 +105,8 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
         no_tun: false,
         tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
         quic_listen_port: Some(DEFAULT_QUIC_LISTEN_PORT),
-        peer_discovery_port: None, // disable multicast discovery
+        peer_discovery_port: 9650,
+        peer_discovery_mode: PeerDiscoveryMode::Disabled, // disable multicast discovery
         #[cfg(any(
             target_os = "linux",
             all(target_os = "macos", not(feature = "mactunfd")),
@@ -143,7 +145,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
 
         let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node.clone(), DEFAULT_JSONRPC_API_SERVER_ADDRESS).await;
         info!("JSON-RPC API server started on {}", DEFAULT_JSONRPC_API_SERVER_ADDRESS);
-        
+
         (Some(http_api), Some(rpc_api))
     } else {
         info!("API servers disabled by configuration");
