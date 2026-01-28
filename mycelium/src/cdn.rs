@@ -4,10 +4,10 @@ use aes_gcm::{aead::Aead, KeyInit};
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
+    response::IntoResponse,
     routing::get,
     Router,
 };
-use axum_extra::extract::Host;
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::header::CONTENT_TYPE;
 use tokio::net::TcpListener;
@@ -334,5 +334,120 @@ impl Cache {
         };
 
         Ok(c)
+    }
+}
+
+// Since axum-extra removed the `Host` extractor, we manually implement it here (i.e. copy it). It
+// has been removed since the values can be spoofed, but that is not an issue here since we are
+// mainly working locally, and access checks are done at a deeper level anyway (by means of
+// encryption, if needed).
+use axum::http::{header::FORWARDED, request::Parts, uri::Authority};
+use axum::{
+    extract::{FromRequestParts, OptionalFromRequestParts},
+    RequestPartsExt,
+};
+use std::convert::Infallible;
+
+const X_FORWARDED_HOST_HEADER_KEY: &str = "X-Forwarded-Host";
+
+/// Extractor that resolves the host of the request.
+///
+/// Host is resolved through the following, in order:
+/// - `Forwarded` header
+/// - `X-Forwarded-Host` header
+/// - `Host` header
+/// - Authority of the request URI
+///
+/// See <https://www.rfc-editor.org/rfc/rfc9110.html#name-host-and-authority> for the definition of
+/// host.
+///
+/// Note that user agents can set `X-Forwarded-Host` and `Host` headers to arbitrary values so make
+/// sure to validate them to avoid security issues.
+#[derive(Debug, Clone)]
+pub struct Host(pub String);
+
+impl<S> FromRequestParts<S> for Host
+where
+    S: Send + Sync,
+{
+    type Rejection = HostRejection;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extract::<Option<Self>>()
+            .await
+            .ok()
+            .flatten()
+            .ok_or(HostRejection)
+    }
+}
+
+impl<S> OptionalFromRequestParts<S> for Host
+where
+    S: Send + Sync,
+{
+    type Rejection = Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        if let Some(host) = parse_forwarded(&parts.headers) {
+            return Ok(Some(Self(host.to_owned())));
+        }
+
+        if let Some(host) = parts
+            .headers
+            .get(X_FORWARDED_HOST_HEADER_KEY)
+            .and_then(|host| host.to_str().ok())
+        {
+            return Ok(Some(Self(host.to_owned())));
+        }
+
+        if let Some(host) = parts
+            .headers
+            .get(axum::http::header::HOST)
+            .and_then(|host| host.to_str().ok())
+        {
+            return Ok(Some(Self(host.to_owned())));
+        }
+
+        if let Some(authority) = parts.uri.authority() {
+            return Ok(Some(Self(parse_authority(authority).to_owned())));
+        }
+
+        Ok(None)
+    }
+}
+
+#[allow(warnings)]
+fn parse_forwarded(headers: &HeaderMap) -> Option<&str> {
+    // if there are multiple `Forwarded` `HeaderMap::get` will return the first one
+    let forwarded_values = headers.get(FORWARDED)?.to_str().ok()?;
+
+    // get the first set of values
+    let first_value = forwarded_values.split(',').nth(0)?;
+
+    // find the value of the `host` field
+    first_value.split(';').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        key.trim()
+            .eq_ignore_ascii_case("host")
+            .then(|| value.trim().trim_matches('"'))
+    })
+}
+
+fn parse_authority(auth: &Authority) -> &str {
+    auth.as_str()
+        .rsplit('@')
+        .next()
+        .expect("split always has at least 1 item")
+}
+
+pub struct HostRejection;
+
+impl IntoResponse for HostRejection {
+    fn into_response(self) -> axum::response::Response {
+        (StatusCode::BAD_REQUEST, "No host found in request").into_response()
     }
 }
