@@ -792,16 +792,12 @@
           "type": "boolean"
         }
       }
-    }
-    ,
+    },
     {
       "name": "getProxies",
       "summary": "List known proxies",
       "description": "List overlay IPv6 addresses of known proxies discovered by the node.",
-      "tags": [
-        { "name": "Admin" },
-        { "name": "Proxy" }
-      ],
+      "tags": [{ "name": "Admin" }, { "name": "Proxy" }],
       "params": [],
       "result": {
         "name": "proxies",
@@ -816,10 +812,7 @@
       "name": "connectProxy",
       "summary": "Connect to a proxy",
       "description": "Connect to a proxy. When no remote is provided, the node attempts to connect to the best known proxy. When a remote is provided, it attempts to connect to that address.",
-      "tags": [
-        { "name": "Admin" },
-        { "name": "Proxy" }
-      ],
+      "tags": [{ "name": "Admin" }, { "name": "Proxy" }],
       "params": [
         {
           "name": "remote",
@@ -844,10 +837,7 @@
       "name": "disconnectProxy",
       "summary": "Disconnect from the current proxy",
       "description": "Disconnect from the currently connected proxy if any.",
-      "tags": [
-        { "name": "Admin" },
-        { "name": "Proxy" }
-      ],
+      "tags": [{ "name": "Admin" }, { "name": "Proxy" }],
       "params": [],
       "result": {
         "name": "success",
@@ -859,10 +849,7 @@
       "name": "startProxyProbe",
       "summary": "Start proxy probe",
       "description": "Start scanning/probing for proxies on the network.",
-      "tags": [
-        { "name": "Admin" },
-        { "name": "Proxy" }
-      ],
+      "tags": [{ "name": "Admin" }, { "name": "Proxy" }],
       "params": [],
       "result": {
         "name": "success",
@@ -874,15 +861,26 @@
       "name": "stopProxyProbe",
       "summary": "Stop proxy probe",
       "description": "Stop scanning/probing for proxies on the network.",
-      "tags": [
-        { "name": "Admin" },
-        { "name": "Proxy" }
-      ],
+      "tags": [{ "name": "Admin" }, { "name": "Proxy" }],
       "params": [],
       "result": {
         "name": "success",
         "description": "Whether probe was stopped",
         "schema": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "getPacketStatistics",
+      "summary": "Get packet statistics",
+      "description": "Get packet statistics grouped by source and destination IP addresses. Returns the number of packets and total bytes routed for each unique source IP and each unique destination IP separately.",
+      "tags": [{ "name": "Admin" }, { "name": "Statistics" }],
+      "params": [],
+      "result": {
+        "name": "statistics",
+        "description": "Packet statistics grouped by source and destination",
+        "schema": {
+          "$ref": "#/components/schemas/PacketStatistics"
+        }
       }
     }
   ],
@@ -907,6 +905,52 @@
           }
         }
       },
+      "PacketStatEntry": {
+        "description": "Statistics for packets routed for a single IP address",
+        "type": "object",
+        "properties": {
+          "ip": {
+            "description": "The IP address",
+            "type": "string",
+            "format": "ipv6",
+            "example": "469:1348:ab0c:a1d8::1"
+          },
+          "packetCount": {
+            "description": "Number of packets routed",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "example": 1234
+          },
+          "byteCount": {
+            "description": "Total bytes routed",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "example": 567890
+          }
+        }
+      },
+      "PacketStatistics": {
+        "description": "Packet statistics grouped by source and destination IP",
+        "type": "object",
+        "properties": {
+          "bySource": {
+            "description": "Statistics per source IP address",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PacketStatEntry"
+            }
+          },
+          "byDestination": {
+            "description": "Statistics per destination IP address",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PacketStatEntry"
+            }
+          }
+        }
+      },
       "Endpoint": {
         "description": "Identification to connect to a peer",
         "type": "object",
@@ -914,10 +958,7 @@
           "proto": {
             "description": "Protocol used",
             "type": "string",
-            "enum": [
-              "tcp",
-              "quic"
-            ],
+            "enum": ["tcp", "quic"],
             "example": "tcp"
           },
           "socketAddr": {
@@ -962,21 +1003,13 @@
           "type": {
             "description": "How we know about this peer",
             "type": "string",
-            "enum": [
-              "static",
-              "inbound",
-              "linkLocalDiscovery"
-            ],
+            "enum": ["static", "inbound", "linkLocalDiscovery"],
             "example": "static"
           },
           "connectionState": {
             "description": "The current state of the connection to the peer",
             "type": "string",
-            "enum": [
-              "alive",
-              "connecting",
-              "dead"
-            ],
+            "enum": ["alive", "connecting", "dead"],
             "example": "alive"
           },
           "txBytes": {
@@ -1229,12 +1262,7 @@
         "oneOf": [
           {
             "type": "string",
-            "enum": [
-              "pending",
-              "received",
-              "read",
-              "aborted"
-            ],
+            "enum": ["pending", "received", "read", "aborted"],
             "example": "received"
           },
           {

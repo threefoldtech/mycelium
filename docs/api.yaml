@@ -24,6 +24,8 @@ tags:
     description: Operations related to peer management
   - name: Route
     description: Operations related to network routes
+  - name: Statistics
+    description: Operations related to packet statistics
   - name: Message
     description: Operations on the embedded message subsystem
   - name: Topic
@@ -288,6 +290,26 @@ paths:
       responses:
         "204":
           description: Probe stopped
+
+  "/api/v1/admin/stats/packets":
+    get:
+      tags:
+        - Admin
+        - Statistics
+      summary: Get packet statistics
+      description: |
+        Get packet statistics grouped by source and destination IP addresses.
+        Returns the number of packets and total bytes routed for each unique source IP
+        and each unique destination IP separately.
+      operationId: getPacketStatistics
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PacketStatistics"
+
   "/api/v1/messages":
     get:
       tags:
@@ -739,6 +761,43 @@ components:
           minLength: 64
           maxLength: 64
           example: 02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf
+
+    PacketStatEntry:
+      description: Statistics for packets routed for a single IP address
+      type: object
+      properties:
+        ip:
+          description: The IP address
+          type: string
+          format: ipv6
+          example: "469:1348:ab0c:a1d8::1"
+        packetCount:
+          description: Number of packets routed
+          type: integer
+          format: int64
+          minimum: 0
+          example: 1234
+        byteCount:
+          description: Total bytes routed
+          type: integer
+          format: int64
+          minimum: 0
+          example: 567890
+
+    PacketStatistics:
+      description: Packet statistics grouped by source and destination IP
+      type: object
+      properties:
+        bySource:
+          description: Statistics per source IP address
+          type: array
+          items:
+            $ref: "#/components/schemas/PacketStatEntry"
+        byDestination:
+          description: Statistics per destination IP address
+          type: array
+          items:
+            $ref: "#/components/schemas/PacketStatEntry"
 
     Endpoint:
       description: Identification to connect to a peer

@@ -362,6 +362,11 @@ where
     pub fn get_pubkey_from_ip(&self, ip: IpAddr) -> Option<crypto::PublicKey> {
         self.router.get_pubkey(ip)
     }
+
+    /// Get packet statistics grouped by source and destination IP.
+    pub fn packet_statistics(&self) -> router::PacketStatistics {
+        self.router.packet_statistics()
+    }
 }
 
 impl<M> Node<M>

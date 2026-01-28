@@ -158,6 +158,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ProxyCommand,
     },
+
+    /// Actions related to packet statistics
+    Stats {
+        #[command(subcommand)]
+        command: StatsCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -277,6 +283,16 @@ pub enum ProxyProbeCommand {
     Start,
     /// Stop background proxy probing
     Stop,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum StatsCommand {
+    /// Show packet statistics grouped by source and destination IP
+    Packets {
+        /// Print in JSON format
+        #[arg(long = "json", default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -846,6 +862,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         return mycelium_cli::stop_proxy_probe(cli.node_args.api_addr).await;
                     }
                 },
+            },
+            Command::Stats { command } => match command {
+                StatsCommand::Packets { json } => {
+                    return mycelium_cli::list_packet_stats(cli.node_args.api_addr, json).await;
+                }
             },
         },
     }

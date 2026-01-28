@@ -23,7 +23,10 @@ use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tracing::debug;
 
-use crate::{Info, Metric, NoRouteSubnet, QueriedSubnet, Route, ServerState};
+use crate::{
+    Info, Metric, NoRouteSubnet, PacketStatEntry, PacketStatistics, QueriedSubnet, Route,
+    ServerState,
+};
 use mycelium::crypto::PublicKey;
 use mycelium::endpoint::Endpoint;
 use mycelium::metrics::Metrics;
@@ -79,6 +82,10 @@ pub trait MyceliumApi {
 
     #[method(name = "stopProxyProbe")]
     async fn stop_proxy_probe(&self) -> RpcResult<bool>;
+
+    // Statistics methods
+    #[method(name = "getPacketStatistics")]
+    async fn get_packet_statistics(&self) -> RpcResult<PacketStatistics>;
 
     // OpenRPC discovery
     #[method(name = "rpc.discover")]
@@ -347,6 +354,32 @@ where
         debug!("Stopping proxy probe via RPC");
         self.state.node.lock().await.stop_proxy_scan();
         Ok(true)
+    }
+
+    async fn get_packet_statistics(&self) -> RpcResult<PacketStatistics> {
+        debug!("Loading packet statistics via RPC");
+        let stats = self.state.node.lock().await.packet_statistics();
+
+        Ok(PacketStatistics {
+            by_source: stats
+                .by_source
+                .into_iter()
+                .map(|ps| PacketStatEntry {
+                    ip: ps.ip.to_string(),
+                    packet_count: ps.packet_count,
+                    byte_count: ps.byte_count,
+                })
+                .collect(),
+            by_destination: stats
+                .by_destination
+                .into_iter()
+                .map(|ps| PacketStatEntry {
+                    ip: ps.ip.to_string(),
+                    packet_count: ps.packet_count,
+                    byte_count: ps.byte_count,
+                })
+                .collect(),
+        })
     }
 
     async fn discover(&self) -> RpcResult<serde_json::Value> {

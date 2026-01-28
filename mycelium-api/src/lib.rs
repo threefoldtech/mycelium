@@ -72,6 +72,7 @@ impl Http {
                     .delete(disconnect_proxy),
             )
             .route("/admin/proxy/probe", get(start_probe).delete(stop_probe))
+            .route("/admin/stats/packets", get(get_packet_statistics))
             .route("/pubkey/{ip}", get(get_pubk_from_ip))
             .with_state(server_state.clone());
         let app = Router::new().nest("/api/v1", admin_routes);
@@ -317,6 +318,58 @@ where
         .collect();
 
     Json(queries)
+}
+
+/// Statistics for packets routed for a single IP address.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PacketStatEntry {
+    /// IP address.
+    pub ip: String,
+    /// Number of packets routed.
+    pub packet_count: u64,
+    /// Total bytes routed.
+    pub byte_count: u64,
+}
+
+/// Packet statistics grouped by source and destination.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PacketStatistics {
+    /// Statistics per source IP.
+    pub by_source: Vec<PacketStatEntry>,
+    /// Statistics per destination IP.
+    pub by_destination: Vec<PacketStatEntry>,
+}
+
+/// Get packet statistics grouped by source and destination IP.
+async fn get_packet_statistics<M>(State(state): State<ServerState<M>>) -> Json<PacketStatistics>
+where
+    M: Metrics + Clone + Send + Sync + 'static,
+{
+    debug!("Loading packet statistics");
+    let stats = state.node.lock().await.packet_statistics();
+
+    Json(PacketStatistics {
+        by_source: stats
+            .by_source
+            .into_iter()
+            .map(|ps| PacketStatEntry {
+                ip: ps.ip.to_string(),
+                packet_count: ps.packet_count,
+                byte_count: ps.byte_count,
+            })
+            .collect(),
+        by_destination: stats
+            .by_destination
+            .into_iter()
+            .map(|ps| PacketStatEntry {
+                ip: ps.ip.to_string(),
+                packet_count: ps.packet_count,
+                byte_count: ps.byte_count,
+            })
+            .collect(),
+    })
 }
 
 async fn list_proxies<M>(State(state): State<ServerState<M>>) -> Json<Vec<Ipv6Addr>>

@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- You can now limit peer discovery to specific interfaces by specifying the `--peer-discovery-interface <interface_name>`.
-  The flag can be specified multiple times to allow multiple interfaces.
+- You can now limit peer discovery to specific interfaces by specifying the
+  `--peer-discovery-interface <interface_name>`. The flag can be specified multiple
+  times to allow multiple interfaces.
+- Track packets which have been handled by src IP and dst IP (separately). The
+  stats can be accessed through the API.
 
 ### Changed
 
@@ -35,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The Quic connection type now uses quic datagrams to transport __data__ (packets
+- The Quic connection type now uses quic datagrams to transport **data** (packets
   coming from the TUN device) to the peer. Protocol traffic is still sent over a
   bidirectional Quic stream (which supports retransmits).
 

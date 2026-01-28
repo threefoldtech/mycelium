@@ -28,6 +28,7 @@ pub enum SharedSecretResult {
     /// No route exists and no query is in progress. The destination is unreachable.
     NoRoute,
 }
+use dashmap::DashMap;
 use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
     Icmpv6Type,
@@ -35,8 +36,11 @@ use etherparse::{
 use std::{
     error::Error,
     hash::{Hash, Hasher},
-    net::IpAddr,
-    sync::{Arc, RwLock},
+    net::{IpAddr, Ipv6Addr},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock,
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
@@ -85,6 +89,46 @@ const ROUTE_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 /// The threshold for route expiry under which we want to send a route requets for a subnet if it is used.
 const ROUTE_ALMOST_EXPIRED_TRESHOLD: tokio::time::Duration = Duration::from_secs(15);
 
+/// Statistics for packets routed for a single IP address.
+pub struct PacketStats {
+    packet_count: AtomicU64,
+    byte_count: AtomicU64,
+}
+
+impl PacketStats {
+    fn new() -> Self {
+        Self {
+            packet_count: AtomicU64::new(0),
+            byte_count: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, bytes: u64) {
+        self.packet_count.fetch_add(1, Ordering::Relaxed);
+        self.byte_count.fetch_add(bytes, Ordering::Relaxed);
+    }
+}
+
+/// A single entry of packet statistics for an IP address.
+#[derive(Clone, Debug)]
+pub struct PacketStatEntry {
+    /// IP address.
+    pub ip: Ipv6Addr,
+    /// Number of packets routed.
+    pub packet_count: u64,
+    /// Total bytes routed.
+    pub byte_count: u64,
+}
+
+/// Packet statistics grouped by source and destination.
+#[derive(Clone, Debug)]
+pub struct PacketStatistics {
+    /// Statistics per source IP.
+    pub by_source: Vec<PacketStatEntry>,
+    /// Statistics per destination IP.
+    pub by_destination: Vec<PacketStatEntry>,
+}
+
 pub struct Router<M> {
     routing_table: RoutingTable,
     peer_interfaces: Arc<RwLock<Vec<Peer>>>,
@@ -113,6 +157,10 @@ pub struct Router<M> {
     /// Channel for sending timed-out unencrypted packets to the data plane for ICMP generation.
     timeout_packet_tx: UnboundedSender<UnencryptedPacket>,
     metrics: M,
+    /// Packet statistics per source IP.
+    packet_stats_by_src: Arc<DashMap<Ipv6Addr, PacketStats>>,
+    /// Packet statistics per destination IP.
+    packet_stats_by_dst: Arc<DashMap<Ipv6Addr, PacketStats>>,
 }
 
 impl<M> Router<M>
@@ -196,6 +244,8 @@ where
             pending_packet_tx,
             timeout_packet_tx,
             metrics,
+            packet_stats_by_src: Arc::new(DashMap::new()),
+            packet_stats_by_dst: Arc::new(DashMap::new()),
         };
 
         tokio::spawn(Router::start_periodic_hello_sender(router.clone()));
@@ -284,6 +334,40 @@ where
             }
         } else {
             None
+        }
+    }
+
+    /// Returns a snapshot of all packet statistics.
+    pub fn packet_statistics(&self) -> PacketStatistics {
+        let by_source = self
+            .packet_stats_by_src
+            .iter()
+            .map(|entry| {
+                let (ip, stats) = entry.pair();
+                PacketStatEntry {
+                    ip: *ip,
+                    packet_count: stats.packet_count.load(Ordering::Relaxed),
+                    byte_count: stats.byte_count.load(Ordering::Relaxed),
+                }
+            })
+            .collect();
+
+        let by_destination = self
+            .packet_stats_by_dst
+            .iter()
+            .map(|entry| {
+                let (ip, stats) = entry.pair();
+                PacketStatEntry {
+                    ip: *ip,
+                    packet_count: stats.packet_count.load(Ordering::Relaxed),
+                    byte_count: stats.byte_count.load(Ordering::Relaxed),
+                }
+            })
+            .collect();
+
+        PacketStatistics {
+            by_source,
+            by_destination,
         }
     }
 
@@ -1762,6 +1846,17 @@ where
             data_packet.dst_ip,
         );
 
+        // Record packet statistics
+        let packet_size = data_packet.raw_data.len() as u64;
+        self.packet_stats_by_src
+            .entry(data_packet.src_ip)
+            .or_insert_with(PacketStats::new)
+            .record(packet_size);
+        self.packet_stats_by_dst
+            .entry(data_packet.dst_ip)
+            .or_insert_with(PacketStats::new)
+            .record(packet_size);
+
         if data_packet.hop_limit < 2 {
             self.metrics.router_route_packet_ttl_expired();
             self.time_exceeded(data_packet);
@@ -2220,6 +2315,8 @@ where
             pending_packet_tx: self.pending_packet_tx.clone(),
             timeout_packet_tx: self.timeout_packet_tx.clone(),
             metrics: self.metrics.clone(),
+            packet_stats_by_src: self.packet_stats_by_src.clone(),
+            packet_stats_by_dst: self.packet_stats_by_dst.clone(),
         }
     }
 }
