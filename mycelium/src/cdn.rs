@@ -249,14 +249,14 @@ impl Drop for Cdn {
 
 /// Download a shard from a 0-db.
 async fn download_shard(
-    location: &cdn_meta::Location,
+    location: &cdn_meta::ShardLocation,
     key: &[u8],
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let client = redis::Client::open(format!("redis://{}", location.host))?;
     let mut con = client.get_multiplexed_async_connection().await?;
 
     redis::cmd("SELECT")
-        .arg(&location.namespace)
+        .arg(location.db)
         .query_async::<()>(&mut con)
         .await?;
 
