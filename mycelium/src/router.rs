@@ -458,6 +458,11 @@ where
     /// This is called when a route query times out or when we lose a route.
     fn drop_queued_packets(&self, subnet: Subnet) {
         let packets = self.packet_queue.drop_subnet(subnet, &self.metrics);
+        debug!(
+            packets = packets.len(),
+            %subnet,
+            "Dropping pending packets for subnet"
+        );
         for packet_data in packets {
             if let QueuedPacketData::Unencrypted(p) = packet_data {
                 if let Err(e) = self.timeout_packet_tx.send(p) {
