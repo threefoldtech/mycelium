@@ -34,6 +34,8 @@ pub struct PrometheusExporter {
     peer_manager_peer_added: IntCounterVec,
     peer_manager_known_peers: IntGauge,
     peer_manager_connection_attemps: IntCounterVec,
+    router_outbound_packet_queue: IntCounterVec,
+    router_incoming_packet_queue: IntCounterVec,
 }
 
 impl PrometheusExporter {
@@ -168,6 +170,22 @@ impl PrometheusExporter {
                     "Count how many connections the peer manager started to remotes, and finished"
                 ),
                 &["connection_state"]
+            )
+            .expect("Can register int counter vec in the default registry"),
+            router_outbound_packet_queue: register_int_counter_vec!(
+                opts!(
+                    "mycelium_router_outbound_packet_queue",
+                    "Events related to the outbound packet queue for packets waiting on route discovery"
+                ),
+                &["event"]
+            )
+            .expect("Can register int counter vec in the default registry"),
+            router_incoming_packet_queue: register_int_counter_vec!(
+                opts!(
+                    "mycelium_router_incoming_packet_queue",
+                    "Events related to the incoming packet queue for packets waiting on sender route discovery"
+                ),
+                &["event"]
             )
             .expect("Can register int counter vec in the default registry"),
         }
@@ -435,6 +453,76 @@ impl Metrics for PrometheusExporter {
     fn peer_manager_connection_finished(&self) {
         self.peer_manager_connection_attemps
             .with_label_values(&["finished"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_packet_enqueued(&self) {
+        self.router_outbound_packet_queue
+            .with_label_values(&["enqueued"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_packets_dequeued(&self, count: usize) {
+        self.router_outbound_packet_queue
+            .with_label_values(&["dequeued"])
+            .inc_by(count as u64)
+    }
+
+    #[inline]
+    fn router_packets_dropped_no_route(&self, count: usize) {
+        self.router_outbound_packet_queue
+            .with_label_values(&["dropped_no_route"])
+            .inc_by(count as u64)
+    }
+
+    #[inline]
+    fn router_packet_queue_full_global(&self) {
+        self.router_outbound_packet_queue
+            .with_label_values(&["queue_full_global"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_packet_queue_full_subnet(&self) {
+        self.router_outbound_packet_queue
+            .with_label_values(&["queue_full_subnet"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_incoming_packet_enqueued(&self) {
+        self.router_incoming_packet_queue
+            .with_label_values(&["enqueued"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_incoming_packets_dequeued(&self, count: usize) {
+        self.router_incoming_packet_queue
+            .with_label_values(&["dequeued"])
+            .inc_by(count as u64)
+    }
+
+    #[inline]
+    fn router_incoming_packets_dropped_no_route(&self, count: usize) {
+        self.router_incoming_packet_queue
+            .with_label_values(&["dropped_no_route"])
+            .inc_by(count as u64)
+    }
+
+    #[inline]
+    fn router_incoming_packet_queue_full_global(&self) {
+        self.router_incoming_packet_queue
+            .with_label_values(&["queue_full_global"])
+            .inc()
+    }
+
+    #[inline]
+    fn router_incoming_packet_queue_full_subnet(&self) {
+        self.router_incoming_packet_queue
+            .with_label_values(&["queue_full_subnet"])
             .inc()
     }
 }
