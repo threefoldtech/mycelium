@@ -76,6 +76,7 @@ where
     /// discovery and need ICMP unreachable responses.
     /// `incoming_packet_queue` is the queue for incoming encrypted packets waiting for the sender's route.
     /// `incoming_route_rx` is a receiver for notifications when routes become available.
+    #[allow(clippy::too_many_arguments)]
     pub fn new<S, T, U>(
         router: Router<M>,
         l3_packet_stream: S,
