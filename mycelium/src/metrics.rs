@@ -212,4 +212,24 @@ pub trait Metrics {
     /// A packet could not be enqueued because the per-subnet queue limit was reached.
     #[inline]
     fn router_packet_queue_full_subnet(&self) {}
+
+    /// An incoming packet was enqueued waiting for the sender's route to be discovered.
+    #[inline]
+    fn router_incoming_packet_enqueued(&self) {}
+
+    /// Incoming packets were dequeued after a route to the sender was installed.
+    #[inline]
+    fn router_incoming_packets_dequeued(&self, _count: usize) {}
+
+    /// Incoming packets were dropped because no route to the sender was found (query timeout).
+    #[inline]
+    fn router_incoming_packets_dropped_no_route(&self, _count: usize) {}
+
+    /// An incoming packet could not be enqueued because the global queue limit was reached.
+    #[inline]
+    fn router_incoming_packet_queue_full_global(&self) {}
+
+    /// An incoming packet could not be enqueued because the per-subnet queue limit was reached.
+    #[inline]
+    fn router_incoming_packet_queue_full_subnet(&self) {}
 }

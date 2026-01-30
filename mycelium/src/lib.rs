@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::cdn::Cdn;
+use crate::packet_queue::IncomingPacketQueue;
 use crate::proxy::{ConnectionError, Proxy};
 use crate::tun::TunConfig;
 use bytes::BytesMut;
@@ -167,34 +168,43 @@ where
         .expect("64 is a valid IPv6 prefix size; qed");
 
         // Creating a new Router instance
-        let (router, pending_packet_rx, timeout_packet_rx) = match router::Router::new(
-            config.update_workers,
-            tun_tx,
-            node_subnet,
-            vec![node_subnet],
-            (config.node_key, node_pub_key),
-            vec![
-                Box::new(filters::AllowedSubnet::new(
-                    Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
-                        .expect("Global subnet is properly defined; qed"),
-                )),
-                Box::new(filters::MaxSubnetSize::<64>),
-                Box::new(filters::RouterIdOwnsSubnet),
-            ],
-            config.metrics.clone(),
-        ) {
-            Ok((router, pending_packet_rx, timeout_packet_rx)) => {
-                info!(
-                    "Router created. Pubkey: {:x}",
-                    BytesMut::from(&router.node_public_key().as_bytes()[..])
-                );
-                (router, pending_packet_rx, timeout_packet_rx)
-            }
-            Err(e) => {
-                error!("Error creating router: {e}");
-                panic!("Error creating router: {e}");
-            }
-        };
+        let (router, pending_packet_rx, timeout_packet_rx, incoming_route_rx) =
+            match router::Router::new(
+                config.update_workers,
+                tun_tx,
+                node_subnet,
+                vec![node_subnet],
+                (config.node_key, node_pub_key),
+                vec![
+                    Box::new(filters::AllowedSubnet::new(
+                        Subnet::new(GLOBAL_SUBNET_ADDRESS, GLOBAL_SUBNET_PREFIX_LEN)
+                            .expect("Global subnet is properly defined; qed"),
+                    )),
+                    Box::new(filters::MaxSubnetSize::<64>),
+                    Box::new(filters::RouterIdOwnsSubnet),
+                ],
+                config.metrics.clone(),
+            ) {
+                Ok((router, pending_packet_rx, timeout_packet_rx, incoming_route_rx)) => {
+                    info!(
+                        "Router created. Pubkey: {:x}",
+                        BytesMut::from(&router.node_public_key().as_bytes()[..])
+                    );
+                    (
+                        router,
+                        pending_packet_rx,
+                        timeout_packet_rx,
+                        incoming_route_rx,
+                    )
+                }
+                Err(e) => {
+                    error!("Error creating router: {e}");
+                    panic!("Error creating router: {e}");
+                }
+            };
+
+        // Create the incoming packet queue for packets waiting for sender's route
+        let incoming_packet_queue = IncomingPacketQueue::new();
 
         // Creating a new PeerManager instance
         let pm = peer_manager::PeerManager::new(
@@ -231,6 +241,8 @@ where
                 tun_rx,
                 pending_packet_rx,
                 timeout_packet_rx,
+                incoming_packet_queue,
+                incoming_route_rx,
             )
         } else {
             #[cfg(not(any(
@@ -283,6 +295,8 @@ where
                     tun_rx,
                     pending_packet_rx,
                     timeout_packet_rx,
+                    incoming_packet_queue,
+                    incoming_route_rx,
                 )
             }
         };

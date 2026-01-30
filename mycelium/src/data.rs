@@ -12,7 +12,7 @@ use crate::{
     crypto::PacketBuffer,
     metrics::Metrics,
     packet::DataPacket,
-    packet_queue::UnencryptedPacket,
+    packet_queue::{IncomingPacketQueue, UnencryptedPacket},
     router::{Router, SharedSecretResult},
     subnet::Subnet,
 };
@@ -74,6 +74,8 @@ where
     /// discovery and are now ready to be encrypted and routed.
     /// `timeout_packet_rx` is a receiver for unencrypted packets that timed out waiting for route
     /// discovery and need ICMP unreachable responses.
+    /// `incoming_packet_queue` is the queue for incoming encrypted packets waiting for the sender's route.
+    /// `incoming_route_rx` is a receiver for notifications when routes become available.
     pub fn new<S, T, U>(
         router: Router<M>,
         l3_packet_stream: S,
@@ -82,6 +84,8 @@ where
         host_packet_source: UnboundedReceiver<DataPacket>,
         pending_packet_rx: UnboundedReceiver<UnencryptedPacket>,
         timeout_packet_rx: UnboundedReceiver<UnencryptedPacket>,
+        incoming_packet_queue: IncomingPacketQueue,
+        incoming_route_rx: UnboundedReceiver<Subnet>,
     ) -> Self
     where
         S: Stream<Item = Result<PacketBuffer, std::io::Error>> + Send + Unpin + 'static,
@@ -100,6 +104,8 @@ where
             l3_packet_sink.clone(),
             message_packet_sink,
             host_packet_source,
+            incoming_packet_queue,
+            incoming_route_rx,
         ));
         tokio::spawn(
             dp.clone()
@@ -480,153 +486,202 @@ where
         mut l3_packet_sink: T,
         mut message_packet_sink: U,
         mut host_packet_source: UnboundedReceiver<DataPacket>,
+        incoming_packet_queue: IncomingPacketQueue,
+        mut incoming_route_rx: UnboundedReceiver<Subnet>,
     ) where
         T: Sink<PacketBuffer> + Send + Unpin + 'static,
         T::Error: std::fmt::Display,
         U: Sink<(PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
         U::Error: std::fmt::Display,
     {
-        while let Some(data_packet) = host_packet_source.recv().await {
-            // decrypt & send to TUN interface
-            let shared_secret = match self
-                .router
-                .get_shared_secret_from_dest(data_packet.src_ip.into())
-            {
-                SharedSecretResult::Found(ss) => ss,
-                _ => {
-                    trace!("Received packet from unknown sender");
-                    continue;
-                }
-            };
-            let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
-                Ok(data) => data,
-                Err(_) => {
-                    debug!("Dropping data packet with invalid encrypted content");
-                    continue;
-                }
-            };
-
-            // Check header
-            let header = decrypted_packet.header();
-            if header[0] != USER_DATA_VERSION {
-                trace!("Dropping decrypted packet with unknown header version");
-                continue;
-            }
-
-            // Route based on packet type.
-            match header[1] {
-                USER_DATA_L3_TYPE => {
-                    let real_packet = decrypted_packet.buffer_mut();
-                    if real_packet.len() < IPV6_MIN_HEADER_SIZE {
-                        debug!(
-                            "Decrypted packet is too short, can't possibly be a valid IPv6 packet"
-                        );
-                        continue;
-                    }
-                    // Adjust the hop limit in the decrypted packet to the new value.
-                    real_packet[7] = data_packet.hop_limit;
-                    if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
-                        error!("Failed to send packet on local TUN interface: {e}",);
-                        continue;
-                    }
-                }
-                USER_DATA_MESSAGE_TYPE => {
-                    if let Err(e) = message_packet_sink
-                        .send((
-                            decrypted_packet,
-                            IpAddr::V6(data_packet.src_ip),
-                            IpAddr::V6(data_packet.dst_ip),
-                        ))
-                        .await
-                    {
-                        error!("Failed to send packet to message handler: {e}",);
-                        continue;
-                    }
-                }
-                USER_DATA_OOB_ICMP => {
-                    let real_packet = &*decrypted_packet;
-                    if real_packet.len() < IPV6_MIN_HEADER_SIZE + ICMP6_HEADER_SIZE + 16 {
-                        debug!(
-                            "Decrypted packet is too short, can't possibly be a valid IPv6 ICMP packet"
-                        );
-                        continue;
-                    }
-                    if real_packet.len() > MIN_IPV6_MTU + 16 {
-                        debug!("Discarding ICMP packet which is too large");
-                        continue;
-                    }
-
-                    let dec_ip = Ipv6Addr::from(
-                        <&[u8] as TryInto<[u8; 16]>>::try_into(&real_packet[..16]).unwrap(),
-                    );
-                    trace!("ICMP for original target {dec_ip}");
-
-                    let key = match self.router.get_shared_secret_from_dest(dec_ip.into()) {
-                        SharedSecretResult::Found(k) => k,
-                        _ => {
-                            debug!("Can't decrypt OOB ICMP packet from unknown host");
-                            continue;
-                        }
+        loop {
+            // Collect packets to process - either from channel or from dequeued after route available
+            let packets_to_process: Vec<DataPacket> = tokio::select! {
+                // Handle incoming data packets
+                maybe_packet = host_packet_source.recv() => {
+                    let Some(data_packet) = maybe_packet else {
+                        break;
                     };
+                    vec![data_packet]
+                }
 
-                    let (_, body) = match etherparse::IpHeaders::from_slice(&real_packet[16..]) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            // This is a node which does not adhere to the protocol of sending back
-                            // ICMP like this, or it is intentionally sending mallicious packets.
+                // Handle route availability notifications - process queued incoming packets
+                Some(subnet) = incoming_route_rx.recv() => {
+                    let packets = incoming_packet_queue.dequeue(subnet, self.router.metrics());
+                    if !packets.is_empty() {
+                        debug!(
+                            subnet = %subnet,
+                            count = packets.len(),
+                            "Processing queued incoming packets after route became available"
+                        );
+                    }
+                    packets
+                }
+            };
+
+            // Process all collected packets
+            for data_packet in packets_to_process {
+                // decrypt & send to TUN interface
+                let shared_secret = match self
+                    .router
+                    .get_shared_secret_from_dest(data_packet.src_ip.into())
+                {
+                    SharedSecretResult::Found(ss) => ss,
+                    SharedSecretResult::Resolving => {
+                        // Queue the packet - will be processed when route becomes available
+                        let src_subnet = Subnet::new(data_packet.src_ip.into(), 64)
+                            .expect("64 is a valid subnet size for IPv6 addresses");
+                        debug!(
+                            src = %data_packet.src_ip,
+                            "Queueing incoming packet, route to sender being resolved"
+                        );
+                        if incoming_packet_queue
+                            .enqueue(src_subnet, data_packet, self.router.metrics())
+                            .is_err()
+                        {
+                            debug!("Incoming packet queue full, dropping packet");
+                        }
+                        continue;
+                    }
+                    SharedSecretResult::NoRoute => {
+                        trace!("Received packet from sender with no route, dropping");
+                        continue;
+                    }
+                };
+                let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data.clone())
+                {
+                    Ok(data) => data,
+                    Err(_) => {
+                        debug!("Dropping data packet with invalid encrypted content");
+                        continue;
+                    }
+                };
+
+                // Check header
+                let header = decrypted_packet.header();
+                if header[0] != USER_DATA_VERSION {
+                    trace!("Dropping decrypted packet with unknown header version");
+                    continue;
+                }
+
+                // Route based on packet type.
+                match header[1] {
+                    USER_DATA_L3_TYPE => {
+                        let real_packet = decrypted_packet.buffer_mut();
+                        if real_packet.len() < IPV6_MIN_HEADER_SIZE {
                             debug!(
-                                "Dropping malformed OOB ICMP packet from {} for {e}",
-                                data_packet.src_ip
+                                "Decrypted packet is too short, can't possibly be a valid IPv6 packet"
                             );
                             continue;
                         }
-                    };
-                    let (header, body) = match etherparse::Icmpv6Header::from_slice(body.payload) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            // This is a node which does not adhere to the protocol of sending back
-                            // ICMP like this, or it is intentionally sending mallicious packets.
+                        // Adjust the hop limit in the decrypted packet to the new value.
+                        real_packet[7] = data_packet.hop_limit;
+                        if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
+                            error!("Failed to send packet on local TUN interface: {e}",);
+                            continue;
+                        }
+                    }
+                    USER_DATA_MESSAGE_TYPE => {
+                        if let Err(e) = message_packet_sink
+                            .send((
+                                decrypted_packet,
+                                IpAddr::V6(data_packet.src_ip),
+                                IpAddr::V6(data_packet.dst_ip),
+                            ))
+                            .await
+                        {
+                            error!("Failed to send packet to message handler: {e}",);
+                            continue;
+                        }
+                    }
+                    USER_DATA_OOB_ICMP => {
+                        let real_packet = &*decrypted_packet;
+                        if real_packet.len() < IPV6_MIN_HEADER_SIZE + ICMP6_HEADER_SIZE + 16 {
                             debug!(
-                                "Dropping OOB ICMP packet from {} with malformed ICMP header ({e})",
-                                data_packet.src_ip
+                                "Decrypted packet is too short, can't possibly be a valid IPv6 ICMP packet"
                             );
                             continue;
                         }
-                    };
-
-                    // Where are the leftover bytes coming from
-                    let orig_pb = match key.decrypt(body[..body.len()].to_vec()) {
-                        Ok(pb) => pb,
-                        Err(e) => {
-                            warn!("Failed to decrypt ICMP data body {e}");
+                        if real_packet.len() > MIN_IPV6_MTU + 16 {
+                            debug!("Discarding ICMP packet which is too large");
                             continue;
                         }
-                    };
 
-                    let packet = etherparse::PacketBuilder::ipv6(
-                        data_packet.src_ip.octets(),
-                        data_packet.dst_ip.octets(),
-                        data_packet.hop_limit,
-                    )
-                    .icmpv6(header.icmp_type);
+                        let dec_ip = Ipv6Addr::from(
+                            <&[u8] as TryInto<[u8; 16]>>::try_into(&real_packet[..16]).unwrap(),
+                        );
+                        trace!("ICMP for original target {dec_ip}");
 
-                    let serialized_icmp = packet.size(orig_pb.len());
-                    let mut rp = PacketBuffer::new();
-                    rp.set_size(serialized_icmp);
-                    if let Err(e) =
-                        packet.write(&mut (&mut rp.buffer_mut()[..serialized_icmp]), &orig_pb)
-                    {
-                        error!("Could not reconstruct icmp packet {e}");
+                        let key = match self.router.get_shared_secret_from_dest(dec_ip.into()) {
+                            SharedSecretResult::Found(k) => k,
+                            _ => {
+                                debug!("Can't decrypt OOB ICMP packet from unknown host");
+                                continue;
+                            }
+                        };
+
+                        let (_, body) = match etherparse::IpHeaders::from_slice(&real_packet[16..])
+                        {
+                            Ok(r) => r,
+                            Err(e) => {
+                                // This is a node which does not adhere to the protocol of sending back
+                                // ICMP like this, or it is intentionally sending mallicious packets.
+                                debug!(
+                                    "Dropping malformed OOB ICMP packet from {} for {e}",
+                                    data_packet.src_ip
+                                );
+                                continue;
+                            }
+                        };
+                        let (header, body) = match etherparse::Icmpv6Header::from_slice(
+                            body.payload,
+                        ) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                // This is a node which does not adhere to the protocol of sending back
+                                // ICMP like this, or it is intentionally sending mallicious packets.
+                                debug!(
+                                    "Dropping OOB ICMP packet from {} with malformed ICMP header ({e})",
+                                    data_packet.src_ip
+                                );
+                                continue;
+                            }
+                        };
+
+                        // Where are the leftover bytes coming from
+                        let orig_pb = match key.decrypt(body[..body.len()].to_vec()) {
+                            Ok(pb) => pb,
+                            Err(e) => {
+                                warn!("Failed to decrypt ICMP data body {e}");
+                                continue;
+                            }
+                        };
+
+                        let packet = etherparse::PacketBuilder::ipv6(
+                            data_packet.src_ip.octets(),
+                            data_packet.dst_ip.octets(),
+                            data_packet.hop_limit,
+                        )
+                        .icmpv6(header.icmp_type);
+
+                        let serialized_icmp = packet.size(orig_pb.len());
+                        let mut rp = PacketBuffer::new();
+                        rp.set_size(serialized_icmp);
+                        if let Err(e) =
+                            packet.write(&mut (&mut rp.buffer_mut()[..serialized_icmp]), &orig_pb)
+                        {
+                            error!("Could not reconstruct icmp packet {e}");
+                            continue;
+                        }
+                        if let Err(e) = l3_packet_sink.send(rp).await {
+                            error!("Failed to send packet on local TUN interface: {e}",);
+                            continue;
+                        }
+                    }
+                    _ => {
+                        trace!("Dropping decrypted packet with unknown protocol type");
                         continue;
                     }
-                    if let Err(e) = l3_packet_sink.send(rp).await {
-                        error!("Failed to send packet on local TUN interface: {e}",);
-                        continue;
-                    }
-                }
-                _ => {
-                    trace!("Dropping decrypted packet with unknown protocol type");
-                    continue;
                 }
             }
         }

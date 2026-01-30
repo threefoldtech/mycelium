@@ -250,6 +250,187 @@ impl Default for PacketQueue {
     }
 }
 
+/// Default maximum incoming packets per source subnet.
+const DEFAULT_INCOMING_MAX_PER_SUBNET: usize = 100;
+
+/// Default maximum total incoming packets across all source subnets.
+const DEFAULT_INCOMING_MAX_TOTAL: usize = 10_000;
+
+/// A queue for incoming encrypted packets waiting for the sender's shared secret.
+///
+/// When a packet arrives from a sender whose route (and thus public key) is not yet known,
+/// the packet is queued here. When a route for the sender becomes available, packets are
+/// dequeued and decrypted. This is keyed by **source** subnet (unlike the outbound PacketQueue
+/// which is keyed by destination subnet).
+#[derive(Clone)]
+pub struct IncomingPacketQueue {
+    /// Map from source subnet to list of queued packets.
+    queue: Arc<DashMap<Subnet, Vec<DataPacket>>>,
+    /// Maximum packets allowed per source subnet.
+    max_per_subnet: usize,
+    /// Maximum total packets across all source subnets.
+    max_total: usize,
+    /// Current total packet count.
+    total_count: Arc<AtomicUsize>,
+}
+
+impl IncomingPacketQueue {
+    /// Create a new incoming packet queue with default limits.
+    pub fn new() -> Self {
+        Self::with_limits(DEFAULT_INCOMING_MAX_PER_SUBNET, DEFAULT_INCOMING_MAX_TOTAL)
+    }
+
+    /// Create a new incoming packet queue with custom limits.
+    pub fn with_limits(max_per_subnet: usize, max_total: usize) -> Self {
+        Self {
+            queue: Arc::new(DashMap::new()),
+            max_per_subnet,
+            max_total,
+            total_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Enqueue an incoming packet from a sender whose route is being resolved.
+    ///
+    /// The `src_subnet` should be the /64 subnet of the packet's source IP.
+    /// Returns `Ok(())` if the packet was enqueued, `Err(packet)` if the queue is full.
+    pub fn enqueue<M>(
+        &self,
+        src_subnet: Subnet,
+        packet: DataPacket,
+        metrics: &M,
+    ) -> Result<(), DataPacket>
+    where
+        M: Metrics,
+    {
+        // Check global limit
+        let current_total = self.total_count.load(Ordering::Relaxed);
+        if current_total >= self.max_total {
+            trace!(
+                src_subnet = %src_subnet,
+                total = current_total,
+                max = self.max_total,
+                "Incoming packet queue full (global limit)"
+            );
+            metrics.router_incoming_packet_queue_full_global();
+            return Err(packet);
+        }
+
+        // Check per-subnet limit
+        let mut entry = self.queue.entry(src_subnet).or_default();
+        if entry.len() >= self.max_per_subnet {
+            trace!(
+                src_subnet = %src_subnet,
+                count = entry.len(),
+                max = self.max_per_subnet,
+                "Incoming packet queue full for source subnet"
+            );
+            metrics.router_incoming_packet_queue_full_subnet();
+            return Err(packet);
+        }
+
+        // Add the packet to the queue
+        entry.push(packet);
+        self.total_count.fetch_add(1, Ordering::Relaxed);
+
+        metrics.router_incoming_packet_enqueued();
+
+        trace!(
+            src_subnet = %src_subnet,
+            queue_len = entry.len(),
+            total = self.total_count.load(Ordering::Relaxed),
+            "Incoming packet enqueued waiting for sender's route"
+        );
+
+        Ok(())
+    }
+
+    /// Dequeue all packets from the given source subnet.
+    ///
+    /// Returns the list of packets that were waiting. Called when a route to the source
+    /// becomes available (meaning we now have the shared secret to decrypt).
+    pub fn dequeue<M>(&self, src_subnet: Subnet, metrics: &M) -> Vec<DataPacket>
+    where
+        M: Metrics,
+    {
+        let packets = if let Some((_, queued)) = self.queue.remove(&src_subnet) {
+            queued
+        } else {
+            return Vec::new();
+        };
+
+        if packets.is_empty() {
+            return Vec::new();
+        }
+
+        let count = packets.len();
+        self.total_count.fetch_sub(count, Ordering::Relaxed);
+
+        metrics.router_incoming_packets_dequeued(count);
+
+        debug!(
+            src_subnet = %src_subnet,
+            count = count,
+            "Dequeued incoming packets after route to sender installed"
+        );
+
+        packets
+    }
+
+    /// Drop all packets from the given source subnet when the route query times out.
+    ///
+    /// This is called when we give up waiting for a route to the sender.
+    /// Returns the dropped packets (mainly for metrics/logging purposes).
+    pub fn drop_subnet<M>(&self, src_subnet: Subnet, metrics: &M) -> Vec<DataPacket>
+    where
+        M: Metrics,
+    {
+        let packets = if let Some((_, queued)) = self.queue.remove(&src_subnet) {
+            queued
+        } else {
+            return Vec::new();
+        };
+
+        if packets.is_empty() {
+            return Vec::new();
+        }
+
+        let count = packets.len();
+        self.total_count.fetch_sub(count, Ordering::Relaxed);
+
+        metrics.router_incoming_packets_dropped_no_route(count);
+
+        debug!(
+            src_subnet = %src_subnet,
+            count = count,
+            "Dropped incoming packets - no route to sender found"
+        );
+
+        packets
+    }
+
+    /// Check if there are any packets queued from the given source subnet.
+    #[cfg(test)]
+    pub fn has_packets(&self, src_subnet: &Subnet) -> bool {
+        self.queue
+            .get(src_subnet)
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Get the total number of packets currently queued.
+    #[cfg(test)]
+    pub fn total_count(&self) -> usize {
+        self.total_count.load(Ordering::Relaxed)
+    }
+}
+
+impl Default for IncomingPacketQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

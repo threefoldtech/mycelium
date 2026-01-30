@@ -156,6 +156,8 @@ pub struct Router<M> {
     pending_packet_tx: UnboundedSender<UnencryptedPacket>,
     /// Channel for sending timed-out unencrypted packets to the data plane for ICMP generation.
     timeout_packet_tx: UnboundedSender<UnencryptedPacket>,
+    /// Channel for notifying the data plane when routes become available (for incoming packet queue).
+    incoming_route_tx: UnboundedSender<Subnet>,
     metrics: M,
     /// Packet statistics per source IP.
     packet_stats_by_src: Arc<DashMap<Ipv6Addr, PacketStats>>,
@@ -173,9 +175,10 @@ where
     ///
     /// If update_workers is not in the range of [1..255], this will panic.
     ///
-    /// Returns the Router and two receivers:
+    /// Returns the Router and three receivers:
     /// - `pending_packet_rx`: unencrypted packets that were queued and are now ready to be processed
     /// - `timeout_packet_rx`: unencrypted packets that timed out waiting for route discovery (for ICMP generation)
+    /// - `incoming_route_rx`: notifications when routes become available (for incoming packet queue)
     #[allow(clippy::type_complexity)]
     pub fn new(
         update_workers: usize,
@@ -190,6 +193,7 @@ where
             Self,
             UnboundedReceiver<UnencryptedPacket>,
             UnboundedReceiver<UnencryptedPacket>,
+            UnboundedReceiver<Subnet>,
         ),
         Box<dyn Error>,
     > {
@@ -221,6 +225,8 @@ where
         let (pending_packet_tx, pending_packet_rx) = mpsc::unbounded_channel();
         // Channel for sending timed-out unencrypted packets to data plane for ICMP generation
         let (timeout_packet_tx, timeout_packet_rx) = mpsc::unbounded_channel();
+        // Channel for notifying data plane when routes become available (for incoming packet queue)
+        let (incoming_route_tx, incoming_route_rx) = mpsc::unbounded_channel();
 
         let router = Router {
             routing_table,
@@ -243,6 +249,7 @@ where
             packet_queue,
             pending_packet_tx,
             timeout_packet_tx,
+            incoming_route_tx,
             metrics,
             packet_stats_by_src: Arc::new(DashMap::new()),
             packet_stats_by_dst: Arc::new(DashMap::new()),
@@ -279,7 +286,12 @@ where
             query_timeout_stream,
         ));
 
-        Ok((router, pending_packet_rx, timeout_packet_rx))
+        Ok((
+            router,
+            pending_packet_rx,
+            timeout_packet_rx,
+            incoming_route_rx,
+        ))
     }
 
     pub fn router_control_tx(&self) -> UnboundedSender<(ControlPacket, Peer)> {
@@ -322,6 +334,11 @@ where
     /// Get the [`RouterId`] of the `Router`.
     pub fn router_id(&self) -> RouterId {
         self.router_id
+    }
+
+    /// Get a reference to the metrics.
+    pub fn metrics(&self) -> &M {
+        &self.metrics
     }
 
     /// Get the [`PublicKey`] for an [`IpAddr`] if a route exists to the IP.
@@ -714,6 +731,8 @@ where
         // Process or drop queued packets after releasing the route lock
         if should_process_queue {
             self.process_queued_packets(subnet);
+            // Notify data plane for incoming packet queue
+            let _ = self.incoming_route_tx.send(subnet);
         } else if should_drop_queue {
             self.drop_queued_packets(subnet);
         }
@@ -1717,6 +1736,8 @@ where
         // Process or drop queued packets based on route state changes
         if should_process_queue {
             self.process_queued_packets(subnet);
+            // Notify data plane for incoming packet queue
+            let _ = self.incoming_route_tx.send(subnet);
         } else if should_drop_queue {
             self.drop_queued_packets(subnet);
         }
@@ -2319,6 +2340,7 @@ where
             packet_queue: self.packet_queue.clone(),
             pending_packet_tx: self.pending_packet_tx.clone(),
             timeout_packet_tx: self.timeout_packet_tx.clone(),
+            incoming_route_tx: self.incoming_route_tx.clone(),
             metrics: self.metrics.clone(),
             packet_stats_by_src: self.packet_stats_by_src.clone(),
             packet_stats_by_dst: self.packet_stats_by_dst.clone(),
