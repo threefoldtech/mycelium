@@ -12,9 +12,9 @@ name = "mycelium"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.54", features = ["derive"] }
+clap = { version = "4.5.56", features = ["derive"] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
-tracing-logfmt = { version = "0.3.5", features = ["ansi_logs"] }
+tracing-logfmt = { version = "0.3.7", features = ["ansi_logs"] }
 tracing-subscriber = { version = "0.3.22", features = [
   "env-filter",
   "nu-ansi-term",
