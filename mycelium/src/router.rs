@@ -563,12 +563,15 @@ where
         self.routing_table.read().iter_no_route().collect()
     }
 
-    /// Get the route status for a destination IP (pure query, no side effects).
+    /// Get the route status for a destination IP (pure query, no side effects). If a selected
+    /// route exists, the returned metric includes the link cost of the peer.
     pub fn route_status(&self, dest: IpAddr) -> RouteStatus {
         match self.routing_table.best_routes(dest) {
             Routes::Exist(routes) => {
                 if let Some(selected) = routes.selected() {
-                    RouteStatus::Selected(selected.metric())
+                    RouteStatus::Selected(
+                        selected.metric() + Metric::from(selected.neighbour().link_cost()),
+                    )
                 } else {
                     RouteStatus::Fallback
                 }
