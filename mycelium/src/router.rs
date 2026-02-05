@@ -28,6 +28,20 @@ pub enum SharedSecretResult {
     /// No route exists and no query is in progress. The destination is unreachable.
     NoRoute,
 }
+
+/// Result of querying the route status for a specific destination.
+pub enum RouteStatus {
+    /// A selected route exists with the given metric.
+    Selected(Metric),
+    /// Route exists but is not selected (fallback only).
+    Fallback,
+    /// Route query is in progress.
+    Queried,
+    /// Destination marked as unreachable.
+    NoRoute,
+    /// No information about this destination.
+    Unknown,
+}
 use dashmap::DashMap;
 use etherparse::{
     icmpv6::{DestUnreachableCode, TimeExceededCode},
@@ -547,6 +561,29 @@ where
 
     pub fn load_no_route_entries(&self) -> Vec<NoRouteSubnet> {
         self.routing_table.read().iter_no_route().collect()
+    }
+
+    /// Get the route status for a destination IP (pure query, no side effects).
+    pub fn route_status(&self, dest: IpAddr) -> RouteStatus {
+        match self.routing_table.best_routes(dest) {
+            Routes::Exist(routes) => {
+                if let Some(selected) = routes.selected() {
+                    RouteStatus::Selected(selected.metric())
+                } else {
+                    RouteStatus::Fallback
+                }
+            }
+            Routes::Queried => RouteStatus::Queried,
+            Routes::NoRoute => RouteStatus::NoRoute,
+            Routes::None => RouteStatus::Unknown,
+        }
+    }
+
+    /// Trigger a route request for the given destination.
+    pub fn request_route(&self, dest: IpAddr) {
+        self.send_route_request(
+            Subnet::new(dest, 64).expect("64 is a valid subnet size for an IPv6 address; qed"),
+        );
     }
 
     /// Task which periodically checks for dead peers in the Router.
