@@ -97,8 +97,8 @@ const INTERVAL_NOT_REPEATING: Duration = Duration::from_millis(6);
 /// The maximum generation of a [`RouteRequest`] we are still willing to transmit.
 const MAX_RR_GENERATION: u8 = 16;
 
-/// Give a route query 5 seconds to resolve, this should be plenty generous.
-const ROUTE_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
+/// Give a route query 15 seconds to resolve, this should be plenty generous.
+const ROUTE_QUERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The threshold for route expiry under which we want to send a route requets for a subnet if it is used.
 const ROUTE_ALMOST_EXPIRED_TRESHOLD: tokio::time::Duration = Duration::from_secs(15);
