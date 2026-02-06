@@ -338,6 +338,20 @@ where
         // might immediately cause timeout timers to fire.
         peer.set_time_last_received_hello(tokio::time::Instant::now());
         peer.set_time_last_received_ihu(tokio::time::Instant::now());
+
+        // Send route requests for all currently queried subnets to the new peer,
+        // so it can help resolve ongoing queries.
+        let read_guard = self.routing_table.read();
+        for queried in read_guard.iter_queries() {
+            let route_request = RouteRequest::new(Some(queried.subnet()), 0);
+            if peer.send_control_packet(route_request.into()).is_err() {
+                debug!(
+                    subnet = %queried.subnet(),
+                    peer = peer.connection_identifier(),
+                    "Can't send route request for queried subnet to new peer"
+                );
+            }
+        }
     }
 
     /// Get the public key used by the router
