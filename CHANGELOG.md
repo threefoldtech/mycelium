@@ -14,11 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   times to allow multiple interfaces.
 - Track packets which have been handled by src IP and dst IP (separately). The
   stats can be accessed through the API.
+- Active route requests are now sent to peers when they connect
 
 ### Changed
 
 - No longer block the router when a subnet is being queried until the query resolves
   or times out.
+- Entries for subnets which did not resolve are now cleared after 5 seconds (down
+  from 60 seconds)
+- Route requests now have 15 seconds to resolve (up from 5 seconds), to increase
+  the chance of recovery after a spurious link issue
 
 ## [0.7.1] - 2026-01-05
 
