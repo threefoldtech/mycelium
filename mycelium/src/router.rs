@@ -813,7 +813,7 @@ where
             {
                 // Load current key
                 let Some(mut routes) = self.routing_table.routes_mut(rk.subnet()) else {
-                    // Subnet now known anymore. This means an expiration timer fired while the entry
+                    // Subnet not known anymore. This means an expiration timer fired while the entry
                     // itself is gone already.
                     warn!(%subnet, "Route key expired for unknown subnet");
                     continue;

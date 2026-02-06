@@ -30,7 +30,8 @@ mod route_key;
 mod route_list;
 mod subnet_entry;
 
-const NO_ROUTE_EXPIRATION: Duration = Duration::from_secs(60);
+/// Clear explict "this route does not exist" entries after 5 seconds to allow new route requests.
+const NO_ROUTE_EXPIRATION: Duration = Duration::from_secs(5);
 
 pub enum Routes {
     Exist(RouteListReadGuard),
