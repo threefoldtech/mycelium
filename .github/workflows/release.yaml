@@ -96,10 +96,10 @@ jobs:
         uses: actions/setup-dotnet@v4.0.0
 
       - name: Install WiX Toolset
-        run: dotnet tool install --global wix
+        run: dotnet tool install --global wix --version 6.0.2
 
       - name: Add WixToolset.UI.wixext extension
-        run: wix extension add WixToolset.UI.wixext
+        run: wix extension add WixToolset.UI.wixext/6.0.2
 
       - name: Download Wintun zip file
         run: curl -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
