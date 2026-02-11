@@ -1,9 +1,13 @@
 //! Built in dns resolver which forwards DNS queries to the public mycelium node with the lowest
-//! route metric, falling back to 1.1.1.1 if no routes are available.
+//! route metric, falling back to 1.1.1.1 via hickory-resolver if no routes are available.
 
 use crate::metric::Metric;
 use crate::metrics::Metrics;
 use crate::router::{RouteStatus, Router};
+use hickory_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
+use hickory_resolver::name_server::TokioConnectionProvider;
+use hickory_resolver::proto::rr::{Record, RecordType};
+use hickory_resolver::ResolveError;
 use hickory_server::authority::MessageResponseBuilder;
 use hickory_server::proto::op::{Header, Message, MessageType, OpCode};
 use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
@@ -57,8 +61,8 @@ const PUBLIC_DNS_NODES: [Ipv6Addr; 10] = [
     ),
 ];
 
-/// Use 1.1.1.1 as fallback in case no mycelium IP is reachable
 const FALLBACK_DNS: Ipv4Addr = Ipv4Addr::new(1, 1, 1, 1);
+const FALLBACK_NS: [Ipv4Addr; 2] = [FALLBACK_DNS, Ipv4Addr::new(1, 0, 0, 1)];
 
 /// Interval between metric checks for public DNS nodes.
 const METRIC_CHECK_INTERVAL: Duration = Duration::from_secs(30);
@@ -76,6 +80,7 @@ pub struct Resolver {
 
 struct Handler {
     best_node: Arc<RwLock<Option<Ipv6Addr>>>,
+    fallback_resolver: hickory_resolver::Resolver<TokioConnectionProvider>,
 }
 
 impl Resolver {
@@ -90,7 +95,22 @@ impl Resolver {
         // Start background metric checker - router is moved into the task
         start_metric_checker(router, best_node.clone(), cancel_token.clone());
 
-        let handler = Handler { best_node };
+        let nameserver_group =
+            NameServerConfigGroup::from_ips_clear(&FALLBACK_NS.map(IpAddr::V4), DNS_PORT, true);
+        let mut fallback_opts = ResolverOpts::default();
+        fallback_opts.timeout = Duration::from_secs(2);
+        let fallback_config = ResolverConfig::from_parts(None, vec![], nameserver_group);
+        let fallback_resolver = hickory_resolver::Resolver::builder_with_config(
+            fallback_config,
+            TokioConnectionProvider::default(),
+        )
+        .with_options(fallback_opts)
+        .build();
+
+        let handler = Handler {
+            best_node,
+            fallback_resolver,
+        };
 
         let mut server = hickory_server::server::ServerFuture::new(handler);
         let udp_socket = UdpSocket::bind("[::]:53")
@@ -178,7 +198,39 @@ where
 }
 
 impl Handler {
-    /// Forward a DNS request to a mycelium node.
+    /// Forward A/AAAA via hickory-resolver (1.1.1.1). Used when no overlay routes exist.
+    async fn forward_dns_fallback(
+        &self,
+        request: &Request,
+    ) -> Result<Vec<Record>, DnsForwardError> {
+        let query = request.queries().iter().next().ok_or_else(|| {
+            DnsForwardError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "No query in request",
+            ))
+        })?;
+        let name = query.original().name().to_string();
+        let record_type = query.original().query_type();
+
+        if record_type != RecordType::A && record_type != RecordType::AAAA {
+            return Err(DnsForwardError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                format!("Fallback only supports A/AAAA, got {:?}", record_type),
+            )));
+        }
+
+        let lookup = tokio::time::timeout(
+            Duration::from_secs(2),
+            self.fallback_resolver.lookup_ip(name.as_str()),
+        )
+        .await
+        .map_err(|_| DnsForwardError::Timeout)?
+        .map_err(DnsForwardError::Resolve)?;
+
+        Ok(lookup.as_lookup().records().to_vec())
+    }
+
+    /// Forward a DNS request to a mycelium node via raw UDP.
     async fn forward_dns(
         &self,
         request: &Request,
@@ -223,21 +275,26 @@ impl RequestHandler for Handler {
         R: ResponseHandler,
     {
         let best = *self.best_node.read().expect("Can read lock best_node; qed");
-
-        let target_ip: IpAddr = if let Some(target_ip) = best {
-            target_ip.into()
-        } else {
-            FALLBACK_DNS.into()
-        };
+        let target_ip: IpAddr = best.map(IpAddr::V6).unwrap_or(FALLBACK_DNS.into());
 
         let responses = MessageResponseBuilder::from_message_request(request);
         let header = Header::response_from_request(request.header());
         let resp = {
-            debug!(%target_ip, "Forwarding DNS request to mycelium node");
-            match self.forward_dns(request, target_ip).await {
-                Ok(response) => {
+            let result = if target_ip == IpAddr::V4(FALLBACK_DNS) {
+                self.forward_dns_fallback(request).await
+            } else {
+                match self.forward_dns(request, target_ip).await {
+                    Ok(msg) => Ok(msg.answers().to_vec()),
+                    Err(e) => {
+                        warn!(%e, %target_ip, "Overlay DNS failed, trying fallback");
+                        self.forward_dns_fallback(request).await
+                    }
+                }
+            };
+            match result {
+                Ok(answers) => {
                     info!(%target_ip, "DNS forward successful");
-                    let resp = responses.build(header, response.answers(), [], [], []);
+                    let resp = responses.build(header, answers.iter(), [], [], []);
                     response_handle.send_response(resp).await
                 }
                 Err(e) => {
@@ -271,6 +328,7 @@ impl Drop for Resolver {
 enum DnsForwardError {
     Io(std::io::Error),
     Proto(hickory_server::proto::ProtoError),
+    Resolve(ResolveError),
     Timeout,
 }
 
@@ -279,6 +337,7 @@ impl std::fmt::Display for DnsForwardError {
         match self {
             Self::Io(e) => write!(f, "IO error: {}", e),
             Self::Proto(e) => write!(f, "Protocol error: {}", e),
+            Self::Resolve(e) => write!(f, "Resolve error: {}", e),
             Self::Timeout => write!(f, "DNS request timed out"),
         }
     }
