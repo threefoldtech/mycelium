@@ -42,6 +42,7 @@
                   ./mycelium-cli
                   ./mycelium-metrics
                   ./myceliumd
+                  ./myceliumd-common
                   ./myceliumd-private
                   ./mobile
                   ./docs
@@ -90,6 +91,7 @@
                   ./mycelium-cli
                   ./mycelium-metrics
                   ./myceliumd
+                  ./myceliumd-common
                   ./myceliumd-private
                   ./mobile
                   ./docs
