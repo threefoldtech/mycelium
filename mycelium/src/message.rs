@@ -20,7 +20,7 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
-use rand::Fill;
+use rand::RngExt;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 #[cfg(target_family = "unix")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1409,7 +1409,7 @@ impl MessageId {
     fn new() -> Self {
         let mut id = Self([0u8; 8]);
 
-        id.0.fill(&mut rand::rng());
+        rand::rng().fill(&mut id.0);
 
         id
     }
