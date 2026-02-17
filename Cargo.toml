@@ -1,6 +1,6 @@
 [workspace]
 members = ["mycelium", "mycelium-metrics", "mycelium-api", "mycelium-cli"]
-exclude = ["myceliumd", "myceliumd-private", "mycelium-ui", "mobile"]
+exclude = ["myceliumd", "myceliumd-private", "myceliumd-common", "mycelium-ui", "mobile"]
 resolver = "2"
 
 

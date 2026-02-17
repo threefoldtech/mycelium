@@ -2047,7 +2047,7 @@ dependencies = [
  "rcgen",
  "redis",
  "reed-solomon-erasure",
- "reqwest 0.12.28",
+ "reqwest",
  "rtnetlink",
  "rustls",
  "serde",
@@ -2089,7 +2089,7 @@ dependencies = [
  "mycelium",
  "mycelium-api",
  "prettytable-rs",
- "reqwest 0.12.28",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -2109,10 +2109,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "myceliumd-private"
+name = "myceliumd-common"
 version = "0.7.3"
 dependencies = [
- "base64",
  "clap",
  "config",
  "dirs",
@@ -2120,14 +2119,23 @@ dependencies = [
  "mycelium-api",
  "mycelium-cli",
  "mycelium-metrics",
- "reqwest 0.13.2",
  "serde",
- "serde_json",
  "tokio",
  "toml 1.0.2+spec-1.1.0",
  "tracing",
  "tracing-logfmt",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "myceliumd-private"
+version = "0.7.3"
+dependencies = [
+ "clap",
+ "mycelium",
+ "myceliumd-common",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -3078,37 +3086,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webpki-roots",
-]
-
-[[package]]
-name = "reqwest"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
-dependencies = [
- "base64",
- "bytes",
- "futures-core",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "js-sys",
- "log",
- "percent-encoding",
- "pin-project-lite",
- "serde",
- "serde_json",
- "sync_wrapper",
- "tokio",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
