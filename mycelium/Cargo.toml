@@ -14,7 +14,7 @@ mactunfd = [
 ] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
 
 [dependencies]
-cdn-meta = { git = "https://github.com/threefoldtech/mycelium-cdn-registry", package = "cdn-meta" }
+cdn-meta = { git = "https://github.com/threefoldtech/mycelium-cdn-registry", rev = "b5848e6e9e6a9a1c122ea5744b819256071b2c70", package = "cdn-meta" }
 
 tokio = { version = "1.49.0", features = [
   "io-util",

@@ -88,10 +88,27 @@ static RESPONSE_CHANNEL: Lazy<ResponseChannelType> = Lazy::new(|| {
 #[tokio::main]
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
 pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, enable_dns: bool, enable_api_server: bool) {
+    start_mycelium_internal(peers, tun_fd, priv_key, enable_dns, enable_api_server, false).await
+}
+
+/// Start Mycelium without TUN interface (for proxy operations only)
+#[tokio::main]
+pub async fn start_mycelium_no_tun(peers: Vec<String>, priv_key: Vec<u8>, enable_dns: bool) {
+    start_mycelium_internal(peers, -1, priv_key, enable_dns, false, true).await
+}
+
+async fn start_mycelium_internal(
+    peers: Vec<String>,
+    tun_fd: i32,
+    priv_key: Vec<u8>,
+    enable_dns: bool,
+    enable_api_server: bool,
+    no_tun: bool,
+) {
     #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     setup_logging_once();
 
-    info!("starting mycelium");
+    info!("starting mycelium (no_tun: {})", no_tun);
     let endpoints: Vec<Endpoint> = peers
         .into_iter()
         .filter_map(|peer| peer.parse().ok())
@@ -102,9 +119,10 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
     let config = Config {
         node_key: secret_key,
         peers: endpoints,
-        no_tun: false,
-        tcp_listen_port: DEFAULT_TCP_LISTEN_PORT,
-        quic_listen_port: Some(DEFAULT_QUIC_LISTEN_PORT),
+        no_tun,
+        // Use port 0 (random) for no-TUN instance to avoid conflicts
+        tcp_listen_port: if no_tun { 0 } else { DEFAULT_TCP_LISTEN_PORT },
+        quic_listen_port: if no_tun { None } else { Some(DEFAULT_QUIC_LISTEN_PORT) },
         peer_discovery_port: 9650,
         peer_discovery_mode: PeerDiscoveryMode::Disabled, // disable multicast discovery
         #[cfg(any(
@@ -112,7 +130,7 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
             all(target_os = "macos", not(feature = "mactunfd")),
             target_os = "windows"
         ))]
-        tun_name: "tun0".to_string(),
+        tun_name: "mycelium0".to_string(),
 
         metrics: NoMetrics,
         private_network_config: None,
@@ -138,17 +156,22 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
         }
     };
 
-    // Only spawn API servers when enabled.
-    let (_http_api, _rpc_api) = if enable_api_server {
+    // Only spawn API servers when enabled and not in no-tun mode
+    let (_http_api, _rpc_api) = if enable_api_server && !no_tun {
         let http_api = mycelium_api::Http::spawn(node.clone(), DEFAULT_HTTP_API_SERVER_ADDRESS);
         info!("HTTP API server started on {}", DEFAULT_HTTP_API_SERVER_ADDRESS);
 
         let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node.clone(), DEFAULT_JSONRPC_API_SERVER_ADDRESS).await;
         info!("JSON-RPC API server started on {}", DEFAULT_JSONRPC_API_SERVER_ADDRESS);
-
+        
         (Some(http_api), Some(rpc_api))
     } else {
-        info!("API servers disabled by configuration");
+        if no_tun {
+            info!("API servers disabled in no-tun mode");
+        }
+        if !no_tun {
+            info!("API servers disabled by configuration");
+        }
         (None, None)
     };
 

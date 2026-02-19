@@ -302,7 +302,9 @@ where
         };
 
         let dns = if config.enable_dns {
-            Some(dns::Resolver::new(router.clone()).await)
+            let resolver = dns::Resolver::new(router.clone()).await;
+            resolver.wait_ready().await;
+            Some(resolver)
         } else {
             None
         };

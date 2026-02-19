@@ -1,24 +1,24 @@
-//! Built in dns resolver which forwards DNS queries to the public mycelium node with the lowest
-//! route metric, falling back to 1.1.1.1 via hickory-resolver if no routes are available.
+//! Built-in DNS resolver for system-wide use: forwards queries to the public mycelium node with
+//! the lowest route metric when overlay routes exist, otherwise to 1.1.1.1 via hickory-resolver.
 
 use crate::metric::Metric;
 use crate::metrics::Metrics;
 use crate::router::{RouteStatus, Router};
 use hickory_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use hickory_resolver::name_server::TokioConnectionProvider;
-use hickory_resolver::proto::rr::{Record, RecordType};
+use hickory_resolver::proto::rr::RecordType;
 use hickory_resolver::ResolveError;
 use hickory_server::authority::MessageResponseBuilder;
 use hickory_server::proto::op::{Header, Message, MessageType, OpCode};
+use hickory_server::proto::rr::{rdata, RData, Record};
 use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
-use hickory_server::ServerFuture;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Public mycelium nodes to consider for DNS forwarding.
 const PUBLIC_DNS_NODES: [Ipv6Addr; 10] = [
@@ -64,18 +64,14 @@ const PUBLIC_DNS_NODES: [Ipv6Addr; 10] = [
 const FALLBACK_DNS: Ipv4Addr = Ipv4Addr::new(1, 1, 1, 1);
 const FALLBACK_NS: [Ipv4Addr; 2] = [FALLBACK_DNS, Ipv4Addr::new(1, 0, 0, 1)];
 
-/// Interval between metric checks for public DNS nodes.
 const METRIC_CHECK_INTERVAL: Duration = Duration::from_secs(30);
-
-/// DNS port.
 const DNS_PORT: u16 = 53;
-
-/// Timeout for DNS forwarding requests.
-const DNS_TIMEOUT: Duration = Duration::from_secs(5);
+const DNS_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct Resolver {
-    server: ServerFuture<Handler>,
+    _server_handle: tokio::task::JoinHandle<()>,
     cancel_token: CancellationToken,
+    ready: Arc<tokio::sync::Notify>,
 }
 
 struct Handler {
@@ -84,21 +80,20 @@ struct Handler {
 }
 
 impl Resolver {
-    /// Create a new resolver instance with the given router.
     pub async fn new<M>(router: Router<M>) -> Self
     where
         M: Metrics + Clone + Send + Sync + 'static,
     {
-        let best_node = Arc::new(RwLock::new(None));
         let cancel_token = CancellationToken::new();
-
-        // Start background metric checker - router is moved into the task
+        let best_node = Arc::new(RwLock::new(None));
+        
+        update_best_node(&router, &best_node);
         start_metric_checker(router, best_node.clone(), cancel_token.clone());
 
         let nameserver_group =
             NameServerConfigGroup::from_ips_clear(&FALLBACK_NS.map(IpAddr::V4), DNS_PORT, true);
         let mut fallback_opts = ResolverOpts::default();
-        fallback_opts.timeout = Duration::from_secs(2);
+        fallback_opts.timeout = DNS_TIMEOUT;
         let fallback_config = ResolverConfig::from_parts(None, vec![], nameserver_group);
         let fallback_resolver = hickory_resolver::Resolver::builder_with_config(
             fallback_config,
@@ -113,19 +108,43 @@ impl Resolver {
         };
 
         let mut server = hickory_server::server::ServerFuture::new(handler);
-        let udp_socket = UdpSocket::bind("[::]:53")
-            .await
-            .expect("Can bind udp port 53");
-        server.register_socket(udp_socket);
-
-        Self {
-            server,
-            cancel_token,
+        let bind_addrs = ["127.0.0.1:53", "[::1]:53"];
+        let mut bound = Vec::new();
+        
+        for addr in &bind_addrs {
+            if let Ok(socket) = UdpSocket::bind(addr).await {
+                server.register_socket(socket);
+                bound.push(*addr);
+            }
         }
+        
+        if !bound.is_empty() {
+            warn!("DNS resolver: Listening on {}, forwarding to mycelium overlay or 1.1.1.1", bound.join(" and "));
+        }
+
+        let ready = Arc::new(tokio::sync::Notify::new());
+        let ready_signal = ready.clone();
+        let cancel_token_clone = cancel_token.clone();
+        let server_handle = tokio::spawn(async move {
+            ready_signal.notify_one();
+            tokio::select! {
+                _ = cancel_token_clone.cancelled() => {}
+                _ = server.block_until_done() => {}
+            }
+        });
+        
+        Self {
+            _server_handle: server_handle,
+            cancel_token,
+            ready,
+        }
+    }
+    
+    pub async fn wait_ready(&self) {
+        self.ready.notified().await;
     }
 }
 
-/// Start a background task that periodically checks route metrics for public DNS nodes.
 fn start_metric_checker<M>(
     router: Router<M>,
     best_node: Arc<RwLock<Option<Ipv6Addr>>>,
@@ -136,12 +155,9 @@ fn start_metric_checker<M>(
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(METRIC_CHECK_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
         loop {
             tokio::select! {
-                _ = interval.tick() => {
-                    update_best_node(&router, &best_node);
-                }
+                _ = interval.tick() => update_best_node(&router, &best_node),
                 _ = cancel_token.cancelled() => {
                     debug!("DNS metric checker shutting down");
                     break;
@@ -151,54 +167,69 @@ fn start_metric_checker<M>(
     });
 }
 
-/// Update the best DNS node based on current route metrics.
 fn update_best_node<M>(router: &Router<M>, best_node: &Arc<RwLock<Option<Ipv6Addr>>>)
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
     let mut best: Option<(Ipv6Addr, Metric)> = None;
-
     for node_ip in PUBLIC_DNS_NODES {
         match router.route_status(IpAddr::V6(node_ip)) {
-            RouteStatus::Selected(metric) => {
-                if !metric.is_infinite() {
-                    match &best {
-                        None => best = Some((node_ip, metric)),
-                        Some((_, best_metric)) if metric < *best_metric => {
-                            best = Some((node_ip, metric));
-                        }
-                        _ => {}
-                    }
+            RouteStatus::Selected(metric) if !metric.is_infinite() => {
+                let replace = match &best {
+                    None => true,
+                    Some((_, m)) => metric < *m,
+                };
+                if replace {
+                    best = Some((node_ip, metric));
                 }
             }
-            RouteStatus::NoRoute => {
-                // Destination is known unreachable, don't retry
-            }
-            RouteStatus::Queried => {
-                // Route request already in progress, wait for next tick
-            }
+            RouteStatus::Selected(_) | RouteStatus::NoRoute | RouteStatus::Queried | RouteStatus::Fallback => {}
             RouteStatus::Unknown => {
-                // No info - trigger a route request for next time
                 router.request_route(IpAddr::V6(node_ip));
-            }
-            RouteStatus::Fallback => {
-                // Has routes but none selected - not usable for DNS forwarding
             }
         }
     }
-
     let new_best = best.map(|(ip, _)| ip);
-    *best_node.write().expect("Can write lock best_node; qed") = new_best;
-
+    *best_node.write().expect("best_node write lock; qed") = new_best;
     if let Some(ip) = new_best {
-        debug!(%ip, "Updated best DNS node");
+        warn!(%ip, "Best DNS node updated");
     } else {
-        debug!("No route to any public DNS node, will use fallback");
+        warn!("No route to any public DNS node, using 1.1.1.1 fallback");
     }
 }
 
 impl Handler {
-    /// Forward A/AAAA via hickory-resolver (1.1.1.1). Used when no overlay routes exist.
+    async fn forward_dns_overlay(
+        &self,
+        request: &Request,
+        target_ip: IpAddr,
+    ) -> Result<Message, DnsForwardError> {
+        let socket = UdpSocket::bind("[::]:0")
+            .await
+            .map_err(DnsForwardError::Io)?;
+        let target_addr = SocketAddr::new(target_ip, DNS_PORT);
+        let mut message = Message::new();
+        message.set_id(request.id());
+        message.set_message_type(MessageType::Query);
+        message.set_op_code(OpCode::Query);
+        message.set_recursion_desired(true);
+        for query in request.queries() {
+            message.add_query(query.original().clone());
+        }
+        let request_bytes = message.to_vec().map_err(DnsForwardError::Proto)?;
+        socket
+            .send_to(&request_bytes, target_addr)
+            .await
+            .map_err(DnsForwardError::Io)?;
+        let mut buf = [0u8; 4096];
+        match tokio::time::timeout(DNS_TIMEOUT, socket.recv_from(&mut buf)).await {
+            Ok(Ok((len, _))) => Message::from_vec(&buf[..len]).map_err(DnsForwardError::Proto),
+            Ok(Err(e)) => Err(DnsForwardError::Io(e)),
+            Err(_) => Err(DnsForwardError::Timeout),
+        }
+    }
+
+    /// Forwards DNS queries to upstream resolver (1.1.1.1). Used when no overlay or overlay failed.
     async fn forward_dns_fallback(
         &self,
         request: &Request,
@@ -209,10 +240,13 @@ impl Handler {
                 "No query in request",
             ))
         })?;
-        let name = query.original().name().to_string();
+        
+        let query_name = query.original().name();
         let record_type = query.original().query_type();
+        let name_str = query_name.to_string();
 
         if record_type != RecordType::A && record_type != RecordType::AAAA {
+            warn!(%name_str, ?record_type, "DNS fallback: unsupported record type (only A/AAAA supported)");
             return Err(DnsForwardError::Io(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
                 format!("Fallback only supports A/AAAA, got {:?}", record_type),
@@ -220,50 +254,24 @@ impl Handler {
         }
 
         let lookup = tokio::time::timeout(
-            Duration::from_secs(2),
-            self.fallback_resolver.lookup_ip(name.as_str()),
+            DNS_TIMEOUT,
+            self.fallback_resolver.lookup_ip(name_str.as_str()),
         )
         .await
         .map_err(|_| DnsForwardError::Timeout)?
         .map_err(DnsForwardError::Resolve)?;
 
-        Ok(lookup.as_lookup().records().to_vec())
-    }
-
-    /// Forward a DNS request to a mycelium node via raw UDP.
-    async fn forward_dns(
-        &self,
-        request: &Request,
-        target_ip: IpAddr,
-    ) -> Result<Message, DnsForwardError> {
-        let socket = UdpSocket::bind("[::]:0")
-            .await
-            .map_err(DnsForwardError::Io)?;
-        let target_addr = SocketAddr::new(target_ip, DNS_PORT);
-
-        // Build the DNS query message
-        let mut message = Message::new();
-        message.set_id(request.id());
-        message.set_message_type(MessageType::Query);
-        message.set_op_code(OpCode::Query);
-        message.set_recursion_desired(true);
-        for query in request.queries() {
-            message.add_query(query.original().clone());
+        let mut records = Vec::new();
+        for ip in lookup.iter() {
+            let rdata = match ip {
+                IpAddr::V4(ipv4) => RData::A(rdata::A(ipv4)),
+                IpAddr::V6(ipv6) => RData::AAAA(rdata::AAAA(ipv6)),
+            };
+            let record = Record::from_rdata(query_name.clone(), 60, rdata);
+            records.push(record);
         }
 
-        let request_bytes = message.to_vec().map_err(DnsForwardError::Proto)?;
-
-        socket
-            .send_to(&request_bytes, target_addr)
-            .await
-            .map_err(DnsForwardError::Io)?;
-
-        let mut buf = [0u8; 4096];
-        match tokio::time::timeout(DNS_TIMEOUT, socket.recv_from(&mut buf)).await {
-            Ok(Ok((len, _))) => Message::from_vec(&buf[..len]).map_err(DnsForwardError::Proto),
-            Ok(Err(e)) => Err(DnsForwardError::Io(e)),
-            Err(_) => Err(DnsForwardError::Timeout),
-        }
+        Ok(records)
     }
 }
 
@@ -274,56 +282,68 @@ impl RequestHandler for Handler {
     where
         R: ResponseHandler,
     {
-        let best = *self.best_node.read().expect("Can read lock best_node; qed");
+        let query_info = request.queries().iter().next().map(|q| {
+            (q.original().name().to_string(), q.original().query_type())
+        });
+        
+        if let Some((ref name, ref qtype)) = query_info {
+            warn!(%name, ?qtype, "DNS QUERY");
+        }
+        
+        let best = *self.best_node.read().expect("best_node read lock; qed");
         let target_ip: IpAddr = best.map(IpAddr::V6).unwrap_or(FALLBACK_DNS.into());
 
         let responses = MessageResponseBuilder::from_message_request(request);
         let header = Header::response_from_request(request.header());
-        let resp = {
-            let result = if target_ip == IpAddr::V4(FALLBACK_DNS) {
-                self.forward_dns_fallback(request).await
-            } else {
-                match self.forward_dns(request, target_ip).await {
-                    Ok(msg) => Ok(msg.answers().to_vec()),
-                    Err(e) => {
-                        warn!(%e, %target_ip, "Overlay DNS failed, trying fallback");
-                        self.forward_dns_fallback(request).await
-                    }
-                }
-            };
-            match result {
-                Ok(answers) => {
-                    info!(%target_ip, "DNS forward successful");
-                    let resp = responses.build(header, answers.iter(), [], [], []);
-                    response_handle.send_response(resp).await
-                }
+        let result = if target_ip == IpAddr::V4(FALLBACK_DNS) {
+            self.forward_dns_fallback(request).await
+        } else {
+            match self.forward_dns_overlay(request, target_ip).await {
+                Ok(msg) => Ok(msg.answers().to_vec()),
                 Err(e) => {
-                    warn!(%e, %target_ip, "Mycelium DNS forward failed");
-                    let resp = responses
-                        .error_msg(&header, hickory_server::proto::op::ResponseCode::ServFail);
-                    response_handle.send_response(resp).await
+                    warn!(%e, %target_ip, "Overlay DNS failed, trying fallback");
+                    self.forward_dns_fallback(request).await
                 }
             }
         };
 
-        match resp {
-            Ok(resp_info) => resp_info,
-            Err(err) => {
-                debug!(%err, "Failed to send response");
-                Header::response_from_request(request.header()).into()
+        match result {
+            Ok(answers) => {
+                if let Some((ref name, ref qtype)) = query_info {
+                    warn!(%name, ?qtype, %target_ip, "DNS forward successful");
+                    warn!(%name, ?qtype, answer_count=answers.len(), "DNS response");
+                } else {
+                    warn!(%target_ip, "DNS forward successful");
+                    warn!(answer_count=answers.len(), "DNS response");
+                }
+                let resp = responses.build(header, answers.iter(), [], [], []);
+                response_handle.send_response(resp).await
+            }
+            Err(e) => {
+                if let Some((ref name, ref qtype)) = query_info {
+                    warn!(%name, ?qtype, %e, %target_ip, "DNS forward failed");
+                    warn!(%name, ?qtype, "DNS response (error)");
+                } else {
+                    warn!(%e, %target_ip, "DNS forward failed");
+                    warn!("DNS response (error)");
+                }
+                let resp = responses.error_msg(&header, hickory_server::proto::op::ResponseCode::ServFail);
+                response_handle.send_response(resp).await
             }
         }
+        .unwrap_or_else(|err| {
+            warn!(%err, "Failed to send response");
+            Header::response_from_request(request.header()).into()
+        })
     }
 }
 
 impl Drop for Resolver {
     fn drop(&mut self) {
         self.cancel_token.cancel();
-        self.server.shutdown_token().cancel();
     }
 }
 
-/// Error type for DNS forwarding operations.
 #[derive(Debug)]
 enum DnsForwardError {
     Io(std::io::Error),
