@@ -92,6 +92,10 @@ impl Tun {
         // SAFETY: raw_fd is valid, we just obtained it from file.
         let owned_fd = unsafe { OwnedFd::from_raw_fd(file.into_raw_fd()) };
 
+        // Set non-blocking now.
+        // If we later call dup(), the flag is inheritted.
+        set_nonblocking(&owned_fd)?;
+
         Ok(Tun {
             fd: owned_fd,
             name: actual_name,
@@ -291,6 +295,21 @@ fn ifreq_name(ifr: &libc::ifreq) -> io::Result<String> {
         .collect();
     String::from_utf8(name_bytes)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid interface name"))
+}
+
+/// Set a file descriptor to non-blocking mode.
+fn set_nonblocking(fd: &OwnedFd) -> io::Result<()> {
+    // SAFETY: fd is valid.
+    let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fd is valid, flags is the current flags with O_NONBLOCK added.
+    let ret = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) };
+    if ret < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// Create a temporary socket for ioctl operations.
