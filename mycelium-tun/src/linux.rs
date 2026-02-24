@@ -44,9 +44,10 @@ nix::ioctl_write_ptr_bad!(
 /// The device is opened with `IFF_TUN | IFF_NO_PI` flags, meaning it operates at the IP layer
 /// (layer 3) with no packet information header prepended.
 ///
-/// All read/write operations are async, backed by tokio's [`AsyncFd`].
+/// Use [`Tun::split`] to obtain a [`ReadHalf`] and [`WriteHalf`] that can be used concurrently
+/// from separate tasks without locking.
 pub struct Tun {
-    fd: AsyncFd<OwnedFd>,
+    fd: OwnedFd,
     name: String,
 }
 
@@ -55,10 +56,6 @@ impl Tun {
     ///
     /// If `name` is empty, the kernel assigns a name (typically "tun0", "tun1", ...). The actual
     /// assigned name can be retrieved with [`Tun::name`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if called outside of a tokio runtime context.
     pub fn new(name: &str) -> io::Result<Self> {
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -87,10 +84,9 @@ impl Tun {
         // Transfer ownership of the fd from File to OwnedFd without closing it.
         // SAFETY: raw_fd is valid, we just obtained it from file.
         let owned_fd = unsafe { OwnedFd::from_raw_fd(file.into_raw_fd()) };
-        let async_fd = AsyncFd::new(owned_fd)?;
 
         Ok(Tun {
-            fd: async_fd,
+            fd: owned_fd,
             name: actual_name,
         })
     }
@@ -134,6 +130,34 @@ impl Tun {
         Ok(())
     }
 
+    /// Split the TUN device into a read half and a write half.
+    ///
+    /// Each half wraps an independent file descriptor (created via `dup()`), so they can be used
+    /// concurrently from separate tasks without any locking.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called outside of a tokio runtime context.
+    pub fn split(self) -> io::Result<(ReadHalf, WriteHalf)> {
+        // Duplicate the fd so each half has its own independent descriptor.
+        // SAFETY: self.fd is a valid fd.
+        let dup_fd = unsafe { libc::dup(self.fd.as_raw_fd()) };
+        if dup_fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: dup_fd is valid, we just created it.
+        let write_fd = unsafe { OwnedFd::from_raw_fd(dup_fd) };
+
+        let read_half = ReadHalf {
+            fd: AsyncFd::new(self.fd)?,
+        };
+        let write_half = WriteHalf {
+            fd: AsyncFd::new(write_fd)?,
+        };
+
+        Ok((read_half, write_half))
+    }
+
     /// Get the kernel interface index for this TUN device.
     fn interface_index(&self) -> io::Result<libc::c_int> {
         let sock = ioctl_socket()?;
@@ -157,7 +181,16 @@ impl Tun {
         }
         ifr
     }
+}
 
+/// The read half of a split TUN device.
+///
+/// Obtained from [`Tun::split`]. Can be used concurrently with [`WriteHalf`].
+pub struct ReadHalf {
+    fd: AsyncFd<OwnedFd>,
+}
+
+impl ReadHalf {
     /// Read a packet from the TUN device into `buf`.
     ///
     /// Returns the number of bytes read. The caller should use `&buf[..n]` to access the packet
@@ -181,7 +214,16 @@ impl Tun {
             }
         }
     }
+}
 
+/// The write half of a split TUN device.
+///
+/// Obtained from [`Tun::split`]. Can be used concurrently with [`ReadHalf`].
+pub struct WriteHalf {
+    fd: AsyncFd<OwnedFd>,
+}
+
+impl WriteHalf {
     /// Write a packet to the TUN device.
     ///
     /// Returns the number of bytes written.
