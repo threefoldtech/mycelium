@@ -41,6 +41,7 @@
                   ./mycelium-api
                   ./mycelium-cli
                   ./mycelium-metrics
+                  ./mycelium-tun
                   ./myceliumd
                   ./myceliumd-common
                   ./myceliumd-private
@@ -88,6 +89,7 @@
                   ./mycelium-api
                   ./mycelium-cli
                   ./mycelium-metrics
+                  ./mycelium-tun
                   ./myceliumd
                   ./myceliumd-common
                   ./myceliumd-private
