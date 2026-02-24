@@ -39,6 +39,13 @@ nix::ioctl_write_ptr_bad!(
     libc::in6_ifreq
 );
 
+nix::ioctl_write_ptr_bad!(
+    /// Set the transmit queue length on a network interface.
+    siocsiftxqlen,
+    libc::SIOCSIFTXQLEN as libc::c_ulong,
+    libc::ifreq
+);
+
 /// A Linux TUN device.
 ///
 /// The device is opened with `IFF_TUN | IFF_NO_PI` flags, meaning it operates at the IP layer
@@ -127,6 +134,23 @@ impl Tun {
         unsafe { siocsifaddr(sock.as_raw_fd(), &ifr6) }.map_err(io::Error::from)?;
 
         debug!(name = %self.name, %addr, prefix_len, "set TUN address");
+        Ok(())
+    }
+
+    /// Set the transmit queue length on the TUN interface.
+    pub fn set_txqueuelen(&self, qlen: u32) -> io::Result<()> {
+        let sock = ioctl_socket()?;
+
+        let mut ifr = self.new_ifreq_with_name();
+        // The kernel defines ifr_qlen as ifr_ifru.ifru_ivalue which is a c_int at the same
+        // offset as ifru_mtu. libc does not expose ifru_ivalue, but ifru_mtu is the same type
+        // and occupies the same union slot.
+        ifr.ifr_ifru.ifru_mtu = qlen as libc::c_int;
+
+        // SAFETY: sock is a valid fd, ifr is properly initialized.
+        unsafe { siocsiftxqlen(sock.as_raw_fd(), &ifr) }.map_err(io::Error::from)?;
+
+        debug!(name = %self.name, qlen, "set TUN txqueuelen");
         Ok(())
     }
 
