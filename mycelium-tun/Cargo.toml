@@ -1,0 +1,10 @@
+[package]
+name = "mycelium-tun"
+version = "0.1.0"
+edition = "2021"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio = { version = "1.49.0", default-features = false, features = ["net"] }
+nix = { version = "0.31.1", features = ["ioctl", "net"] }
+libc = "0.2"
+tracing = "0.1"
