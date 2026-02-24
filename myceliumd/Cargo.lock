@@ -2132,6 +2132,7 @@ dependencies = [
  "ipnet",
  "left-right",
  "libc",
+ "mycelium-tun",
  "netdev",
  "nix 0.31.2",
  "quinn",
@@ -2145,7 +2146,6 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-stream",
- "tokio-tun",
  "tokio-util",
  "tokio-vsock",
  "tracing",
@@ -2196,6 +2196,16 @@ dependencies = [
  "axum",
  "mycelium",
  "prometheus",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "mycelium-tun"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nix 0.31.2",
  "tokio",
  "tracing",
 ]
@@ -3868,17 +3878,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "tokio-tun"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2688a909b49d133bf55f2e29271fb3a81ff1e1a0b99c366da9ffd9af69b933a"
-dependencies = [
- "libc",
- "nix 0.31.2",
- "tokio",
 ]
 
 [[package]]
