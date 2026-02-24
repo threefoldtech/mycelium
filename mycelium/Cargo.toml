@@ -62,7 +62,7 @@ reqwest = { version = "0.12.24", default-features = false, features = [
   "system-proxy",
   "rustls-tls",
 ] }
-redis = { version = "1.0.3", features = ["tokio-comp"] }
+redis = { version = "1.0.4", features = ["tokio-comp"] }
 reed-solomon-erasure = "6.0.0"
 hickory-server = "0.25.2"
 async-trait = "0.1.89"
