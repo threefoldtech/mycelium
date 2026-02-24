@@ -1881,6 +1881,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-tun"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nix 0.31.1",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "netdev"
 version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
