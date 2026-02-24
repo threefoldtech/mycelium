@@ -1,19 +1,16 @@
 //! Linux specific tun interface setup.
 
 use std::io;
+use std::net::IpAddr;
 
-use futures::{Sink, Stream, TryStreamExt};
-use rtnetlink::Handle;
-use tokio::{select, sync::mpsc};
-use tokio_tun::{Tun, TunBuilder};
+use futures::{Sink, Stream};
+use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::crypto::PacketBuffer;
-use crate::subnet::Subnet;
 use crate::tun::TunConfig;
 
-// TODO
-const LINK_MTU: i32 = 1400;
+const LINK_MTU: u32 = 1400;
 
 /// Create a new tun interface and set required routes
 ///
@@ -29,128 +26,67 @@ pub async fn new(
     ),
     Box<dyn std::error::Error>,
 > {
-    let tun = match create_tun_interface(&tun_config.name) {
+    let tun = match mycelium_tun::Tun::new(&tun_config.name) {
         Ok(tun) => tun,
         Err(e) => {
             error!(
                 "Could not create tun device named \"{}\", make sure the name is not yet in use, and you have sufficient privileges to create a network device",
                 tun_config.name,
             );
-            return Err(e);
+            return Err(e.into());
         }
     };
 
-    let (conn, handle, _) = rtnetlink::new_connection()?;
-    let netlink_task_handle = tokio::spawn(conn);
+    tun.set_mtu(LINK_MTU)?;
 
-    let tun_index = link_index_by_name(handle.clone(), tun_config.name).await?;
+    let addr = match tun_config.node_subnet.address() {
+        IpAddr::V6(addr) => addr,
+        IpAddr::V4(_) => {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidInput, "expected IPv6 address").into(),
+            );
+        }
+    };
+    tun.set_addr(addr, tun_config.route_subnet.prefix_len())?;
+    tun.set_up()?;
 
-    if let Err(e) = add_address(
-        handle.clone(),
-        tun_index,
-        Subnet::new(
-            tun_config.node_subnet.address(),
-            tun_config.route_subnet.prefix_len(),
-        )
-        .unwrap(),
-    )
-    .await
-    {
-        error!(
-            "Failed to add address {0} to TUN interface: {e}",
-            tun_config.node_subnet
-        );
-        return Err(e);
-    }
-
-    // We are done with our netlink connection, abort the task so we can properly clean up.
-    netlink_task_handle.abort();
+    let (read_half, write_half) = tun.split()?;
 
     let (tun_sink, mut sink_receiver) = mpsc::channel::<PacketBuffer>(1000);
     let (tun_stream, stream_receiver) = mpsc::unbounded_channel();
 
-    // Spawn a single task to manage the TUN interface
+    // Spawn a task to read packets from the TUN device.
     tokio::spawn(async move {
-        let mut buf_hold = None;
         loop {
-            let mut buf: PacketBuffer = buf_hold.take().unwrap_or_default();
-
-            select! {
-                data = sink_receiver.recv() => {
-                    match data {
-                        None => return,
-                        Some(data) => {
-                            if let Err(e) = tun.send(&data).await {
-                                error!("Failed to send data to tun interface {e}");
-                            }
-                        }
-                    }
-                    // Save the buffer as we didn't  use it
-                    buf_hold = Some(buf);
-                }
-                read_result = tun.recv(buf.buffer_mut()) => {
-                    let rr = read_result.map(|n| {
-                        buf.set_size(n);
-                        buf
-                    });
-
-                    if tun_stream.send(rr).is_err() {
+            let mut buf = PacketBuffer::new();
+            match read_half.read(buf.buffer_mut()).await {
+                Ok(n) => {
+                    buf.set_size(n);
+                    if tun_stream.send(Ok(buf)).is_err() {
                         error!("Could not forward data to tun stream, receiver is gone");
                         break;
-                    };
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to read from tun interface: {e}");
                 }
             }
         }
-        info!("Stop reading from / writing to tun interface");
+        info!("Stop reading from tun interface");
+    });
+
+    // Spawn a task to write packets to the TUN device.
+    tokio::spawn(async move {
+        while let Some(data) = sink_receiver.recv().await {
+            if let Err(e) = write_half.write(&data).await {
+                error!("Failed to send data to tun interface: {e}");
+            }
+        }
+        info!("Stop writing to tun interface");
     });
 
     Ok((
         tokio_stream::wrappers::UnboundedReceiverStream::new(stream_receiver),
         tokio_util::sync::PollSender::new(tun_sink),
     ))
-}
-
-/// Create a new TUN interface
-fn create_tun_interface(name: &str) -> Result<Tun, Box<dyn std::error::Error>> {
-    let tun = TunBuilder::new()
-        .name(name)
-        .mtu(LINK_MTU)
-        .queues(1)
-        .up()
-        .build()?
-        .pop()
-        .expect("Succesfully build tun interface has 1 queue");
-
-    Ok(tun)
-}
-
-/// Retrieve the link index of an interface with the given name
-async fn link_index_by_name(
-    handle: Handle,
-    name: String,
-) -> Result<u32, Box<dyn std::error::Error>> {
-    handle
-        .link()
-        .get()
-        .match_name(name)
-        .execute()
-        .try_next()
-        .await?
-        .map(|link_message| link_message.header.index)
-        .ok_or(io::Error::new(io::ErrorKind::NotFound, "link not found").into())
-}
-
-/// Add an address to an interface.
-///
-/// The kernel will automatically add a route entry for the subnet assigned to the interface.
-async fn add_address(
-    handle: Handle,
-    link_index: u32,
-    subnet: Subnet,
-) -> Result<(), Box<dyn std::error::Error>> {
-    Ok(handle
-        .address()
-        .add(link_index, subnet.address(), subnet.prefix_len())
-        .execute()
-        .await?)
 }

@@ -69,9 +69,9 @@ async-trait = "0.1.89"
 hickory-resolver = "0.26.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.21.0"
-tokio-tun = "0.15.2"
 nix = { version = "0.31.2", features = ["socket"] }
 tokio-vsock = { version = "0.7.2" }
+mycelium-tun = { path = "../mycelium-tun" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
