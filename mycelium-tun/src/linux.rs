@@ -46,6 +46,20 @@ nix::ioctl_write_ptr_bad!(
     libc::ifreq
 );
 
+nix::ioctl_read_bad!(
+    /// Get the flags on a network interface.
+    siocgifflags,
+    libc::SIOCGIFFLAGS as libc::c_ulong,
+    libc::ifreq
+);
+
+nix::ioctl_write_ptr_bad!(
+    /// Set the flags on a network interface.
+    siocsifflags,
+    libc::SIOCSIFFLAGS as libc::c_ulong,
+    libc::ifreq
+);
+
 /// A Linux TUN device.
 ///
 /// The device is opened with `IFF_TUN | IFF_NO_PI` flags, meaning it operates at the IP layer
@@ -158,6 +172,27 @@ impl Tun {
         Ok(())
     }
 
+    /// Bring the TUN interface up.
+    pub fn set_up(&self) -> io::Result<()> {
+        let sock = ioctl_socket()?;
+        let mut ifr = self.new_ifreq_with_name();
+
+        // Read current flags.
+        // SAFETY: sock is a valid fd, ifr is properly initialized with the interface name.
+        unsafe { siocgifflags(sock.as_raw_fd(), &mut ifr) }.map_err(io::Error::from)?;
+
+        // Set IFF_UP without clobbering existing flags.
+        // SAFETY: siocgifflags populates ifr_ifru.ifru_flags on success.
+        ifr.ifr_ifru.ifru_flags =
+            unsafe { ifr.ifr_ifru.ifru_flags } | libc::IFF_UP as libc::c_short;
+
+        // SAFETY: sock is a valid fd, ifr is properly initialized.
+        unsafe { siocsifflags(sock.as_raw_fd(), &ifr) }.map_err(io::Error::from)?;
+
+        debug!(name = %self.name, "brought TUN interface up");
+        Ok(())
+    }
+
     /// Split the TUN device into a read half and a write half.
     ///
     /// Each half wraps an independent file descriptor (created via `dup()`), so they can be used
@@ -228,9 +263,8 @@ impl ReadHalf {
             let mut guard = self.fd.readable().await?;
             match guard.try_io(|inner| {
                 // SAFETY: inner is a valid fd, buf is valid for buf.len() bytes.
-                let n = unsafe {
-                    libc::read(inner.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len())
-                };
+                let n =
+                    unsafe { libc::read(inner.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
                 if n < 0 {
                     Err(io::Error::last_os_error())
                 } else {
@@ -260,9 +294,7 @@ impl WriteHalf {
             let mut guard = self.fd.writable().await?;
             match guard.try_io(|inner| {
                 // SAFETY: inner is a valid fd, buf is valid for buf.len() bytes.
-                let n = unsafe {
-                    libc::write(inner.as_raw_fd(), buf.as_ptr().cast(), buf.len())
-                };
+                let n = unsafe { libc::write(inner.as_raw_fd(), buf.as_ptr().cast(), buf.len()) };
                 if n < 0 {
                     Err(io::Error::last_os_error())
                 } else {
@@ -289,10 +321,7 @@ fn ifreq_name(ifr: &libc::ifreq) -> io::Result<String> {
         .iter()
         .position(|&c| c == 0)
         .unwrap_or(libc::IFNAMSIZ);
-    let name_bytes: Vec<u8> = ifr.ifr_name[..nul_pos]
-        .iter()
-        .map(|&c| c as u8)
-        .collect();
+    let name_bytes: Vec<u8> = ifr.ifr_name[..nul_pos].iter().map(|&c| c as u8).collect();
     String::from_utf8(name_bytes)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid interface name"))
 }
