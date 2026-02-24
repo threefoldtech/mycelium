@@ -68,8 +68,7 @@ hickory-server = "0.25.2"
 async-trait = "0.1.89"
 hickory-resolver = "0.25.2"
 [target.'cfg(target_os = "linux")'.dependencies]
-rtnetlink = "0.20.0"
-tokio-tun = "0.15.2"
+mycelium-tun = { path = "../mycelium-tun" }
 nix = { version = "0.31.1", features = ["socket"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
