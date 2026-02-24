@@ -6,4 +6,4 @@
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::Tun;
+pub use linux::{ReadHalf, Tun, WriteHalf};
