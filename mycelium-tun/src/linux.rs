@@ -1,4 +1,8 @@
 //! Linux TUN device implementation using ioctls and tokio's AsyncFd.
+//!
+//! The device is opened with `IFF_VNET_HDR` to enable GSO/GRO offloading. Each read/write on
+//! the fd carries a 10-byte `virtio_net_hdr` prefix, handled internally. Callers only see
+//! normal IP packets.
 
 use std::io;
 use std::net::Ipv6Addr;
@@ -8,8 +12,25 @@ use nix::net::if_::InterfaceFlags;
 use tokio::io::unix::AsyncFd;
 use tracing::debug;
 
+use crate::offload::{self, VIRTIO_NET_HDR_LEN, VirtioNetHdr};
+
 /// `TUNSETIFF` ioctl request code. Not exposed by libc or nix.
 const TUNSETIFF: libc::c_ulong = 0x400454ca;
+/// `TUNSETOFFLOAD` ioctl request code.
+const TUNSETOFFLOAD: libc::c_ulong = 0x400454d0;
+
+/// `IFF_VNET_HDR` — prepend virtio_net_hdr to every packet.
+const IFF_VNET_HDR: libc::c_short = 0x4000;
+
+// TUNSETOFFLOAD feature flags.
+const TUN_F_CSUM: libc::c_ulong = 0x01;
+const TUN_F_TSO4: libc::c_ulong = 0x02;
+const TUN_F_TSO6: libc::c_ulong = 0x04;
+const TUN_F_USO4: libc::c_ulong = 0x20;
+const TUN_F_USO6: libc::c_ulong = 0x40;
+
+/// Maximum read buffer: 65535 (max IP packet) + 12 (virtio header).
+const READ_BUF_SIZE: usize = 65535 + VIRTIO_NET_HDR_LEN;
 
 nix::ioctl_write_ptr_bad!(
     /// Configure a TUN device (set name and flags).
@@ -62,8 +83,9 @@ nix::ioctl_write_ptr_bad!(
 
 /// A Linux TUN device.
 ///
-/// The device is opened with `IFF_TUN | IFF_NO_PI` flags, meaning it operates at the IP layer
-/// (layer 3) with no packet information header prepended.
+/// The device is opened with `IFF_TUN | IFF_NO_PI | IFF_VNET_HDR` flags, meaning it operates
+/// at the IP layer (layer 3) with no packet information header but with a virtio_net_hdr
+/// prefix for GSO/GRO offloading.
 ///
 /// Use [`Tun::split`] to obtain a [`ReadHalf`] and [`WriteHalf`] that can be used concurrently
 /// from separate tasks without locking.
@@ -77,6 +99,9 @@ impl Tun {
     ///
     /// If `name` is empty, the kernel assigns a name (typically "tun0", "tun1", ...). The actual
     /// assigned name can be retrieved with [`Tun::name`].
+    ///
+    /// The device is configured with `IFF_VNET_HDR` and TCP/UDP segmentation offload is enabled
+    /// via `TUNSETOFFLOAD`.
     pub fn new(name: &str) -> io::Result<Self> {
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -94,7 +119,7 @@ impl Tun {
         }
 
         let flags = InterfaceFlags::IFF_TUN | InterfaceFlags::IFF_NO_PI;
-        ifr.ifr_ifru.ifru_flags = flags.bits() as libc::c_short;
+        ifr.ifr_ifru.ifru_flags = flags.bits() as libc::c_short | IFF_VNET_HDR;
 
         // SAFETY: file is a valid fd, ifr is properly initialized.
         unsafe { tunsetiff(file.as_raw_fd(), &ifr) }.map_err(io::Error::from)?;
@@ -102,12 +127,29 @@ impl Tun {
         let actual_name = ifreq_name(&ifr)?;
         debug!(name = %actual_name, "created TUN device");
 
+        // Enable offloading: CSUM + TSO4 + TSO6 are mandatory.
+        let offload_flags = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6;
+        // SAFETY: file is a valid TUN fd.
+        let ret = unsafe { libc::ioctl(file.as_raw_fd(), TUNSETOFFLOAD, offload_flags) };
+        if ret < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        debug!(name = %actual_name, "enabled TSO offload");
+
+        // Attempt USO4/USO6 — requires Linux 6.2+. Failure is non-fatal.
+        let uso_flags = offload_flags | TUN_F_USO4 | TUN_F_USO6;
+        // SAFETY: file is a valid TUN fd.
+        let ret = unsafe { libc::ioctl(file.as_raw_fd(), TUNSETOFFLOAD, uso_flags) };
+        if ret == 0 {
+            debug!(name = %actual_name, "enabled USO offload");
+        }
+
         // Transfer ownership of the fd from File to OwnedFd without closing it.
         // SAFETY: raw_fd is valid, we just obtained it from file.
         let owned_fd = unsafe { OwnedFd::from_raw_fd(file.into_raw_fd()) };
 
         // Set non-blocking now.
-        // If we later call dup(), the flag is inheritted.
+        // If we later call dup(), the flag is inherited.
         set_nonblocking(&owned_fd)?;
 
         Ok(Tun {
@@ -213,9 +255,11 @@ impl Tun {
 
         let read_half = ReadHalf {
             fd: AsyncFd::new(self.fd)?,
+            raw_buf: vec![0u8; READ_BUF_SIZE],
         };
         let write_half = WriteHalf {
             fd: AsyncFd::new(write_fd)?,
+            write_buf: vec![0u8; READ_BUF_SIZE],
         };
 
         Ok((read_half, write_half))
@@ -251,20 +295,42 @@ impl Tun {
 /// Obtained from [`Tun::split`]. Can be used concurrently with [`WriteHalf`].
 pub struct ReadHalf {
     fd: AsyncFd<OwnedFd>,
+    /// Internal buffer for reading raw data (virtio_net_hdr + payload) from the kernel.
+    raw_buf: Vec<u8>,
 }
 
 impl ReadHalf {
-    /// Read a packet from the TUN device into `buf`.
+    /// Read one or more packets from the TUN device.
     ///
-    /// Returns the number of bytes read. The caller should use `&buf[..n]` to access the packet
-    /// data.
-    pub async fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
+    /// The kernel may deliver a GRO-coalesced super-packet, which is split into individual IP
+    /// packets written into `bufs`. The length of each packet is recorded in the corresponding
+    /// entry of `sizes`. Returns the number of packets written.
+    ///
+    /// `bufs` and `sizes` must have the same length.
+    pub async fn read(&mut self, bufs: &mut [&mut [u8]], sizes: &mut [usize]) -> io::Result<usize> {
+        assert_eq!(
+            bufs.len(),
+            sizes.len(),
+            "bufs and sizes must have the same length"
+        );
+
+        let n = self.read_raw().await?;
+        offload::gso_split(&self.raw_buf[..n], bufs, sizes)
+    }
+
+    /// Perform a single raw read from the TUN fd into the internal buffer.
+    async fn read_raw(&mut self) -> io::Result<usize> {
         loop {
             let mut guard = self.fd.readable().await?;
             match guard.try_io(|inner| {
-                // SAFETY: inner is a valid fd, buf is valid for buf.len() bytes.
-                let n =
-                    unsafe { libc::read(inner.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+                // SAFETY: inner is a valid fd, raw_buf is valid for raw_buf.len() bytes.
+                let n = unsafe {
+                    libc::read(
+                        inner.as_raw_fd(),
+                        self.raw_buf.as_mut_ptr().cast(),
+                        self.raw_buf.len(),
+                    )
+                };
                 if n < 0 {
                     Err(io::Error::last_os_error())
                 } else {
@@ -283,13 +349,44 @@ impl ReadHalf {
 /// Obtained from [`Tun::split`]. Can be used concurrently with [`ReadHalf`].
 pub struct WriteHalf {
     fd: AsyncFd<OwnedFd>,
+    /// Internal buffer for building coalesced packets (virtio_net_hdr + payload).
+    write_buf: Vec<u8>,
 }
 
 impl WriteHalf {
-    /// Write a packet to the TUN device.
+    /// Write one or more packets to the TUN device.
     ///
-    /// Returns the number of bytes written.
-    pub async fn write(&self, buf: &[u8]) -> io::Result<usize> {
+    /// Compatible packets are coalesced with GSO for fewer syscalls. Each entry in `pkts` must
+    /// be a complete IP packet.
+    pub async fn write(&mut self, pkts: &[&[u8]]) -> io::Result<()> {
+        if pkts.is_empty() {
+            return Ok(());
+        }
+
+        // Try to coalesce multiple packets into a single GSO write.
+        if pkts.len() > 1
+            && let Ok((len, vhdr)) =
+                offload::gro_coalesce(pkts, &mut self.write_buf[VIRTIO_NET_HDR_LEN..])
+        {
+            vhdr.encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
+            self.write_raw(&self.write_buf[..VIRTIO_NET_HDR_LEN + len])
+                .await?;
+            return Ok(());
+        }
+
+        // Fallback: write each packet individually with GSO_NONE header.
+        for pkt in pkts {
+            let total = VIRTIO_NET_HDR_LEN + pkt.len();
+            VirtioNetHdr::none().encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
+            self.write_buf[VIRTIO_NET_HDR_LEN..total].copy_from_slice(pkt);
+            self.write_raw(&self.write_buf[..total]).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Perform a single raw write to the TUN fd.
+    async fn write_raw(&self, buf: &[u8]) -> io::Result<usize> {
         loop {
             let mut guard = self.fd.writable().await?;
             match guard.try_io(|inner| {

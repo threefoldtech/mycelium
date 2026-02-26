@@ -12,6 +12,12 @@ use crate::tun::TunConfig;
 
 const LINK_MTU: u32 = 1400;
 
+/// Maximum number of packets that can be delivered from a single GRO-coalesced read.
+const READ_BATCH_SIZE: usize = 64;
+
+/// Maximum number of packets to coalesce for a single GSO write.
+const WRITE_BATCH_SIZE: usize = 64;
+
 /// Create a new tun interface and set required routes
 ///
 /// # Panics
@@ -50,37 +56,70 @@ pub async fn new(
     tun.set_addr(addr, tun_config.route_subnet.prefix_len())?;
     tun.set_up()?;
 
-    let (read_half, write_half) = tun.split()?;
+    let (mut read_half, mut write_half) = tun.split()?;
 
     let (tun_sink, mut sink_receiver) = mpsc::channel::<PacketBuffer>(1000);
     let (tun_stream, stream_receiver) = mpsc::unbounded_channel();
 
     // Spawn a task to read packets from the TUN device.
+    // The kernel may deliver GRO-coalesced super-packets, which are split into individual
+    // packets by the read call.
     tokio::spawn(async move {
+        let mut packet_bufs: Vec<PacketBuffer> =
+            (0..READ_BATCH_SIZE).map(|_| PacketBuffer::new()).collect();
+        let mut sizes = [0usize; READ_BATCH_SIZE];
+
         loop {
-            let mut buf = PacketBuffer::new();
-            match read_half.read(buf.buffer_mut()).await {
+            let mut bufs: Vec<&mut [u8]> =
+                packet_bufs.iter_mut().map(|pb| pb.buffer_mut()).collect();
+
+            match read_half.read(&mut bufs, &mut sizes).await {
                 Ok(n) => {
-                    buf.set_size(n);
-                    if tun_stream.send(Ok(buf)).is_err() {
-                        error!("Could not forward data to tun stream, receiver is gone");
-                        break;
+                    // Drop the borrow on packet_bufs before moving packets out.
+                    drop(bufs);
+                    for i in 0..n {
+                        let mut pkt = std::mem::take(&mut packet_bufs[i]);
+                        pkt.set_size(sizes[i]);
+                        if tun_stream.send(Ok(pkt)).is_err() {
+                            error!("Could not forward data to tun stream, receiver is gone");
+                            return;
+                        }
                     }
                 }
                 Err(e) => {
                     error!("Failed to read from tun interface: {e}");
+                    drop(bufs);
                 }
             }
         }
-        info!("Stop reading from tun interface");
     });
 
     // Spawn a task to write packets to the TUN device.
+    // Batches packets from the channel for GSO coalescing.
     tokio::spawn(async move {
-        while let Some(data) = sink_receiver.recv().await {
-            if let Err(e) = write_half.write(&data).await {
+        let mut batch: Vec<PacketBuffer> = Vec::with_capacity(WRITE_BATCH_SIZE);
+
+        loop {
+            // Wait for at least one packet.
+            match sink_receiver.recv().await {
+                Some(data) => batch.push(data),
+                None => break,
+            }
+
+            // Drain any additional immediately-available packets up to the batch limit.
+            while batch.len() < WRITE_BATCH_SIZE {
+                match sink_receiver.try_recv() {
+                    Ok(data) => batch.push(data),
+                    Err(_) => break,
+                }
+            }
+
+            let pkts: Vec<&[u8]> = batch.iter().map(|pb| &**pb).collect();
+            if let Err(e) = write_half.write(&pkts).await {
                 error!("Failed to send data to tun interface: {e}");
             }
+
+            batch.clear();
         }
         info!("Stop writing to tun interface");
     });
