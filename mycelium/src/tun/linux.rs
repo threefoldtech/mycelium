@@ -18,6 +18,12 @@ const READ_BATCH_SIZE: usize = 64;
 /// Maximum number of packets to coalesce for a single GSO write.
 const WRITE_BATCH_SIZE: usize = 64;
 
+/// Maximum number of packets that can be buffered between the TUN reader task and the DataPlane.
+/// This provides backpressure on the ingress path: if the DataPlane can't keep up with TUN reads,
+/// the reader task will block until space is available, which in turn stops reading from the
+/// kernel TUN device.
+const TUN_READ_CHANNEL_CAPACITY: usize = 1000;
+
 /// Create a new tun interface and set required routes
 ///
 /// # Panics
@@ -59,7 +65,7 @@ pub async fn new(
     let (mut read_half, mut write_half) = tun.split()?;
 
     let (tun_sink, mut sink_receiver) = mpsc::channel::<PacketBuffer>(1000);
-    let (tun_stream, stream_receiver) = mpsc::unbounded_channel();
+    let (tun_stream, stream_receiver) = mpsc::channel(TUN_READ_CHANNEL_CAPACITY);
 
     // Spawn a task to read packets from the TUN device.
     // The kernel may deliver GRO-coalesced super-packets, which are split into individual
@@ -77,13 +83,20 @@ pub async fn new(
                 Ok(n) => {
                     // Drop the borrow on packet_bufs before moving packets out.
                     drop(bufs);
-                    for i in 0..n {
-                        let mut pkt = std::mem::take(&mut packet_bufs[i]);
-                        pkt.set_size(sizes[i]);
-                        if tun_stream.send(Ok(pkt)).is_err() {
+
+                    // Reserve capacity for the entire batch at once, avoiding
+                    // per-packet async overhead on the channel.
+                    let permits = match tun_stream.reserve_many(n).await {
+                        Ok(permits) => permits,
+                        Err(_) => {
                             error!("Could not forward data to tun stream, receiver is gone");
                             return;
                         }
+                    };
+                    for (i, permit) in permits.enumerate() {
+                        let mut pkt = std::mem::take(&mut packet_bufs[i]);
+                        pkt.set_size(sizes[i]);
+                        permit.send(Ok(pkt));
                     }
                 }
                 Err(e) => {
@@ -125,7 +138,7 @@ pub async fn new(
     });
 
     Ok((
-        tokio_stream::wrappers::UnboundedReceiverStream::new(stream_receiver),
+        tokio_stream::wrappers::ReceiverStream::new(stream_receiver),
         tokio_util::sync::PollSender::new(tun_sink),
     ))
 }
