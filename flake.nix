@@ -64,10 +64,6 @@
                 final.perl
               ];
 
-              buildInputs = lib.optionals stdenv.isDarwin [
-                final.libiconv
-              ];
-
               meta = {
                 mainProgram = "mycelium";
               };
@@ -110,10 +106,6 @@
                 final.openssl
                 # required by openssl-sys
                 final.perl
-              ];
-
-              buildInputs = lib.optionals stdenv.isDarwin [
-                final.libiconv
               ];
 
               meta = {
