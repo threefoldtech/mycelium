@@ -363,19 +363,30 @@ impl WriteHalf {
             return Ok(());
         }
 
-        // Try to coalesce multiple packets into a single GSO write.
-        if pkts.len() > 1
-            && let Ok((len, vhdr)) =
-                offload::gro_coalesce(pkts, &mut self.write_buf[VIRTIO_NET_HDR_LEN..])
-        {
-            vhdr.encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
-            self.write_raw(&self.write_buf[..VIRTIO_NET_HDR_LEN + len])
-                .await?;
-            return Ok(());
+        let mut remaining = pkts;
+
+        while remaining.len() > 1 {
+            match offload::gro_coalesce(remaining, &mut self.write_buf[VIRTIO_NET_HDR_LEN..]) {
+                Ok((len, vhdr, consumed)) => {
+                    vhdr.encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
+                    self.write_raw(&self.write_buf[..VIRTIO_NET_HDR_LEN + len])
+                        .await?;
+                    remaining = &remaining[consumed..];
+                }
+                Err(_) => {
+                    // First packet can't be coalesced — write it individually and advance.
+                    let pkt = remaining[0];
+                    let total = VIRTIO_NET_HDR_LEN + pkt.len();
+                    VirtioNetHdr::none().encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
+                    self.write_buf[VIRTIO_NET_HDR_LEN..total].copy_from_slice(pkt);
+                    self.write_raw(&self.write_buf[..total]).await?;
+                    remaining = &remaining[1..];
+                }
+            }
         }
 
-        // Fallback: write each packet individually with GSO_NONE header.
-        for pkt in pkts {
+        // Write any single remaining packet.
+        if let Some(pkt) = remaining.first() {
             let total = VIRTIO_NET_HDR_LEN + pkt.len();
             VirtioNetHdr::none().encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
             self.write_buf[VIRTIO_NET_HDR_LEN..total].copy_from_slice(pkt);
