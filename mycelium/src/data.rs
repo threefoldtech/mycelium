@@ -54,6 +54,11 @@ const IPV6_VERSION_BYTE: u8 = 0b0110_0000;
 /// 64 is used as sane default.
 const MESSAGE_HOP_LIMIT: u8 = 64;
 
+/// Maximum number of packets to receive from the host channel in a single batch. Batching allows
+/// decrypting multiple packets before sending them to the TUN writer, giving GRO a chance to
+/// coalesce them.
+const EXTRACT_BATCH_SIZE: usize = 100;
+
 /// The DataPlane manages forwarding/receiving of local data packets to the [`Router`], and the
 /// encryption/decryption of them.
 ///
@@ -495,15 +500,18 @@ where
         U: Sink<(PacketBuffer, IpAddr, IpAddr)> + Send + Unpin + 'static,
         U::Error: std::fmt::Display,
     {
+        let mut host_packet_buf = Vec::with_capacity(EXTRACT_BATCH_SIZE);
+        let mut l3_send_buf: Vec<PacketBuffer> = Vec::with_capacity(EXTRACT_BATCH_SIZE);
+
         loop {
             // Collect packets to process - either from channel or from dequeued after route available
-            let packets_to_process: Vec<DataPacket> = tokio::select! {
-                // Handle incoming data packets
-                maybe_packet = host_packet_source.recv() => {
-                    let Some(data_packet) = maybe_packet else {
+            tokio::select! {
+                // Handle incoming data packets - batch receive to give the TUN interface the best
+                // chance to actually coalesce if that is supported
+                received = host_packet_source.recv_many(&mut host_packet_buf, EXTRACT_BATCH_SIZE) => {
+                    if received == 0 {
                         break;
-                    };
-                    vec![data_packet]
+                    }
                 }
 
                 // Handle route availability notifications - process queued incoming packets
@@ -516,12 +524,13 @@ where
                             "Processing queued incoming packets after route became available"
                         );
                     }
-                    packets
+                    host_packet_buf = packets;
                 }
             };
 
-            // Process all collected packets
-            for data_packet in packets_to_process {
+            // Decrypt all collected packets before sending any to the TUN, giving the TUN
+            // writer a chance to coalesce them via GRO/GSO.
+            for data_packet in host_packet_buf.drain(..) {
                 // decrypt & send to TUN interface
                 let shared_secret = match self
                     .router
@@ -549,8 +558,7 @@ where
                         continue;
                     }
                 };
-                let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data.clone())
-                {
+                let mut decrypted_packet = match shared_secret.decrypt(data_packet.raw_data) {
                     Ok(data) => data,
                     Err(_) => {
                         debug!("Dropping data packet with invalid encrypted content");
@@ -577,10 +585,8 @@ where
                         }
                         // Adjust the hop limit in the decrypted packet to the new value.
                         real_packet[7] = data_packet.hop_limit;
-                        if let Err(e) = l3_packet_sink.send(decrypted_packet).await {
-                            error!("Failed to send packet on local TUN interface: {e}",);
-                            continue;
-                        }
+                        // Buffer for batch sending after decryption loop.
+                        l3_send_buf.push(decrypted_packet);
                     }
                     USER_DATA_MESSAGE_TYPE => {
                         if let Err(e) = message_packet_sink
@@ -674,16 +680,24 @@ where
                             error!("Could not reconstruct icmp packet {e}");
                             continue;
                         }
-                        if let Err(e) = l3_packet_sink.send(rp).await {
-                            error!("Failed to send packet on local TUN interface: {e}",);
-                            continue;
-                        }
+                        l3_send_buf.push(rp);
                     }
                     _ => {
                         trace!("Dropping decrypted packet with unknown protocol type");
                         continue;
                     }
                 }
+            }
+
+            // Try to burst L3 packets as much as possible so the TUN can attempt to use GRO
+            // coalescing if that is supported.
+            for packet in l3_send_buf.drain(..) {
+                if let Err(e) = l3_packet_sink.feed(packet).await {
+                    error!("Failed to send packet on local TUN interface: {e}");
+                }
+            }
+            if let Err(e) = l3_packet_sink.flush().await {
+                error!("Failed to flush packets to local TUN interface: {e}");
             }
         }
 
