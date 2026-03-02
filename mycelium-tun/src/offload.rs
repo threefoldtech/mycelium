@@ -425,13 +425,15 @@ fn pseudo_header_acc(pkt: &[u8], info: &HeaderInfo) -> u64 {
 
 /// Attempt to coalesce multiple packets into a single GSO super-packet.
 ///
-/// Returns `(bytes_written, virtio_header)` on success. The coalesced payload is written to
-/// `out` and the caller should prepend the returned virtio header.
+/// Returns `(bytes_written, virtio_header, packets_consumed)` on success. The coalesced payload
+/// is written to `out` and the caller should prepend the returned virtio header.
+/// `packets_consumed` indicates how many packets from the front of `pkts` were coalesced —
+/// the caller should handle any remaining packets separately.
 ///
-/// If the packets cannot be coalesced (incompatible flows, single packet, etc.), returns
-/// an error. The caller should then fall back to writing each packet individually with
-/// a `GSO_NONE` header.
-pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, VirtioNetHdr)> {
+/// If even the first two packets cannot be coalesced (incompatible flows, single packet, etc.),
+/// returns an error. The caller should then fall back to writing the first packet individually
+/// with a `GSO_NONE` header.
+pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, VirtioNetHdr, usize)> {
     if pkts.len() < 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -442,13 +444,11 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
     let first = pkts[0];
     let info = parse_headers(first)?;
 
-    // Validate all packets belong to the same flow and can be coalesced.
     let is_tcp = info.protocol == IPPROTO_TCP;
 
     // Extract flow key from first packet.
     let flow = FlowKey::from_packet(first, &info)?;
 
-    // Collect segment data and validate contiguity.
     let first_payload_len = first.len() - info.total_header_len;
     if first_payload_len == 0 {
         return Err(io::Error::new(
@@ -459,6 +459,19 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
 
     // The GSO size is the payload length of the first (and all non-last) segments.
     let gso_size = first_payload_len;
+
+    // Check that the first packet (headers + payload) fits in the output buffer.
+    if first.len() > out.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "output buffer too small for first packet",
+        ));
+    }
+
+    // Copy headers + first payload into `out`.
+    out[..first.len()].copy_from_slice(first);
+    let mut pos = first.len();
+    let mut packets_consumed = 1;
 
     let mut expected_seq = if is_tcp {
         u32::from_be_bytes([
@@ -478,25 +491,25 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
         0
     };
 
-    // Validate remaining packets.
+    // Incrementally validate and append remaining packets.
     for &pkt in &pkts[1..] {
-        let pkt_info = parse_headers(pkt)?;
+        let pkt_info = match parse_headers(pkt) {
+            Ok(i) => i,
+            Err(_) => break,
+        };
         if pkt_info.protocol != info.protocol
             || pkt_info.ip_version != info.ip_version
             || pkt_info.total_header_len != info.total_header_len
         {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "incompatible packet headers",
-            ));
+            break;
         }
 
-        let pkt_flow = FlowKey::from_packet(pkt, &pkt_info)?;
+        let pkt_flow = match FlowKey::from_packet(pkt, &pkt_info) {
+            Ok(f) => f,
+            Err(_) => break,
+        };
         if pkt_flow != flow {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "packets belong to different flows",
-            ));
+            break;
         }
 
         let payload_len = pkt.len() - info.total_header_len;
@@ -509,52 +522,46 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
                 pkt[info.ip_header_len + 7],
             ]);
             if seq != expected_seq {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "TCP sequence numbers not contiguous",
-                ));
+                break;
             }
-            expected_seq = expected_seq.wrapping_add(payload_len as u32);
-
-            // Non-last segments must have the same payload size as gso_size.
-            // (Last segment can be smaller.)
         }
 
-        // Validate IPv4 ID contiguity.
         if info.ip_version == IPV4_VERSION {
             let ip_id = u16::from_be_bytes([pkt[4], pkt[5]]);
             if ip_id != expected_ip_id {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "IPv4 IDs not contiguous",
-                ));
+                break;
             }
+        }
+
+        // Check if appending this packet's payload would exceed the output buffer.
+        let payload = &pkt[info.total_header_len..];
+        if pos + payload.len() > out.len() {
+            break;
+        }
+
+        // Append payload.
+        out[pos..pos + payload.len()].copy_from_slice(payload);
+        pos += payload.len();
+        packets_consumed += 1;
+
+        if is_tcp {
+            expected_seq = expected_seq.wrapping_add(payload_len as u32);
+        }
+        if info.ip_version == IPV4_VERSION {
             expected_ip_id = expected_ip_id.wrapping_add(1);
         }
     }
 
-    // All packets validated — build the coalesced buffer.
-    // Layout: [first_packet_headers] [all_payloads_concatenated]
-    let total_payload: usize = pkts.iter().map(|p| p.len() - info.total_header_len).sum();
-    let total_len = info.total_header_len + total_payload;
-
-    if total_len > out.len() {
+    // Need at least 2 packets for coalescing to be worthwhile.
+    if packets_consumed < 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "output buffer too small for coalesced packet",
+            "could not coalesce at least 2 packets",
         ));
     }
 
-    // Copy headers from first packet.
-    out[..info.total_header_len].copy_from_slice(&first[..info.total_header_len]);
-
-    // Copy payloads.
-    let mut pos = info.total_header_len;
-    for &pkt in pkts {
-        let payload = &pkt[info.total_header_len..];
-        out[pos..pos + payload.len()].copy_from_slice(payload);
-        pos += payload.len();
-    }
+    let total_len = pos;
+    let total_payload = total_len - info.total_header_len;
 
     // Fix up IP total length / payload length.
     match info.ip_version {
@@ -576,13 +583,20 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
         out[info.ip_header_len + 4..info.ip_header_len + 6].copy_from_slice(&udp_len.to_be_bytes());
     }
 
-    // Zero transport checksum — kernel computes it via VIRTIO_NET_HDR_F_NEEDS_CSUM.
+    // Seed the transport checksum field with the pseudo-header checksum. The kernel's
+    // CHECKSUM_PARTIAL path computes the ones-complement sum from csum_start to the end of
+    // the packet. Because the checksum field itself falls within that range, its value is
+    // included in the sum — so we place the complemented pseudo-header checksum here to
+    // supply the pseudo-header contribution.
     let csum_field_offset = if is_tcp {
         info.ip_header_len + 16
     } else {
         info.ip_header_len + 6
     };
     out[csum_field_offset..csum_field_offset + 2].copy_from_slice(&[0, 0]);
+    let pseudo = pseudo_header_acc(&out[..total_len], &info);
+    let pseudo_csum = checksum::checksum(&[], pseudo);
+    out[csum_field_offset..csum_field_offset + 2].copy_from_slice(&pseudo_csum.to_be_bytes());
 
     // Build the virtio header.
     let gso_type = match (info.protocol, info.ip_version) {
@@ -601,7 +615,7 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
         csum_offset: if is_tcp { 16 } else { 6 },
     };
 
-    Ok((total_len, vhdr))
+    Ok((total_len, vhdr, packets_consumed))
 }
 
 /// Flow key for identifying compatible packets.
@@ -862,8 +876,9 @@ mod tests {
 
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1];
         let mut out = vec![0u8; 65536];
-        let (len, vhdr) = gro_coalesce(&pkts, &mut out).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
 
+        assert_eq!(consumed, 2);
         assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_TCPV4);
         assert_eq!(vhdr.gso_size, 100);
         assert_eq!(len, IPV4_MIN_HEADER_LEN + TCP_MIN_HEADER_LEN + 200);
@@ -959,7 +974,8 @@ mod tests {
         // Coalesce.
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1, &pkt2];
         let mut coalesced = vec![0u8; 65536];
-        let (len, vhdr) = gro_coalesce(&pkts, &mut coalesced).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut coalesced).unwrap();
+        assert_eq!(consumed, 3);
 
         // Build raw buffer as if read from kernel.
         let mut raw = vec![0u8; VIRTIO_NET_HDR_LEN + len];
@@ -1033,11 +1049,109 @@ mod tests {
 
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1];
         let mut out = vec![0u8; 65536];
-        let (len, vhdr) = gro_coalesce(&pkts, &mut out).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
 
+        assert_eq!(consumed, 2);
         assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_UDP_L4);
         assert_eq!(vhdr.gso_size, 100);
         assert_eq!(len, IPV4_MIN_HEADER_LEN + UDP_HEADER_LEN + 200);
+    }
+
+    #[test]
+    fn test_gro_coalesce_partial_buffer_too_small() {
+        // Create 4 UDP packets of 1000 bytes payload each. Use a buffer that can only
+        // fit 2 packets worth of coalesced data (headers + 2000 bytes payload) but not 3.
+        const PAYLOAD_SIZE: usize = 1000;
+        let pkt0 = make_ipv4_udp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            53,
+            1,
+            &[0xAA; PAYLOAD_SIZE],
+        );
+        let pkt1 = make_ipv4_udp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            53,
+            2,
+            &[0xBB; PAYLOAD_SIZE],
+        );
+        let pkt2 = make_ipv4_udp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            53,
+            3,
+            &[0xCC; PAYLOAD_SIZE],
+        );
+        let pkt3 = make_ipv4_udp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            53,
+            4,
+            &[0xDD; PAYLOAD_SIZE],
+        );
+
+        let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1, &pkt2, &pkt3];
+
+        // Buffer big enough for headers + 2 payloads, but not 3.
+        let header_len = IPV4_MIN_HEADER_LEN + UDP_HEADER_LEN;
+        let out_size = header_len + PAYLOAD_SIZE * 2 + 10; // just enough for 2
+        let mut out = vec![0u8; out_size];
+
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
+
+        assert_eq!(consumed, 2);
+        assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_UDP_L4);
+        assert_eq!(vhdr.gso_size as usize, PAYLOAD_SIZE);
+        assert_eq!(len, header_len + PAYLOAD_SIZE * 2);
+    }
+
+    #[test]
+    fn test_gro_coalesce_partial_different_flow_mid_batch() {
+        // 3 TCP packets: first 2 same flow, 3rd different destination port.
+        let pkt0 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            1234,
+            80,
+            1000,
+            1,
+            &[0xAA; 100],
+        );
+        let pkt1 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            1234,
+            80,
+            1100,
+            2,
+            &[0xBB; 100],
+        );
+        // Different destination port — breaks the flow.
+        let pkt2 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            1234,
+            81,
+            1200,
+            3,
+            &[0xCC; 100],
+        );
+
+        let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1, &pkt2];
+        let mut out = vec![0u8; 65536];
+
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
+
+        // Should coalesce only the first 2 packets.
+        assert_eq!(consumed, 2);
+        assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_TCPV4);
+        assert_eq!(vhdr.gso_size, 100);
+        assert_eq!(len, IPV4_MIN_HEADER_LEN + TCP_MIN_HEADER_LEN + 200);
     }
 
     #[test]
