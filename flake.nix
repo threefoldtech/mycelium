@@ -19,7 +19,7 @@
     {
       overlays.default = final: prev:
         let
-          inherit (final) lib stdenv darwin;
+          inherit (final) lib stdenv;
           craneLib = crane.mkLib final;
         in
         {
@@ -64,12 +64,6 @@
                 final.perl
               ];
 
-              buildInputs = lib.optionals stdenv.isDarwin [
-                darwin.apple_sdk.frameworks.Security
-                darwin.apple_sdk.frameworks.SystemConfiguration
-                final.libiconv
-              ];
-
               meta = {
                 mainProgram = "mycelium";
               };
@@ -112,12 +106,6 @@
                 final.openssl
                 # required by openssl-sys
                 final.perl
-              ];
-
-              buildInputs = lib.optionals stdenv.isDarwin [
-                darwin.apple_sdk.frameworks.Security
-                darwin.apple_sdk.frameworks.SystemConfiguration
-                final.libiconv
               ];
 
               meta = {
