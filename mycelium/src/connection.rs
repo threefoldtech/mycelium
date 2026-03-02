@@ -120,7 +120,11 @@ impl TcpStream {
         Ok(Self {
             local_addr: tcp_stream.local_addr()?,
             peer_addr: tcp_stream.peer_addr()?,
-            framed: Framed::new(Tracked::new(read, write, tcp_stream), packet::Codec::new()),
+            framed: Framed::with_capacity(
+                Tracked::new(read, write, tcp_stream),
+                packet::Codec::new(),
+                65 * 1024,
+            ),
         })
     }
 }
@@ -220,9 +224,10 @@ impl Quic {
         write: Arc<AtomicU64>,
     ) -> Self {
         Quic {
-            framed: Framed::new(
+            framed: Framed::with_capacity(
                 Tracked::new(read.clone(), write.clone(), QuicStream { tx, rx }),
                 packet::Codec::new(),
+                65 * 1024,
             ),
             con,
             read,
@@ -399,8 +404,7 @@ impl ConnectionReadHalf for QuicReadHalf {
                 let mut codec = packet::Codec::new();
                 match codec.decode(&mut datagram_bytes.into()) {
                     Ok(Some(packet)) => Some(Ok(packet)),
-                    // Partial? packet read. We consider this to be a stream hangup
-                    // TODO: verify
+                    // Partial packet read. We consider this to be a stream hangup.
                     Ok(None) => None,
                     Err(e) => Some(Err(e)),
                 }
@@ -408,7 +412,6 @@ impl ConnectionReadHalf for QuicReadHalf {
             packet = self.framed.next() => {
                 packet
             }
-
         }
     }
 }
