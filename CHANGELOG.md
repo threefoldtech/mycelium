@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- On linux, the TUN interface now supports GSU/GRO (TSO and optionally USO on
+  linux 6.2+), improving throughput and lowering CPU utilization under heavy load.
+
 ## [0.7.3] - 2026-02-09
 
 ### Fixed
