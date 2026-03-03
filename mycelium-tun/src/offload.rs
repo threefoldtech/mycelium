@@ -629,8 +629,25 @@ pub fn gro_coalesce(
     Ok((total_len, vhdr, packets_consumed))
 }
 
+/// Reorder packets so that packets belonging to the same flow are contiguous.
+///
+/// Uses a stable sort so that intra-flow packet ordering is preserved (important for
+/// TCP sequence number continuity). Packets whose headers cannot be parsed are
+/// moved to the front where they will be written individually by the fallback path.
+pub fn sort_by_flow(pkts: &mut [&[u8]]) {
+    pkts.sort_by(|a, b| {
+        let key_a = parse_headers(a)
+            .ok()
+            .and_then(|i| FlowKey::from_packet(a, &i).ok());
+        let key_b = parse_headers(b)
+            .ok()
+            .and_then(|i| FlowKey::from_packet(b, &i).ok());
+        key_a.cmp(&key_b)
+    });
+}
+
 /// Flow key for identifying compatible packets.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct FlowKey {
     src_addr: [u8; 16],
     dst_addr: [u8; 16],
@@ -1186,5 +1203,134 @@ mod tests {
         assert_eq!(decoded.gso_size, hdr.gso_size);
         assert_eq!(decoded.csum_start, hdr.csum_start);
         assert_eq!(decoded.csum_offset, hdr.csum_offset);
+    }
+
+    #[test]
+    fn test_sort_by_flow_groups_interleaved_flows() {
+        // Two TCP flows interleaved: A, B, A, B.
+        let a0 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            80,
+            1000,
+            1,
+            &[0xAA; 100],
+        );
+        let a1 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            80,
+            1100,
+            2,
+            &[0xAA; 100],
+        );
+        let b0 = make_ipv4_tcp_packet(
+            [10, 0, 0, 3],
+            [10, 0, 0, 4],
+            6000,
+            443,
+            2000,
+            1,
+            &[0xBB; 100],
+        );
+        let b1 = make_ipv4_tcp_packet(
+            [10, 0, 0, 3],
+            [10, 0, 0, 4],
+            6000,
+            443,
+            2100,
+            2,
+            &[0xBB; 100],
+        );
+
+        let mut pkts: Vec<&[u8]> = vec![&a0, &b0, &a1, &b1];
+        sort_by_flow(&mut pkts);
+
+        // After sorting, same-flow packets should be contiguous.
+        // Extract flow keys to verify grouping.
+        let keys: Vec<_> = pkts
+            .iter()
+            .map(|p| {
+                let info = parse_headers(p).unwrap();
+                FlowKey::from_packet(p, &info).unwrap()
+            })
+            .collect();
+
+        // First two should be the same flow, last two should be the same flow.
+        assert_eq!(keys[0], keys[1]);
+        assert_eq!(keys[2], keys[3]);
+        assert_ne!(keys[0], keys[2]);
+    }
+
+    #[test]
+    fn test_sort_by_flow_preserves_intra_flow_order() {
+        // Three packets from the same flow with sequential seq numbers.
+        let p0 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            80,
+            1000,
+            1,
+            &[0xAA; 100],
+        );
+        let p1 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            80,
+            1100,
+            2,
+            &[0xBB; 100],
+        );
+        let p2 = make_ipv4_tcp_packet(
+            [10, 0, 0, 1],
+            [10, 0, 0, 2],
+            5000,
+            80,
+            1200,
+            3,
+            &[0xCC; 100],
+        );
+        // Interleave with a different flow.
+        let other = make_ipv4_tcp_packet(
+            [10, 0, 0, 3],
+            [10, 0, 0, 4],
+            6000,
+            443,
+            2000,
+            1,
+            &[0xDD; 100],
+        );
+
+        let mut pkts: Vec<&[u8]> = vec![&p0, &other, &p1, &p2];
+        sort_by_flow(&mut pkts);
+
+        // Find the group belonging to flow A and verify sequence numbers are still in order.
+        let flow_a_key = {
+            let info = parse_headers(&p0).unwrap();
+            FlowKey::from_packet(&p0, &info).unwrap()
+        };
+
+        let flow_a_seqs: Vec<u32> = pkts
+            .iter()
+            .filter(|p| {
+                let info = parse_headers(p).unwrap();
+                FlowKey::from_packet(p, &info).unwrap() == flow_a_key
+            })
+            .map(|p| {
+                let info = parse_headers(p).unwrap();
+                u32::from_be_bytes([
+                    p[info.ip_header_len + 4],
+                    p[info.ip_header_len + 5],
+                    p[info.ip_header_len + 6],
+                    p[info.ip_header_len + 7],
+                ])
+            })
+            .collect();
+
+        assert_eq!(flow_a_seqs, vec![1000, 1100, 1200]);
     }
 }
