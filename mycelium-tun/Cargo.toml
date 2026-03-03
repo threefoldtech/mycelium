@@ -5,7 +5,7 @@ edition = "2024"
 license-file = "../LICENSE"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-tokio = { version = "1.49.0", default-features = false, features = ["net"] }
-nix = { version = "0.31.1", features = ["ioctl", "net"] }
+tokio = { version = "1.50.0", default-features = false, features = ["net"] }
+nix = { version = "0.31.2", features = ["ioctl", "net"] }
 libc = "0.2"
 tracing = "0.1"

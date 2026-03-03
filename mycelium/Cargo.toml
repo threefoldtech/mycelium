@@ -16,7 +16,7 @@ mactunfd = [
 [dependencies]
 cdn-meta = { git = "https://github.com/threefoldtech/mycelium-cdn-registry", package = "cdn-meta" }
 
-tokio = { version = "1.49.0", features = [
+tokio = { version = "1.50.0", features = [
   "io-util",
   "fs",
   "macros",
@@ -38,7 +38,7 @@ tracing-logfmt = { version = "0.3.7", features = ["ansi_logs"] }
 faster-hex = "0.10.0"
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 left-right = "0.11.7"
-ipnet = "2.11.0"
+ipnet = "2.12.0"
 ip_network_table-deps-treebitmap = "0.5.0"
 blake3 = "1.8.3"
 etherparse = "0.19.0"
@@ -46,7 +46,7 @@ quinn = { version = "0.11.9", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
-rustls = { version = "0.23.36", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.37", default-features = false, features = ["ring"] }
 rcgen = "0.14.7"
 netdev = "0.40.0"
 openssl = { version = "0.10.75", optional = true }
@@ -62,14 +62,14 @@ reqwest = { version = "0.12.24", default-features = false, features = [
   "system-proxy",
   "rustls-tls",
 ] }
-redis = { version = "1.0.3", features = ["tokio-comp"] }
+redis = { version = "1.0.4", features = ["tokio-comp"] }
 reed-solomon-erasure = "6.0.0"
 hickory-server = "0.25.2"
 async-trait = "0.1.89"
 hickory-resolver = "0.25.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 mycelium-tun = { path = "../mycelium-tun" }
-nix = { version = "0.31.1", features = ["socket"] }
+nix = { version = "0.31.2", features = ["socket"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
