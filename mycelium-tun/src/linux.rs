@@ -369,7 +369,10 @@ impl WriteHalf {
             return Ok(());
         }
 
-        let mut remaining = pkts;
+        // Sort packets by flow so same-flow packets are contiguous for coalescing.
+        let mut sorted: Vec<&[u8]> = pkts.to_vec();
+        offload::sort_by_flow(&mut sorted);
+        let mut remaining: &[&[u8]] = &sorted;
 
         while remaining.len() > 1 {
             match offload::gro_coalesce(
