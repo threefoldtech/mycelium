@@ -433,7 +433,11 @@ fn pseudo_header_acc(pkt: &[u8], info: &HeaderInfo) -> u64 {
 /// If even the first two packets cannot be coalesced (incompatible flows, single packet, etc.),
 /// returns an error. The caller should then fall back to writing the first packet individually
 /// with a `GSO_NONE` header.
-pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, VirtioNetHdr, usize)> {
+pub fn gro_coalesce(
+    pkts: &[&[u8]],
+    out: &mut [u8],
+    can_uso: bool,
+) -> io::Result<(usize, VirtioNetHdr, usize)> {
     if pkts.len() < 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -445,6 +449,13 @@ pub fn gro_coalesce(pkts: &[&[u8]], out: &mut [u8]) -> io::Result<(usize, Virtio
     let info = parse_headers(first)?;
 
     let is_tcp = info.protocol == IPPROTO_TCP;
+
+    if !is_tcp && !can_uso {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "USO not available for UDP coalescing",
+        ));
+    }
 
     // Extract flow key from first packet.
     let flow = FlowKey::from_packet(first, &info)?;
@@ -876,7 +887,7 @@ mod tests {
 
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1];
         let mut out = vec![0u8; 65536];
-        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out, true).unwrap();
 
         assert_eq!(consumed, 2);
         assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_TCPV4);
@@ -909,7 +920,7 @@ mod tests {
 
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1];
         let mut out = vec![0u8; 65536];
-        assert!(gro_coalesce(&pkts, &mut out).is_err());
+        assert!(gro_coalesce(&pkts, &mut out, true).is_err());
     }
 
     #[test]
@@ -936,7 +947,7 @@ mod tests {
 
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1];
         let mut out = vec![0u8; 65536];
-        assert!(gro_coalesce(&pkts, &mut out).is_err());
+        assert!(gro_coalesce(&pkts, &mut out, true).is_err());
     }
 
     #[test]
@@ -974,7 +985,7 @@ mod tests {
         // Coalesce.
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1, &pkt2];
         let mut coalesced = vec![0u8; 65536];
-        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut coalesced).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut coalesced, true).unwrap();
         assert_eq!(consumed, 3);
 
         // Build raw buffer as if read from kernel.
@@ -1049,7 +1060,7 @@ mod tests {
 
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1];
         let mut out = vec![0u8; 65536];
-        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out, true).unwrap();
 
         assert_eq!(consumed, 2);
         assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_UDP_L4);
@@ -1102,7 +1113,7 @@ mod tests {
         let out_size = header_len + PAYLOAD_SIZE * 2 + 10; // just enough for 2
         let mut out = vec![0u8; out_size];
 
-        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out, true).unwrap();
 
         assert_eq!(consumed, 2);
         assert_eq!(vhdr.gso_type, VIRTIO_NET_HDR_GSO_UDP_L4);
@@ -1145,7 +1156,7 @@ mod tests {
         let pkts: Vec<&[u8]> = vec![&pkt0, &pkt1, &pkt2];
         let mut out = vec![0u8; 65536];
 
-        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out).unwrap();
+        let (len, vhdr, consumed) = gro_coalesce(&pkts, &mut out, true).unwrap();
 
         // Should coalesce only the first 2 packets.
         assert_eq!(consumed, 2);

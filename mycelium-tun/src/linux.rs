@@ -92,6 +92,7 @@ nix::ioctl_write_ptr_bad!(
 pub struct Tun {
     fd: OwnedFd,
     name: String,
+    uso_enabled: bool,
 }
 
 impl Tun {
@@ -140,7 +141,8 @@ impl Tun {
         let uso_flags = offload_flags | TUN_F_USO4 | TUN_F_USO6;
         // SAFETY: file is a valid TUN fd.
         let ret = unsafe { libc::ioctl(file.as_raw_fd(), TUNSETOFFLOAD, uso_flags) };
-        if ret == 0 {
+        let uso_enabled = ret == 0;
+        if uso_enabled {
             debug!(name = %actual_name, "enabled USO offload");
         }
 
@@ -155,6 +157,7 @@ impl Tun {
         Ok(Tun {
             fd: owned_fd,
             name: actual_name,
+            uso_enabled,
         })
     }
 
@@ -260,6 +263,7 @@ impl Tun {
         let write_half = WriteHalf {
             fd: AsyncFd::new(write_fd)?,
             write_buf: vec![0u8; READ_BUF_SIZE],
+            uso_enabled: self.uso_enabled,
         };
 
         Ok((read_half, write_half))
@@ -351,6 +355,8 @@ pub struct WriteHalf {
     fd: AsyncFd<OwnedFd>,
     /// Internal buffer for building coalesced packets (virtio_net_hdr + payload).
     write_buf: Vec<u8>,
+    /// Whether USO (UDP Segmentation Offload) is available on this device.
+    uso_enabled: bool,
 }
 
 impl WriteHalf {
@@ -366,7 +372,11 @@ impl WriteHalf {
         let mut remaining = pkts;
 
         while remaining.len() > 1 {
-            match offload::gro_coalesce(remaining, &mut self.write_buf[VIRTIO_NET_HDR_LEN..]) {
+            match offload::gro_coalesce(
+                remaining,
+                &mut self.write_buf[VIRTIO_NET_HDR_LEN..],
+                self.uso_enabled,
+            ) {
                 Ok((len, vhdr, consumed)) => {
                     vhdr.encode(&mut self.write_buf[..VIRTIO_NET_HDR_LEN]);
                     self.write_raw(&self.write_buf[..VIRTIO_NET_HDR_LEN + len])
