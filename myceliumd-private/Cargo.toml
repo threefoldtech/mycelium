@@ -14,9 +14,9 @@ name = "mycelium-private"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.59", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
-tokio = { version = "1.49.0", features = [
+tokio = { version = "1.50.0", features = [
   "macros",
   "rt-multi-thread",
 ] }
