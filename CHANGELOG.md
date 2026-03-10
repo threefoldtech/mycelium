@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- When a new peer connects, immediately announce our own subnet.
+
 ### Removed
 
 - No longer maintain a list of "no-route" entries if a subnet query times out.

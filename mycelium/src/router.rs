@@ -333,6 +333,12 @@ where
         peer.set_time_last_received_hello(tokio::time::Instant::now());
         peer.set_time_last_received_ihu(tokio::time::Instant::now());
 
+        // Announce our own static route so the peer does not have to wait for the periodic
+        // announcement to learn it. This doesn't really matter that much since if the peer is
+        // looking for our route it should send a route request immediately as well for this
+        // subnet, but it doesn't hurt either way.
+        self.propagate_static_route_to_peer(&peer);
+
         // Send route requests for all currently queried subnets to the new peer,
         // so it can help resolve ongoing queries.
         let read_guard = self.routing_table.read();
