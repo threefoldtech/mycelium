@@ -471,9 +471,9 @@ impl Metrics for PrometheusExporter {
     }
 
     #[inline]
-    fn router_packets_dropped_no_route(&self, count: usize) {
+    fn router_packets_dropped_query_timeout(&self, count: usize) {
         self.router_outbound_packet_queue
-            .with_label_values(&["dropped_no_route"])
+            .with_label_values(&["dropped_query_timeout"])
             .inc_by(count as u64)
     }
 
@@ -506,9 +506,9 @@ impl Metrics for PrometheusExporter {
     }
 
     #[inline]
-    fn router_incoming_packets_dropped_no_route(&self, count: usize) {
+    fn router_incoming_packets_dropped_query_timeout(&self, count: usize) {
         self.router_incoming_packet_queue
-            .with_label_values(&["dropped_no_route"])
+            .with_label_values(&["dropped_query_timeout"])
             .inc_by(count as u64)
     }
 

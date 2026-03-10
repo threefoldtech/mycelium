@@ -198,7 +198,7 @@ impl PacketQueue {
 
     /// Remove all packets for the given subnet when the route query times out.
     ///
-    /// This is used when a route query times out (transitions to NoRoute state).
+    /// This is used when a route query times out.
     /// Returns the packets so they can be used for ICMP generation.
     pub fn drop_subnet<M>(&self, subnet: Subnet, metrics: &M) -> Vec<QueuedPacketData>
     where
@@ -217,12 +217,12 @@ impl PacketQueue {
         let count = packets.len();
         self.total_count.fetch_sub(count, Ordering::Relaxed);
 
-        metrics.router_packets_dropped_no_route(count);
+        metrics.router_packets_dropped_query_timeout(count);
 
         warn!(
             subnet = %subnet,
             count = count,
-            "Returning queued packets for ICMP - no route found"
+            "Returning queued packets for ICMP - route query timed out"
         );
 
         packets
@@ -398,12 +398,12 @@ impl IncomingPacketQueue {
         let count = packets.len();
         self.total_count.fetch_sub(count, Ordering::Relaxed);
 
-        metrics.router_incoming_packets_dropped_no_route(count);
+        metrics.router_incoming_packets_dropped_query_timeout(count);
 
         debug!(
             src_subnet = %src_subnet,
             count = count,
-            "Dropped incoming packets - no route to sender found"
+            "Dropped incoming packets - route query to sender timed out"
         );
 
         packets

@@ -19,7 +19,7 @@ use message::{
 };
 use metrics::Metrics;
 use peer_manager::{PeerDiscoveryMode, PeerExists, PeerNotFound, PeerStats, PrivateNetworkKey};
-use routing_table::{NoRouteSubnet, QueriedSubnet, RouteEntry};
+use routing_table::{QueriedSubnet, RouteEntry};
 use subnet::Subnet;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -365,11 +365,6 @@ where
     /// List all [`queried subnets`](QueriedSubnet) in the system.
     pub fn queried_subnets(&self) -> Vec<QueriedSubnet> {
         self.router.load_queried_subnets()
-    }
-
-    /// List all [`subnets with no route`](NoRouteSubnet) in the system.
-    pub fn no_route_entries(&self) -> Vec<NoRouteSubnet> {
-        self.router.load_no_route_entries()
     }
 
     /// Get public key from the IP of `Node`

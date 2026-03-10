@@ -5,9 +5,9 @@ use std::{
 };
 
 use ip_network_table_deps_treebitmap::IpLookupTable;
-use iter::{RoutingTableNoRouteIter, RoutingTableQueryIter};
+use iter::RoutingTableQueryIter;
 use subnet_entry::SubnetEntry;
-use tokio::{select, sync::mpsc, time::Duration};
+use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, trace};
 
@@ -15,7 +15,6 @@ use crate::{crypto::SharedSecret, peer::Peer, subnet::Subnet};
 
 pub use iter::RoutingTableIter;
 pub use iter_mut::RoutingTableIterMut;
-pub use no_route::NoRouteSubnet;
 pub use queried_subnet::QueriedSubnet;
 pub use route_entry::RouteEntry;
 pub use route_key::RouteKey;
@@ -23,20 +22,15 @@ pub use route_list::RouteList;
 
 mod iter;
 mod iter_mut;
-mod no_route;
 mod queried_subnet;
 mod route_entry;
 mod route_key;
 mod route_list;
 mod subnet_entry;
 
-/// Clear explict "this route does not exist" entries after 5 seconds to allow new route requests.
-const NO_ROUTE_EXPIRATION: Duration = Duration::from_secs(5);
-
 pub enum Routes {
     Exist(RouteListReadGuard),
     Queried,
-    NoRoute,
     None,
 }
 
@@ -63,7 +57,6 @@ impl From<&SubnetEntry> for Routes {
                 Routes::Exist(RouteListReadGuard { inner: list.load() })
             }
             SubnetEntry::Queried { .. } => Routes::Queried,
-            SubnetEntry::NoRoute { .. } => Routes::NoRoute,
         }
     }
 }
@@ -88,7 +81,7 @@ pub struct RoutingTable {
 
 struct RoutingTableShared {
     expired_route_entry_sink: mpsc::Sender<RouteKey>,
-    /// Channel to notify when a query times out (Queried → NoRoute transition).
+    /// Channel to notify when a query times out, so the router can drop queued packets.
     query_timeout_sink: mpsc::Sender<Subnet>,
     cancel_token: CancellationToken,
 }
@@ -295,7 +288,6 @@ impl RoutingTable {
 
         // Start a task to expire the queried state if we didn't have any results in time.
         {
-            // We only need the write handle in the task
             let writer = self.writer.clone();
             let cancel_token = self.shared.cancel_token.clone();
             let query_timeout_sink = self.shared.query_timeout_sink.clone();
@@ -306,43 +298,18 @@ impl RoutingTable {
                         return
                     }
                     _ = tokio::time::sleep_until(query_timeout) => {
-                        // Timeout fired, mark as no route
+                        // Timeout fired, remove queried entry
                     }
                 }
 
-                let expiry = tokio::time::Instant::now() + NO_ROUTE_EXPIRATION;
-
-                // Scope this so the lock for the write_handle goes out of scope when we are done
-                // here, as we don't want to hold the write_handle lock while sleeping for the
-                // second timeout.
                 {
                     let mut write_handle = writer.lock().expect("Can lock writer");
-                    write_handle.append(RoutingTableOplogEntry::QueryExpired(
-                        subnet,
-                        Arc::new(SubnetEntry::NoRoute { expiry }),
-                    ));
+                    write_handle.append(RoutingTableOplogEntry::QueryExpired(subnet));
                     write_handle.flush();
                 }
 
                 // Notify the router that the query timed out so it can drop queued packets
                 let _ = query_timeout_sink.send(subnet).await;
-
-                // TODO: Check if we are indeed marked as NoRoute here, if we aren't this can be
-                // cancelled now
-
-                select! {
-                    _ = cancel_token.cancelled() => {
-                        // Future got cancelled, nothing to do
-                        return
-                    }
-                    _ = tokio::time::sleep_until(expiry) => {
-                        // Timeout fired, remove no route entry
-                    }
-                }
-
-                let mut write_handle = writer.lock().expect("Can lock writer");
-                write_handle.append(RoutingTableOplogEntry::NoRouteExpired(subnet));
-                write_handle.flush();
             });
         }
 
@@ -407,12 +374,6 @@ impl RoutingTableReadGuard<'_> {
     /// Create an iterator for all queried subnets in the routing table
     pub fn iter_queries(&self) -> RoutingTableQueryIter<'_> {
         RoutingTableQueryIter::new(self.guard.table.iter())
-    }
-
-    /// Create an iterator for all subnets which are currently marked as `NoRoute` in the routing
-    /// table.
-    pub fn iter_no_route(&self) -> RoutingTableNoRouteIter<'_> {
-        RoutingTableNoRouteIter::new(self.guard.table.iter())
     }
 }
 
@@ -549,11 +510,8 @@ enum RoutingTableOplogEntry {
     Queried(Subnet, Arc<SubnetEntry>),
     /// Delete the entry for the given subnet.
     Delete(Subnet),
-    /// The route request for a subnet expired, if it is still in query state mark it as not
-    /// existing
-    QueryExpired(Subnet, Arc<SubnetEntry>),
-    /// The marker for explicitly not having a route to a subnet has expired
-    NoRouteExpired(Subnet),
+    /// The route request for a subnet expired, if it is still in query state remove the entry.
+    QueryExpired(Subnet),
 }
 
 /// Convert an [`IpAddr`] into an [`Ipv6Addr`]. Panics if the contained addrss is not an IPv6
@@ -584,9 +542,9 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                     .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
                     .map(Arc::deref);
 
-                // If we have no route, transition to query, if we have a route or existing query,
-                // do nothing
-                if matches!(entry, None | Some(SubnetEntry::NoRoute { .. })) {
+                // Only transition to query if we don't already have a valid entry or existing
+                // query
+                if entry.is_none() {
                     self.table.insert(
                         expect_ipv6(subnet.address()),
                         subnet.prefix_len().into(),
@@ -598,26 +556,12 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                 self.table
                     .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
             }
-            RoutingTableOplogEntry::QueryExpired(subnet, nre) => {
+            RoutingTableOplogEntry::QueryExpired(subnet) => {
                 if let Some(entry) = self
                     .table
                     .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
                 {
                     if let SubnetEntry::Queried { .. } = &**entry {
-                        self.table.insert(
-                            expect_ipv6(subnet.address()),
-                            subnet.prefix_len().into(),
-                            Arc::clone(nre),
-                        );
-                    }
-                }
-            }
-            RoutingTableOplogEntry::NoRouteExpired(subnet) => {
-                if let Some(entry) = self
-                    .table
-                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
-                {
-                    if let SubnetEntry::NoRoute { .. } = &**entry {
                         self.table
                             .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
                     }
@@ -648,9 +592,9 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                     .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
                     .map(Arc::deref);
 
-                // If we have no route, transition to query, if we have a route or existing query,
-                // do nothing
-                if matches!(entry, None | Some(SubnetEntry::NoRoute { .. })) {
+                // Only transition to query if we don't already have a valid entry or existing
+                // query
+                if entry.is_none() {
                     self.table.insert(
                         expect_ipv6(subnet.address()),
                         subnet.prefix_len().into(),
@@ -662,26 +606,12 @@ impl left_right::Absorb<RoutingTableOplogEntry> for RoutingTableInner {
                 self.table
                     .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
             }
-            RoutingTableOplogEntry::QueryExpired(subnet, nre) => {
+            RoutingTableOplogEntry::QueryExpired(subnet) => {
                 if let Some(entry) = self
                     .table
                     .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
                 {
                     if let SubnetEntry::Queried { .. } = &**entry {
-                        self.table.insert(
-                            expect_ipv6(subnet.address()),
-                            subnet.prefix_len().into(),
-                            nre,
-                        );
-                    }
-                }
-            }
-            RoutingTableOplogEntry::NoRouteExpired(subnet) => {
-                if let Some(entry) = self
-                    .table
-                    .exact_match(expect_ipv6(subnet.address()), subnet.prefix_len().into())
-                {
-                    if let SubnetEntry::NoRoute { .. } = &**entry {
                         self.table
                             .remove(expect_ipv6(subnet.address()), subnet.prefix_len().into());
                     }

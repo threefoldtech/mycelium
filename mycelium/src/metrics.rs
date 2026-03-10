@@ -203,7 +203,7 @@ pub trait Metrics {
 
     /// Packets were dropped because no route was found (query timeout).
     #[inline]
-    fn router_packets_dropped_no_route(&self, _count: usize) {}
+    fn router_packets_dropped_query_timeout(&self, _count: usize) {}
 
     /// A packet could not be enqueued because the global queue limit was reached.
     #[inline]
@@ -223,7 +223,7 @@ pub trait Metrics {
 
     /// Incoming packets were dropped because no route to the sender was found (query timeout).
     #[inline]
-    fn router_incoming_packets_dropped_no_route(&self, _count: usize) {}
+    fn router_incoming_packets_dropped_query_timeout(&self, _count: usize) {}
 
     /// An incoming packet could not be enqueued because the global queue limit was reached.
     #[inline]

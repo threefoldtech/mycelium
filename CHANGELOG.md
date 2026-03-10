@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- No longer maintain a list of "no-route" entries if a subnet query times out.
+
 ## [0.7.3] - 2026-02-09
 
 ### Fixed

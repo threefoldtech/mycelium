@@ -151,9 +151,6 @@ where
                     }
                 }
             }
-            RouteStatus::NoRoute => {
-                // Destination is known unreachable, don't retry
-            }
             RouteStatus::Queried => {
                 // Route request already in progress, wait for next tick
             }

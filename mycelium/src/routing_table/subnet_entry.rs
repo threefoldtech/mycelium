@@ -10,7 +10,4 @@ pub enum SubnetEntry {
     /// Routes are being queried from peers for the given subnet, but we haven't gotten a response
     /// yet
     Queried { query_timeout: tokio::time::Instant },
-    /// We queried our peers for the subnet, but we didn't get a valid response in time, so there
-    /// is for sure no route to the subnet.
-    NoRoute { expiry: tokio::time::Instant },
 }

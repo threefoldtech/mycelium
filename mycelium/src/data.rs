@@ -369,31 +369,6 @@ where
                 // Packet queued successfully
                 None
             }
-            SharedSecretResult::NoRoute => {
-                // No route exists - send ICMP unreachable
-                debug!(
-                    packet.src = %src_ip,
-                    packet.dst = %dst_ip,
-                    "No route to destination, sending ICMP unreachable",
-                );
-
-                let mut pb = PacketBuffer::new();
-                let icmp = PacketBuilder::ipv6(src_ip.octets(), src_ip.octets(), hop_limit).icmpv6(
-                    Icmpv6Type::DestinationUnreachable(DestUnreachableCode::NoRoute),
-                );
-                let orig_buf_end = packet
-                    .buffer()
-                    .len()
-                    .min(MIN_IPV6_MTU - IPV6_MIN_HEADER_SIZE - ICMP6_HEADER_SIZE);
-                pb.set_size(icmp.size(orig_buf_end));
-                let mut b = pb.buffer_mut();
-                if let Err(e) = icmp.write(&mut b, &packet.buffer()[..orig_buf_end]) {
-                    error!("Failed to construct no route to host ICMP packet {e}");
-                    return None;
-                }
-
-                Some(pb)
-            }
         }
     }
 
@@ -542,10 +517,6 @@ where
                         {
                             debug!("Incoming packet queue full, dropping packet");
                         }
-                        continue;
-                    }
-                    SharedSecretResult::NoRoute => {
-                        trace!("Received packet from sender with no route, dropping");
                         continue;
                     }
                 };

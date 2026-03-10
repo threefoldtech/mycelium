@@ -23,10 +23,7 @@ use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tracing::debug;
 
-use crate::{
-    Info, Metric, NoRouteSubnet, PacketStatEntry, PacketStatistics, QueriedSubnet, Route,
-    ServerState,
-};
+use crate::{Info, Metric, PacketStatEntry, PacketStatistics, QueriedSubnet, Route, ServerState};
 use mycelium::crypto::PublicKey;
 use mycelium::endpoint::Endpoint;
 use mycelium::metrics::Metrics;
@@ -63,9 +60,6 @@ pub trait MyceliumApi {
 
     #[method(name = "getQueriedSubnets")]
     async fn get_queried_subnets(&self) -> RpcResult<Vec<QueriedSubnet>>;
-
-    #[method(name = "getNoRouteEntries")]
-    async fn get_no_route_entries(&self) -> RpcResult<Vec<NoRouteSubnet>>;
 
     // Proxy methods
     #[method(name = "getProxies")]
@@ -296,28 +290,6 @@ where
             .collect();
 
         Ok(queries)
-    }
-
-    async fn get_no_route_entries(&self) -> RpcResult<Vec<NoRouteSubnet>> {
-        debug!("Loading no route entries via RPC");
-        let entries = self
-            .state
-            .node
-            .lock()
-            .await
-            .no_route_entries()
-            .into_iter()
-            .map(|nrs| NoRouteSubnet {
-                subnet: nrs.subnet().to_string(),
-                expiration: nrs
-                    .entry_expires()
-                    .duration_since(tokio::time::Instant::now())
-                    .as_secs()
-                    .to_string(),
-            })
-            .collect();
-
-        Ok(entries)
     }
 
     async fn get_proxies(&self) -> RpcResult<Vec<Ipv6Addr>> {

@@ -8,7 +8,6 @@ use mycelium::metrics::Metrics;
 use crate::HttpServerState;
 use crate::Route;
 use crate::QueriedSubnet;
-use crate::NoRouteSubnet;
 use crate::Metric;
 use crate::rpc::traits::RouteApi;
 
@@ -52,10 +51,10 @@ where
                 seqno: sr.seqno().into(),
             })
             .collect();
-        
+
         Ok(routes)
     }
-    
+
     fn get_fallback_routes(&self) -> RpcResult<Vec<Route>> {
         debug!("Loading fallback routes via RPC");
         let routes = self.state
@@ -74,10 +73,10 @@ where
                 seqno: sr.seqno().into(),
             })
             .collect();
-        
+
         Ok(routes)
     }
-    
+
     fn get_queried_subnets(&self) -> RpcResult<Vec<QueriedSubnet>> {
         debug!("Loading queried subnets via RPC");
         let queries = self.state
@@ -94,27 +93,7 @@ where
                     .to_string(),
             })
             .collect();
-        
+
         Ok(queries)
-    }
-    
-    fn get_no_route_entries(&self) -> RpcResult<Vec<NoRouteSubnet>> {
-        debug!("Loading no route entries via RPC");
-        let entries = self.state
-            .node
-            .blocking_lock()
-            .no_route_entries()
-            .into_iter()
-            .map(|nrs| NoRouteSubnet {
-                subnet: nrs.subnet().to_string(),
-                expiration: nrs
-                    .entry_expires()
-                    .duration_since(tokio::time::Instant::now())
-                    .as_secs()
-                    .to_string(),
-            })
-            .collect();
-        
-        Ok(entries)
     }
 }
