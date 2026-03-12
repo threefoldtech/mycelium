@@ -1109,7 +1109,7 @@ where
                                                     ChunkTransmitState::Sent(time::Instant::now());
                                             }
                                             ChunkTransmitState::Sent(t) => {
-                                                if t.elapsed().as_secs() >= 1 {
+                                                if t.elapsed() >= RETRANSMISSION_DELAY {
                                                     // retransmit
                                                     let mut mp = MessagePacket::new(PacketBuffer::new());
                                                     mp.header_mut().set_message_id(id);
