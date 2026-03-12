@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Reduced time before an unacknowledged message chunk gets retransmitted.
+- When a message chunk gets ACK'ed, immediately send a new chunk.
 
 ### Removed
 
