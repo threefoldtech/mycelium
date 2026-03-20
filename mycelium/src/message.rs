@@ -1338,7 +1338,14 @@ where
                         .enumerate()
                         .find(|(_, v)| &v.topic == topic)
                     {
-                        return inbox.complete_msges.remove(idx).unwrap();
+                        let msg = if pop {
+                            inbox.complete_msges.remove(idx).unwrap();
+                        } else {
+                            inbox.complete_msges[idx].clone();
+                        };
+
+                        self.notify_read(&msg);
+                        return msg;
                     } else {
                         break 'check;
                     }

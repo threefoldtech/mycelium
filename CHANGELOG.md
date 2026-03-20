@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - On unix based systems, the created key file is no longer readable system-wide.
 - The message subsystem no longer removes peeked message if a topic filter is set.
+- Properly send back a read acknowledgement after popping/peeking a message while
+  a topic filter is set.
 
 ### Deprecated
 
