@@ -869,7 +869,7 @@ pub async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<(
             .create(true)
             .truncate(true)
             .write(true)
-            .mode(0o644)
+            .mode(0o640)
             .open(path)
             .await?;
         file.write_all(key.as_bytes()).await?;

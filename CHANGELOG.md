@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced time before an unacknowledged message chunk gets retransmitted.
 - When a message chunk gets ACK'ed, immediately send a new chunk.
 
+### Fixed
+
+- On unix based systems, the created key file is no longer readable system-wide
+
 ### Removed
 
 - No longer maintain a list of "no-route" entries if a subnet query times out.
