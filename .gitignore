@@ -19,3 +19,8 @@ wintun.dll
 result/
 
 .idea
+
+# Ignore myceliumd-common lib lock file and target dir, created since that dir is
+# not part of the workspace
+myceliumd-common/Cargo.lock
+myceliumd-common/target/
