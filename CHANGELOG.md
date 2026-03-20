@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - On unix based systems, the created key file is no longer readable system-wide
 
+### Deprecated
+
+- Mycelium-ui (the stand alone GUI) will be removed in the next version. It was
+  never formally launched as a binary, and its inteded use has been replaced by
+  myceliumflut, which embeds a full mycelium node.
+
 ### Removed
 
 - No longer maintain a list of "no-route" entries if a subnet query times out.
