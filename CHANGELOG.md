@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a topic filter is set.
 - When we stop probing for socks proxies, replace the cancellation token so future
   probes behave as expected.
+- Properly return an error from the API when trying to connect a proxy if we can't
+  bind the local socket.
 
 ### Deprecated
 

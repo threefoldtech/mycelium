@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::cdn::Cdn;
 use crate::packet_queue::IncomingPacketQueue;
-use crate::proxy::{ConnectionError, Proxy};
+use crate::proxy::{Proxy, ProxyError};
 use crate::tun::TunConfig;
 use bytes::BytesMut;
 use data::DataPlane;
@@ -397,7 +397,7 @@ where
     pub fn connect_proxy(
         &self,
         remote: Option<SocketAddr>,
-    ) -> impl Future<Output = Result<SocketAddr, ConnectionError>> + Send {
+    ) -> impl Future<Output = Result<SocketAddr, ProxyError>> + Send {
         let proxy = self.proxy.clone();
         async move { proxy.connect(remote).await }
     }
