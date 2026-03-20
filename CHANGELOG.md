@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- On unix based systems, the created key file is no longer readable system-wide
+- On unix based systems, the created key file is no longer readable system-wide.
+- The message subsystem no longer removes peeked message if a topic filter is set.
 
 ### Deprecated
 
