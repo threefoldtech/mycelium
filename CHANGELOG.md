@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The message subsystem no longer removes peeked message if a topic filter is set.
 - Properly send back a read acknowledgement after popping/peeking a message while
   a topic filter is set.
+- When we stop probing for socks proxies, replace the cancellation token so future
+  probes behave as expected.
 
 ### Deprecated
 

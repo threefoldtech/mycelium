@@ -221,10 +221,11 @@ where
     /// Stops any ongoing probes.
     pub fn stop_probing(&self) {
         info!("Stopping Socks5 proxy probing");
-        self.scan_token
-            .lock()
-            .expect("Can lock cancel token; qed")
-            .cancel();
+        let mut token = self.scan_token.lock().expect("Can lock cancel token; qed");
+        // Cancel existing token
+        token.cancel();
+        // Replace with new token in case we scan again
+        *token = CancellationToken::new();
     }
 
     /// Connect to a remote Socks5 proxy. If a proxy address is given, connect to that one. If not, connect to the best (fastest) known proxy.
