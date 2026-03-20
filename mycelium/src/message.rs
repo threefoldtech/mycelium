@@ -1339,9 +1339,9 @@ where
                         .find(|(_, v)| &v.topic == topic)
                     {
                         let msg = if pop {
-                            inbox.complete_msges.remove(idx).unwrap();
+                            inbox.complete_msges.remove(idx).unwrap()
                         } else {
-                            inbox.complete_msges[idx].clone();
+                            inbox.complete_msges[idx].clone()
                         };
 
                         self.notify_read(&msg);
