@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::path::PathBuf;
 
-use clap::{Args, Parser};
+use clap::{Args, CommandFactory, FromArgMatches};
 use myceliumd_common::{Cli, MyceliumConfig, NodeArguments, PrivateNetworkKey};
 use serde::Deserialize;
 
@@ -39,7 +39,12 @@ struct PrivateMyceliumConfig {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::<PrivateNodeArguments>::parse();
+    let cli = Cli::<PrivateNodeArguments>::from_arg_matches(
+        &Cli::<PrivateNodeArguments>::command()
+            .name(env!("CARGO_BIN_NAME"))
+            .version(env!("CARGO_PKG_VERSION"))
+            .get_matches(),
+    )?;
 
     let private_config: PrivateMyceliumConfig =
         myceliumd_common::load_config_file(&cli.config_file)?;

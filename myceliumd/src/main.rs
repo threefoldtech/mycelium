@@ -1,11 +1,16 @@
 use std::error::Error;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use myceliumd_common::{Cli, MyceliumConfig, NodeArguments};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::<NodeArguments>::parse();
+    let cli = Cli::<NodeArguments>::from_arg_matches(
+        &Cli::<NodeArguments>::command()
+            .name(env!("CARGO_BIN_NAME"))
+            .version(env!("CARGO_PKG_VERSION"))
+            .get_matches(),
+    )?;
 
     let mycelium_config: MyceliumConfig = myceliumd_common::load_config_file(&cli.config_file)?;
 

@@ -85,7 +85,6 @@ impl FromStr for LoggingFormat {
 }
 
 #[derive(Parser)]
-#[command(version)]
 pub struct Cli<N: Args> {
     /// Path to the private key file. This will be created if it does not exist. Default
     /// [priv_key.bin].
