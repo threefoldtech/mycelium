@@ -1343,7 +1343,7 @@ where
             && seqno_request.seqno().gt(&router_seqno)
             && self.static_routes.contains(&seqno_request.prefix())
         {
-            if last_seqno_bump.elapsed() >= SEQNO_BUMP_TIMEOUT {
+            if last_seqno_bump.elapsed() < SEQNO_BUMP_TIMEOUT {
                 trace!("Ignoring seqno bump request which happened too fast");
                 return;
             }
@@ -1355,7 +1355,7 @@ where
             {
                 let mut router_seqno = self.router_seqno.write().unwrap();
                 // First check again if we should bump
-                if router_seqno.1.elapsed() >= SEQNO_BUMP_TIMEOUT {
+                if router_seqno.1.elapsed() < SEQNO_BUMP_TIMEOUT {
                     trace!("Ignoring seqno bump request which happened too fast");
                     return;
                 }
@@ -2413,15 +2413,63 @@ fn advertised_update_interval(sre: &RouteEntry) -> Duration {
 mod tests {
     use std::{
         net::{IpAddr, Ipv6Addr},
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use tokio::sync::mpsc;
 
     use crate::{
-        babel::Update, connection::DuplexStream, crypto::PublicKey, metric::Metric, peer::Peer,
-        router_id::RouterId, sequence_number::SeqNo, source_table::SourceKey, subnet::Subnet,
+        babel::{SeqNoRequest, Update},
+        connection::DuplexStream,
+        crypto::{PublicKey, SecretKey},
+        metric::Metric,
+        metrics::Metrics,
+        peer::Peer,
+        router_id::RouterId,
+        sequence_number::SeqNo,
+        source_table::SourceKey,
+        subnet::Subnet,
     };
+
+    #[derive(Clone)]
+    struct NoMetrics;
+    impl Metrics for NoMetrics {}
+
+    /// Create a router for testing, along with its router_id.
+    fn test_router(static_routes: Vec<Subnet>) -> (super::Router<NoMetrics>, RouterId) {
+        let sk = SecretKey::new();
+        let pk = PublicKey::from(&sk);
+        let node_tun_subnet =
+            Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0, 0, 0, 0, 0, 0, 1)), 64)
+                .expect("Valid subnet");
+        let (node_tun, _) = mpsc::unbounded_channel();
+        let (router, _, _, _) = super::Router::new(
+            1,
+            node_tun,
+            node_tun_subnet,
+            static_routes,
+            (sk, pk),
+            vec![],
+            NoMetrics,
+        )
+        .expect("Can create router");
+        let router_id = router.router_id();
+        (router, router_id)
+    }
+
+    fn test_peer() -> Peer {
+        let (router_data_tx, _) = mpsc::channel(1);
+        let (router_control_tx, _) = mpsc::unbounded_channel();
+        let (dead_peer_sink, _) = mpsc::channel(1);
+        let (con1, _con2) = tokio::io::duplex(1500);
+        Peer::new(
+            router_data_tx,
+            router_control_tx,
+            DuplexStream::new(con1),
+            dead_peer_sink,
+        )
+        .expect("Can create a dummy peer")
+    }
 
     #[test]
     fn calculate_route_hold_time() {
@@ -2535,5 +2583,61 @@ mod tests {
         // but basically verify that the calculated interval is within expected parameters.
         let advertised_interval = super::advertised_update_interval(&re);
         assert_eq!(advertised_interval, super::UPDATE_INTERVAL);
+    }
+
+    #[tokio::test]
+    async fn seqno_request_bumps_seqno() {
+        let static_route = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0x1, 0, 0, 0, 0, 0, 0)), 64)
+            .expect("Valid subnet");
+        let (router, router_id) = test_router(vec![static_route]);
+        let peer = test_peer();
+
+        // Set the last bump time to the past so the rate limit allows a bump.
+        {
+            let mut seqno = router.router_seqno.write().unwrap();
+            seqno.1 = Instant::now() - super::SEQNO_BUMP_TIMEOUT - Duration::from_secs(1);
+        }
+
+        // Request seqno 1, which is greater than the initial seqno 0.
+        let seqno_request = SeqNoRequest::new(SeqNo::from(1u16), router_id, static_route);
+        router.handle_incoming_seqno_request(seqno_request, peer);
+
+        let current_seqno = router.router_seqno.read().unwrap().0;
+        assert_eq!(
+            current_seqno,
+            SeqNo::from(1u16),
+            "Router seqno should have been bumped to 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn seqno_request_rate_limited() {
+        let static_route = Subnet::new(IpAddr::V6(Ipv6Addr::new(0x400, 0x1, 0, 0, 0, 0, 0, 0)), 64)
+            .expect("Valid subnet");
+        let (router, router_id) = test_router(vec![static_route]);
+        let peer = test_peer();
+
+        // Set the last bump time to the past so the first bump succeeds.
+        {
+            let mut seqno = router.router_seqno.write().unwrap();
+            seqno.1 = Instant::now() - super::SEQNO_BUMP_TIMEOUT - Duration::from_secs(1);
+        }
+
+        let req1 = SeqNoRequest::new(SeqNo::from(1u16), router_id, static_route);
+        router.handle_incoming_seqno_request(req1, peer.clone());
+        assert_eq!(
+            router.router_seqno.read().unwrap().0,
+            SeqNo::from(1u16),
+            "First bump should succeed"
+        );
+
+        // Immediately send another request without waiting — should be rate limited.
+        let req2 = SeqNoRequest::new(SeqNo::from(2u16), router_id, static_route);
+        router.handle_incoming_seqno_request(req2, peer);
+        assert_eq!(
+            router.router_seqno.read().unwrap().0,
+            SeqNo::from(1u16),
+            "Second bump should be rate limited"
+        );
     }
 }

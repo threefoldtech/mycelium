@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The version command in the CLI now once again correctly identifies if the binary
   is the regular mycelium or the mycelium-private binary. 
+- Fixed router seqno rate limiting, which essentially prevented seqno bumping from
+  working. This should improve route acquisition after spurious network interrupts.
 
 ## [0.7.4] - 2026-03-23
 
