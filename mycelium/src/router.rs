@@ -225,7 +225,9 @@ where
         let router_id = RouterId::new(node_keypair.1);
 
         let seqno_cache = SeqnoCache::new();
-        let rr_cache = RouteRequestCache::new(ROUTE_ALMOST_EXPIRED_TRESHOLD);
+        // Force cache expiration to be the same as the query timeout, so route requests get
+        // at most once the query times out.
+        let rr_cache = RouteRequestCache::new(ROUTE_QUERY_TIMEOUT);
 
         let packet_queue = PacketQueue::new();
 
