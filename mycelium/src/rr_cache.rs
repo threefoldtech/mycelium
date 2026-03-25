@@ -60,12 +60,13 @@ impl RouteRequestCache {
                         trace!("Cleaning route request cache");
 
                         cache.retain(|subnet, info: &mut RouteRequestInfo| {
-                            if info.sent.elapsed() < expiration {
-                                false
-                            } else {
+                            let elapsed = info.sent.elapsed() >= expiration;
+
+                            if elapsed {
                                 trace!(%subnet, "Removing exired route request from cache");
-                                true
                             }
+
+                            !elapsed
                         });
                     }
                 }
