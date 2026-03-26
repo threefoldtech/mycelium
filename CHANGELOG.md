@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- When using quic connections, apply backpressure if the send buffer is full instead
+  of dropping packets.
+
 ### Fixed
 
 - The version command in the CLI now once again correctly identifies if the binary

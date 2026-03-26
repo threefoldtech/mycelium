@@ -299,7 +299,10 @@ impl Connection for Quic {
         let tx_len = data.len();
         self.write.fetch_add(tx_len as u64, Ordering::Relaxed);
 
-        self.con.send_datagram(data).map_err(io::Error::other)
+        self.con
+            .send_datagram_wait(data)
+            .await
+            .map_err(io::Error::other)
     }
 
     async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
@@ -423,7 +426,10 @@ impl ConnectionWriteHalf for QuicWriteHalf {
         let tx_len = data.len();
         self.write.fetch_add(tx_len as u64, Ordering::Relaxed);
 
-        self.con.send_datagram(data).map_err(io::Error::other)
+        self.con
+            .send_datagram_wait(data)
+            .await
+            .map_err(io::Error::other)
     }
 
     async fn feed_control_packet(&mut self, packet: ControlPacket) -> io::Result<()> {
