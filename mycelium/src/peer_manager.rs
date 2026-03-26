@@ -669,7 +669,6 @@ where
             }
         };
         let mut config = quinn::ClientConfig::new(Arc::new(qcc));
-        // Todo: tweak transport config
         let mut transport_config = TransportConfig::default();
         transport_config.max_concurrent_uni_streams(0_u8.into());
         // Larger than needed for now, just in case
@@ -679,10 +678,15 @@ where
         transport_config.max_idle_timeout(Some(Duration::from_secs(60).try_into().unwrap()));
         transport_config.mtu_discovery_config(Some(MtuDiscoveryConfig::default()));
         transport_config.keep_alive_interval(Some(Duration::from_secs(20)));
-        // we don't use datagrams.
         transport_config.datagram_receive_buffer_size(Some(16 << 20));
         transport_config.datagram_send_buffer_size(16 << 20);
         transport_config.initial_mtu(1500);
+        transport_config.enable_segmentation_offload(true);
+        transport_config.send_window((8 * (10u32 << 20)).into());
+        transport_config.stream_receive_window((10u32 << 20).into());
+        let mut congestion_controller = congestion::CubicConfig::default();
+        congestion_controller.initial_window(1 << 22); // 4MiB
+        transport_config.congestion_controller_factory(Arc::new(congestion_controller));
         config.transport_config(Arc::new(transport_config));
 
         match quic_socket.connect_with(config, endpoint.address(), "dummy.mycelium") {
@@ -1296,7 +1300,7 @@ fn make_quic_endpoint(
     transport_config.stream_receive_window((10u32 << 20).into());
     let mut congestion_controller = congestion::CubicConfig::default();
     congestion_controller.initial_window(1 << 22); // 4MiB
-                                                   // TODO: further tweak this.
+    transport_config.congestion_controller_factory(Arc::new(congestion_controller));
 
     let socket = std::net::UdpSocket::bind(("::", quic_listen_port))
         .and_then(|socket| set_fw_mark(socket, firewall_mark))?;

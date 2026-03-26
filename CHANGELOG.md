@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   working. This should improve route acquisition after spurious network interrupts.
 - Route request cache now properly cleans and maintains entries to avoid sending
   duplicates to peers.
+- Make sure the configuration for Quic connections is the same for outbound and
+  inbound connections.
 
 ## [0.7.4] - 2026-03-23
 
