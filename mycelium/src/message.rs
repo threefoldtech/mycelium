@@ -359,7 +359,7 @@ where
                 let mc = MessageChunk::new(mp);
                 // Sanity checks. This is just to protect ourselves, if the other party is
                 // malicious it can return any data it wants here.
-                if mc.chunk_idx() > message.chunks.len() as u64 {
+                if mc.chunk_idx() >= message.chunks.len() as u64 {
                     debug!("Dropping CHUNK ACK for message because ACK'ed chunk is out of bounds");
                     return;
                 }

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duplicates to peers.
 - Make sure the configuration for Quic connections is the same for outbound and
   inbound connections.
+- Fix bound check on message ACK.
 
 ## [0.7.4] - 2026-03-23
 
