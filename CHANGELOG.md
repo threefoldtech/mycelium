@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix bound check on message ACK.
 - When forwarding messages to a unix socket avoid sending the message twice if
   a duplicate DONE packet arrives.
+- Outbound quic connections now properly report received and transmitted bytes,
+  instead of the inverted values.
 
 ## [0.7.4] - 2026-03-23
 

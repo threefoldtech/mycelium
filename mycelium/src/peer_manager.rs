@@ -693,7 +693,7 @@ where
             Ok(connecting) => match connecting.await {
                 Ok(con) => match con.open_bi().await {
                     Ok((tx, rx)) => {
-                        let q_con = Quic::new(tx, rx, con, ct.tx_bytes, ct.rx_bytes);
+                        let q_con = Quic::new(tx, rx, con, ct.rx_bytes, ct.tx_bytes);
                         let res = {
                             let router = self.router.lock().unwrap();
                             let router_data_tx = router.router_data_tx();
