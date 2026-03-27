@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-03-27
+
 ### Changed
 
 - When using quic connections, apply backpressure if the send buffer is full instead
@@ -752,4 +754,5 @@ This is a breaking change, check the main README file for update info.
 [0.7.2]: https://github.com/threefoldtech/mycelium/compare/v0.7.1...v0.7.2
 [0.7.3]: https://github.com/threefoldtech/mycelium/compare/v0.7.2...v0.7.3
 [0.7.4]: https://github.com/threefoldtech/mycelium/compare/v0.7.3...v0.7.4
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.4...HEAD
+[0.7.5]: https://github.com/threefoldtech/mycelium/compare/v0.7.4...v0.7.5
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.5...HEAD
