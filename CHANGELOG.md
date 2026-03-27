@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make sure the configuration for Quic connections is the same for outbound and
   inbound connections.
 - Fix bound check on message ACK.
+- When forwarding messages to a unix socket avoid sending the message twice if
+  a duplicate DONE packet arrives.
 
 ## [0.7.4] - 2026-03-23
 

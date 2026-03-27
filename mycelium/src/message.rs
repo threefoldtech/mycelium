@@ -596,6 +596,10 @@ where
                         let message_clone = message.clone();
                         let message_stack = self.clone();
 
+                        // Remove from pending before dropping the lock, so a duplicate DONE
+                        // arriving while the async task runs won't process the message again.
+                        inbox.pending_msges.remove(&message_id);
+
                         // Drop the inbox lock before spawning the task to avoid deadlocks
                         std::mem::drop(inbox);
                         std::mem::drop(subscribers);
