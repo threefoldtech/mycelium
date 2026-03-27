@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - When using quic connections, apply backpressure if the send buffer is full instead
   of dropping packets.
+- Message reply packets no longer contain the message data.
 
 ### Fixed
 

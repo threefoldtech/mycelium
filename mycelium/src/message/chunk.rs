@@ -98,9 +98,9 @@ impl MessageChunk {
     /// Convert the `MessageChunk` into a reply. This does nothing if it is already a reply.
     pub fn into_reply(mut self) -> Self {
         self.buffer.header_mut().flags_mut().set_ack();
-        // We want to leave the length field in tact but don't want to copy the data in the reply.
-        // This needs additional work on the underlying buffer.
-        // TODO
+        // Strip the chunk data from the reply, keeping only the chunk header fields
+        // (chunk_idx, chunk_offset, chunk_size = 24 bytes).
+        self.buffer.set_used_buffer_size(24);
         self
     }
 
