@@ -7,7 +7,7 @@ use tracing::{error, info};
 
 use metrics::Metrics;
 use mycelium::endpoint::Endpoint;
-use mycelium::peer_manager::PeerDiscoveryMode;
+use mycelium::peer_manager::{PeerDiscoveryMode, PeerExists, PeerNotFound};
 use mycelium::{crypto, metrics, Config, Node};
 use once_cell::sync::Lazy;
 use tokio::sync::{mpsc, Mutex};
@@ -166,6 +166,28 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
                         send_response(vec![CHANNEL_MSG_OK.to_string()]).await;
                         break;
                     }
+                    CmdType::AddPeer(endpoint_str) => {
+                        info!(%endpoint_str, "Received add peer command");
+                        let result = match endpoint_str.parse::<Endpoint>() {
+                            Err(e) => e.to_string(),
+                            Ok(endpoint) => match node.lock().await.add_peer(endpoint) {
+                                Ok(()) => CHANNEL_MSG_OK.to_string(),
+                                Err(PeerExists) => "err_peer_exists".to_string(),
+                            },
+                        };
+                        send_response(vec![result]).await;
+                    }
+                    CmdType::RemovePeer(endpoint_str) => {
+                        info!(%endpoint_str, "Received remove peer command");
+                        let result = match endpoint_str.parse::<Endpoint>() {
+                            Err(e) => e.to_string(),
+                            Ok(endpoint) => match node.lock().await.remove_peer(endpoint) {
+                                Ok(()) => CHANNEL_MSG_OK.to_string(),
+                                Err(PeerNotFound) => "err_peer_not_found".to_string(),
+                            },
+                        };
+                        send_response(vec![result]).await;
+                    }
                     CmdType::Status => {
                         let mut vec: Vec<String> = Vec::new();
                         for info in node.lock().await.peer_info() {
@@ -227,6 +249,8 @@ struct Cmd {
 enum CmdType {
     Stop,
     Status,
+    AddPeer(String),
+    RemovePeer(String),
     ProxyProbeStart,
     ProxyProbeStop,
     ProxyList,
@@ -266,6 +290,32 @@ pub async fn get_peer_status() -> Vec<String> {
             resp
         }
         Err(e) => vec![e.to_string()],
+    }
+}
+
+/// Add a peer while mycelium is running. Returns "ok" on success, or an error string.
+#[tokio::main]
+pub async fn add_peer(endpoint: String) -> String {
+    match send_command(CmdType::AddPeer(endpoint)).await {
+        Err(e) => return e.to_string(),
+        Ok(()) => {}
+    }
+    match recv_response().await {
+        Ok(resp) => resp.into_iter().next().unwrap_or_default(),
+        Err(e) => e.to_string(),
+    }
+}
+
+/// Remove a peer while mycelium is running. Returns "ok" on success, or an error string.
+#[tokio::main]
+pub async fn remove_peer(endpoint: String) -> String {
+    match send_command(CmdType::RemovePeer(endpoint)).await {
+        Err(e) => return e.to_string(),
+        Ok(()) => {}
+    }
+    match recv_response().await {
+        Ok(resp) => resp.into_iter().next().unwrap_or_default(),
+        Err(e) => e.to_string(),
     }
 }
 
