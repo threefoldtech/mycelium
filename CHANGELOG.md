@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Mycelium-ui has been removed, it was unmaintained for some time. If a GUI interface
+  is needed, check out [the GUI with embedded mycelium node](https://github.com/threefoldtech/myceliumflut).
+
 ## [0.7.5] - 2026-03-27
 
 ### Changed
