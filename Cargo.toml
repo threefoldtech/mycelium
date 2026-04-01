@@ -6,7 +6,13 @@ members = [
   "mycelium-cli",
   "mycelium-tun",
 ]
-exclude = ["myceliumd", "myceliumd-private", "myceliumd-common", "mobile"]
+exclude = [
+  "myceliumd",
+  "myceliumd-private",
+  "myceliumd-common",
+  "mobile",
+  "mycelium-android",
+]
 resolver = "2"
 
 
