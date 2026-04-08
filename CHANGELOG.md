@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add support for a vsock transport. This allows connecting mycelium in a VM even
+  without alternative network interface(s).
+
 ### Removed
 
 - Mycelium-ui has been removed, it was unmaintained for some time. If a GUI interface
