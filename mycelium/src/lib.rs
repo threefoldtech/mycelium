@@ -70,6 +70,9 @@ pub struct Config<M> {
     pub tcp_listen_port: u16,
     /// Listen port for Quic connections.
     pub quic_listen_port: Option<u16>,
+    /// Listen port for vsock connections (Linux only).
+    #[cfg(target_os = "linux")]
+    pub vsock_listen_port: Option<u32>,
     /// Udp port for peer discovery.
     pub peer_discovery_port: u16,
     /// Mode for peer discovery (All, Disabled, or Filtered).
@@ -212,6 +215,8 @@ where
             config.peers,
             config.tcp_listen_port,
             config.quic_listen_port,
+            #[cfg(target_os = "linux")]
+            config.vsock_listen_port,
             config.peer_discovery_port,
             config.peer_discovery_mode,
             config.private_network_config,

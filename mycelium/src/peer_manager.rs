@@ -1,7 +1,9 @@
 #[cfg(feature = "private-network")]
 use crate::connection::tls::TlsStream;
+#[cfg(target_os = "linux")]
+use crate::connection::vsock::VsockStream;
 use crate::connection::{Quic, TcpStream};
-use crate::endpoint::{Endpoint, Protocol};
+use crate::endpoint::{Endpoint, PeerAddr, Protocol};
 use crate::metrics::Metrics;
 use crate::peer::{Peer, PeerRef};
 use crate::router::Router;
@@ -182,6 +184,9 @@ struct Inner<M> {
     /// Listen port for new peer connections
     tcp_listen_port: u16,
     quic_socket: Option<quinn::Endpoint>,
+    /// Optional vsock listen port. Only used on Linux with the `vsock` feature.
+    #[cfg(target_os = "linux")]
+    vsock_listen_port: Option<u32>,
     /// Identity and name of a private network, if one exists
     private_network_config: Option<(String, [u8; 32])>,
     metrics: M,
@@ -198,6 +203,7 @@ where
         static_peers_sockets: Vec<Endpoint>,
         tcp_listen_port: u16,
         quic_listen_port: Option<u16>,
+        #[cfg(target_os = "linux")] vsock_listen_port: Option<u32>,
         peer_discovery_port: u16,
         peer_discovery_mode: PeerDiscoveryMode,
         private_network_config: Option<(String, PrivateNetworkKey)>,
@@ -255,6 +261,8 @@ where
                 ),
                 tcp_listen_port,
                 quic_socket,
+                #[cfg(target_os = "linux")]
+                vsock_listen_port,
                 private_network_config,
                 metrics,
                 firewall_mark,
@@ -274,6 +282,13 @@ where
             let handle = tokio::spawn(peer_manager.inner.clone().quic_listener());
             peer_manager.abort_handles.push(handle.abort_handle());
         };
+
+        // Start vsock listener if configured (Linux only).
+        #[cfg(target_os = "linux")]
+        if peer_manager.inner.vsock_listen_port.is_some() {
+            let handle = tokio::spawn(peer_manager.inner.clone().vsock_listener());
+            peer_manager.abort_handles.push(handle.abort_handle());
+        }
 
         // Start (re)connecting to outbound/local peers
         let handle = tokio::spawn(peer_manager.inner.clone().connect_to_peers());
@@ -480,6 +495,13 @@ where
         match endpoint.proto() {
             Protocol::Tcp | Protocol::Tls => self.connect_tcp_peer(endpoint, ct).await,
             Protocol::Quic => self.connect_quic_peer(endpoint, ct).await,
+            #[cfg(target_os = "linux")]
+            Protocol::Vsock => self.connect_vsock_peer(endpoint, ct).await,
+            #[cfg(not(target_os = "linux"))]
+            Protocol::Vsock => {
+                debug!("Vsock support is not enabled on this platform/build");
+                (endpoint, None)
+            }
         }
     }
 
@@ -524,9 +546,13 @@ where
             None
         };
 
-        match tokio::net::TcpStream::connect(endpoint.address())
-            .map(|result| result.and_then(|socket| set_fw_mark(socket, self.firewall_mark)))
-            .await
+        match tokio::net::TcpStream::connect(
+            endpoint
+                .socket_addr()
+                .expect("tcp/tls endpoint always has a socket address"),
+        )
+        .map(|result| result.and_then(|socket| set_fw_mark(socket, self.firewall_mark)))
+        .await
         {
             Ok(peer_stream) => {
                 debug!("Opened connection");
@@ -689,7 +715,13 @@ where
         transport_config.congestion_controller_factory(Arc::new(congestion_controller));
         config.transport_config(Arc::new(transport_config));
 
-        match quic_socket.connect_with(config, endpoint.address(), "dummy.mycelium") {
+        match quic_socket.connect_with(
+            config,
+            endpoint
+                .socket_addr()
+                .expect("quic endpoint always has a socket address"),
+            "dummy.mycelium",
+        ) {
             Ok(connecting) => match connecting.await {
                 Ok(con) => match con.open_bi().await {
                     Ok((tx, rx)) => {
@@ -984,6 +1016,130 @@ where
         info!("Shutting down closed quic listener");
     }
 
+    /// Connect to a remote peer over vsock.
+    #[cfg(target_os = "linux")]
+    async fn connect_vsock_peer(
+        self: Arc<Self>,
+        endpoint: Endpoint,
+        ct: ConnectionTraffic,
+    ) -> (Endpoint, Option<Peer>) {
+        let (cid, port) = match endpoint.address() {
+            PeerAddr::Vsock { cid, port } => (cid, port),
+            PeerAddr::Socket(_) => {
+                debug!("connect_vsock_peer called with a socket address endpoint");
+                return (endpoint, None);
+            }
+        };
+
+        match tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(cid, port)).await {
+            Ok(stream) => {
+                debug!("Opened vsock connection");
+                let (router_data_tx, router_control_tx, dead_peer_sink) = {
+                    let router = self.router.lock().unwrap();
+                    (
+                        router.router_data_tx(),
+                        router.router_control_tx(),
+                        router.dead_peer_sink().clone(),
+                    )
+                };
+                let vsock_stream = match VsockStream::new(stream, ct.rx_bytes, ct.tx_bytes) {
+                    Ok(vs) => vs,
+                    Err(err) => {
+                        error!(%err, "Failed to create wrapped vsock stream");
+                        return (endpoint, None);
+                    }
+                };
+                match Peer::new(
+                    router_data_tx,
+                    router_control_tx,
+                    vsock_stream,
+                    dead_peer_sink,
+                ) {
+                    Ok(new_peer) => {
+                        info!("Connected to new vsock peer");
+                        (endpoint, Some(new_peer))
+                    }
+                    Err(e) => {
+                        debug!(err=%e, "Failed to spawn vsock peer");
+                        (endpoint, None)
+                    }
+                }
+            }
+            Err(e) => {
+                debug!(err=%e, "Couldn't connect to vsock peer");
+                (endpoint, None)
+            }
+        }
+    }
+
+    /// Start listening for new inbound peers on a vsock socket.
+    #[cfg(target_os = "linux")]
+    async fn vsock_listener(self: Arc<Self>) {
+        let port = match self.vsock_listen_port {
+            Some(p) => p,
+            None => {
+                debug!("vsock_listener called but no vsock_listen_port configured");
+                return;
+            }
+        };
+
+        let router_data_tx = self.router.lock().unwrap().router_data_tx();
+        let router_control_tx = self.router.lock().unwrap().router_control_tx();
+        let dead_peer_sink = self.router.lock().unwrap().dead_peer_sink().clone();
+
+        let addr = tokio_vsock::VsockAddr::new(tokio_vsock::VMADDR_CID_ANY, port);
+        let listener = match tokio_vsock::VsockListener::bind(addr) {
+            Ok(l) => l,
+            Err(e) => {
+                error!(err=%e, "Error starting vsock listener");
+                return;
+            }
+        };
+
+        info!(%port, "Vsock listener started");
+        loop {
+            match listener.accept().await {
+                Ok((stream, remote)) => {
+                    let tx_bytes = Arc::new(AtomicU64::new(0));
+                    let rx_bytes = Arc::new(AtomicU64::new(0));
+
+                    let vsock_stream =
+                        match VsockStream::new(stream, rx_bytes.clone(), tx_bytes.clone()) {
+                            Ok(vs) => vs,
+                            Err(err) => {
+                                error!(%err, "Failed to create wrapped vsock stream");
+                                continue;
+                            }
+                        };
+
+                    let new_peer = match Peer::new(
+                        router_data_tx.clone(),
+                        router_control_tx.clone(),
+                        vsock_stream,
+                        dead_peer_sink.clone(),
+                    ) {
+                        Ok(peer) => peer,
+                        Err(e) => {
+                            error!(err=%e, "Failed to spawn vsock peer");
+                            continue;
+                        }
+                    };
+
+                    info!(remote.cid=%remote.cid(), remote.port=%remote.port(), "Accepted new inbound vsock peer");
+                    self.add_peer(
+                        Endpoint::new_vsock(remote.cid(), remote.port()),
+                        PeerType::Inbound,
+                        ConnectionTraffic { tx_bytes, rx_bytes },
+                        Some(new_peer),
+                    );
+                }
+                Err(e) => {
+                    error!(err=%e, "Error accepting vsock connection");
+                }
+            }
+        }
+    }
+
     /// Add a new peer identifier we discovered.
     #[instrument(skip_all,fields(peer.endpoint=%endpoint))]
     fn add_peer(
@@ -995,16 +1151,19 @@ where
     ) {
         self.metrics.peer_manager_peer_added(discovery_type.clone());
         let mut peers = self.peers.lock().unwrap();
-        // Filter out link local IP's we already know (because of reverse detection)
+        // Filter out link local IP's we already know (because of reverse detection).
+        // Link-local discovery always uses socket addresses, so vsock endpoints are unaffected.
         if discovery_type == PeerType::LinkLocalDiscovery {
-            if let IpAddr::V6(ip) = endpoint.address().ip() {
-                if ip.octets()[..8] == [0xfe, 0x80, 0, 0, 0, 0, 0, 0] {
-                    for known_endpoint in peers.keys() {
-                        if known_endpoint.address().ip() == endpoint.address().ip()
-                            && known_endpoint.proto() == endpoint.proto()
-                        {
-                            trace!(peer.known_endpoint=%known_endpoint, "Refusing to add link local discovered address as there already is a reverse connection");
-                            return;
+            if let PeerAddr::Socket(sa) = endpoint.address() {
+                if let IpAddr::V6(ip) = sa.ip() {
+                    if ip.octets()[..8] == [0xfe, 0x80, 0, 0, 0, 0, 0, 0] {
+                        for known_endpoint in peers.keys() {
+                            if known_endpoint.address() == endpoint.address()
+                                && known_endpoint.proto() == endpoint.proto()
+                            {
+                                trace!(peer.known_endpoint=%known_endpoint, "Refusing to add link local discovered address as there already is a reverse connection");
+                                return;
+                            }
                         }
                     }
                 }

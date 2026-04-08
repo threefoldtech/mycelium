@@ -392,6 +392,14 @@ pub struct NodeArguments {
     #[arg(long = "cdn-cache")]
     pub cdn_cache: Option<PathBuf>,
 
+    /// Port to listen on for vsock connections.
+    ///
+    /// When set, a vsock listener is started on the given port with CID VMADDR_CID_ANY, allowing
+    /// both a hypervisor and a VM guest to accept inbound connections over the vsock transport.
+    #[cfg(target_os = "linux")]
+    #[arg(long = "vsock-listen-port")]
+    pub vsock_listen_port: Option<u32>,
+
     /// Enable the dns resolver
     ///
     /// When the DNS resolver is enabled, it will bind a UDP socket on port 53. If this fails, the
@@ -420,6 +428,8 @@ pub struct MergedNodeConfig {
     pub topic_config: Option<PathBuf>,
     pub cdn_cache: Option<PathBuf>,
     pub enable_dns: bool,
+    #[cfg(target_os = "linux")]
+    pub vsock_listen_port: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -442,6 +452,8 @@ pub struct MyceliumConfig {
     pub topic_config: Option<PathBuf>,
     pub cdn_cache: Option<PathBuf>,
     pub enable_dns: Option<bool>,
+    #[cfg(target_os = "linux")]
+    pub vsock_listen_port: Option<u32>,
 }
 
 /// Load a configuration file, using either the explicitly provided path or the platform-specific
@@ -643,6 +655,8 @@ pub async fn run_node(
             topic_config,
             cdn_cache: merged_config.cdn_cache,
             enable_dns: merged_config.enable_dns,
+            #[cfg(target_os = "linux")]
+            vsock_listen_port: merged_config.vsock_listen_port,
         };
         metrics.spawn(metrics_api_addr);
         let node = Arc::new(Mutex::new(Node::new(config).await?));
@@ -673,6 +687,8 @@ pub async fn run_node(
             topic_config,
             cdn_cache: merged_config.cdn_cache,
             enable_dns: merged_config.enable_dns,
+            #[cfg(target_os = "linux")]
+            vsock_listen_port: merged_config.vsock_listen_port,
         };
         let node = Arc::new(Mutex::new(Node::new(config).await?));
         let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
@@ -952,6 +968,8 @@ pub fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> Mer
         topic_config: cli_args.topic_config.or(file_config.topic_config),
         cdn_cache: cli_args.cdn_cache.or(file_config.cdn_cache),
         enable_dns: cli_args.enable_dns || file_config.enable_dns.unwrap_or(false),
+        #[cfg(target_os = "linux")]
+        vsock_listen_port: cli_args.vsock_listen_port.or(file_config.vsock_listen_port),
     }
 }
 
