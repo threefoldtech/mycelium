@@ -25,6 +25,9 @@ pub use tracked::Tracked;
 #[cfg(feature = "private-network")]
 pub mod tls;
 
+#[cfg(target_os = "linux")]
+pub mod vsock;
+
 /// Cost to add to the peer_link_cost for "local processing", when peers are connected over IPv6.
 ///
 /// The current peer link cost is calculated from a HELLO rtt. This is great to measure link
