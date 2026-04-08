@@ -145,6 +145,13 @@ Mycelium supports running a private network, in which you must know the network 
 and a PSK (pre shared key) to connect to nodes in the network. For more info, check
 out [the relevant docs](/docs/private_network.md).
 
+### Vsock transport (Linux)
+
+On Linux, mycelium can peer with another node over [vsock](https://man7.org/linux/man-pages/man7/vsock.7.html),
+a socket type that connects a virtual machine guest directly to its hypervisor host without
+requiring a network interface. This is useful for running mycelium inside a VM and connecting
+it to a node on the host. For more info, check out [the relevant docs](/docs/vsock.md).
+
 ## API
 
 The node starts an HTTP API, which by default listens on `localhost:8989`. A different
