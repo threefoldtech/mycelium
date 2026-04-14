@@ -59,7 +59,7 @@ fn create_tun_fd(tun_name: &str) -> Result<i32, std::io::Error> {
     ifr[16] = (flags & 0xff) as u8;
     ifr[17] = ((flags >> 8) & 0xff) as u8;
 
-    let ret = unsafe { libc::ioctl(fd, TUNSETIFF, ifr.as_ptr()) };
+    let ret = unsafe { libc::ioctl(fd, TUNSETIFF as i32, ifr.as_ptr()) };
     if ret < 0 {
         let err = std::io::Error::last_os_error();
         unsafe { libc::close(fd) };
@@ -119,7 +119,7 @@ impl NodeHandle {
                     Ok(fd) => fd,
                     Err(e) => {
                         error!("Failed to create TUN fd: {e}");
-                        let _ = result_tx.send(Err(NodeError::NodeCreate(Box::new(e))));
+                        let _ = result_tx.send(Err(NodeError::NodeCreate(e.to_string())));
                         return;
                     }
                 };
