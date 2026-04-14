@@ -8,10 +8,10 @@ name = "mycelium-android"
 path = "src/main.rs"
 
 [dependencies]
-mycelium           = { path = "../mycelium" }
-tokio              = { version = "1.50", features = ["rt-multi-thread"] }
-rsbinder           = "0.6"
-tracing            = { version = "0.1", features = ["release_max_level_debug"] }
+mycelium = { path = "../mycelium" }
+tokio = { version = "1.50", features = ["rt-multi-thread"] }
+rsbinder = { version = "0.6", features = ["android_14_plus"] }
+tracing = { version = "0.1", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
