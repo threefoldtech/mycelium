@@ -10,12 +10,35 @@ use service::MyceliumService;
 fn main() {
     setup_logging();
 
+    let args: Vec<String> = std::env::args().collect();
+    let key_file = args
+        .iter()
+        .position(|a| a == "--key-file")
+        .map(|i| args[i + 1].clone());
+    let peers: Vec<String> = args
+        .iter()
+        .position(|a| a == "--peers")
+        .map(|i| {
+            args[i + 1..]
+                .iter()
+                .take_while(|a| !a.starts_with("--"))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+
     rsbinder::ProcessState::init_default();
     rsbinder::ProcessState::start_thread_pool();
 
     let svc = MyceliumService::new();
 
-    // rsbinder-aidl generates BnXxx::new_binder(inner) for the native (server) side.
+    if let Some(path) = &key_file {
+        let key_data = std::fs::read(path).expect("failed to read key file");
+        use tech::threefold::mycelium::IMyceliumService::IMyceliumService;
+        svc.start(&peers, &key_data, false)
+            .expect("failed to start mycelium node");
+    }
+
     let binder = tech::threefold::mycelium::IMyceliumService::BnMyceliumService::new_binder(svc);
 
     service_manager::add_service(
