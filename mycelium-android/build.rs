@@ -14,6 +14,14 @@ fn main() {
         .generate()
         .unwrap();
 
+    let sm_output = out_dir.join("service_manager_a15.rs");
+    rsbinder_aidl::Builder::new()
+        .source("aidl/android/os/IServiceManager.aidl")
+        .output(&sm_output)
+        .generate()
+        .unwrap();
+    patch_async_compat(&sm_output);
+
     // rsbinder-aidl 0.6.0 generates async infrastructure that is incompatible with
     // async-trait ≥ 0.1.80 on Rust ≥ 1.75 (native AFIT makes async traits non-dyn-compatible).
     // We can't pin async-trait < 0.1.80 because mycelium requires ^0.1.89.

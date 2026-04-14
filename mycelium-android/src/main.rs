@@ -3,6 +3,7 @@ include!(concat!(env!("OUT_DIR"), "/mycelium_aidl.rs"));
 
 mod node;
 mod service;
+mod service_manager;
 
 use service::MyceliumService;
 
@@ -17,7 +18,7 @@ fn main() {
     // rsbinder-aidl generates BnXxx::new_binder(inner) for the native (server) side.
     let binder = tech::threefold::mycelium::IMyceliumService::BnMyceliumService::new_binder(svc);
 
-    rsbinder::hub::add_service(
+    service_manager::add_service(
         "tech.threefold.mycelium.IMyceliumService",
         binder.as_binder(),
     )
