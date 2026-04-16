@@ -48,6 +48,8 @@ pub struct Http {
 pub struct ServerState<M> {
     /// Access to the (`node`)(mycelium::Node) state.
     pub node: Arc<Mutex<mycelium::Node<M>>>,
+    /// Shared managed-network state for the `network.*` JSON-RPC namespace.
+    pub managed: std::sync::Arc<std::sync::Mutex<rpc::network::managed::ManagedState>>,
 }
 
 impl Http {
@@ -56,7 +58,8 @@ impl Http {
     where
         M: Metrics + Clone + Send + Sync + 'static,
     {
-        let server_state = ServerState { node };
+        let managed = rpc::network::managed::ManagedState::new_shared();
+        let server_state = ServerState { node, managed };
         let admin_routes = Router::new()
             .route("/admin", get(get_info))
             .route("/admin/peers", get(get_peers).post(add_peer))

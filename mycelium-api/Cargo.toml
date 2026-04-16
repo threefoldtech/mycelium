@@ -33,5 +33,11 @@ mycelium-metrics = { path = "../mycelium-metrics", features = ["prometheus"] }
 serde = { version = "1.0.228", features = ["derive"] }
 async-trait = "0.1.89"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rtnetlink = "0.20.0"
+netlink-packet-route = "0.28"
+futures = "0.3"
+libc = "0.2"
+
 [dev-dependencies]
 serde_json = "1.0.149"

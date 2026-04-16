@@ -1,8 +1,11 @@
 //! JSON-RPC API implementation for Mycelium
 
 mod spec;
+pub mod network;
 pub mod unix;
 pub use unix::JsonRpcUnix;
+
+// TODO: expose network.* over TCP jsonrpsee in a follow-up
 
 use std::net::{Ipv6Addr, SocketAddr};
 #[cfg(feature = "message")]
@@ -761,7 +764,8 @@ impl JsonRpc {
     {
         debug!(%listen_addr, "Starting JSON-RPC server");
 
-        let server_state = Arc::new(ServerState { node });
+        let managed = crate::rpc::network::managed::ManagedState::new_shared();
+        let server_state = Arc::new(ServerState { node, managed });
 
         // Create the server builder
         let server = ServerBuilder::default()

@@ -55,7 +55,11 @@ impl Drop for JsonRpcUnix {
 ///
 /// Removes any stale socket file, creates parent directories, binds the
 /// listener, and serves HTTP in a background task.
-pub async fn spawn<M>(node: Arc<Mutex<mycelium::Node<M>>>, socket_path: PathBuf) -> JsonRpcUnix
+pub async fn spawn<M>(
+    node: Arc<Mutex<mycelium::Node<M>>>,
+    socket_path: PathBuf,
+    managed: std::sync::Arc<std::sync::Mutex<crate::rpc::network::managed::ManagedState>>,
+) -> JsonRpcUnix
 where
     M: Metrics + Clone + Send + Sync + 'static,
 {
@@ -77,7 +81,7 @@ where
         }
     };
 
-    let state: Arc<ServerState<M>> = Arc::new(ServerState { node });
+    let state: Arc<ServerState<M>> = Arc::new(ServerState { node, managed });
 
     let app = Router::new()
         .route("/rpc", post(rpc_handler::<M>))
@@ -292,6 +296,48 @@ fn str_param(params: &Option<Value>, pos: usize, key: &str) -> Option<String> {
 /// Extract an optional SocketAddr from params[pos] or params[key].
 fn opt_socket_addr_param(params: &Option<Value>, pos: usize, key: &str) -> Option<SocketAddr> {
     str_param(params, pos, key).and_then(|s| s.parse().ok())
+}
+
+/// Extract an optional boolean from params[pos] or params[key].
+fn opt_bool_param(params: &Option<Value>, pos: usize, key: &str) -> Option<bool> {
+    match params.as_ref()? {
+        Value::Array(a) => a.get(pos)?.as_bool(),
+        Value::Object(o) => o.get(key)?.as_bool(),
+        _ => None,
+    }
+}
+
+/// Extract an optional u32 from params[pos] or params[key].
+fn opt_u32_param(params: &Option<Value>, pos: usize, key: &str) -> Option<u32> {
+    match params.as_ref()? {
+        Value::Array(a) => a.get(pos)?.as_u64().and_then(|v| u32::try_from(v).ok()),
+        Value::Object(o) => o.get(key)?.as_u64().and_then(|v| u32::try_from(v).ok()),
+        _ => None,
+    }
+}
+
+/// Extract an optional u8 from params[pos] or params[key].
+fn opt_u8_param(params: &Option<Value>, pos: usize, key: &str) -> Option<u8> {
+    match params.as_ref()? {
+        Value::Array(a) => a.get(pos)?.as_u64().and_then(|v| u8::try_from(v).ok()),
+        Value::Object(o) => o.get(key)?.as_u64().and_then(|v| u8::try_from(v).ok()),
+        _ => None,
+    }
+}
+
+/// Extract an optional Vec<String> from params[key] (or params[pos] if array).
+fn opt_str_vec_param(params: &Option<Value>, pos: usize, key: &str) -> Option<Vec<String>> {
+    let v = match params.as_ref()? {
+        Value::Array(a) => a.get(pos)?,
+        Value::Object(o) => o.get(key)?,
+        _ => return None,
+    };
+    let arr = v.as_array()?;
+    Some(
+        arr.iter()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -813,6 +859,190 @@ where
             };
             state.node.lock().await.delete_topic_forward_socket(topic_bytes);
             RpcResp::ok(id, json!(true))
+        }
+
+        // ── Network (Linux) ──────────────────────────────────────────────────
+        "network.getStatus" => {
+            match crate::rpc::network::imp::get_status(state.managed.clone()).await {
+                Ok(s) => RpcResp::ok(id, serde_json::to_value(s).unwrap_or(Value::Null)),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.listBridges" => {
+            let managed_only = opt_bool_param(&req.params, 0, "managed_only").unwrap_or(false);
+            let include_addresses =
+                opt_bool_param(&req.params, 1, "include_addresses").unwrap_or(false);
+            let include_ports =
+                opt_bool_param(&req.params, 2, "include_ports").unwrap_or(false);
+            match crate::rpc::network::imp::list_bridges(
+                state.managed.clone(),
+                include_addresses,
+                include_ports,
+                managed_only,
+            )
+            .await
+            {
+                Ok(bs) => RpcResp::ok(id, json!({ "bridges": bs })),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.ensureBridge" => {
+            let name = match str_param(&req.params, 0, "name") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'name'"),
+            };
+            let up = opt_bool_param(&req.params, 1, "up").unwrap_or(true);
+            let mtu = opt_u32_param(&req.params, 2, "mtu");
+            match crate::rpc::network::imp::ensure_bridge(state.managed.clone(), name, up, mtu)
+                .await
+            {
+                Ok((b, created)) => RpcResp::ok(id, json!({ "bridge": b, "created": created })),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.deleteBridge" => {
+            let name = match str_param(&req.params, 0, "name") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'name'"),
+            };
+            let only_if_empty =
+                opt_bool_param(&req.params, 1, "only_if_empty").unwrap_or(false);
+            match crate::rpc::network::imp::delete_bridge(
+                state.managed.clone(),
+                name,
+                only_if_empty,
+            )
+            .await
+            {
+                Ok(deleted) => RpcResp::ok(id, json!({ "deleted": deleted })),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.listAddresses" => {
+            let interface = str_param(&req.params, 0, "interface");
+            let bridge_only = opt_bool_param(&req.params, 1, "bridge_only").unwrap_or(false);
+            let mycelium_only =
+                opt_bool_param(&req.params, 2, "mycelium_only").unwrap_or(false);
+            let managed_only = opt_bool_param(&req.params, 3, "managed_only").unwrap_or(false);
+            match crate::rpc::network::imp::list_addresses(
+                state.managed.clone(),
+                interface,
+                bridge_only,
+                mycelium_only,
+                managed_only,
+            )
+            .await
+            {
+                Ok(list) => RpcResp::ok(id, json!({ "addresses": list })),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.addAddress" => {
+            let interface = match str_param(&req.params, 0, "interface") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'interface'"),
+            };
+            let address_str = match str_param(&req.params, 1, "address") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'address'"),
+            };
+            let prefix_override = opt_u8_param(&req.params, 2, "prefix_len");
+            let activate_listener =
+                opt_bool_param(&req.params, 3, "activate_listener").unwrap_or(true);
+
+            let (ip, parsed_prefix) =
+                match crate::rpc::network::imp::parse_address_with_prefix(&address_str, None) {
+                    Ok(v) => v,
+                    Err(e) => return RpcResp::err(id, e.code(), e.message()),
+                };
+            let prefix = prefix_override.or(parsed_prefix).unwrap_or(64);
+
+            match crate::rpc::network::imp::add_address(
+                state.managed.clone(),
+                interface,
+                ip,
+                prefix,
+                activate_listener,
+            )
+            .await
+            {
+                Ok((iface, addr, plen, managed, listener_activated)) => RpcResp::ok(
+                    id,
+                    json!({
+                        "interface": iface,
+                        "address": addr,
+                        "prefix_len": plen,
+                        "managed": managed,
+                        "listener_activated": listener_activated,
+                    }),
+                ),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.removeAddress" => {
+            let interface = match str_param(&req.params, 0, "interface") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'interface'"),
+            };
+            let address = match str_param(&req.params, 1, "address") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'address'"),
+            };
+            match crate::rpc::network::imp::remove_address(
+                state.managed.clone(),
+                interface,
+                address,
+            )
+            .await
+            {
+                Ok((removed, listener_removed)) => RpcResp::ok(
+                    id,
+                    json!({ "removed": removed, "listener_removed": listener_removed }),
+                ),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.getListeners" => {
+            match crate::rpc::network::imp::get_listeners(state.managed.clone()).await {
+                Ok((policy, listeners)) => {
+                    RpcResp::ok(id, json!({ "policy": policy, "listeners": listeners }))
+                }
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
+        }
+
+        "network.setListenerPolicy" => {
+            use crate::rpc::network::models::ListenerPolicy;
+            let policy_str = match str_param(&req.params, 0, "policy") {
+                Some(s) => s,
+                None => return RpcResp::invalid_params(id, "missing 'policy'"),
+            };
+            let policy = match policy_str.as_str() {
+                "all_mycelium_addresses" => ListenerPolicy::AllMyceliumAddresses,
+                "all_managed_addresses" => ListenerPolicy::AllManagedAddresses,
+                "explicit_only" => ListenerPolicy::ExplicitOnly,
+                other => {
+                    return RpcResp::invalid_params(id, &format!("unknown policy: {other}"))
+                }
+            };
+            let explicit = opt_str_vec_param(&req.params, 1, "explicit_addresses");
+            match crate::rpc::network::imp::set_listener_policy(
+                state.managed.clone(),
+                policy,
+                explicit,
+            )
+            .await
+            {
+                Ok(p) => RpcResp::ok(id, json!({ "policy": p, "listeners_reloaded": true })),
+                Err(e) => RpcResp::err(id, e.code(), e.message()),
+            }
         }
 
         _ => RpcResp::method_not_found(id),

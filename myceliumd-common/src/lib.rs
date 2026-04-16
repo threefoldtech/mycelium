@@ -678,7 +678,13 @@ pub async fn run_node(
         };
         metrics.spawn(metrics_api_addr);
         let node = Arc::new(Mutex::new(Node::new(config).await?));
-        let unix_rpc = mycelium_api::rpc::unix::spawn(node.clone(), merged_config.rpc_socket_path.clone()).await;
+        let managed = mycelium_api::rpc::network::managed::ManagedState::new_shared();
+        let unix_rpc = mycelium_api::rpc::unix::spawn(
+            node.clone(),
+            merged_config.rpc_socket_path.clone(),
+            managed.clone(),
+        )
+        .await;
 
         let _legacy = if !merged_config.uds_only {
             let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
@@ -714,7 +720,13 @@ pub async fn run_node(
             vsock_listen_port: merged_config.vsock_listen_port,
         };
         let node = Arc::new(Mutex::new(Node::new(config).await?));
-        let unix_rpc = mycelium_api::rpc::unix::spawn(node.clone(), merged_config.rpc_socket_path).await;
+        let managed = mycelium_api::rpc::network::managed::ManagedState::new_shared();
+        let unix_rpc = mycelium_api::rpc::unix::spawn(
+            node.clone(),
+            merged_config.rpc_socket_path,
+            managed.clone(),
+        )
+        .await;
 
         let _legacy = if !merged_config.uds_only {
             let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);

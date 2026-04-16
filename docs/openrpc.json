@@ -1,7 +1,7 @@
 {
   "openrpc": "1.2.6",
   "info": {
-    "version": "0.7.5",
+    "version": "0.7.6",
     "title": "Mycelium JSON-RPC API",
     "description": "This is the specification of the Mycelium JSON-RPC API. It is used to perform admin tasks on the system, and to perform administrative duties.",
     "contact": {
@@ -951,6 +951,464 @@
           "$ref": "#/components/schemas/PacketStatistics"
         }
       }
+    },
+    {
+      "name": "network.getStatus",
+      "summary": "Get network management status",
+      "description": "Return a high-level snapshot of the host's network management state as seen by the mycelium daemon. Reports the platform, current listener policy, whether bridge and address management are supported on this platform, and counts of bridges, managed bridges, mycelium addresses (IPv6 in 400::/7) and currently active listeners.",
+      "tags": [{ "name": "Network" }],
+      "params": [],
+      "result": {
+        "name": "status",
+        "description": "Network management status",
+        "schema": {
+          "$ref": "#/components/schemas/NetworkStatus"
+        }
+      }
+    },
+    {
+      "name": "network.listBridges",
+      "summary": "List bridges known to the host",
+      "description": "List Linux bridges discovered on the host. By default all bridges are returned; set `managed_only` to true to restrict the result to bridges created or tracked by mycelium. The `include_addresses` and `include_ports` flags control whether per-bridge address and port lists are populated.",
+      "tags": [{ "name": "Network" }, { "name": "Bridge" }],
+      "params": [
+        {
+          "name": "managed_only",
+          "description": "If true, only return bridges created or tracked by mycelium. Defaults to false.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "name": "include_addresses",
+          "description": "If true, include the list of addresses on each bridge. Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "name": "include_ports",
+          "description": "If true, include the list of enslaved ports on each bridge. Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      ],
+      "result": {
+        "name": "bridges",
+        "description": "List of bridges",
+        "schema": {
+          "type": "object",
+          "required": ["bridges"],
+          "properties": {
+            "bridges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/BridgeInfo"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "network.ensureBridge",
+      "summary": "Ensure a bridge exists",
+      "description": "Ensure that a bridge with the given name exists on the host. If the bridge does not exist it is created; if it already exists, no error is raised. The `up` flag (default true) indicates whether the bridge should be brought up after creation. The `mtu` parameter sets the MTU for the bridge (default 1500). The response indicates whether the bridge was newly created.",
+      "tags": [{ "name": "Network" }, { "name": "Bridge" }],
+      "params": [
+        {
+          "name": "name",
+          "description": "The name of the bridge to ensure",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "up",
+          "description": "If true, bring the bridge up after ensuring it exists. Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "name": "mtu",
+          "description": "MTU to set on the bridge. Defaults to 1500.",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "default": 1500
+          }
+        }
+      ],
+      "result": {
+        "name": "bridge",
+        "description": "The ensured bridge and whether it was newly created",
+        "schema": {
+          "type": "object",
+          "required": ["bridge", "created"],
+          "properties": {
+            "bridge": {
+              "$ref": "#/components/schemas/BridgeInfo"
+            },
+            "created": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 1002,
+          "message": "permission_denied"
+        },
+        {
+          "code": 1103,
+          "message": "invalid_bridge_name"
+        },
+        {
+          "code": 1900,
+          "message": "internal_error"
+        }
+      ]
+    },
+    {
+      "name": "network.deleteBridge",
+      "summary": "Delete a bridge",
+      "description": "Delete a Linux bridge by name. When `only_if_empty` is true (the default) the bridge is only deleted if it has no enslaved ports; otherwise the call returns an error.",
+      "tags": [{ "name": "Network" }, { "name": "Bridge" }],
+      "params": [
+        {
+          "name": "name",
+          "description": "The name of the bridge to delete",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "only_if_empty",
+          "description": "If true, only delete the bridge when it has no enslaved ports. Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Whether the bridge was deleted",
+        "schema": {
+          "type": "object",
+          "required": ["deleted"],
+          "properties": {
+            "deleted": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 1101,
+          "message": "bridge_not_found"
+        },
+        {
+          "code": 1102,
+          "message": "bridge_not_empty"
+        },
+        {
+          "code": 1002,
+          "message": "permission_denied"
+        }
+      ]
+    },
+    {
+      "name": "network.listAddresses",
+      "summary": "List addresses on interfaces",
+      "description": "List IP addresses visible to the mycelium daemon. By default only mycelium IPv6 addresses (in 400::/7) on bridges are returned. Use `interface` to restrict the listing to a single interface, and the `bridge_only`, `mycelium_only` and `managed_only` flags to narrow the scope further.",
+      "tags": [{ "name": "Network" }, { "name": "Address" }],
+      "params": [
+        {
+          "name": "interface",
+          "description": "If set, restrict the listing to this interface name. Null to return addresses across all interfaces.",
+          "required": false,
+          "schema": {
+            "type": ["string", "null"]
+          }
+        },
+        {
+          "name": "bridge_only",
+          "description": "If true, only include addresses on bridge interfaces. Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "name": "mycelium_only",
+          "description": "If true, only include mycelium IPv6 addresses (in 400::/7). Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "name": "managed_only",
+          "description": "If true, only include addresses managed by mycelium. Defaults to false.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      ],
+      "result": {
+        "name": "addresses",
+        "description": "List of addresses matching the filter",
+        "schema": {
+          "type": "object",
+          "required": ["addresses"],
+          "properties": {
+            "addresses": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/AddressInfo"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "network.addAddress",
+      "summary": "Add an address to an interface",
+      "description": "Add an IPv6 address to the given bridge interface and, optionally, activate a mycelium listener on it. Validation rules: this method is only supported on Linux; the target interface must exist and be a bridge; the address must be an IPv6 address in 400::/7; the address must not already be configured on the interface (no duplicates). When `activate_listener` is true (the default) the daemon attempts to (re)activate a listener on the new address according to the current listener policy.",
+      "tags": [{ "name": "Network" }, { "name": "Address" }],
+      "params": [
+        {
+          "name": "interface",
+          "description": "Name of the bridge interface to add the address to",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "address",
+          "description": "IPv6 address to add (no prefix). Must lie in 400::/7.",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "prefix_len",
+          "description": "Prefix length for the address. Defaults to 64.",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 128,
+            "default": 64
+          }
+        },
+        {
+          "name": "activate_listener",
+          "description": "If true, activate a mycelium listener on the new address. Defaults to true.",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      ],
+      "result": {
+        "name": "added",
+        "description": "Details about the added address",
+        "schema": {
+          "type": "object",
+          "required": ["interface", "address", "prefix_len", "managed", "listener_activated"],
+          "properties": {
+            "interface": {
+              "type": "string"
+            },
+            "address": {
+              "type": "string"
+            },
+            "prefix_len": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "listener_activated": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 1201,
+          "message": "interface_not_found"
+        },
+        {
+          "code": 1202,
+          "message": "interface_not_bridge"
+        },
+        {
+          "code": 1203,
+          "message": "invalid_address"
+        },
+        {
+          "code": 1204,
+          "message": "address_out_of_range"
+        },
+        {
+          "code": 1205,
+          "message": "address_already_exists"
+        },
+        {
+          "code": 1002,
+          "message": "permission_denied"
+        }
+      ]
+    },
+    {
+      "name": "network.removeAddress",
+      "summary": "Remove an address from an interface",
+      "description": "Remove an IPv6 address from the given interface. If a mycelium listener is currently bound to the address it is torn down as part of the operation.",
+      "tags": [{ "name": "Network" }, { "name": "Address" }],
+      "params": [
+        {
+          "name": "interface",
+          "description": "Name of the interface to remove the address from",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "address",
+          "description": "IPv6 address to remove (no prefix)",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "removed",
+        "description": "Whether the address and any bound listener were removed",
+        "schema": {
+          "type": "object",
+          "required": ["removed", "listener_removed"],
+          "properties": {
+            "removed": {
+              "type": "boolean"
+            },
+            "listener_removed": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": 1201,
+          "message": "interface_not_found"
+        },
+        {
+          "code": 1206,
+          "message": "address_not_found"
+        }
+      ]
+    },
+    {
+      "name": "network.getListeners",
+      "summary": "Get active mycelium listeners",
+      "description": "Return the current listener policy and the list of mycelium listeners the daemon considers active. Each listener records the interface, address, port, source (how the listener was discovered), and whether it is currently bound.",
+      "tags": [{ "name": "Network" }, { "name": "Listener" }],
+      "params": [],
+      "result": {
+        "name": "listeners",
+        "description": "Current listener policy and list of listeners",
+        "schema": {
+          "type": "object",
+          "required": ["policy", "listeners"],
+          "properties": {
+            "policy": {
+              "type": "string"
+            },
+            "listeners": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ListenerInfo"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "network.setListenerPolicy",
+      "summary": "Set the listener policy",
+      "description": "Set the policy that controls which addresses the mycelium daemon binds listeners on. Supported policies are `all_mycelium_addresses` (bind every detected mycelium IPv6 address), `all_managed_addresses` (bind only mycelium-managed addresses), and `explicit_only` (bind only the addresses provided in `explicit_addresses`). When switching policy the daemon reloads its listener set and reports whether a reload occurred.",
+      "tags": [{ "name": "Network" }, { "name": "Listener" }],
+      "params": [
+        {
+          "name": "policy",
+          "description": "The listener policy to apply",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListenerPolicy"
+          }
+        },
+        {
+          "name": "explicit_addresses",
+          "description": "When policy is `explicit_only`, the list of addresses listeners should be bound to.",
+          "required": false,
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "The applied policy and whether listeners were reloaded",
+        "schema": {
+          "type": "object",
+          "required": ["policy", "listeners_reloaded"],
+          "properties": {
+            "policy": {
+              "$ref": "#/components/schemas/ListenerPolicy"
+            },
+            "listeners_reloaded": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
     }
   ],
   "components": {
@@ -1333,6 +1791,61 @@
             }
           }
         ]
+      },
+      "BridgeInfo": {
+        "type": "object",
+        "required": ["name", "ifindex", "state", "managed", "ports", "addresses"],
+        "properties": {
+          "name": {"type": "string"},
+          "ifindex": {"type": "integer", "minimum": 0},
+          "state": {"type": "string", "enum": ["up", "down", "unknown"]},
+          "managed": {"type": "boolean"},
+          "ports": {"type": "array", "items": {"type": "string"}},
+          "addresses": {"type": "array", "items": {"$ref": "#/components/schemas/AddressInfo"}}
+        }
+      },
+      "AddressInfo": {
+        "type": "object",
+        "required": ["interface", "ifindex", "address", "prefix_len", "scope", "family", "managed", "active_listener"],
+        "properties": {
+          "interface": {"type": "string"},
+          "ifindex": {"type": "integer"},
+          "address": {"type": "string", "description": "IPv6 address (no prefix)"},
+          "prefix_len": {"type": "integer", "minimum": 0, "maximum": 128},
+          "scope": {"type": "string"},
+          "family": {"type": "string", "enum": ["inet6", "inet"]},
+          "managed": {"type": "boolean"},
+          "active_listener": {"type": "boolean"}
+        }
+      },
+      "ListenerInfo": {
+        "type": "object",
+        "required": ["interface", "address", "port", "source", "active"],
+        "properties": {
+          "interface": {"type": "string"},
+          "address": {"type": "string"},
+          "port": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "source": {"type": "string", "description": "How this listener was detected (kernel_address_scan, explicit, managed)"},
+          "active": {"type": "boolean"}
+        }
+      },
+      "NetworkStatus": {
+        "type": "object",
+        "required": ["platform", "listener_policy", "supports_bridge_management", "supports_address_management", "bridges", "managed_bridges", "mycelium_addresses", "active_listeners"],
+        "properties": {
+          "platform": {"type": "string"},
+          "listener_policy": {"$ref": "#/components/schemas/ListenerPolicy"},
+          "supports_bridge_management": {"type": "boolean"},
+          "supports_address_management": {"type": "boolean"},
+          "bridges": {"type": "integer", "minimum": 0},
+          "managed_bridges": {"type": "integer", "minimum": 0},
+          "mycelium_addresses": {"type": "integer", "minimum": 0},
+          "active_listeners": {"type": "integer", "minimum": 0}
+        }
+      },
+      "ListenerPolicy": {
+        "type": "string",
+        "enum": ["all_mycelium_addresses", "all_managed_addresses", "explicit_only"]
       }
     }
   }
