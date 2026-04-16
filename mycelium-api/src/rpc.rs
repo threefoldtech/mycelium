@@ -1,6 +1,8 @@
 //! JSON-RPC API implementation for Mycelium
 
 mod spec;
+pub mod unix;
+pub use unix::JsonRpcUnix;
 
 use std::net::{Ipv6Addr, SocketAddr};
 #[cfg(feature = "message")]

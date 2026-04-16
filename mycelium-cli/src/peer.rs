@@ -1,66 +1,52 @@
 use mycelium::peer_manager::PeerStats;
-use mycelium_api::AddPeer;
 use prettytable::{row, Table};
-use std::net::SocketAddr;
-use tracing::{debug, error};
+use std::path::Path;
+use tracing::error;
+
+use crate::rpc_client::rpc_call;
 
 /// List the peers the current node is connected to
 pub async fn list_peers(
-    server_addr: SocketAddr,
+    socket_path: &Path,
     json_print: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Make API call
-    let request_url = format!("http://{server_addr}/api/v1/admin/peers");
-    match reqwest::get(&request_url).await {
-        Err(e) => {
-            error!("Failed to retrieve peers");
-            return Err(e.into());
+    let result = rpc_call(socket_path, "getPeers", serde_json::json!({})).await?;
+
+    if json_print {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        let peers: Vec<PeerStats> = serde_json::from_value(result).map_err(|e| {
+            error!("Failed to parse peers response: {e}");
+            e
+        })?;
+
+        let mut table = Table::new();
+        table.add_row(row![
+            "Protocol",
+            "Socket",
+            "Type",
+            "Connection",
+            "Rx total",
+            "Tx total",
+            "Discovered",
+            "Last connection"
+        ]);
+        for peer in peers.iter() {
+            table.add_row(row![
+                peer.endpoint.proto(),
+                peer.endpoint.address(),
+                peer.pt,
+                peer.connection_state,
+                format_bytes(peer.rx_bytes),
+                format_bytes(peer.tx_bytes),
+                format_seconds(peer.discovered),
+                peer.last_connected
+                    .map(format_seconds)
+                    .unwrap_or("Never connected".to_string()),
+            ]);
         }
-        Ok(resp) => {
-            debug!("Listing connected peers");
-            match resp.json::<Vec<PeerStats>>().await {
-                Err(e) => {
-                    error!("Failed to load response json: {e}");
-                    return Err(e.into());
-                }
-                Ok(peers) => {
-                    if json_print {
-                        // Print peers in JSON format
-                        let json_output = serde_json::to_string_pretty(&peers)?;
-                        println!("{json_output}");
-                    } else {
-                        // Print peers in table format
-                        let mut table = Table::new();
-                        table.add_row(row![
-                            "Protocol",
-                            "Socket",
-                            "Type",
-                            "Connection",
-                            "Rx total",
-                            "Tx total",
-                            "Discovered",
-                            "Last connection"
-                        ]);
-                        for peer in peers.iter() {
-                            table.add_row(row![
-                                peer.endpoint.proto(),
-                                peer.endpoint.address(),
-                                peer.pt,
-                                peer.connection_state,
-                                format_bytes(peer.rx_bytes),
-                                format_bytes(peer.tx_bytes),
-                                format_seconds(peer.discovered),
-                                peer.last_connected
-                                    .map(format_seconds)
-                                    .unwrap_or("Never connected".to_string()),
-                            ]);
-                        }
-                        table.printstd();
-                    }
-                }
-            }
-        }
-    };
+        table.printstd();
+    }
 
     Ok(())
 }
@@ -95,47 +81,40 @@ fn format_seconds(total_seconds: u64) -> String {
 
 /// Remove peer(s) by (underlay) IP
 pub async fn remove_peers(
-    server_addr: SocketAddr,
+    socket_path: &Path,
     peers: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
     for peer in peers.iter() {
-        // encode to pass in URL
-        let peer_encoded = urlencoding::encode(peer);
-        let request_url = format!("http://{server_addr}/api/v1/admin/peers/{peer_encoded}");
-        if let Err(e) = client
-            .delete(&request_url)
-            .send()
-            .await
-            .and_then(|res| res.error_for_status())
-        {
-            error!("Failed to delete peer: {e}");
-            return Err(e.into());
-        }
+        rpc_call(
+            socket_path,
+            "deletePeer",
+            serde_json::json!({ "endpoint": peer }),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to delete peer {peer}: {e}");
+            e
+        })?;
     }
-
     Ok(())
 }
 
 /// Add peer(s) by (underlay) IP
 pub async fn add_peers(
-    server_addr: SocketAddr,
+    socket_path: &Path,
     peers: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
     for peer in peers.into_iter() {
-        let request_url = format!("http://{server_addr}/api/v1/admin/peers");
-        if let Err(e) = client
-            .post(&request_url)
-            .json(&AddPeer { endpoint: peer })
-            .send()
-            .await
-            .and_then(|res| res.error_for_status())
-        {
-            error!("Failed to add peer: {e}");
-            return Err(e.into());
-        }
+        rpc_call(
+            socket_path,
+            "addPeer",
+            serde_json::json!({ "endpoint": peer }),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to add peer {peer}: {e}");
+            e
+        })?;
     }
-
     Ok(())
 }

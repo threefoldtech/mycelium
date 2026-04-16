@@ -2111,6 +2111,10 @@ version = "0.7.5"
 dependencies = [
  "base64",
  "byte-unit",
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "mycelium",
  "mycelium-api",
  "prettytable-rs",

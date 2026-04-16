@@ -1,128 +1,99 @@
 use prettytable::{row, Table};
 use std::net::{Ipv6Addr, SocketAddr};
-use tracing::{debug, error};
+use std::path::Path;
+use tracing::error;
 
-#[derive(serde::Serialize)]
-struct ConnectProxyRequest {
-    remote: Option<String>,
-}
+use crate::rpc_client::rpc_call;
 
 /// List known valid proxy IPv6 addresses discovered by the node.
 pub async fn list_proxies(
-    server_addr: SocketAddr,
+    socket_path: &Path,
     json_print: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request_url = format!("http://{server_addr}/api/v1/admin/proxy");
-    match reqwest::get(&request_url).await {
-        Err(e) => {
-            error!("Failed to retrieve proxies");
-            return Err(e.into());
+    let result = rpc_call(socket_path, "getProxies", serde_json::json!({})).await?;
+
+    if json_print {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        let proxies: Vec<Ipv6Addr> = serde_json::from_value(result).map_err(|e| {
+            error!("Failed to parse proxies response: {e}");
+            e
+        })?;
+        let mut table = Table::new();
+        table.add_row(row!["IPv6 Address"]);
+        for ip in proxies {
+            table.add_row(row![ip]);
         }
-        Ok(resp) => {
-            debug!("Listing known proxies");
-            if json_print {
-                let body = resp.text().await?;
-                println!("{body}");
-            } else {
-                let proxies: Vec<Ipv6Addr> = resp.json().await?;
-                let mut table = Table::new();
-                table.add_row(row!["IPv6 Address"]);
-                for ip in proxies {
-                    table.add_row(row![ip]);
-                }
-                table.printstd();
-            }
-        }
+        table.printstd();
     }
+
     Ok(())
 }
 
 /// Connect to a proxy. When `remote` is None, the node will auto-select the best known proxy.
 pub async fn connect_proxy(
-    server_addr: SocketAddr,
+    socket_path: &Path,
     remote: Option<SocketAddr>,
     json_print: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let request_url = format!("http://{server_addr}/api/v1/admin/proxy");
-    let payload = ConnectProxyRequest {
-        remote: remote.map(|r| r.to_string()),
+    let params = if let Some(addr) = remote {
+        serde_json::json!({ "remote": addr.to_string() })
+    } else {
+        serde_json::json!({})
     };
 
-    let res = client.post(&request_url).json(&payload).send().await;
-    match res {
-        Err(e) => {
-            error!("Failed to send connect proxy request: {e}");
-            Err(e.into())
-        }
-        Ok(resp) => {
-            if resp.status().is_success() {
-                if json_print {
-                    let body = resp.text().await?;
-                    println!("{body}");
-                } else {
-                    let addr: SocketAddr = resp.json().await?;
-                    println!("{addr}");
-                }
-                Ok(())
-            } else if resp.status().as_u16() == 404 {
-                error!("No valid proxy available or connection failed");
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "No valid proxy available or connection failed",
-                )
-                .into())
-            } else {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                error!("Proxy connect failed, status {status}, body: {body}");
-                Err(std::io::Error::other(format!("HTTP {status}")).into())
-            }
+    let result = rpc_call(socket_path, "connectProxy", params).await.map_err(|e| {
+        error!("Failed to send connect proxy request: {e}");
+        e
+    })?;
+
+    if json_print {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        // result is the connected proxy address as a string or null
+        if result.is_null() {
+            println!("No proxy connected");
+        } else {
+            let addr_str = result
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| result.to_string());
+            println!("{addr_str}");
         }
     }
+
+    Ok(())
 }
 
 /// Disconnect from the current proxy, if any.
-pub async fn disconnect_proxy(server_addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let request_url = format!("http://{server_addr}/api/v1/admin/proxy");
-    if let Err(e) = client
-        .delete(&request_url)
-        .send()
+pub async fn disconnect_proxy(socket_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    rpc_call(socket_path, "disconnectProxy", serde_json::json!({}))
         .await
-        .and_then(|r| r.error_for_status())
-    {
-        error!("Failed to disconnect proxy: {e}");
-        return Err(e.into());
-    }
+        .map_err(|e| {
+            error!("Failed to disconnect proxy: {e}");
+            e
+        })?;
     Ok(())
 }
 
 /// Start background probing for proxies.
-pub async fn start_proxy_probe(server_addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let request_url = format!("http://{server_addr}/api/v1/admin/proxy/probe");
-    if let Err(e) = reqwest::get(&request_url)
+pub async fn start_proxy_probe(socket_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    rpc_call(socket_path, "startProxyProbe", serde_json::json!({}))
         .await
-        .and_then(|r| r.error_for_status())
-    {
-        error!("Failed to start proxy probe: {e}");
-        return Err(e.into());
-    }
+        .map_err(|e| {
+            error!("Failed to start proxy probe: {e}");
+            e
+        })?;
     Ok(())
 }
 
 /// Stop background probing for proxies.
-pub async fn stop_proxy_probe(server_addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let request_url = format!("http://{server_addr}/api/v1/admin/proxy/probe");
-    if let Err(e) = client
-        .delete(&request_url)
-        .send()
+pub async fn stop_proxy_probe(socket_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    rpc_call(socket_path, "stopProxyProbe", serde_json::json!({}))
         .await
-        .and_then(|r| r.error_for_status())
-    {
-        error!("Failed to stop proxy probe: {e}");
-        return Err(e.into());
-    }
+        .map_err(|e| {
+            error!("Failed to stop proxy probe: {e}");
+            e
+        })?;
     Ok(())
 }

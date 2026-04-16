@@ -1,7 +1,7 @@
 {
   "openrpc": "1.2.6",
   "info": {
-    "version": "1.0.0",
+    "version": "0.7.5",
     "title": "Mycelium JSON-RPC API",
     "description": "This is the specification of the Mycelium JSON-RPC API. It is used to perform admin tasks on the system, and to perform administrative duties.",
     "contact": {
@@ -14,8 +14,12 @@
   },
   "servers": [
     {
+      "url": "unix://${HERO_SOCKET_DIR:-${HOME}/hero/var/sockets}/mycelium/rpc.sock",
+      "name": "Mycelium JSON-RPC API (Hero Unix socket)"
+    },
+    {
       "url": "http://localhost:8990",
-      "name": "Mycelium JSON-RPC API"
+      "name": "Mycelium JSON-RPC API (legacy TCP — kept for backwards compatibility)"
     }
   ],
   "methods": [
@@ -92,11 +96,11 @@
       },
       "errors": [
         {
-          "code": 400,
+          "code": -32009,
           "message": "Malformed endpoint"
         },
         {
-          "code": 409,
+          "code": -32010,
           "message": "Peer already exists"
         }
       ]
@@ -132,11 +136,11 @@
       },
       "errors": [
         {
-          "code": 400,
+          "code": -32012,
           "message": "Malformed endpoint"
         },
         {
-          "code": 404,
+          "code": -32011,
           "message": "Peer doesn't exist"
         }
       ]
@@ -255,22 +259,25 @@
       ],
       "result": {
         "name": "message",
-        "description": "The retrieved message",
+        "description": "The retrieved message, or null if no message was ready before the timeout expired",
         "schema": {
-          "$ref": "#/components/schemas/InboundMessage"
+          "oneOf": [
+            { "$ref": "#/components/schemas/InboundMessage" },
+            { "type": "null" }
+          ]
         }
       },
       "errors": [
         {
-          "code": 204,
-          "message": "No message ready"
+          "code": -32013,
+          "message": "Invalid base64 encoded topic"
         }
       ]
     },
     {
       "name": "pushMessage",
       "summary": "Submit a new message to the system",
-      "description": "Push a new message to the systems outbound message queue. The system will continuously attempt to send the message until it is either fully transmitted, or the send deadline is expired.",
+      "description": "Push a new message to the systems outbound message queue. The system will continuously attempt to send the message until it is either fully transmitted, or the send deadline is expired. If `reply_timeout` is set and a reply arrives in time, the reply is returned; if it does not arrive in time, the message ID is returned (no error is raised).",
       "tags": [
         {
           "name": "Message"
@@ -312,8 +319,16 @@
       },
       "errors": [
         {
-          "code": 408,
-          "message": "The system timed out waiting for a reply to the message"
+          "code": -32015,
+          "message": "Failed to push message"
+        },
+        {
+          "code": -32016,
+          "message": "Internal: reply subscription returned no value"
+        },
+        {
+          "code": -32017,
+          "message": "Internal: reply subscription sender dropped"
         }
       ]
     },
@@ -353,7 +368,13 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32018,
+          "message": "Invalid message ID (must be 16 hex characters)"
+        }
+      ]
     },
     {
       "name": "getMessageInfo",
@@ -386,7 +407,11 @@
       },
       "errors": [
         {
-          "code": 404,
+          "code": -32020,
+          "message": "Invalid message ID (must be 16 hex characters)"
+        },
+        {
+          "code": -32019,
           "message": "Message not found"
         }
       ]
@@ -413,14 +438,22 @@
       ],
       "result": {
         "name": "pubkey",
-        "description": "The public key of the node",
+        "description": "The hex encoded public key of the node",
         "schema": {
-          "$ref": "#/components/schemas/PublicKeyResponse"
+          "type": "string",
+          "format": "hex",
+          "minLength": 64,
+          "maxLength": 64,
+          "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
         }
       },
       "errors": [
         {
-          "code": 404,
+          "code": -32007,
+          "message": "Malformed IP address"
+        },
+        {
+          "code": -32008,
           "message": "Public key not found"
         }
       ]
@@ -530,7 +563,13 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        }
+      ]
     },
     {
       "name": "removeTopic",
@@ -560,7 +599,13 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        }
+      ]
     },
     {
       "name": "getTopicSources",
@@ -593,7 +638,17 @@
             "type": "string"
           }
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        },
+        {
+          "code": -32030,
+          "message": "Topic not found"
+        }
+      ]
     },
     {
       "name": "addTopicSource",
@@ -631,7 +686,17 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        },
+        {
+          "code": -32023,
+          "message": "Invalid subnet"
+        }
+      ]
     },
     {
       "name": "removeTopicSource",
@@ -669,7 +734,17 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        },
+        {
+          "code": -32023,
+          "message": "Invalid subnet"
+        }
+      ]
     },
     {
       "name": "getTopicForwardSocket",
@@ -699,7 +774,13 @@
         "schema": {
           "type": ["string", "null"]
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        }
+      ]
     },
     {
       "name": "setTopicForwardSocket",
@@ -737,7 +818,13 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        }
+      ]
     },
     {
       "name": "removeTopicForwardSocket",
@@ -767,7 +854,13 @@
         "schema": {
           "type": "boolean"
         }
-      }
+      },
+      "errors": [
+        {
+          "code": -32021,
+          "message": "Invalid base64 encoded topic"
+        }
+      ]
     },
     {
       "name": "getProxies",
@@ -944,31 +1037,6 @@
           }
         }
       },
-      "TopicInfo": {
-        "description": "Information about a configured topic",
-        "type": "object",
-        "properties": {
-          "topic": {
-            "description": "The topic identifier",
-            "type": "string",
-            "format": "byte",
-            "example": "example.topic"
-          },
-          "sources": {
-            "description": "List of subnets that are allowed to send messages for this topic",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "example": "503:5478:df06:d79a::/64"
-            }
-          },
-          "forward_socket": {
-            "description": "Optional socket path where messages for this topic are forwarded to",
-            "type": ["string", "null"],
-            "example": "/var/run/mycelium/topic_socket"
-          }
-        }
-      },
       "PeerStats": {
         "description": "Info about a peer",
         "type": "object",
@@ -1001,6 +1069,20 @@
             "format": "int64",
             "minimum": 0,
             "example": 64645089
+          },
+          "discovered": {
+            "description": "Number of seconds since the system first learned about this peer",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "example": 3600
+          },
+          "lastConnected": {
+            "description": "Number of seconds since the last successful connection to this peer. Null if there has never been a successful connection",
+            "type": ["integer", "null"],
+            "format": "int64",
+            "minimum": 0,
+            "example": 12
           }
         }
       },
@@ -1251,19 +1333,6 @@
             }
           }
         ]
-      },
-      "PublicKeyResponse": {
-        "description": "Public key requested based on a node's IP",
-        "type": "object",
-        "properties": {
-          "NodePubKey": {
-            "type": "string",
-            "format": "hex",
-            "minLength": 64,
-            "maxLength": 64,
-            "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
-          }
-        }
       }
     }
   }

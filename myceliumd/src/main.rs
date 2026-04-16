@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             myceliumd_common::run_node(merged_config, None, key_path).await
         }
         Some(cmd) => {
-            myceliumd_common::dispatch_subcommand(cmd, key_path, cli.node_args.api_addr).await
+            myceliumd_common::dispatch_subcommand(cmd, key_path, cli.node_args.api_addr, cli.node_args.rpc_socket).await
         }
     }
 }

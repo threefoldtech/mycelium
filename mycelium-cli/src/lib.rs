@@ -3,6 +3,7 @@ mod inspect;
 mod message;
 mod peer;
 mod proxy;
+mod rpc_client;
 mod routes;
 mod stats;
 
@@ -13,5 +14,6 @@ pub use peer::{add_peers, list_peers, remove_peers};
 pub use proxy::{
     connect_proxy, disconnect_proxy, list_proxies, start_proxy_probe, stop_proxy_probe,
 };
+pub use rpc_client::rpc_call;
 pub use routes::{list_fallback_routes, list_queried_subnets, list_selected_routes};
 pub use stats::list_packet_stats;

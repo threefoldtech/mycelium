@@ -19,6 +19,9 @@ use tokio::signal::{self, unix::SignalKind};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
+pub mod defaults;
+pub use defaults::BOOTSTRAP_PEERS;
+
 pub use mycelium::crypto;
 pub use mycelium::endpoint::Endpoint;
 use mycelium::peer_manager::PeerDiscoveryMode;
@@ -407,6 +410,17 @@ pub struct NodeArguments {
     /// the system resolvers.
     #[arg(long = "enable-dns")]
     pub enable_dns: bool,
+
+    /// Path for the Unix socket JSON-RPC server.
+    /// Defaults to $HERO_SOCKET_DIR/mycelium/rpc.sock, or ~/hero/var/sockets/mycelium/rpc.sock.
+    #[arg(long = "rpc-socket")]
+    pub rpc_socket: Option<PathBuf>,
+
+    /// Only expose the Unix domain socket API. Disables the legacy TCP HTTP REST
+    /// server (--api-addr) and TCP JSON-RPC server (--jsonrpc-addr).
+    /// Use this for Hero-managed deployments where only the UDS socket is needed.
+    #[arg(long = "uds-only", default_value_t = false)]
+    pub uds_only: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -428,6 +442,8 @@ pub struct MergedNodeConfig {
     pub topic_config: Option<PathBuf>,
     pub cdn_cache: Option<PathBuf>,
     pub enable_dns: bool,
+    pub rpc_socket_path: PathBuf,
+    pub uds_only: bool,
     #[cfg(target_os = "linux")]
     pub vsock_listen_port: Option<u32>,
 }
@@ -452,6 +468,8 @@ pub struct MyceliumConfig {
     pub topic_config: Option<PathBuf>,
     pub cdn_cache: Option<PathBuf>,
     pub enable_dns: Option<bool>,
+    pub rpc_socket: Option<PathBuf>,
+    pub uds_only: Option<bool>,
     #[cfg(target_os = "linux")]
     pub vsock_listen_port: Option<u32>,
 }
@@ -660,12 +678,17 @@ pub async fn run_node(
         };
         metrics.spawn(metrics_api_addr);
         let node = Arc::new(Mutex::new(Node::new(config).await?));
-        let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
+        let unix_rpc = mycelium_api::rpc::unix::spawn(node.clone(), merged_config.rpc_socket_path.clone()).await;
 
-        // Initialize the JSON-RPC server
-        let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
+        let _legacy = if !merged_config.uds_only {
+            let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
+            let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
+            Some((http_api, rpc_api))
+        } else {
+            None
+        };
 
-        (http_api, rpc_api)
+        (unix_rpc,)
     } else {
         let config = mycelium::Config {
             node_key: node_secret_key,
@@ -691,12 +714,17 @@ pub async fn run_node(
             vsock_listen_port: merged_config.vsock_listen_port,
         };
         let node = Arc::new(Mutex::new(Node::new(config).await?));
-        let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
+        let unix_rpc = mycelium_api::rpc::unix::spawn(node.clone(), merged_config.rpc_socket_path).await;
 
-        // Initialize the JSON-RPC server
-        let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
+        let _legacy = if !merged_config.uds_only {
+            let http_api = mycelium_api::Http::spawn(node.clone(), merged_config.api_addr);
+            let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node, merged_config.jsonrpc_addr).await;
+            Some((http_api, rpc_api))
+        } else {
+            None
+        };
 
-        (http_api, rpc_api)
+        (unix_rpc,)
     };
 
     // TODO: put in dedicated file so we can only rely on certain signals on unix platforms
@@ -727,7 +755,9 @@ pub async fn dispatch_subcommand(
     cmd: Command,
     key_path: PathBuf,
     api_addr: SocketAddr,
+    rpc_socket: Option<PathBuf>,
 ) -> Result<(), Box<dyn Error>> {
+    let socket_path = rpc_socket.unwrap_or_else(default_rpc_socket_path);
     match cmd {
         Command::Inspect { json, key } => {
             let node_keys = get_node_keys(&key_path).await?;
@@ -786,29 +816,29 @@ pub async fn dispatch_subcommand(
         },
         Command::Peers { command } => match command {
             PeersCommand::List { json } => {
-                return mycelium_cli::list_peers(api_addr, json).await;
+                return mycelium_cli::list_peers(&socket_path, json).await;
             }
             PeersCommand::Add { peers } => {
-                return mycelium_cli::add_peers(api_addr, peers).await;
+                return mycelium_cli::add_peers(&socket_path, peers).await;
             }
             PeersCommand::Remove { peers } => {
-                return mycelium_cli::remove_peers(api_addr, peers).await;
+                return mycelium_cli::remove_peers(&socket_path, peers).await;
             }
         },
         Command::Routes { command } => match command {
             RoutesCommand::Selected { json } => {
-                return mycelium_cli::list_selected_routes(api_addr, json).await;
+                return mycelium_cli::list_selected_routes(&socket_path, json).await;
             }
             RoutesCommand::Fallback { json } => {
-                return mycelium_cli::list_fallback_routes(api_addr, json).await;
+                return mycelium_cli::list_fallback_routes(&socket_path, json).await;
             }
             RoutesCommand::Queried { json } => {
-                return mycelium_cli::list_queried_subnets(api_addr, json).await;
+                return mycelium_cli::list_queried_subnets(&socket_path, json).await;
             }
         },
         Command::Proxy { command } => match command {
             ProxyCommand::List { json } => {
-                return mycelium_cli::list_proxies(api_addr, json).await;
+                return mycelium_cli::list_proxies(&socket_path, json).await;
             }
             ProxyCommand::Connect { remote, json } => {
                 let remote_parsed = if let Some(r) = remote {
@@ -826,23 +856,23 @@ pub async fn dispatch_subcommand(
                 } else {
                     None
                 };
-                return mycelium_cli::connect_proxy(api_addr, remote_parsed, json).await;
+                return mycelium_cli::connect_proxy(&socket_path, remote_parsed, json).await;
             }
             ProxyCommand::Disconnect => {
-                return mycelium_cli::disconnect_proxy(api_addr).await;
+                return mycelium_cli::disconnect_proxy(&socket_path).await;
             }
             ProxyCommand::Probe { command } => match command {
                 ProxyProbeCommand::Start => {
-                    return mycelium_cli::start_proxy_probe(api_addr).await;
+                    return mycelium_cli::start_proxy_probe(&socket_path).await;
                 }
                 ProxyProbeCommand::Stop => {
-                    return mycelium_cli::stop_proxy_probe(api_addr).await;
+                    return mycelium_cli::stop_proxy_probe(&socket_path).await;
                 }
             },
         },
         Command::Stats { command } => match command {
             StatsCommand::Packets { json } => {
-                return mycelium_cli::list_packet_stats(api_addr, json).await;
+                return mycelium_cli::list_packet_stats(&socket_path, json).await;
             }
         },
     }
@@ -898,12 +928,34 @@ pub async fn save_key_file(key: &crypto::SecretKey, path: &Path) -> io::Result<(
     Ok(())
 }
 
+/// Compute the default Unix socket path for the JSON-RPC API.
+/// Respects `HERO_SOCKET_DIR` if set, otherwise uses `~/hero/var/sockets`.
+fn default_rpc_socket_path() -> PathBuf {
+    let base = std::env::var("HERO_SOCKET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join("hero").join("var").join("sockets")
+        });
+    base.join("mycelium").join("rpc.sock")
+}
+
 pub fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> MergedNodeConfig {
     MergedNodeConfig {
         peers: if !cli_args.static_peers.is_empty() {
             cli_args.static_peers
+        } else if let Some(file_peers) = file_config.peers {
+            if !file_peers.is_empty() {
+                file_peers
+            } else {
+                defaults::BOOTSTRAP_PEERS.iter()
+                    .filter_map(|s| mycelium::endpoint::Endpoint::from_str(s).ok())
+                    .collect()
+            }
         } else {
-            file_config.peers.unwrap_or_default()
+            defaults::BOOTSTRAP_PEERS.iter()
+                .filter_map(|s| mycelium::endpoint::Endpoint::from_str(s).ok())
+                .collect()
         },
         tcp_listen_port: if cli_args.tcp_listen_port != DEFAULT_TCP_LISTEN_PORT {
             cli_args.tcp_listen_port
@@ -968,6 +1020,8 @@ pub fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> Mer
         topic_config: cli_args.topic_config.or(file_config.topic_config),
         cdn_cache: cli_args.cdn_cache.or(file_config.cdn_cache),
         enable_dns: cli_args.enable_dns || file_config.enable_dns.unwrap_or(false),
+        rpc_socket_path: cli_args.rpc_socket.or(file_config.rpc_socket).unwrap_or_else(default_rpc_socket_path),
+        uds_only: cli_args.uds_only || file_config.uds_only.unwrap_or(false),
         #[cfg(target_os = "linux")]
         vsock_listen_port: cli_args.vsock_listen_port.or(file_config.vsock_listen_port),
     }
