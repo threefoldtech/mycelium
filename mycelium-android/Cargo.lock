@@ -1731,7 +1731,10 @@ dependencies = [
  "rcgen",
  "redis",
  "reed-solomon-erasure",
+ "regex",
  "reqwest",
+ "rsbinder",
+ "rsbinder-aidl",
  "rtnetlink",
  "rustls",
  "serde",
@@ -1751,12 +1754,8 @@ dependencies = [
 name = "mycelium-android"
 version = "0.1.0"
 dependencies = [
- "libc",
  "mycelium",
- "regex",
  "rsbinder",
- "rsbinder-aidl",
- "tokio",
  "tracing",
  "tracing-android",
  "tracing-subscriber",

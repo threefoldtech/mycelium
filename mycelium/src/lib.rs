@@ -49,6 +49,9 @@ mod rr_cache;
 mod seqno_cache;
 mod sequence_number;
 mod source_table;
+#[cfg(feature = "aidl")]
+pub mod aidl;
+pub mod node_handle;
 pub mod subnet;
 pub mod task;
 mod tun;

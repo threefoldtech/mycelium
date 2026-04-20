@@ -12,6 +12,7 @@ vendored-openssl = ["openssl/vendored"]
 mactunfd = [
   "tun/appstore",
 ] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
+aidl = ["dep:rsbinder", "dep:rsbinder-aidl", "dep:regex"]
 
 [dependencies]
 cdn-meta = { git = "https://github.com/threefoldtech/mycelium-cdn-registry", package = "cdn-meta" }
@@ -67,6 +68,7 @@ reed-solomon-erasure = "6.0.0"
 hickory-server = "0.26.0"
 async-trait = "0.1.89"
 hickory-resolver = "0.26.0"
+rsbinder = { version = "0.6", features = ["android_14"], optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.21.0"
 nix = { version = "0.31.2", features = ["socket"] }
@@ -83,6 +85,11 @@ wintun = "0.5.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
+libc = "0.2.180"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
+
+[build-dependencies]
+rsbinder-aidl = { version = "0.6", optional = true }
+regex = { version = "1", optional = true }

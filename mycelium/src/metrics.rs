@@ -233,3 +233,8 @@ pub trait Metrics {
     #[inline]
     fn router_incoming_packet_queue_full_subnet(&self) {}
 }
+
+/// A no-op [`Metrics`] implementation that discards all metrics.
+#[derive(Clone)]
+pub struct NoMetrics;
+impl Metrics for NoMetrics {}

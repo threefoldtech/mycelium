@@ -1,11 +1,4 @@
-// Pull in the AIDL-generated Rust bindings (tech::threefold::mycelium module).
-include!(concat!(env!("OUT_DIR"), "/mycelium_aidl.rs"));
-
-mod node;
-mod service;
-mod service_manager;
-
-use service::MyceliumService;
+use mycelium::aidl::{BnMyceliumService, IMyceliumService, MyceliumService};
 
 fn main() {
     setup_logging();
@@ -34,14 +27,13 @@ fn main() {
 
     if let Some(path) = &key_file {
         let key_data = std::fs::read(path).expect("failed to read key file");
-        use tech::threefold::mycelium::IMyceliumService::IMyceliumService;
         svc.start(&peers, &key_data, false)
             .expect("failed to start mycelium node");
     }
 
-    let binder = tech::threefold::mycelium::IMyceliumService::BnMyceliumService::new_binder(svc);
+    let binder = BnMyceliumService::new_binder(svc);
 
-    service_manager::add_service(
+    mycelium::aidl::add_service(
         "tech.threefold.mycelium.IMyceliumService",
         binder.as_binder(),
     )
@@ -51,10 +43,6 @@ fn main() {
 
     let _ = rsbinder::ProcessState::join_thread_pool();
 }
-
-// ── Logging setup ─────────────────────────────────────────────────────────────
-// NOTE: This is copied from mobile.
-// TODO: Is this needed, i.e. do we care about capturing logs?
 
 #[cfg(target_os = "android")]
 fn setup_logging() {
@@ -73,7 +61,6 @@ fn setup_logging() {
         .init();
 }
 
-// Convenience when building on linux
 #[cfg(not(target_os = "android"))]
 fn setup_logging() {
     use tracing_subscriber::EnvFilter;
