@@ -11,6 +11,9 @@ readme = "./README.md"
 name = "mycelium"
 path = "src/main.rs"
 
+[features]
+aidl = ["myceliumd-common/aidl"]
+
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 tokio = { version = "1.52.1", features = [

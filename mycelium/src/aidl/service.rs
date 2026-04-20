@@ -92,6 +92,8 @@ impl IMyceliumService for MyceliumService {
             update_workers: 1,
             cdn_cache: None,
             enable_dns,
+            #[cfg(feature = "message")]
+            topic_config: None,
         };
 
         match NodeHandle::start(config) {
