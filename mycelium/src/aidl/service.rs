@@ -1,19 +1,23 @@
+//! Implementation of the `IMyceliumService` AIDL interface.
+
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 
 use rsbinder::StatusCode;
 use tracing::{error, info, warn};
 
-use crate::node::{parse_proxy_remote, peer_stats_to_aidl, NodeHandle, DEFAULT_SOCKS_PORT};
-use crate::tech::threefold::mycelium::IMyceliumService::IMyceliumService;
-use crate::tech::threefold::mycelium::NodeInfo::NodeInfo;
-use crate::tech::threefold::mycelium::PacketStatEntry::PacketStatEntry;
-use crate::tech::threefold::mycelium::PacketStats::PacketStats;
-use crate::tech::threefold::mycelium::PeerInfo::PeerInfo;
-use crate::tech::threefold::mycelium::QueriedSubnet::QueriedSubnet;
-use crate::tech::threefold::mycelium::Route::Route;
+use crate::metrics::NoMetrics;
+use crate::node_handle::{parse_proxy_remote, NodeHandle, DEFAULT_SOCKS_PORT};
+use crate::peer_manager::PeerDiscoveryMode;
+use crate::{crypto, Config};
 
-// ── Service struct ─────────────────────────────────────────────────────────────
+use super::tech::threefold::mycelium::IMyceliumService::IMyceliumService;
+use super::tech::threefold::mycelium::NodeInfo::NodeInfo;
+use super::tech::threefold::mycelium::PacketStatEntry::PacketStatEntry;
+use super::tech::threefold::mycelium::PacketStats::PacketStats;
+use super::tech::threefold::mycelium::PeerInfo::PeerInfo;
+use super::tech::threefold::mycelium::QueriedSubnet::QueriedSubnet;
+use super::tech::threefold::mycelium::Route::Route;
 
 /// Implements the `IMyceliumService` AIDL interface.
 ///
@@ -21,15 +25,20 @@ use crate::tech::threefold::mycelium::Route::Route;
 /// answers immediately (pure computation) or uses `rt_handle.block_on` to
 /// drive an async operation against the running mycelium node.
 pub struct MyceliumService {
-    /// Running node handle, present once `start()` has been called.
     handle: Mutex<Option<NodeHandle>>,
+}
+
+impl Default for MyceliumService {
+    fn default() -> Self {
+        MyceliumService {
+            handle: Mutex::new(None),
+        }
+    }
 }
 
 impl MyceliumService {
     pub fn new() -> Self {
-        MyceliumService {
-            handle: Mutex::new(None),
-        }
+        Self::default()
     }
 }
 
@@ -49,7 +58,43 @@ impl IMyceliumService for MyceliumService {
 
         info!("starting mycelium node, {} peers", peers.len());
 
-        match NodeHandle::start(peers.to_vec(), key, enable_dns) {
+        let endpoints = peers.iter().filter_map(|p| p.parse().ok()).collect();
+
+        #[cfg(target_os = "android")]
+        let tun_fd = crate::node_handle::create_tun_fd("tun0").map_err(|e| {
+            error!("Failed to create TUN fd: {e}");
+            rsbinder::Status::from(StatusCode::Unknown)
+        })?;
+
+        let config = Config {
+            node_key: crypto::SecretKey::from(key),
+            peers: endpoints,
+            no_tun: false,
+            #[cfg(any(
+                target_os = "linux",
+                all(target_os = "macos", not(feature = "mactunfd")),
+                target_os = "windows"
+            ))]
+            tun_name: "tun0".to_string(),
+            #[cfg(any(
+                target_os = "android",
+                target_os = "ios",
+                all(target_os = "macos", feature = "mactunfd"),
+            ))]
+            tun_fd: Some(tun_fd),
+            tcp_listen_port: 9651,
+            quic_listen_port: Some(9651),
+            peer_discovery_port: 9650,
+            peer_discovery_mode: PeerDiscoveryMode::Disabled,
+            metrics: NoMetrics,
+            private_network_config: None,
+            firewall_mark: None,
+            update_workers: 1,
+            cdn_cache: None,
+            enable_dns,
+        };
+
+        match NodeHandle::start(config) {
             Ok(h) => {
                 *self.handle.lock().unwrap() = Some(h);
                 Ok(true)
@@ -125,7 +170,7 @@ impl IMyceliumService for MyceliumService {
                 .await
                 .peer_info()
                 .into_iter()
-                .map(peer_stats_to_aidl)
+                .map(PeerInfo::from)
                 .collect())
         })
     }
@@ -136,7 +181,7 @@ impl IMyceliumService for MyceliumService {
             .as_ref()
             .ok_or_else(|| rsbinder::Status::from(StatusCode::InvalidOperation))?;
         let endpoint = endpoint
-            .parse::<mycelium::endpoint::Endpoint>()
+            .parse::<crate::endpoint::Endpoint>()
             .map_err(|_| rsbinder::Status::from(StatusCode::BadValue))?;
         h.rt()
             .block_on(async { Ok(h.node().lock().await.add_peer(endpoint).is_ok()) })
@@ -148,7 +193,7 @@ impl IMyceliumService for MyceliumService {
             .as_ref()
             .ok_or_else(|| rsbinder::Status::from(StatusCode::InvalidOperation))?;
         let endpoint = endpoint
-            .parse::<mycelium::endpoint::Endpoint>()
+            .parse::<crate::endpoint::Endpoint>()
             .map_err(|_| rsbinder::Status::from(StatusCode::BadValue))?;
         h.rt()
             .block_on(async { Ok(h.node().lock().await.remove_peer(endpoint).is_ok()) })
@@ -165,16 +210,7 @@ impl IMyceliumService for MyceliumService {
                 .await
                 .selected_routes()
                 .into_iter()
-                .map(|r| Route {
-                    subnet: r.source().subnet().to_string(),
-                    nextHop: r.neighbour().connection_identifier().clone(),
-                    metric: if r.metric().is_infinite() {
-                        -1
-                    } else {
-                        u16::from(r.metric()) as i64
-                    },
-                    seqno: u16::from(r.seqno()) as i32,
-                })
+                .map(Route::from)
                 .collect())
         })
     }
@@ -190,16 +226,7 @@ impl IMyceliumService for MyceliumService {
                 .await
                 .fallback_routes()
                 .into_iter()
-                .map(|r| Route {
-                    subnet: r.source().subnet().to_string(),
-                    nextHop: r.neighbour().connection_identifier().clone(),
-                    metric: if r.metric().is_infinite() {
-                        -1
-                    } else {
-                        u16::from(r.metric()) as i64
-                    },
-                    seqno: u16::from(r.seqno()) as i32,
-                })
+                .map(Route::from)
                 .collect())
         })
     }
@@ -233,40 +260,22 @@ impl IMyceliumService for MyceliumService {
         h.rt().block_on(async {
             let stats = h.node().lock().await.packet_statistics();
             Ok(PacketStats {
-                bySource: stats
-                    .by_source
-                    .into_iter()
-                    .map(|e| PacketStatEntry {
-                        ip: e.ip.to_string(),
-                        packetCount: e.packet_count as i64,
-                        byteCount: e.byte_count as i64,
-                    })
-                    .collect(),
-                byDestination: stats
-                    .by_destination
-                    .into_iter()
-                    .map(|e| PacketStatEntry {
-                        ip: e.ip.to_string(),
-                        packetCount: e.packet_count as i64,
-                        byteCount: e.byte_count as i64,
-                    })
-                    .collect(),
+                bySource: stats.by_source.into_iter().map(PacketStatEntry::from).collect(),
+                byDestination: stats.by_destination.into_iter().map(PacketStatEntry::from).collect(),
             })
         })
     }
 
     fn generateSecretKey(&self) -> rsbinder::status::Result<Vec<u8>> {
-        Ok(mycelium::crypto::SecretKey::new().as_bytes().to_vec())
+        Ok(crypto::SecretKey::new().as_bytes().to_vec())
     }
 
     fn addressFromSecretKey(&self, key: &[u8]) -> rsbinder::status::Result<String> {
         let arr: [u8; 32] = key
             .try_into()
             .map_err(|_| rsbinder::Status::from(StatusCode::BadValue))?;
-        let secret = mycelium::crypto::SecretKey::from(arr);
-        Ok(mycelium::crypto::PublicKey::from(&secret)
-            .address()
-            .to_string())
+        let secret = crypto::SecretKey::from(arr);
+        Ok(crypto::PublicKey::from(&secret).address().to_string())
     }
 
     fn startProxyProbe(&self) -> rsbinder::status::Result<bool> {
@@ -320,7 +329,6 @@ impl IMyceliumService for MyceliumService {
 
         h.rt().block_on(async {
             let future = h.node().lock().await.connect_proxy(remote_addr);
-            // MutexGuard released before await
             match future.await {
                 Ok(addr) => Ok(addr.to_string()),
                 Err(e) => {
