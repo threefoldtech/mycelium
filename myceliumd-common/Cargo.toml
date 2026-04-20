@@ -4,6 +4,9 @@ version = "0.7.6"
 edition = "2021"
 license-file = "../LICENSE"
 
+[features]
+aidl = ["mycelium/aidl", "dep:rsbinder"]
+
 [dependencies]
 clap = { version = "4.5.59", features = ["derive"] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
@@ -25,3 +28,4 @@ tokio = { version = "1.49.0", features = [
 config = "0.15.19"
 dirs = "6.0.0"
 toml = "1.0.2"
+rsbinder = { version = "0.6", features = ["android_14"], optional = true }
