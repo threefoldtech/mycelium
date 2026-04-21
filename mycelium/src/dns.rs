@@ -4,10 +4,10 @@
 use crate::metric::Metric;
 use crate::metrics::Metrics;
 use crate::router::{RouteStatus, Router};
-use hickory_server::authority::MessageResponseBuilder;
-use hickory_server::proto::op::{Header, Message, MessageType, OpCode};
-use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
-use hickory_server::ServerFuture;
+use hickory_server::net::runtime::Time;
+use hickory_server::proto::op::{Header, HeaderCounts, Message, MessageType, Metadata, OpCode};
+use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo, Server};
+use hickory_server::zone_handler::MessageResponseBuilder;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -70,7 +70,7 @@ const DNS_PORT: u16 = 53;
 const DNS_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Resolver {
-    server: ServerFuture<Handler>,
+    server: Server<Handler>,
     cancel_token: CancellationToken,
 }
 
@@ -92,7 +92,7 @@ impl Resolver {
 
         let handler = Handler { best_node };
 
-        let mut server = hickory_server::server::ServerFuture::new(handler);
+        let mut server = Server::new(handler);
         let udp_socket = UdpSocket::bind("[::]:53")
             .await
             .expect("Can bind udp port 53");
@@ -187,12 +187,9 @@ impl Handler {
         let target_addr = SocketAddr::new(target_ip, DNS_PORT);
 
         // Build the DNS query message
-        let mut message = Message::new();
-        message.set_id(request.id());
-        message.set_message_type(MessageType::Query);
-        message.set_op_code(OpCode::Query);
-        message.set_recursion_desired(true);
-        for query in request.queries() {
+        let mut message = Message::new(request.metadata.id, MessageType::Query, OpCode::Query);
+        message.metadata.recursion_desired = true;
+        for query in request.queries.queries() {
             message.add_query(query.original().clone());
         }
 
@@ -205,7 +202,7 @@ impl Handler {
 
         let mut buf = [0u8; 4096];
         match tokio::time::timeout(DNS_TIMEOUT, socket.recv_from(&mut buf)).await {
-            Ok(Ok((len, _))) => Message::from_vec(&buf[..len]).map_err(DnsForwardError::Proto),
+            Ok(Ok((len, _))) => Message::from_vec(&buf[..len]).map_err(DnsForwardError::Decode),
             Ok(Err(e)) => Err(DnsForwardError::Io(e)),
             Err(_) => Err(DnsForwardError::Timeout),
         }
@@ -215,9 +212,10 @@ impl Handler {
 #[async_trait::async_trait]
 impl RequestHandler for Handler {
     #[tracing::instrument(skip_all, Level = DEBUG)]
-    async fn handle_request<R>(&self, request: &Request, mut response_handle: R) -> ResponseInfo
+    async fn handle_request<R, T>(&self, request: &Request, mut response_handle: R) -> ResponseInfo
     where
         R: ResponseHandler,
+        T: Time,
     {
         let best = *self.best_node.read().expect("Can read lock best_node; qed");
 
@@ -228,19 +226,21 @@ impl RequestHandler for Handler {
         };
 
         let responses = MessageResponseBuilder::from_message_request(request);
-        let header = Header::response_from_request(request.header());
+        let metadata = Metadata::response_from_request(&request.metadata);
         let resp = {
             debug!(%target_ip, "Forwarding DNS request to mycelium node");
             match self.forward_dns(request, target_ip).await {
                 Ok(response) => {
                     info!(%target_ip, "DNS forward successful");
-                    let resp = responses.build(header, response.answers(), [], [], []);
+                    let resp = responses.build(metadata, &response.answers, [], [], []);
                     response_handle.send_response(resp).await
                 }
                 Err(e) => {
                     warn!(%e, %target_ip, "Mycelium DNS forward failed");
-                    let resp = responses
-                        .error_msg(&header, hickory_server::proto::op::ResponseCode::ServFail);
+                    let resp = responses.error_msg(
+                        &request.metadata,
+                        hickory_server::proto::op::ResponseCode::ServFail,
+                    );
                     response_handle.send_response(resp).await
                 }
             }
@@ -250,7 +250,11 @@ impl RequestHandler for Handler {
             Ok(resp_info) => resp_info,
             Err(err) => {
                 debug!(%err, "Failed to send response");
-                Header::response_from_request(request.header()).into()
+                Header {
+                    metadata: Metadata::response_from_request(&request.metadata),
+                    counts: HeaderCounts::default(),
+                }
+                .into()
             }
         }
     }
@@ -268,6 +272,7 @@ impl Drop for Resolver {
 enum DnsForwardError {
     Io(std::io::Error),
     Proto(hickory_server::proto::ProtoError),
+    Decode(hickory_server::proto::serialize::binary::DecodeError),
     Timeout,
 }
 
@@ -276,6 +281,7 @@ impl std::fmt::Display for DnsForwardError {
         match self {
             Self::Io(e) => write!(f, "IO error: {}", e),
             Self::Proto(e) => write!(f, "Protocol error: {}", e),
+            Self::Decode(e) => write!(f, "Decode error: {}", e),
             Self::Timeout => write!(f, "DNS request timed out"),
         }
     }
