@@ -12,8 +12,8 @@ name = "mycelium"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.6.0", features = ["derive"] }
-tokio = { version = "1.51.1", features = [
+clap = { version = "4.6.1", features = ["derive"] }
+tokio = { version = "1.52.1", features = [
   "macros",
   "rt-multi-thread",
 ] }
