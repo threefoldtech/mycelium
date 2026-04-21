@@ -1,13 +1,4 @@
-FROM debian:latest AS build
-
-# TODO: Add nonnteractive flag for apt
-
-# Upgrade system
-RUN apt update
-RUN apt upgrade -y
-
-# Install build dependencies
-RUN apt install rustc -y
+FROM rust:latest AS build
 
 # Copy across data
 RUN mkdir /src
