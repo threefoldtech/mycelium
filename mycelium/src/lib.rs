@@ -49,7 +49,7 @@ mod rr_cache;
 mod seqno_cache;
 mod sequence_number;
 mod source_table;
-#[cfg(feature = "aidl")]
+#[cfg(aidl)]
 pub mod aidl;
 pub mod node_handle;
 pub mod subnet;

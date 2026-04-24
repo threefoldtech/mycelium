@@ -3,9 +3,9 @@
 use crate::peer_manager::PeerStats;
 use crate::routing_table::RouteEntry;
 
-use super::tech::threefold::mycelium::PacketStatEntry::PacketStatEntry;
-use super::tech::threefold::mycelium::PeerInfo::PeerInfo;
-use super::tech::threefold::mycelium::Route::Route;
+use mycelium_aidl_interface::aidl::tech::threefold::mycelium::{
+    PacketStatEntry::PacketStatEntry, PeerInfo::PeerInfo, Route::Route,
+};
 
 impl From<PeerStats> for PeerInfo {
     fn from(p: PeerStats) -> Self {

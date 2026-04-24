@@ -408,15 +408,6 @@ pub struct NodeArguments {
     #[arg(long = "enable-dns")]
     pub enable_dns: bool,
 
-    /// Register an AIDL Binder service instead of auto-starting the node.
-    ///
-    /// When set, the daemon registers an IMyceliumService AIDL interface with
-    /// Android's ServiceManager and waits for a client to call start() via
-    /// Binder IPC. The node is not started automatically. This flag requires
-    /// the binary to be built with the `aidl` feature.
-    #[cfg(feature = "aidl")]
-    #[arg(long = "aidl")]
-    pub aidl: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -440,9 +431,6 @@ pub struct MergedNodeConfig {
     pub enable_dns: bool,
     #[cfg(target_os = "linux")]
     pub vsock_listen_port: Option<u32>,
-    #[cfg(feature = "aidl")]
-    #[serde(skip)]
-    pub aidl: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -607,19 +595,19 @@ pub fn resolve_key_path(key_file: Option<PathBuf>) -> PathBuf {
     })
 }
 
-/// Run the mycelium node (the default command when no subcommand is given).
-#[cfg(feature = "aidl")]
+/// Register the mycelium node as an AIDL service and wait for shutdown.
+#[cfg(aidl)]
 async fn run_aidl_daemon() -> Result<(), Box<dyn Error>> {
     use mycelium::aidl;
 
-    rsbinder::ProcessState::init_default();
-    rsbinder::ProcessState::start_thread_pool();
+    binder::ProcessState::start_thread_pool();
 
     let svc = aidl::MyceliumService::new();
-    let binder = aidl::BnMyceliumService::new_binder(svc);
-    aidl::add_service(
+    let binder_obj =
+        aidl::BnMyceliumService::new_binder(svc, binder::BinderFeatures::default());
+    binder::add_service(
         "tech.threefold.mycelium.IMyceliumService",
-        binder.as_binder(),
+        binder_obj.as_binder(),
     )
     .map_err(|e| format!("failed to register AIDL service: {e}"))?;
 
@@ -648,16 +636,21 @@ async fn run_aidl_daemon() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(aidl)]
+pub async fn run_node(
+    _merged_config: MergedNodeConfig,
+    _private_network_config: Option<(String, PrivateNetworkKey)>,
+    _key_path: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    run_aidl_daemon().await
+}
+
+#[cfg(not(aidl))]
 pub async fn run_node(
     merged_config: MergedNodeConfig,
     private_network_config: Option<(String, PrivateNetworkKey)>,
     key_path: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
-    #[cfg(feature = "aidl")]
-    if merged_config.aidl {
-        return run_aidl_daemon().await;
-    }
-
     let topic_config = merged_config.topic_config.as_ref().and_then(|path| {
         let mut content = String::new();
         let mut file = std::fs::File::open(path).ok()?;
@@ -1028,8 +1021,6 @@ pub fn merge_config(cli_args: NodeArguments, file_config: MyceliumConfig) -> Mer
         enable_dns: cli_args.enable_dns || file_config.enable_dns.unwrap_or(false),
         #[cfg(target_os = "linux")]
         vsock_listen_port: cli_args.vsock_listen_port.or(file_config.vsock_listen_port),
-        #[cfg(feature = "aidl")]
-        aidl: cli_args.aidl,
     }
 }
 
