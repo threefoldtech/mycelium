@@ -6,10 +6,11 @@ import tech.threefold.mycelium.PacketStats;
 import tech.threefold.mycelium.PeerInfo;
 import tech.threefold.mycelium.QueriedSubnet;
 import tech.threefold.mycelium.Route;
+import tech.threefold.mycelium.StartConfig;
 
 interface IMyceliumService {
-    /** Start the node. peers = bootstrap endpoints e.g. "tcp://1.2.3.4:9651". privKey = 32 bytes. */
-    boolean start(in String[] peers, in byte[] privKey, boolean enableDns);
+    /** Start the node with the given configuration. */
+    boolean start(in StartConfig config);
 
     void stop();
 
