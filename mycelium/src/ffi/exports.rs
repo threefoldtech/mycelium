@@ -3,8 +3,8 @@
 //! Each entry point follows the same shape:
 //! 1. Clear the per-thread last-error.
 //! 2. Validate inputs; on failure, set the error message and return a
-//!    negative status code.
-//! 3. Lock the singleton node slot, dispatch into the running [`NodeHandle`].
+//!    negative status code (or NULL for `mycelium_start`).
+//! 3. Lock the handle's internal state; reject if the node is stopped.
 //! 4. Use `h.rt().block_on(...)` to bridge the synchronous C caller to the
 //!    underlying async APIs.
 //! 5. Convert the result into the `repr(C)` mirror type and write through
@@ -16,18 +16,19 @@
 use core::ffi::c_char;
 use std::ffi::CStr;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Mutex;
 
 use tracing::{error, info, warn};
 
 use super::error::{
     self, MYCELIUM_ERR_INTERNAL, MYCELIUM_ERR_INVALID_ARG, MYCELIUM_ERR_INVALID_STATE, MYCELIUM_OK,
 };
-use super::node_slot;
 use super::types::{
-    cstring, mycelium_node_info_t, mycelium_packet_stat_entry_t, mycelium_packet_stats_t,
-    mycelium_peer_info_array_t, mycelium_peer_info_t, mycelium_queried_subnet_array_t,
-    mycelium_queried_subnet_t, mycelium_route_array_t, mycelium_route_t, mycelium_secret_key_t,
-    mycelium_start_config_t, mycelium_string_array_t, vec_into_c,
+    cstring, mycelium_node_info_t, mycelium_node_t, mycelium_packet_stat_entry_t,
+    mycelium_packet_stats_t, mycelium_peer_info_array_t, mycelium_peer_info_t,
+    mycelium_queried_subnet_array_t, mycelium_queried_subnet_t, mycelium_route_array_t,
+    mycelium_route_t, mycelium_secret_key_t, mycelium_start_config_t, mycelium_string_array_t,
+    vec_into_c, NodeState,
 };
 
 use crate::crypto;
@@ -93,38 +94,59 @@ fn parse_discovery_mode(mode: &str, interfaces: Vec<String>) -> Result<PeerDisco
     }
 }
 
+/// Borrow the inner running [`NodeHandle`] from a node pointer, or return
+/// the appropriate error code if the pointer is NULL or the node has been
+/// stopped.
+macro_rules! with_running_node {
+    ($node:expr, $body:expr) => {{
+        if $node.is_null() {
+            return error::set_and_return("node is null", MYCELIUM_ERR_INVALID_ARG);
+        }
+        let node_ref = &*$node;
+        let guard = match node_ref.state.lock() {
+            Ok(g) => g,
+            Err(_) => return error::set_and_return("node lock poisoned", MYCELIUM_ERR_INTERNAL),
+        };
+        let h: &NodeHandle = match &*guard {
+            NodeState::Running(h) => h,
+            NodeState::Stopped => {
+                return error::set_and_return("node is not running", MYCELIUM_ERR_INVALID_STATE)
+            }
+        };
+        $body(h)
+    }};
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-/// Start the mycelium node. Returns 0 on success, a negative code on failure.
-/// Calling while a node is already running returns `MYCELIUM_ERR_INVALID_STATE`.
+/// Start a mycelium node. Returns an opaque handle on success, or NULL on
+/// failure — call `mycelium_last_error_message` for details. The returned
+/// handle must eventually be released with `mycelium_node_free`.
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_start(cfg: *const mycelium_start_config_t) -> i32 {
+pub unsafe extern "C" fn mycelium_start(
+    cfg: *const mycelium_start_config_t,
+) -> *mut mycelium_node_t {
     error::clear();
 
     let cfg = match cfg.as_ref() {
         Some(c) => c,
-        None => return error::set_and_return("cfg is null", MYCELIUM_ERR_INVALID_ARG),
+        None => {
+            error::set("cfg is null");
+            return std::ptr::null_mut();
+        }
     };
-
-    let mut guard = match node_slot().lock() {
-        Ok(g) => g,
-        Err(_) => return error::set_and_return("node lock poisoned", MYCELIUM_ERR_INTERNAL),
-    };
-    if guard.is_some() {
-        return error::set_and_return("node is already running", MYCELIUM_ERR_INVALID_STATE);
-    }
 
     let peers_strs = match cstr_array_to_vec(cfg.peers, cfg.peers_len, "peers") {
         Ok(v) => v,
-        Err(code) => return code,
+        Err(_) => return std::ptr::null_mut(),
     };
     let endpoints = peers_strs.iter().filter_map(|p| p.parse().ok()).collect();
 
     let mode = match cstr_to_str(cfg.peer_discovery_mode, "peer_discovery_mode") {
         Ok(s) => s.to_owned(),
-        Err(code) => return code,
+        Err(_) => return std::ptr::null_mut(),
     };
     let interfaces = match cstr_array_to_vec(
         cfg.peer_discovery_interfaces,
@@ -132,16 +154,16 @@ pub unsafe extern "C" fn mycelium_start(cfg: *const mycelium_start_config_t) -> 
         "peer_discovery_interfaces",
     ) {
         Ok(v) => v,
-        Err(code) => return code,
+        Err(_) => return std::ptr::null_mut(),
     };
     let peer_discovery_mode = match parse_discovery_mode(&mode, interfaces) {
         Ok(m) => m,
-        Err(code) => return code,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     let tun_name = match cstr_to_str(cfg.tun_name, "tun_name") {
         Ok(s) => s.to_owned(),
-        Err(code) => return code,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     info!(peers = peers_strs.len(), "starting mycelium node");
@@ -151,10 +173,8 @@ pub unsafe extern "C" fn mycelium_start(cfg: *const mycelium_start_config_t) -> 
         Ok(fd) => fd,
         Err(e) => {
             error!("Failed to create TUN fd: {e}");
-            return error::set_and_return(
-                format!("failed to create tun fd: {e}"),
-                MYCELIUM_ERR_INTERNAL,
-            );
+            error::set(format!("failed to create tun fd: {e}"));
+            return std::ptr::null_mut();
         }
     };
 
@@ -195,67 +215,61 @@ pub unsafe extern "C" fn mycelium_start(cfg: *const mycelium_start_config_t) -> 
     };
 
     match NodeHandle::start(config) {
-        Ok(h) => {
-            *guard = Some(h);
-            MYCELIUM_OK
-        }
+        Ok(h) => Box::into_raw(Box::new(mycelium_node_t {
+            state: Mutex::new(NodeState::Running(h)),
+        })),
         Err(e) => {
             error!("failed to start node: {e}");
-            error::set_and_return(format!("failed to start node: {e}"), MYCELIUM_ERR_INTERNAL)
+            error::set(format!("failed to start node: {e}"));
+            std::ptr::null_mut()
         }
     }
 }
 
-/// Stop the running node. No-op (returns 0) if no node is running.
+/// Halt the node and release its internal resources. The handle remains
+/// valid for `mycelium_is_running` queries (which will return false) until
+/// `mycelium_node_free` is called. No-op on a NULL or already-stopped node.
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_stop() -> i32 {
+pub unsafe extern "C" fn mycelium_stop(node: *mut mycelium_node_t) -> i32 {
     error::clear();
-    let mut guard = match node_slot().lock() {
+    if node.is_null() {
+        return error::set_and_return("node is null", MYCELIUM_ERR_INVALID_ARG);
+    }
+    let node = &*node;
+    let mut guard = match node.state.lock() {
         Ok(g) => g,
         Err(_) => return error::set_and_return("node lock poisoned", MYCELIUM_ERR_INTERNAL),
     };
-    if let Some(h) = guard.as_mut() {
-        info!("stopping mycelium node");
-        h.stop();
-    } else {
-        warn!("mycelium_stop called but node is not running");
+    match &mut *guard {
+        NodeState::Running(h) => {
+            info!("stopping mycelium node");
+            h.stop();
+            *guard = NodeState::Stopped;
+        }
+        NodeState::Stopped => {
+            warn!("mycelium_stop called on a stopped node");
+        }
     }
     MYCELIUM_OK
 }
 
 /// Write `true`/`false` into `out` reflecting whether the node is running.
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_is_running(out: *mut bool) -> i32 {
+pub unsafe extern "C" fn mycelium_is_running(node: *mut mycelium_node_t, out: *mut bool) -> i32 {
     error::clear();
+    if node.is_null() {
+        return error::set_and_return("node is null", MYCELIUM_ERR_INVALID_ARG);
+    }
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    let guard = match node_slot().lock() {
+    let node = &*node;
+    let guard = match node.state.lock() {
         Ok(g) => g,
         Err(_) => return error::set_and_return("node lock poisoned", MYCELIUM_ERR_INTERNAL),
     };
-    *out = guard.as_ref().is_some_and(|h| h.is_running());
+    *out = matches!(&*guard, NodeState::Running(h) if h.is_running());
     MYCELIUM_OK
-}
-
-// ---------------------------------------------------------------------------
-// Internal: take a guard on the running node, or set an error
-// ---------------------------------------------------------------------------
-
-macro_rules! with_running_node {
-    ($body:expr) => {{
-        let guard = match node_slot().lock() {
-            Ok(g) => g,
-            Err(_) => return error::set_and_return("node lock poisoned", MYCELIUM_ERR_INTERNAL),
-        };
-        let h = match guard.as_ref() {
-            Some(h) => h,
-            None => {
-                return error::set_and_return("node is not running", MYCELIUM_ERR_INVALID_STATE)
-            }
-        };
-        $body(h)
-    }};
 }
 
 // ---------------------------------------------------------------------------
@@ -263,12 +277,15 @@ macro_rules! with_running_node {
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_get_node_info(out: *mut mycelium_node_info_t) -> i32 {
+pub unsafe extern "C" fn mycelium_get_node_info(
+    node: *mut mycelium_node_t,
+    out: *mut mycelium_node_info_t,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let info = h.node().lock().await.info();
             *out = mycelium_node_info_t {
@@ -282,6 +299,7 @@ pub unsafe extern "C" fn mycelium_get_node_info(out: *mut mycelium_node_info_t) 
 
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_public_key_from_ip(
+    node: *mut mycelium_node_t,
     ip: *const c_char,
     out: *mut *mut c_char,
 ) -> i32 {
@@ -299,7 +317,7 @@ pub unsafe extern "C" fn mycelium_get_public_key_from_ip(
             return error::set_and_return("ip is not a valid address", MYCELIUM_ERR_INVALID_ARG)
         }
     };
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let pubkey = h
                 .node()
@@ -319,12 +337,15 @@ pub unsafe extern "C" fn mycelium_get_public_key_from_ip(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_get_peers(out: *mut mycelium_peer_info_array_t) -> i32 {
+pub unsafe extern "C" fn mycelium_get_peers(
+    node: *mut mycelium_node_t,
+    out: *mut mycelium_peer_info_array_t,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let peers: Vec<mycelium_peer_info_t> = h
                 .node()
@@ -342,7 +363,11 @@ pub unsafe extern "C" fn mycelium_get_peers(out: *mut mycelium_peer_info_array_t
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_add_peer(endpoint: *const c_char, out: *mut bool) -> i32 {
+pub unsafe extern "C" fn mycelium_add_peer(
+    node: *mut mycelium_node_t,
+    endpoint: *const c_char,
+    out: *mut bool,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
@@ -355,7 +380,7 @@ pub unsafe extern "C" fn mycelium_add_peer(endpoint: *const c_char, out: *mut bo
         Ok(e) => e,
         Err(_) => return error::set_and_return("invalid endpoint", MYCELIUM_ERR_INVALID_ARG),
     };
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             *out = h.node().lock().await.add_peer(endpoint).is_ok();
             MYCELIUM_OK
@@ -364,7 +389,11 @@ pub unsafe extern "C" fn mycelium_add_peer(endpoint: *const c_char, out: *mut bo
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_remove_peer(endpoint: *const c_char, out: *mut bool) -> i32 {
+pub unsafe extern "C" fn mycelium_remove_peer(
+    node: *mut mycelium_node_t,
+    endpoint: *const c_char,
+    out: *mut bool,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
@@ -377,7 +406,7 @@ pub unsafe extern "C" fn mycelium_remove_peer(endpoint: *const c_char, out: *mut
         Ok(e) => e,
         Err(_) => return error::set_and_return("invalid endpoint", MYCELIUM_ERR_INVALID_ARG),
     };
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             *out = h.node().lock().await.remove_peer(endpoint).is_ok();
             MYCELIUM_OK
@@ -390,12 +419,15 @@ pub unsafe extern "C" fn mycelium_remove_peer(endpoint: *const c_char, out: *mut
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_get_selected_routes(out: *mut mycelium_route_array_t) -> i32 {
+pub unsafe extern "C" fn mycelium_get_selected_routes(
+    node: *mut mycelium_node_t,
+    out: *mut mycelium_route_array_t,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let routes: Vec<mycelium_route_t> = h
                 .node()
@@ -413,12 +445,15 @@ pub unsafe extern "C" fn mycelium_get_selected_routes(out: *mut mycelium_route_a
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_get_fallback_routes(out: *mut mycelium_route_array_t) -> i32 {
+pub unsafe extern "C" fn mycelium_get_fallback_routes(
+    node: *mut mycelium_node_t,
+    out: *mut mycelium_route_array_t,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let routes: Vec<mycelium_route_t> = h
                 .node()
@@ -437,13 +472,14 @@ pub unsafe extern "C" fn mycelium_get_fallback_routes(out: *mut mycelium_route_a
 
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_queried_subnets(
+    node: *mut mycelium_node_t,
     out: *mut mycelium_queried_subnet_array_t,
 ) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let now = tokio::time::Instant::now();
             let qs: Vec<mycelium_queried_subnet_t> = h
@@ -470,12 +506,15 @@ pub unsafe extern "C" fn mycelium_get_queried_subnets(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_get_packet_stats(out: *mut mycelium_packet_stats_t) -> i32 {
+pub unsafe extern "C" fn mycelium_get_packet_stats(
+    node: *mut mycelium_node_t,
+    out: *mut mycelium_packet_stats_t,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let stats = h.node().lock().await.packet_statistics();
             let by_source: Vec<mycelium_packet_stat_entry_t> = stats
@@ -542,9 +581,9 @@ pub unsafe extern "C" fn mycelium_address_from_secret_key(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_start_proxy_probe() -> i32 {
+pub unsafe extern "C" fn mycelium_start_proxy_probe(node: *mut mycelium_node_t) -> i32 {
     error::clear();
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             h.node().lock().await.start_proxy_scan();
             MYCELIUM_OK
@@ -553,9 +592,9 @@ pub unsafe extern "C" fn mycelium_start_proxy_probe() -> i32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_stop_proxy_probe() -> i32 {
+pub unsafe extern "C" fn mycelium_stop_proxy_probe(node: *mut mycelium_node_t) -> i32 {
     error::clear();
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             h.node().lock().await.stop_proxy_scan();
             MYCELIUM_OK
@@ -564,12 +603,15 @@ pub unsafe extern "C" fn mycelium_stop_proxy_probe() -> i32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_list_proxies(out: *mut mycelium_string_array_t) -> i32 {
+pub unsafe extern "C" fn mycelium_list_proxies(
+    node: *mut mycelium_node_t,
+    out: *mut mycelium_string_array_t,
+) -> i32 {
     error::clear();
     if out.is_null() {
         return error::set_and_return("out is null", MYCELIUM_ERR_INVALID_ARG);
     }
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let proxies: Vec<*mut c_char> = h
                 .node()
@@ -591,6 +633,7 @@ pub unsafe extern "C" fn mycelium_list_proxies(out: *mut mycelium_string_array_t
 
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_proxy_connect(
+    node: *mut mycelium_node_t,
     remote: *const c_char,
     out: *mut *mut c_char,
 ) -> i32 {
@@ -606,7 +649,7 @@ pub unsafe extern "C" fn mycelium_proxy_connect(
         Ok(r) => r,
         Err(_) => return error::set_and_return("invalid proxy remote", MYCELIUM_ERR_INVALID_ARG),
     };
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             let future = h.node().lock().await.connect_proxy(remote_addr);
             match future.await {
@@ -627,9 +670,9 @@ pub unsafe extern "C" fn mycelium_proxy_connect(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mycelium_proxy_disconnect() -> i32 {
+pub unsafe extern "C" fn mycelium_proxy_disconnect(node: *mut mycelium_node_t) -> i32 {
     error::clear();
-    with_running_node!(|h: &NodeHandle| {
+    with_running_node!(node, |h: &NodeHandle| {
         h.rt().block_on(async {
             h.node().lock().await.disconnect_proxy();
             MYCELIUM_OK

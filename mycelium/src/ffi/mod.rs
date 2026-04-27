@@ -4,26 +4,15 @@
 //! `cdylib` (`libmycelium.so` / `.dylib`) and `staticlib` (`libmycelium.a`),
 //! and `build.rs` runs `cbindgen` to write `include/mycelium.h`.
 //!
-//! The surface is process-singleton: a single `NodeHandle` lives in
-//! `NODE` and every entry point operates against it. Two processes that
-//! both load the library each get their own `NODE` (writable globals are
-//! per-process under copy-on-write), so this is exactly what you want when
-//! the library is wrapped by an external daemon.
+//! The surface is opaque-handle: `mycelium_start` returns a
+//! `mycelium_node_t *` that the caller passes back into every other entry
+//! point. Lifecycle (singleton-or-not, lifetime, threading) is the
+//! consumer's choice, not ours.
 
 mod conversions;
 mod error;
 mod exports;
 mod types;
-
-use std::sync::{Mutex, OnceLock};
-
-use crate::node_handle::NodeHandle;
-
-static NODE: OnceLock<Mutex<Option<NodeHandle>>> = OnceLock::new();
-
-pub(crate) fn node_slot() -> &'static Mutex<Option<NodeHandle>> {
-    NODE.get_or_init(|| Mutex::new(None))
-}
 
 pub use error::{
     mycelium_last_error_message, MYCELIUM_ERR_INTERNAL, MYCELIUM_ERR_INVALID_ARG,

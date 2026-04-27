@@ -44,6 +44,16 @@
 #define RouterId_BYTE_SIZE 40
 
 /*
+ Opaque handle to a running (or stopped) mycelium node.
+
+ Created by [`mycelium_start`](super::mycelium_start), released by
+ [`mycelium_node_free`](super::mycelium_node_free). The C side only ever
+ sees an opaque pointer — cbindgen emits a forward declaration for this
+ struct because it is not `#[repr(C)]`.
+ */
+typedef struct mycelium_node_t mycelium_node_t;
+
+/*
  Configuration passed to `mycelium_start`. The library reads strings out
  during the call and does not retain any of the pointers — caller still
  owns the memory.
@@ -195,52 +205,65 @@ typedef struct mycelium_string_array_t {
 const char *mycelium_last_error_message(void);
 
 /*
- Start the mycelium node. Returns 0 on success, a negative code on failure.
- Calling while a node is already running returns `MYCELIUM_ERR_INVALID_STATE`.
+ Start a mycelium node. Returns an opaque handle on success, or NULL on
+ failure — call `mycelium_last_error_message` for details. The returned
+ handle must eventually be released with `mycelium_node_free`.
  */
-int32_t mycelium_start(const struct mycelium_start_config_t *cfg);
+struct mycelium_node_t *mycelium_start(const struct mycelium_start_config_t *cfg);
 
 /*
- Stop the running node. No-op (returns 0) if no node is running.
+ Halt the node and release its internal resources. The handle remains
+ valid for `mycelium_is_running` queries (which will return false) until
+ `mycelium_node_free` is called. No-op on a NULL or already-stopped node.
  */
-int32_t mycelium_stop(void);
+int32_t mycelium_stop(struct mycelium_node_t *node);
 
 /*
  Write `true`/`false` into `out` reflecting whether the node is running.
  */
-int32_t mycelium_is_running(bool *out);
+int32_t mycelium_is_running(struct mycelium_node_t *node, bool *out);
 
-int32_t mycelium_get_node_info(struct mycelium_node_info_t *out);
+int32_t mycelium_get_node_info(struct mycelium_node_t *node, struct mycelium_node_info_t *out);
 
-int32_t mycelium_get_public_key_from_ip(const char *ip, char **out);
+int32_t mycelium_get_public_key_from_ip(struct mycelium_node_t *node, const char *ip, char **out);
 
-int32_t mycelium_get_peers(struct mycelium_peer_info_array_t *out);
+int32_t mycelium_get_peers(struct mycelium_node_t *node, struct mycelium_peer_info_array_t *out);
 
-int32_t mycelium_add_peer(const char *endpoint, bool *out);
+int32_t mycelium_add_peer(struct mycelium_node_t *node, const char *endpoint, bool *out);
 
-int32_t mycelium_remove_peer(const char *endpoint, bool *out);
+int32_t mycelium_remove_peer(struct mycelium_node_t *node, const char *endpoint, bool *out);
 
-int32_t mycelium_get_selected_routes(struct mycelium_route_array_t *out);
+int32_t mycelium_get_selected_routes(struct mycelium_node_t *node,
+                                     struct mycelium_route_array_t *out);
 
-int32_t mycelium_get_fallback_routes(struct mycelium_route_array_t *out);
+int32_t mycelium_get_fallback_routes(struct mycelium_node_t *node,
+                                     struct mycelium_route_array_t *out);
 
-int32_t mycelium_get_queried_subnets(struct mycelium_queried_subnet_array_t *out);
+int32_t mycelium_get_queried_subnets(struct mycelium_node_t *node,
+                                     struct mycelium_queried_subnet_array_t *out);
 
-int32_t mycelium_get_packet_stats(struct mycelium_packet_stats_t *out);
+int32_t mycelium_get_packet_stats(struct mycelium_node_t *node,
+                                  struct mycelium_packet_stats_t *out);
 
 int32_t mycelium_generate_secret_key(struct mycelium_secret_key_t *out);
 
 int32_t mycelium_address_from_secret_key(const struct mycelium_secret_key_t *key, char **out);
 
-int32_t mycelium_start_proxy_probe(void);
+int32_t mycelium_start_proxy_probe(struct mycelium_node_t *node);
 
-int32_t mycelium_stop_proxy_probe(void);
+int32_t mycelium_stop_proxy_probe(struct mycelium_node_t *node);
 
-int32_t mycelium_list_proxies(struct mycelium_string_array_t *out);
+int32_t mycelium_list_proxies(struct mycelium_node_t *node, struct mycelium_string_array_t *out);
 
-int32_t mycelium_proxy_connect(const char *remote, char **out);
+int32_t mycelium_proxy_connect(struct mycelium_node_t *node, const char *remote, char **out);
 
-int32_t mycelium_proxy_disconnect(void);
+int32_t mycelium_proxy_disconnect(struct mycelium_node_t *node);
+
+/*
+ Release a node handle returned by `mycelium_start`. If the node is still
+ running it is stopped first. Safe to call with NULL.
+ */
+void mycelium_node_free(struct mycelium_node_t *node);
 
 /*
  Free a single C string returned by the library. Safe to call with NULL.

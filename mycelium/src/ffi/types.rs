@@ -6,6 +6,24 @@
 
 use core::ffi::c_char;
 use std::ffi::CString;
+use std::sync::Mutex;
+
+use crate::node_handle::NodeHandle;
+
+/// Opaque handle to a running (or stopped) mycelium node.
+///
+/// Created by [`mycelium_start`](super::mycelium_start), released by
+/// [`mycelium_node_free`](super::mycelium_node_free). The C side only ever
+/// sees an opaque pointer — cbindgen emits a forward declaration for this
+/// struct because it is not `#[repr(C)]`.
+pub struct mycelium_node_t {
+    pub(super) state: Mutex<NodeState>,
+}
+
+pub(super) enum NodeState {
+    Running(NodeHandle),
+    Stopped,
+}
 
 /// Configuration passed to `mycelium_start`. The library reads strings out
 /// during the call and does not retain any of the pointers — caller still
@@ -159,6 +177,16 @@ pub(super) unsafe fn drain_array<T>(ptr: *mut T, len: usize) -> Vec<T> {
 // ---------------------------------------------------------------------------
 // Per-type destructors.
 // ---------------------------------------------------------------------------
+
+/// Release a node handle returned by `mycelium_start`. If the node is still
+/// running it is stopped first. Safe to call with NULL.
+#[no_mangle]
+pub unsafe extern "C" fn mycelium_node_free(node: *mut mycelium_node_t) {
+    if node.is_null() {
+        return;
+    }
+    let _ = Box::from_raw(node);
+}
 
 /// Free a single C string returned by the library. Safe to call with NULL.
 #[no_mangle]
