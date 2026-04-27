@@ -11,7 +11,6 @@
 //!    the out-parameter.
 
 #![allow(non_camel_case_types)]
-#![allow(clippy::missing_safety_doc)]
 
 use core::ffi::c_char;
 use std::ffi::CStr;
@@ -124,6 +123,15 @@ macro_rules! with_running_node {
 /// Start a mycelium node. Returns an opaque handle on success, or NULL on
 /// failure — call `mycelium_last_error_message` for details. The returned
 /// handle must eventually be released with `mycelium_node_free`.
+///
+/// # Safety
+///
+/// `cfg` must point to a fully-initialised `mycelium_start_config_t`.
+/// Pointer fields inside (`peers`, `peer_discovery_mode`,
+/// `peer_discovery_interfaces`, `tun_name`) follow the conventions in the
+/// module-level safety docs. The struct and any strings it points at are
+/// not retained beyond the call — the caller may free them as soon as
+/// this function returns.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_start(
     cfg: *const mycelium_start_config_t,
@@ -231,7 +239,11 @@ pub unsafe extern "C" fn mycelium_start(
 
 /// Halt the node and release its internal resources. The handle remains
 /// valid for `mycelium_is_running` queries (which will return false) until
-/// `mycelium_node_free` is called. No-op on a NULL or already-stopped node.
+/// `mycelium_node_free` is called. No-op on an already-stopped node.
+///
+/// # Safety
+///
+/// `node` must be NULL or a live handle returned by `mycelium_start`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_stop(node: *mut mycelium_node_t) -> i32 {
     error::clear();
@@ -257,6 +269,11 @@ pub unsafe extern "C" fn mycelium_stop(node: *mut mycelium_node_t) -> i32 {
 }
 
 /// Write `true`/`false` into `out` reflecting whether the node is running.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `bool`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_is_running(node: *mut mycelium_node_t, out: *mut bool) -> i32 {
     error::clear();
@@ -279,6 +296,16 @@ pub unsafe extern "C" fn mycelium_is_running(node: *mut mycelium_node_t, out: *m
 // Identity / introspection
 // ---------------------------------------------------------------------------
 
+/// Populate `out` with the node's subnet and public key. The returned
+/// strings are owned by the caller and must be released with
+/// `mycelium_node_info_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_node_info_t`. Any
+/// previous contents of `*out` are overwritten without being freed —
+/// callers must release prior contents first or pass a fresh struct.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_node_info(
     node: *mut mycelium_node_t,
@@ -300,6 +327,15 @@ pub unsafe extern "C" fn mycelium_get_node_info(
     })
 }
 
+/// Look up the public key of the peer that owns the given mycelium IP.
+/// On success writes a newly-allocated string to `*out` (empty if no
+/// match); release with `mycelium_string_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `ip` must
+/// be a NUL-terminated C string. `out` must point to a writable
+/// `*mut c_char`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_public_key_from_ip(
     node: *mut mycelium_node_t,
@@ -339,6 +375,14 @@ pub unsafe extern "C" fn mycelium_get_public_key_from_ip(
 // Peers
 // ---------------------------------------------------------------------------
 
+/// Populate `out` with one entry per known peer. Release the array with
+/// `mycelium_peer_info_array_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_peer_info_array_t`;
+/// any previous contents are overwritten without being freed.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_peers(
     node: *mut mycelium_node_t,
@@ -365,6 +409,14 @@ pub unsafe extern "C" fn mycelium_get_peers(
     })
 }
 
+/// Add a peer endpoint. Writes `true` to `*out` if the peer was newly
+/// added, `false` if it was already known.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `endpoint`
+/// must be a NUL-terminated C string. `out` must point to a writable
+/// `bool`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_add_peer(
     node: *mut mycelium_node_t,
@@ -391,6 +443,14 @@ pub unsafe extern "C" fn mycelium_add_peer(
     })
 }
 
+/// Remove a peer endpoint. Writes `true` to `*out` if the peer existed
+/// and was removed, `false` if no such peer was registered.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `endpoint`
+/// must be a NUL-terminated C string. `out` must point to a writable
+/// `bool`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_remove_peer(
     node: *mut mycelium_node_t,
@@ -421,6 +481,14 @@ pub unsafe extern "C" fn mycelium_remove_peer(
 // Routes
 // ---------------------------------------------------------------------------
 
+/// Populate `out` with the currently selected (in-use) routes. Release
+/// the array with `mycelium_route_array_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_route_array_t`; any
+/// previous contents are overwritten without being freed.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_selected_routes(
     node: *mut mycelium_node_t,
@@ -447,6 +515,14 @@ pub unsafe extern "C" fn mycelium_get_selected_routes(
     })
 }
 
+/// Populate `out` with the routing table's fallback (non-selected) routes.
+/// Release the array with `mycelium_route_array_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_route_array_t`; any
+/// previous contents are overwritten without being freed.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_fallback_routes(
     node: *mut mycelium_node_t,
@@ -473,6 +549,14 @@ pub unsafe extern "C" fn mycelium_get_fallback_routes(
     })
 }
 
+/// Populate `out` with subnets the router is currently querying. Release
+/// the array with `mycelium_queried_subnet_array_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_queried_subnet_array_t`;
+/// any previous contents are overwritten without being freed.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_queried_subnets(
     node: *mut mycelium_node_t,
@@ -508,6 +592,14 @@ pub unsafe extern "C" fn mycelium_get_queried_subnets(
 // Packet statistics
 // ---------------------------------------------------------------------------
 
+/// Populate `out` with aggregated packet statistics. Release with
+/// `mycelium_packet_stats_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_packet_stats_t`; any
+/// previous contents are overwritten without being freed.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_get_packet_stats(
     node: *mut mycelium_node_t,
@@ -547,6 +639,13 @@ pub unsafe extern "C" fn mycelium_get_packet_stats(
 // Key utilities (no node required)
 // ---------------------------------------------------------------------------
 
+/// Generate a fresh 32-byte node secret key into `out`. Stateless — no
+/// node handle required.
+///
+/// # Safety
+///
+/// `out` must point to a writable, properly aligned
+/// `mycelium_secret_key_t`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_generate_secret_key(out: *mut mycelium_secret_key_t) -> i32 {
     error::clear();
@@ -560,6 +659,14 @@ pub unsafe extern "C" fn mycelium_generate_secret_key(out: *mut mycelium_secret_
     MYCELIUM_OK
 }
 
+/// Derive the mycelium address (text form) of the public key for the
+/// given secret key. Writes a newly-allocated string to `*out`; release
+/// with `mycelium_string_free`. Stateless — no node handle required.
+///
+/// # Safety
+///
+/// `key` must point to an initialised `mycelium_secret_key_t`. `out` must
+/// point to a writable `*mut c_char`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_address_from_secret_key(
     key: *const mycelium_secret_key_t,
@@ -583,6 +690,11 @@ pub unsafe extern "C" fn mycelium_address_from_secret_key(
 // Proxy
 // ---------------------------------------------------------------------------
 
+/// Begin the periodic SOCKS5 proxy probe scan.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_start_proxy_probe(node: *mut mycelium_node_t) -> i32 {
     error::clear();
@@ -594,6 +706,11 @@ pub unsafe extern "C" fn mycelium_start_proxy_probe(node: *mut mycelium_node_t) 
     })
 }
 
+/// Stop the periodic SOCKS5 proxy probe scan.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_stop_proxy_probe(node: *mut mycelium_node_t) -> i32 {
     error::clear();
@@ -605,6 +722,14 @@ pub unsafe extern "C" fn mycelium_stop_proxy_probe(node: *mut mycelium_node_t) -
     })
 }
 
+/// List the currently known SOCKS5 proxy endpoints (formatted as
+/// `addr:port` strings). Release with `mycelium_string_array_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `out` must
+/// point to a writable, properly aligned `mycelium_string_array_t`; any
+/// previous contents are overwritten without being freed.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_list_proxies(
     node: *mut mycelium_node_t,
@@ -634,6 +759,15 @@ pub unsafe extern "C" fn mycelium_list_proxies(
     })
 }
 
+/// Connect to a remote SOCKS5 proxy. Writes the negotiated remote address
+/// to `*out` as a newly-allocated string; release with
+/// `mycelium_string_free`.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`. `remote`
+/// must be a NUL-terminated C string. `out` must point to a writable
+/// `*mut c_char`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_proxy_connect(
     node: *mut mycelium_node_t,
@@ -672,6 +806,11 @@ pub unsafe extern "C" fn mycelium_proxy_connect(
     })
 }
 
+/// Disconnect from the currently connected SOCKS5 proxy, if any.
+///
+/// # Safety
+///
+/// `node` must be a live handle returned by `mycelium_start`.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_proxy_disconnect(node: *mut mycelium_node_t) -> i32 {
     error::clear();
