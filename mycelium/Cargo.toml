@@ -12,6 +12,18 @@ vendored-openssl = ["openssl/vendored"]
 mactunfd = [
   "tun/appstore",
 ] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
+# Build a C ABI surface (cdylib + staticlib + generated header) on top of the
+# core node. Used by external daemons that wrap libmycelium without depending
+# on Rust as a build dependency.
+ffi = []
+
+[lib]
+# Keep "lib" so in-tree Rust crates (myceliumd, myceliumd-common, mycelium-api,
+# mycelium-cli) can depend on this crate as a regular Rust library; "cdylib"
+# and "staticlib" only emit useful artefacts when --features ffi is enabled
+# (entry points are gated on cfg(feature = "ffi")), but building them
+# unconditionally costs nothing extra.
+crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
 cdn-meta = { git = "https://github.com/threefoldtech/mycelium-cdn-registry", package = "cdn-meta" }
@@ -88,3 +100,6 @@ libc = "0.2.180"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
+
+[build-dependencies]
+cbindgen = { version = "0.29", default-features = false }
