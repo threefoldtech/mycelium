@@ -407,7 +407,6 @@ pub struct NodeArguments {
     /// the system resolvers.
     #[arg(long = "enable-dns")]
     pub enable_dns: bool,
-
 }
 
 #[derive(Debug, Deserialize)]
@@ -595,57 +594,7 @@ pub fn resolve_key_path(key_file: Option<PathBuf>) -> PathBuf {
     })
 }
 
-/// Register the mycelium node as an AIDL service and wait for shutdown.
-#[cfg(aidl)]
-async fn run_aidl_daemon() -> Result<(), Box<dyn Error>> {
-    use mycelium::aidl;
-
-    binder::ProcessState::start_thread_pool();
-
-    let svc = aidl::MyceliumService::new();
-    let binder_obj =
-        aidl::BnMyceliumService::new_binder(svc, binder::BinderFeatures::default());
-    binder::add_service(
-        "tech.threefold.mycelium.IMyceliumService",
-        binder_obj.as_binder(),
-    )
-    .map_err(|e| format!("failed to register AIDL service: {e}"))?;
-
-    info!("AIDL service registered, waiting for client connections");
-
-    #[cfg(target_family = "unix")]
-    {
-        use tokio::signal::unix::SignalKind;
-        let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())
-            .expect("Can install SIGINT handler");
-        let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate())
-            .expect("Can install SIGTERM handler");
-
-        tokio::select! {
-            _ = sigint.recv() => { }
-            _ = sigterm.recv() => { }
-        }
-    }
-    #[cfg(not(target_family = "unix"))]
-    {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            error!("Failed to wait for SIGINT: {e}");
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(aidl)]
-pub async fn run_node(
-    _merged_config: MergedNodeConfig,
-    _private_network_config: Option<(String, PrivateNetworkKey)>,
-    _key_path: PathBuf,
-) -> Result<(), Box<dyn Error>> {
-    run_aidl_daemon().await
-}
-
-#[cfg(not(aidl))]
+/// Run the mycelium node (the default command when no subcommand is given).
 pub async fn run_node(
     merged_config: MergedNodeConfig,
     private_network_config: Option<(String, PrivateNetworkKey)>,

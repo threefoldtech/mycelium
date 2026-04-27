@@ -31,12 +31,15 @@ pub mod crypto;
 pub mod data;
 mod dns;
 pub mod endpoint;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 pub mod filters;
 mod interval;
 #[cfg(feature = "message")]
 pub mod message;
 mod metric;
 pub mod metrics;
+pub mod node_handle;
 pub mod packet;
 mod packet_queue;
 mod peer;
@@ -49,9 +52,6 @@ mod rr_cache;
 mod seqno_cache;
 mod sequence_number;
 mod source_table;
-#[cfg(aidl)]
-pub mod aidl;
-pub mod node_handle;
 pub mod subnet;
 pub mod task;
 mod tun;
