@@ -161,6 +161,7 @@ pub unsafe extern "C" fn mycelium_start(
         Err(_) => return std::ptr::null_mut(),
     };
 
+    #[cfg(not(any(target_os = "ios", all(target_os = "macos", feature = "mactunfd"))))]
     let tun_name = match cstr_to_str(cfg.tun_name, "tun_name") {
         Ok(s) => s.to_owned(),
         Err(_) => return std::ptr::null_mut(),
@@ -177,6 +178,8 @@ pub unsafe extern "C" fn mycelium_start(
             return std::ptr::null_mut();
         }
     };
+    #[cfg(any(target_os = "ios", all(target_os = "macos", feature = "mactunfd")))]
+    let tun_fd = cfg.tun_fd;
 
     let config = Config {
         node_key: crypto::SecretKey::from(cfg.priv_key),
