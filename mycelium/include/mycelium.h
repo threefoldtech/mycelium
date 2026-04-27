@@ -103,6 +103,14 @@ typedef struct mycelium_start_config_t {
    Name of the TUN device.
    */
   const char *tun_name;
+  /*
+   Pre-opened TUN file descriptor. Required on iOS and on macOS when
+   the `mactunfd` feature is enabled (the platform delivers the fd
+   through Network Extensions / app-store sandbox plumbing). Ignored
+   on Linux, Windows, plain macOS, and Android — Android opens
+   `/dev/tun` itself from `tun_name`.
+   */
+  int32_t tun_fd;
 } mycelium_start_config_t;
 
 /*

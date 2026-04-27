@@ -52,6 +52,12 @@ pub struct mycelium_start_config_t {
     pub peer_discovery_interfaces_len: usize,
     /// Name of the TUN device.
     pub tun_name: *const c_char,
+    /// Pre-opened TUN file descriptor. Required on iOS and on macOS when
+    /// the `mactunfd` feature is enabled (the platform delivers the fd
+    /// through Network Extensions / app-store sandbox plumbing). Ignored
+    /// on Linux, Windows, plain macOS, and Android — Android opens
+    /// `/dev/tun` itself from `tun_name`.
+    pub tun_fd: i32,
 }
 
 /// 32-byte secret key (output of `mycelium_generate_secret_key`).
