@@ -186,6 +186,12 @@ pub(super) unsafe fn drain_array<T>(ptr: *mut T, len: usize) -> Vec<T> {
 
 /// Release a node handle returned by `mycelium_start`. If the node is still
 /// running it is stopped first. Safe to call with NULL.
+///
+/// # Safety
+///
+/// `node` must be NULL or a pointer previously returned by `mycelium_start`
+/// that has not already been passed to this function. Double-free or
+/// use-after-free is undefined behaviour.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_node_free(node: *mut mycelium_node_t) {
     if node.is_null() {
@@ -195,13 +201,29 @@ pub unsafe extern "C" fn mycelium_node_free(node: *mut mycelium_node_t) {
 }
 
 /// Free a single C string returned by the library. Safe to call with NULL.
+///
+/// # Safety
+///
+/// `ptr` must be NULL or a value returned by a `mycelium_*` entry point
+/// that hands the caller ownership of a `char *` (e.g.
+/// `mycelium_get_public_key_from_ip`, `mycelium_address_from_secret_key`,
+/// `mycelium_proxy_connect`). Strings retrieved via `mycelium_last_error_message`
+/// are owned by the library and must NOT be passed here.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_string_free(ptr: *mut c_char) {
     free_cstring(ptr);
 }
 
-/// Free a string array returned by the library. The struct itself is
-/// caller-allocated; this releases the contents (each item plus the array).
+/// Free a string array returned by the library. The outer struct is
+/// caller-allocated; this releases the items and the backing storage, then
+/// resets `items` to NULL and `len` to 0.
+///
+/// # Safety
+///
+/// `arr` must be NULL or point to a `mycelium_string_array_t` populated by
+/// a successful library call (currently only `mycelium_list_proxies`).
+/// Calling this twice on the same struct is safe — the second call sees
+/// `items == NULL` and does nothing.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_string_array_free(arr: *mut mycelium_string_array_t) {
     if arr.is_null() {
@@ -215,6 +237,15 @@ pub unsafe extern "C" fn mycelium_string_array_free(arr: *mut mycelium_string_ar
     arr.len = 0;
 }
 
+/// Free a `mycelium_node_info_t` populated by `mycelium_get_node_info`.
+/// Releases the inner `subnet` and `pubkey` strings and resets them to
+/// NULL.
+///
+/// # Safety
+///
+/// `info` must be NULL or point to a struct populated by a successful call
+/// to `mycelium_get_node_info`. Calling this twice on the same struct is
+/// safe — the second call sees the fields already NULL.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_node_info_free(info: *mut mycelium_node_info_t) {
     if info.is_null() {
@@ -227,6 +258,13 @@ pub unsafe extern "C" fn mycelium_node_info_free(info: *mut mycelium_node_info_t
     info.pubkey = std::ptr::null_mut();
 }
 
+/// Free a peer-info array populated by `mycelium_get_peers`. Releases each
+/// item's strings, then the backing array, then resets the struct.
+///
+/// # Safety
+///
+/// `arr` must be NULL or point to a `mycelium_peer_info_array_t` populated
+/// by a successful call to `mycelium_get_peers`. Idempotent.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_peer_info_array_free(arr: *mut mycelium_peer_info_array_t) {
     if arr.is_null() {
@@ -243,6 +281,13 @@ pub unsafe extern "C" fn mycelium_peer_info_array_free(arr: *mut mycelium_peer_i
     arr.len = 0;
 }
 
+/// Free a route array populated by `mycelium_get_selected_routes` or
+/// `mycelium_get_fallback_routes`.
+///
+/// # Safety
+///
+/// `arr` must be NULL or point to a `mycelium_route_array_t` populated by
+/// a successful call to one of those two functions. Idempotent.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_route_array_free(arr: *mut mycelium_route_array_t) {
     if arr.is_null() {
@@ -257,6 +302,13 @@ pub unsafe extern "C" fn mycelium_route_array_free(arr: *mut mycelium_route_arra
     arr.len = 0;
 }
 
+/// Free a queried-subnet array populated by `mycelium_get_queried_subnets`.
+///
+/// # Safety
+///
+/// `arr` must be NULL or point to a `mycelium_queried_subnet_array_t`
+/// populated by a successful call to `mycelium_get_queried_subnets`.
+/// Idempotent.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_queried_subnet_array_free(
     arr: *mut mycelium_queried_subnet_array_t,
@@ -278,6 +330,14 @@ unsafe fn free_packet_stat_entries(ptr: *mut mycelium_packet_stat_entry_t, len: 
     }
 }
 
+/// Free a `mycelium_packet_stats_t` populated by
+/// `mycelium_get_packet_stats`. Releases both the by-source and
+/// by-destination arrays.
+///
+/// # Safety
+///
+/// `stats` must be NULL or point to a `mycelium_packet_stats_t` populated
+/// by a successful call to `mycelium_get_packet_stats`. Idempotent.
 #[no_mangle]
 pub unsafe extern "C" fn mycelium_packet_stats_free(stats: *mut mycelium_packet_stats_t) {
     if stats.is_null() {
