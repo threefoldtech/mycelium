@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - On linux, the TUN interface now supports GSU/GRO (TSO and optionally USO on
   linux 6.2+), improving throughput and lowering CPU utilization under heavy load.
+- Added the option to build `mycelium` as a library (both shared object and archive),
+  with a stable C FFI interface.
 
 ## [0.7.6] - 2026-04-21
 
