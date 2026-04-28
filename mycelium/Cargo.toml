@@ -40,13 +40,13 @@ tokio-stream = { version = "0.1.18", features = ["sync"] }
 left-right = "0.11.7"
 ipnet = "2.12.0"
 ip_network_table-deps-treebitmap = "0.5.0"
-blake3 = "1.8.4"
+blake3 = "1.8.5"
 etherparse = "0.20.1"
 quinn = { version = "0.11.9", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
-rustls = { version = "0.23.38", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.39", default-features = false, features = ["ring"] }
 rcgen = "0.14.7"
 netdev = "0.42.0"
 openssl = { version = "0.10.78", optional = true }
@@ -75,7 +75,7 @@ tokio-vsock = { version = "0.7.2" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
-libc = "0.2.185"
+libc = "0.2.186"
 nix = { version = "0.31.1", features = ["net", "socket", "ioctl"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
