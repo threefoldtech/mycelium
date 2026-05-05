@@ -28,7 +28,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [dependencies]
 cdn-meta = { git = "https://github.com/threefoldtech/mycelium-cdn-registry", package = "cdn-meta" }
 
-tokio = { version = "1.52.1", features = [
+tokio = { version = "1.52.2", features = [
   "io-util",
   "fs",
   "macros",
@@ -52,16 +52,16 @@ tokio-stream = { version = "0.1.18", features = ["sync"] }
 left-right = "0.11.7"
 ipnet = "2.12.0"
 ip_network_table-deps-treebitmap = "0.5.0"
-blake3 = "1.8.4"
+blake3 = "1.8.5"
 etherparse = "0.20.1"
 quinn = { version = "0.11.9", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
-rustls = { version = "0.23.38", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.40", default-features = false, features = ["ring"] }
 rcgen = "0.14.7"
-netdev = "0.42.0"
-openssl = { version = "0.10.78", optional = true }
+netdev = "0.43.0"
+openssl = { version = "0.10.79", optional = true }
 tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.9.1"
 dashmap = { version = "6.1.0", features = ["inline"] }
@@ -74,11 +74,11 @@ reqwest = { version = "0.12.24", default-features = false, features = [
   "system-proxy",
   "rustls-tls",
 ] }
-redis = { version = "1.2.0", features = ["tokio-comp"] }
+redis = { version = "1.2.1", features = ["tokio-comp"] }
 reed-solomon-erasure = "6.0.0"
-hickory-server = "0.26.0"
+hickory-server = "0.26.1"
 async-trait = "0.1.89"
-hickory-resolver = "0.26.0"
+hickory-resolver = "0.26.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.21.0"
@@ -88,7 +88,7 @@ mycelium-tun = { path = "../mycelium-tun" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
-libc = "0.2.185"
+libc = "0.2.186"
 nix = { version = "0.31.1", features = ["net", "socket", "ioctl"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -96,7 +96,7 @@ wintun = "0.5.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
-libc = "0.2.180"
+libc = "0.2.186"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
