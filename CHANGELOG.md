@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   linux 6.2+), improving throughput and lowering CPU utilization under heavy load.
 - Added the option to build `mycelium` as a library (both shared object and archive),
   with a stable C FFI interface.
+- `mycelium` shared library and archive are added to releases.
 
 ## [0.7.6] - 2026-04-21
 

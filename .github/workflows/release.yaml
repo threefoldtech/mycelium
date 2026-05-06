@@ -80,6 +80,120 @@ jobs:
           # Specify manifest since we are in a subdirectory
           manifest-path: myceliumd-private/Cargo.toml
 
+  upload-assets-libmycelium:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            dyn_lib: libmycelium.so
+            dyn_versioned: libmycelium.so.0
+            link_arg: -Wl,-soname,libmycelium.so.0
+            cross_apt: gcc-aarch64-linux-gnu
+            cross_linker_var: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
+            cross_linker_val: aarch64-linux-gnu-gcc
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            dyn_lib: libmycelium.so
+            dyn_versioned: libmycelium.so.0
+            link_arg: -Wl,-soname,libmycelium.so.0
+            cross_apt: ""
+            cross_linker_var: ""
+            cross_linker_val: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            dyn_lib: libmycelium.dylib
+            dyn_versioned: libmycelium.0.dylib
+            link_arg: -Wl,-install_name,@rpath/libmycelium.0.dylib
+            cross_apt: ""
+            cross_linker_var: ""
+            cross_linker_val: ""
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            dyn_lib: libmycelium.dylib
+            dyn_versioned: libmycelium.0.dylib
+            link_arg: -Wl,-install_name,@rpath/libmycelium.0.dylib
+            cross_apt: ""
+            cross_linker_var: ""
+            cross_linker_val: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux cross toolchain
+        if: matrix.cross_apt != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.cross_apt }}
+
+      - name: Build libmycelium
+        shell: bash
+        env:
+          RUSTFLAGS: -C link-arg=${{ matrix.link_arg }}
+        run: |
+          set -euo pipefail
+          if [ -n "${{ matrix.cross_linker_var }}" ]; then
+            export ${{ matrix.cross_linker_var }}=${{ matrix.cross_linker_val }}
+          fi
+          cargo build --release \
+            --manifest-path mycelium/Cargo.toml \
+            --target ${{ matrix.target }} \
+            --features ffi
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_DIR="target/${{ matrix.target }}/release"
+          mkdir -p pkg/lib pkg/include
+          cp "$TARGET_DIR/${{ matrix.dyn_lib }}" "pkg/lib/${{ matrix.dyn_versioned }}"
+          ln -s "${{ matrix.dyn_versioned }}" "pkg/lib/${{ matrix.dyn_lib }}"
+          cp "$TARGET_DIR/libmycelium.a" pkg/lib/libmycelium.a
+          # cbindgen writes mycelium.h into the build-script OUT_DIR
+          # (target/<TARGET>/release/build/mycelium-<fingerprint>/out/).
+          # The dir name shares a prefix with sibling workspace crates
+          # (mycelium-tun, mycelium-api, ...) so glob on the file name —
+          # only mycelium/build.rs emits a header by that name.
+          mapfile -t headers < <(find "$TARGET_DIR/build" -type f -name mycelium.h)
+          if [ ${#headers[@]} -ne 1 ]; then
+            echo "Expected exactly one mycelium.h, found ${#headers[@]}:" >&2
+            printf '  %s\n' "${headers[@]}" >&2
+            exit 1
+          fi
+          cp "${headers[0]}" pkg/include/mycelium.h
+
+      - name: Verify SONAME / install_name
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            readelf -d "pkg/lib/${{ matrix.dyn_versioned }}" \
+              | grep -q 'SONAME.*libmycelium\.so\.0'
+          else
+            otool -D "pkg/lib/${{ matrix.dyn_versioned }}" \
+              | grep -q '@rpath/libmycelium\.0\.dylib'
+          fi
+
+      - name: Create tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -czf "libmycelium-${VERSION}-${{ matrix.target }}.tar.gz" -C pkg .
+
+      - name: Upload tarball to release
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["libmycelium-*.tar.gz"]'
+
   build-msi:
     needs: create-release
     runs-on: windows-latest
