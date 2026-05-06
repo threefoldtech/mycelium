@@ -143,8 +143,7 @@ impl Tun {
         // Attempt USO4/USO6 — requires Linux 6.2+. Failure is non-fatal.
         let uso_flags = offload_flags | TUN_F_USO4 | TUN_F_USO6;
         // SAFETY: file is a valid TUN fd.
-        let uso_enabled =
-            unsafe { tunsetoffload(file.as_raw_fd(), uso_flags) }.is_ok();
+        let uso_enabled = unsafe { tunsetoffload(file.as_raw_fd(), uso_flags) }.is_ok();
         if uso_enabled {
             debug!(name = %actual_name, "enabled USO offload");
         }

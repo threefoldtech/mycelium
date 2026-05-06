@@ -160,7 +160,10 @@ jobs:
           # The dir name shares a prefix with sibling workspace crates
           # (mycelium-tun, mycelium-api, ...) so glob on the file name —
           # only mycelium/build.rs emits a header by that name.
-          mapfile -t headers < <(find "$TARGET_DIR/build" -type f -name mycelium.h)
+          headers=()
+          while IFS= read -r line; do
+            headers+=("$line")
+          done < <(find "$TARGET_DIR/build" -type f -name mycelium.h)
           if [ ${#headers[@]} -ne 1 ]; then
             echo "Expected exactly one mycelium.h, found ${#headers[@]}:" >&2
             printf '  %s\n' "${headers[@]}" >&2
