@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-05-06
+
 ### Added
 
 - On linux, the TUN interface now supports GSU/GRO (TSO and optionally USO on
@@ -776,4 +778,5 @@ This is a breaking change, check the main README file for update info.
 [0.7.4]: https://github.com/threefoldtech/mycelium/compare/v0.7.3...v0.7.4
 [0.7.5]: https://github.com/threefoldtech/mycelium/compare/v0.7.4...v0.7.5
 [0.7.6]: https://github.com/threefoldtech/mycelium/compare/v0.7.5...v0.7.6
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.6...HEAD
+[0.7.7]: https://github.com/threefoldtech/mycelium/compare/v0.7.6...v0.7.7
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.7...HEAD

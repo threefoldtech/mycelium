@@ -10,5 +10,5 @@ export BINARIES="mycelium mycelium-private"
 # and are built with --manifest-path in the Makefile rather than build_binaries()
 export ALL_FEATURES="default"
 
-export VERSION="0.7.5"
+export VERSION="0.7.7"
 export PATCHLEVEL="patch"
