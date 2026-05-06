@@ -23,11 +23,11 @@ const TUNSETOFFLOAD: libc::c_ulong = 0x400454d0;
 const IFF_VNET_HDR: libc::c_short = 0x4000;
 
 // TUNSETOFFLOAD feature flags.
-const TUN_F_CSUM: libc::c_ulong = 0x01;
-const TUN_F_TSO4: libc::c_ulong = 0x02;
-const TUN_F_TSO6: libc::c_ulong = 0x04;
-const TUN_F_USO4: libc::c_ulong = 0x20;
-const TUN_F_USO6: libc::c_ulong = 0x40;
+const TUN_F_CSUM: libc::c_int = 0x01;
+const TUN_F_TSO4: libc::c_int = 0x02;
+const TUN_F_TSO6: libc::c_int = 0x04;
+const TUN_F_USO4: libc::c_int = 0x20;
+const TUN_F_USO6: libc::c_int = 0x40;
 
 /// Maximum read buffer: 65535 (max IP packet) + 12 (virtio header).
 const READ_BUF_SIZE: usize = 65535 + VIRTIO_NET_HDR_LEN;
@@ -37,6 +37,12 @@ nix::ioctl_write_ptr_bad!(
     tunsetiff,
     TUNSETIFF,
     libc::ifreq
+);
+
+nix::ioctl_write_int_bad!(
+    /// Set TUN device offload features.
+    tunsetoffload,
+    TUNSETOFFLOAD
 );
 
 nix::ioctl_write_ptr_bad!(
@@ -131,17 +137,14 @@ impl Tun {
         // Enable offloading: CSUM + TSO4 + TSO6 are mandatory.
         let offload_flags = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6;
         // SAFETY: file is a valid TUN fd.
-        let ret = unsafe { libc::ioctl(file.as_raw_fd(), TUNSETOFFLOAD, offload_flags) };
-        if ret < 0 {
-            return Err(io::Error::last_os_error());
-        }
+        unsafe { tunsetoffload(file.as_raw_fd(), offload_flags) }.map_err(io::Error::from)?;
         debug!(name = %actual_name, "enabled TSO offload");
 
         // Attempt USO4/USO6 — requires Linux 6.2+. Failure is non-fatal.
         let uso_flags = offload_flags | TUN_F_USO4 | TUN_F_USO6;
         // SAFETY: file is a valid TUN fd.
-        let ret = unsafe { libc::ioctl(file.as_raw_fd(), TUNSETOFFLOAD, uso_flags) };
-        let uso_enabled = ret == 0;
+        let uso_enabled =
+            unsafe { tunsetoffload(file.as_raw_fd(), uso_flags) }.is_ok();
         if uso_enabled {
             debug!(name = %actual_name, "enabled USO offload");
         }
