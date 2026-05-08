@@ -2,9 +2,9 @@
 
 This is the main binary to use when connecting to [a private network](../docs/private_network.md).
 You can either get a release from [the GitHub release page](https://github.com/threefoldtech/myceliumd/releases), 
-or build the code yourself here. While we intend to keep the master branch as stable,
-i.e. a build from latest master should succeed, this is not a hard guarantee. Additionally,
-the master branch might not be compatible with the latest release, in case of a
+or build the code yourself here. While we intend to keep the main branch as stable,
+i.e. a build from latest main should succeed, this is not a hard guarantee. Additionally,
+the main branch might not be compatible with the latest release, in case of a
 breaking change.
 
 Building, with the rust toolchain installed, can be done by running `cargo build`

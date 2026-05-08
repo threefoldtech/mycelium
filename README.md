@@ -27,7 +27,7 @@ make run
 
 > We are looking for lots of testers to push the system
 
-> [see here for docs](https://github.com/threefoldtech/mycelium/tree/master/docs)
+> [see here for docs](https://github.com/threefoldtech/mycelium/tree/main/docs)
 
 ## Running
 
