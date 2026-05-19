@@ -169,7 +169,9 @@ where
         let node_info = self.state.node.lock().await.info();
         Ok(Info {
             node_subnet: node_info.node_subnet.to_string(),
+            node_ip: node_info.node_ip.to_string(),
             node_pubkey: node_info.node_pubkey,
+            node_start_time: node_info.node_start_time,
         })
     }
 

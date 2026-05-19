@@ -871,6 +871,11 @@
             "type": "string",
             "example": "54f:b680:ba6e:7ced::/64"
           },
+          "nodeIp": {
+            "description": "The full overlay IP of the node, derived from its public key",
+            "type": "string",
+            "example": "54f:b680:ba6e:7ced:abcd:1234:5678:9abc"
+          },
           "nodePubkey": {
             "description": "The public key of the node",
             "type": "string",
@@ -878,6 +883,12 @@
             "minLength": 64,
             "maxLength": 64,
             "example": "02468ace13579bdf02468ace13579bdf02468ace13579bdf02468ace13579bdf"
+          },
+          "nodeStartTime": {
+            "description": "The time the node started, as seconds since the Unix epoch",
+            "type": "integer",
+            "format": "int64",
+            "example": 1716100000
           }
         }
       },

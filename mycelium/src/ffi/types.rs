@@ -70,7 +70,11 @@ pub struct mycelium_secret_key_t {
 #[repr(C)]
 pub struct mycelium_node_info_t {
     pub subnet: *mut c_char,
+    /// The full overlay IP of the node, derived from its public key.
+    pub ip: *mut c_char,
     pub pubkey: *mut c_char,
+    /// Node start time, as seconds since the Unix epoch.
+    pub start_time: u64,
 }
 
 /// Information about a known peer connection.
@@ -238,8 +242,8 @@ pub unsafe extern "C" fn mycelium_string_array_free(arr: *mut mycelium_string_ar
 }
 
 /// Free a `mycelium_node_info_t` populated by `mycelium_get_node_info`.
-/// Releases the inner `subnet` and `pubkey` strings and resets them to
-/// NULL.
+/// Releases the inner `subnet`, `ip` and `pubkey` strings and resets them
+/// to NULL.
 ///
 /// # Safety
 ///
@@ -253,8 +257,10 @@ pub unsafe extern "C" fn mycelium_node_info_free(info: *mut mycelium_node_info_t
     }
     let info = &mut *info;
     free_cstring(info.subnet);
+    free_cstring(info.ip);
     free_cstring(info.pubkey);
     info.subnet = std::ptr::null_mut();
+    info.ip = std::ptr::null_mut();
     info.pubkey = std::ptr::null_mut();
 }
 

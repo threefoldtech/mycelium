@@ -320,7 +320,9 @@ pub unsafe extern "C" fn mycelium_get_node_info(
             let info = h.node().lock().await.info();
             *out = mycelium_node_info_t {
                 subnet: cstring(info.node_subnet.to_string()),
+                ip: cstring(info.node_ip.to_string()),
                 pubkey: cstring(info.node_pubkey.to_string()),
+                start_time: info.node_start_time,
             };
             MYCELIUM_OK
         })

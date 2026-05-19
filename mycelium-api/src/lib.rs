@@ -404,8 +404,12 @@ where
 pub struct Info {
     /// The overlay subnet in use by the node.
     pub node_subnet: String,
+    /// The full overlay IP of the node.
+    pub node_ip: String,
     /// The public key of the node
     pub node_pubkey: PublicKey,
+    /// Node start time, as seconds since the Unix epoch.
+    pub node_start_time: u64,
 }
 
 /// Get general info about the node.
@@ -416,7 +420,9 @@ where
     let info = state.node.lock().await.info();
     Json(Info {
         node_subnet: info.node_subnet.to_string(),
+        node_ip: info.node_ip.to_string(),
         node_pubkey: info.node_pubkey,
+        node_start_time: info.node_start_time,
     })
 }
 

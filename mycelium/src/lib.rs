@@ -133,14 +133,20 @@ pub struct Node<M> {
     proxy: Proxy<M>,
     #[cfg(feature = "message")]
     message_stack: message::MessageStack<M>,
+    /// The moment this node was created, used to report uptime/start time.
+    started: std::time::SystemTime,
 }
 
 /// General info about a node.
 pub struct NodeInfo {
     /// The overlay subnet in use by the node.
     pub node_subnet: Subnet,
+    /// The full overlay IP of the node (derived from the public key).
+    pub node_ip: std::net::IpAddr,
     /// The public key of the node
     pub node_pubkey: crypto::PublicKey,
+    /// Node start time, as seconds since the Unix epoch.
+    pub node_start_time: u64,
 }
 
 impl<M> Node<M>
@@ -149,6 +155,7 @@ where
 {
     /// Setup a new `Node` with the provided [`Config`].
     pub async fn new(config: Config<M>) -> Result<Self, Box<dyn std::error::Error>> {
+        let started = std::time::SystemTime::now();
         // If a private network is configured, validate network name
         if let Some((net_name, _)) = &config.private_network_config {
             if net_name.len() < 2 || net_name.len() > 64 {
@@ -334,6 +341,7 @@ where
             proxy,
             #[cfg(feature = "message")]
             message_stack: ms,
+            started,
         })
     }
 
@@ -341,7 +349,13 @@ where
     pub fn info(&self) -> NodeInfo {
         NodeInfo {
             node_subnet: self.router.node_tun_subnet(),
+            node_ip: self.router.node_public_key().address().into(),
             node_pubkey: self.router.node_public_key(),
+            node_start_time: self
+                .started
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         }
     }
 
