@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-05-19
+
 ### Added
 
 - Add a node ip and node start time field to the node info struct.
@@ -783,4 +785,5 @@ This is a breaking change, check the main README file for update info.
 [0.7.5]: https://github.com/threefoldtech/mycelium/compare/v0.7.4...v0.7.5
 [0.7.6]: https://github.com/threefoldtech/mycelium/compare/v0.7.5...v0.7.6
 [0.7.7]: https://github.com/threefoldtech/mycelium/compare/v0.7.6...v0.7.7
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.7...HEAD
+[0.7.8]: https://github.com/threefoldtech/mycelium/compare/v0.7.7...v0.7.8
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.8...HEAD
