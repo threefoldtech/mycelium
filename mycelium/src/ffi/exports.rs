@@ -237,9 +237,12 @@ pub unsafe extern "C" fn mycelium_start(
     }
 }
 
-/// Halt the node and release its internal resources. The handle remains
-/// valid for `mycelium_is_running` queries (which will return false) until
-/// `mycelium_node_free` is called. No-op on an already-stopped node.
+/// Halt the node and release its internal resources. This call blocks until
+/// the node's background runtime has fully shut down (typically well under a
+/// second; bounded at a few seconds) and any network interface it created has
+/// been removed. The handle remains valid for `mycelium_is_running` queries
+/// (which will return false) until `mycelium_node_free` is called. No-op on an
+/// already-stopped node.
 ///
 /// # Safety
 ///
@@ -255,15 +258,17 @@ pub unsafe extern "C" fn mycelium_stop(node: *mut mycelium_node_t) -> i32 {
         Ok(g) => g,
         Err(_) => return error::set_and_return("node lock poisoned", MYCELIUM_ERR_INTERNAL),
     };
-    match &mut *guard {
-        NodeState::Running(h) => {
-            info!("stopping mycelium node");
-            h.stop();
-            *guard = NodeState::Stopped;
-        }
-        NodeState::Stopped => {
-            warn!("mycelium_stop called on a stopped node");
-        }
+    if matches!(&*guard, NodeState::Running(_)) {
+        info!("stopping mycelium node");
+        // Swap the handle out under the lock, then release the lock before
+        // dropping the handle: `NodeHandle`'s `Drop` blocks until the
+        // background runtime is fully torn down, and we must not hold the
+        // `state` mutex while that happens.
+        let old = std::mem::replace(&mut *guard, NodeState::Stopped);
+        drop(guard);
+        drop(old);
+    } else {
+        warn!("mycelium_stop called on a stopped node");
     }
     MYCELIUM_OK
 }

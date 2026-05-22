@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::metrics::NoMetrics;
 use crate::{Config, Node};
@@ -72,6 +72,13 @@ pub fn create_tun_fd(tun_name: &str) -> Result<i32, std::io::Error> {
 
 // ── NodeHandle ──────────────────────────────────────────────────────────────
 
+/// Upper bound on how long node teardown waits for the background Tokio
+/// runtime to shut down. Asynchronous tasks (including the TUN reader/writer)
+/// are cancelled immediately when the runtime is dropped; this timeout only
+/// bounds the wait on any outstanding `spawn_blocking` work so a stuck
+/// blocking task cannot hang teardown forever.
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Handle to a running mycelium node. Holds a reference to the node for direct
 /// method calls and the Tokio runtime handle to drive them from non-async
 /// threads (e.g. Binder threads, C FFI callbacks).
@@ -79,6 +86,18 @@ pub struct NodeHandle {
     node: Arc<Mutex<Node<NoMetrics>>>,
     rt_handle: tokio::runtime::Handle,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Background OS thread that owns the Tokio runtime. Joined on drop so
+    /// teardown is synchronous: once the join completes the runtime is gone
+    /// and any TUN interface the node created has been removed.
+    thread: Option<std::thread::JoinHandle<()>>,
+    /// On Android the `tun` crate does not close the TUN file descriptor on
+    /// drop (it assumes the fd is owned by Android's `VpnService`). Mycelium
+    /// opens this fd itself via [`create_tun_fd`], so it owns it and must
+    /// close it during teardown — otherwise the kernel keeps the
+    /// non-persistent TUN interface alive. Closed in [`Drop`], after the
+    /// background runtime has been joined.
+    #[cfg(target_os = "android")]
+    tun_fd: Option<i32>,
 }
 
 impl NodeHandle {
@@ -87,10 +106,15 @@ impl NodeHandle {
     /// Blocks the calling thread until the node is ready (or fails to start).
     /// The caller provides a fully constructed [`Config`].
     pub fn start(config: Config<NoMetrics>) -> Result<Self, NodeError> {
+        // On Android mycelium opens the TUN fd itself (see `create_tun_fd`),
+        // so the handle owns it and is responsible for closing it on drop.
+        #[cfg(target_os = "android")]
+        let tun_fd = config.tun_fd;
+
         let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-        std::thread::spawn(move || {
+        let thread = std::thread::spawn(move || {
             let rt = match tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .enable_all()
@@ -121,14 +145,44 @@ impl NodeHandle {
                     }
                 }
             });
+
+            // Explicit, bounded teardown. Dropping the runtime cancels every
+            // asynchronous task and drops the TUN device, then waits up to
+            // SHUTDOWN_TIMEOUT for any `spawn_blocking` work to finish.
+            debug!("shutting down node runtime");
+            rt.shutdown_timeout(SHUTDOWN_TIMEOUT);
+            debug!("node runtime shut down");
         });
 
-        let (node, rt_handle) = result_rx.recv().map_err(|_| NodeError::ThreadPanic)??;
+        let (node, rt_handle) = match result_rx.recv() {
+            Ok(Ok(pair)) => pair,
+            other => {
+                // The node failed to start. Wait for the background runtime
+                // to finish tearing down, then release the TUN fd we opened
+                // (on Android nothing else will close it).
+                let _ = thread.join();
+                #[cfg(target_os = "android")]
+                if let Some(fd) = tun_fd {
+                    if fd >= 0 {
+                        // SAFETY: `fd` came from `create_tun_fd`; the runtime
+                        // that used it has been joined, so it is unreferenced.
+                        unsafe { libc::close(fd) };
+                    }
+                }
+                return Err(match other {
+                    Ok(Err(e)) => e,
+                    _ => NodeError::ThreadPanic,
+                });
+            }
+        };
 
         Ok(NodeHandle {
             node,
             rt_handle,
             shutdown_tx: Some(shutdown_tx),
+            thread: Some(thread),
+            #[cfg(target_os = "android")]
+            tun_fd,
         })
     }
 
@@ -155,6 +209,44 @@ impl NodeHandle {
     /// methods from synchronous code.
     pub fn rt(&self) -> &tokio::runtime::Handle {
         &self.rt_handle
+    }
+}
+
+impl Drop for NodeHandle {
+    /// Shut the node down and block until its background runtime — and any
+    /// network interface it created — has been fully torn down.
+    ///
+    /// NOTE: this joins the background OS thread, so it must not be invoked
+    /// from within the node's own Tokio runtime (a thread cannot join
+    /// itself). Calling it from an external thread — as the C FFI layer
+    /// does — is safe.
+    fn drop(&mut self) {
+        // Signal shutdown if `stop()` has not already done so.
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        // Block until the background thread has finished tearing down the
+        // runtime. Dropping the runtime cancels every task, including the
+        // TUN reader/writer that owns the tun device.
+        if let Some(thread) = self.thread.take() {
+            if let Err(e) = thread.join() {
+                error!("node background thread panicked during shutdown: {e:?}");
+            }
+        }
+        // On Android the `tun` crate does not close the TUN fd on drop (it
+        // assumes Android's `VpnService` owns it). Mycelium opened this fd
+        // itself via `create_tun_fd`, so it must close it here — after the
+        // join above guarantees the runtime, and the tun device using the
+        // fd, are gone. The interface is non-persistent, so closing the last
+        // fd makes the kernel remove it.
+        #[cfg(target_os = "android")]
+        if let Some(fd) = self.tun_fd.take() {
+            if fd >= 0 {
+                // SAFETY: `fd` came from `create_tun_fd`; the runtime that
+                // used it has been joined, so nothing else references it.
+                unsafe { libc::close(fd) };
+            }
+        }
     }
 }
 

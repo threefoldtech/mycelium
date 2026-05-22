@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- When the mycelium library is used, the TUN device is now properly
+  cleaned up after the node is stopped
+
 ## [0.7.8] - 2026-05-19
 
 ### Added
