@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-05-22
+
 ### Fixed
 
 - When the mycelium library is used, the TUN device is now properly
@@ -791,4 +793,5 @@ This is a breaking change, check the main README file for update info.
 [0.7.6]: https://github.com/threefoldtech/mycelium/compare/v0.7.5...v0.7.6
 [0.7.7]: https://github.com/threefoldtech/mycelium/compare/v0.7.6...v0.7.7
 [0.7.8]: https://github.com/threefoldtech/mycelium/compare/v0.7.7...v0.7.8
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.8...HEAD
+[0.7.9]: https://github.com/threefoldtech/mycelium/compare/v0.7.8...v0.7.9
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.9...HEAD
