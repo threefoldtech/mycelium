@@ -22,7 +22,7 @@ jsonrpsee = { version = "0.26.0", features = [
   "macros",
   "jsonrpsee-types",
 ] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 tracing = "0.1.44"
 tokio = { version = "1.52.3", default-features = false, features = [
   "net",
@@ -34,4 +34,4 @@ serde = { version = "1.0.228", features = ["derive"] }
 async-trait = "0.1.89"
 
 [dev-dependencies]
-serde_json = "1.0.149"
+serde_json = "1.0.150"

@@ -60,7 +60,7 @@ quinn = { version = "0.11.9", default-features = false, features = [
 ] }
 rustls = { version = "0.23.40", default-features = false, features = ["ring"] }
 rcgen = "0.14.8"
-netdev = "0.43.0"
+netdev = "0.44.0"
 openssl = { version = "0.10.80", optional = true }
 tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.9.1"
@@ -74,7 +74,7 @@ reqwest = { version = "0.12.24", default-features = false, features = [
   "system-proxy",
   "rustls-tls",
 ] }
-redis = { version = "1.2.1", features = ["tokio-comp"] }
+redis = { version = "1.2.2", features = ["tokio-comp"] }
 reed-solomon-erasure = "6.0.0"
 hickory-server = "0.26.1"
 async-trait = "0.1.89"
