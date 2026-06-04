@@ -84,7 +84,8 @@ pub struct Config<M> {
     #[cfg(any(
         target_os = "linux",
         all(target_os = "macos", not(feature = "mactunfd")),
-        target_os = "windows"
+        target_os = "windows",
+        all(target_os = "android", not(feature = "androidtunfd")),
     ))]
     pub tun_name: String,
 
@@ -97,14 +98,16 @@ pub struct Config<M> {
     /// Mark that's set on all packets that we send on the underlying network
     pub firewall_mark: Option<u32>,
 
-    // tun_fd is android, iOS, macos on appstore specific option
-    // We can't create TUN device from the Rust code in android, iOS, and macos on appstore.
-    // So, we create the TUN device on Kotlin(android) or Swift(iOS, macos) then pass
-    // the TUN's file descriptor to mycelium.
+    // tun_fd is the iOS / macos-appstore / android-VpnService option.
+    // We can't create the TUN device from Rust on iOS or macOS-appstore (the
+    // platform doesn't expose `/dev/net/tun` to the app). Android apps using
+    // `VpnService.Builder` are in the same situation — the framework hands
+    // back a ready fd. In these cases the TUN is created by Kotlin (android)
+    // or Swift (iOS, macOS) and the file descriptor is passed to mycelium.
     #[cfg(any(
-        target_os = "android",
         target_os = "ios",
         all(target_os = "macos", feature = "mactunfd"),
+        all(target_os = "android", feature = "androidtunfd"),
     ))]
     pub tun_fd: Option<i32>,
 
@@ -281,7 +284,8 @@ where
                 #[cfg(any(
                     target_os = "linux",
                     all(target_os = "macos", not(feature = "mactunfd")),
-                    target_os = "windows"
+                    target_os = "windows",
+                    all(target_os = "android", not(feature = "androidtunfd")),
                 ))]
                 let tun_config = TunConfig {
                     name: config.tun_name.clone(),
@@ -291,9 +295,9 @@ where
                         .expect("Static configured TUN route is valid; qed"),
                 };
                 #[cfg(any(
-                    target_os = "android",
                     target_os = "ios",
                     all(target_os = "macos", feature = "mactunfd"),
+                    all(target_os = "android", feature = "androidtunfd"),
                 ))]
                 let tun_config = TunConfig {
                     tun_fd: config.tun_fd.unwrap(),

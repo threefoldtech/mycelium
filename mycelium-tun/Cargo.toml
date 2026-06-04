@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license-file = "../LICENSE"
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 tokio = { version = "1.52.3", default-features = false, features = ["net"] }
 nix = { version = "0.31.3", features = ["ioctl", "net"] }
 libc = "0.2"

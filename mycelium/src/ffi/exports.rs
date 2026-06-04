@@ -169,7 +169,11 @@ pub unsafe extern "C" fn mycelium_start(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    #[cfg(not(any(target_os = "ios", all(target_os = "macos", feature = "mactunfd"))))]
+    #[cfg(not(any(
+        target_os = "ios",
+        all(target_os = "macos", feature = "mactunfd"),
+        all(target_os = "android", feature = "androidtunfd"),
+    )))]
     let tun_name = match cstr_to_str(cfg.tun_name, "tun_name") {
         Ok(s) => s.to_owned(),
         Err(_) => return std::ptr::null_mut(),
@@ -177,45 +181,28 @@ pub unsafe extern "C" fn mycelium_start(
 
     info!(peers = peers_strs.len(), "starting mycelium node");
 
-    let node_key = crypto::SecretKey::from(cfg.priv_key);
-
-    #[cfg(target_os = "android")]
-    let tun_fd = {
-        // MTU matches `LINK_MTU` in `mycelium/src/tun/android.rs`; the prefix
-        // length matches what `tun/linux.rs` uses, so the kernel installs the
-        // on-link route for the global mycelium subnet.
-        let node_addr = crypto::PublicKey::from(&node_key).address();
-        match crate::node_handle::create_tun_fd(
-            &tun_name,
-            node_addr,
-            crate::GLOBAL_SUBNET_PREFIX_LEN,
-            1400,
-        ) {
-            Ok(fd) => fd,
-            Err(e) => {
-                error!("Failed to create TUN fd: {e}");
-                error::set(format!("failed to create tun fd: {e}"));
-                return std::ptr::null_mut();
-            }
-        }
-    };
-    #[cfg(any(target_os = "ios", all(target_os = "macos", feature = "mactunfd")))]
+    #[cfg(any(
+        target_os = "ios",
+        all(target_os = "macos", feature = "mactunfd"),
+        all(target_os = "android", feature = "androidtunfd"),
+    ))]
     let tun_fd = cfg.tun_fd;
 
     let config = Config {
-        node_key,
+        node_key: crypto::SecretKey::from(cfg.priv_key),
         peers: endpoints,
         no_tun: false,
         #[cfg(any(
             target_os = "linux",
             all(target_os = "macos", not(feature = "mactunfd")),
-            target_os = "windows"
+            target_os = "windows",
+            all(target_os = "android", not(feature = "androidtunfd")),
         ))]
         tun_name,
         #[cfg(any(
-            target_os = "android",
             target_os = "ios",
             all(target_os = "macos", feature = "mactunfd"),
+            all(target_os = "android", feature = "androidtunfd"),
         ))]
         tun_fd: Some(tun_fd),
         tcp_listen_port: cfg.tcp_listen_port,

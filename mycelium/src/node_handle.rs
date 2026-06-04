@@ -36,156 +36,6 @@ impl std::fmt::Display for NodeError {
 
 impl std::error::Error for NodeError {}
 
-// ── TUN setup (Android only) ────────────────────────────────────────────────
-
-/// Open and fully configure a TUN file descriptor on Android.
-///
-/// The `tun/android.rs` data-plane code expects an already-configured fd
-/// (the same contract the `mobile/` crate satisfies via `VpnService.Builder`).
-/// For the FFI path there is no VpnService doing that work, so this function
-/// does it: opens `/dev/tun`, sets `IFF_TUN | IFF_NO_PI` via `TUNSETIFF`,
-/// assigns `node_addr` with `prefix_len` (`/7` causes the kernel to install
-/// the on-link route for the global mycelium subnet), sets the MTU, and
-/// brings the interface up.
-///
-/// Requires `CAP_NET_ADMIN`.
-#[cfg(target_os = "android")]
-pub fn create_tun_fd(
-    tun_name: &str,
-    node_addr: std::net::Ipv6Addr,
-    prefix_len: u8,
-    mtu: i32,
-) -> Result<i32, std::io::Error> {
-    const TUNSETIFF: libc::c_ulong = 0x400454ca;
-    const IFF_TUN: libc::c_short = 0x0001;
-    const IFF_NO_PI: libc::c_short = 0x1000;
-
-    // SAFETY: the path is a static NUL-terminated byte string; `open` has no
-    // other preconditions.
-    let fd = unsafe { libc::open(b"/dev/tun\0".as_ptr() as *const libc::c_char, libc::O_RDWR) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-
-    let mut ifr = [0u8; 40];
-    let name_bytes = tun_name.as_bytes();
-    let len = name_bytes.len().min(15);
-    ifr[..len].copy_from_slice(&name_bytes[..len]);
-    let flags: i16 = IFF_TUN | IFF_NO_PI;
-    ifr[16] = (flags & 0xff) as u8;
-    ifr[17] = ((flags >> 8) & 0xff) as u8;
-
-    // SAFETY: `fd` is a valid file descriptor that we just opened. `ifr` is a
-    // 40-byte buffer matching the kernel's `struct ifreq` layout, with name
-    // bytes (offset 0..15), a NUL terminator (offset 15, left at zero), and
-    // `ifr_flags` (offset 16..18) populated; remaining bytes are zero, which
-    // is what TUNSETIFF expects for unused union members.
-    let ret = unsafe { libc::ioctl(fd, TUNSETIFF as i32, ifr.as_ptr()) };
-    if ret < 0 {
-        let err = std::io::Error::last_os_error();
-        // SAFETY: `fd` is the open fd from the `open` call above; nothing else
-        // can reference it because it has not escaped this function.
-        unsafe { libc::close(fd) };
-        return Err(err);
-    }
-
-    if let Err(e) = configure_tun_interface(tun_name, node_addr, prefix_len, mtu) {
-        // SAFETY: `fd` is the open fd from the `open` call above; nothing else
-        // can reference it because it has not escaped this function.
-        unsafe { libc::close(fd) };
-        return Err(e);
-    }
-
-    Ok(fd)
-}
-
-/// Assign address, set MTU and bring the named interface up via an
-/// `AF_INET6` control socket. `SIOCSIFADDR` for IPv6 requires `AF_INET6`.
-#[cfg(target_os = "android")]
-fn configure_tun_interface(
-    tun_name: &str,
-    node_addr: std::net::Ipv6Addr,
-    prefix_len: u8,
-    mtu: i32,
-) -> std::io::Result<()> {
-    // SAFETY: `socket(2)` has no preconditions; the arguments are valid
-    // constants exported by libc.
-    let sock = unsafe { libc::socket(libc::AF_INET6, libc::SOCK_DGRAM, 0) };
-    if sock < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-
-    let result = (|| -> std::io::Result<()> {
-        // SAFETY: `libc::ifreq` is a `repr(C)` aggregate of POD types and a
-        // C union; the all-zero bit pattern is a valid value of every
-        // variant (the union members are all integers or fixed-size byte
-        // arrays), and the kernel ignores fields not consumed by the
-        // specific ioctl request.
-        let mut ifr: libc::ifreq = unsafe { std::mem::zeroed() };
-        let name_bytes = tun_name.as_bytes();
-        let copy_len = name_bytes.len().min(libc::IFNAMSIZ - 1);
-        for (dst, &src) in ifr.ifr_name[..copy_len].iter_mut().zip(name_bytes) {
-            *dst = src as libc::c_char;
-        }
-
-        // SAFETY: `sock` is a valid socket fd opened above; `ifr` is fully
-        // initialised with the interface name in `ifr_name` (NUL-terminated:
-        // we copied at most IFNAMSIZ-1 bytes into a zero-initialised buffer)
-        // — the layout expected by SIOCGIFINDEX.
-        if unsafe { libc::ioctl(sock, libc::SIOCGIFINDEX as _, &mut ifr) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        // SAFETY: SIOCGIFINDEX populates the `ifru_ifindex` union variant on
-        // success; the ioctl returned >= 0 above.
-        let ifindex = unsafe { ifr.ifr_ifru.ifru_ifindex };
-
-        let ifr6 = libc::in6_ifreq {
-            ifr6_addr: libc::in6_addr {
-                s6_addr: node_addr.octets(),
-            },
-            ifr6_prefixlen: prefix_len as u32,
-            ifr6_ifindex: ifindex,
-        };
-        // SAFETY: `sock` is a valid AF_INET6 socket fd (required for IPv6
-        // SIOCSIFADDR); `ifr6` is a fully initialised `in6_ifreq` with the
-        // address, prefix length, and interface index expected by the ioctl.
-        if unsafe { libc::ioctl(sock, libc::SIOCSIFADDR as _, &ifr6) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        ifr.ifr_ifru.ifru_mtu = mtu;
-        // SAFETY: `sock` is a valid socket fd; `ifr` has the interface name
-        // set in `ifr_name` and the MTU written into the `ifru_mtu` union
-        // variant — the layout SIOCSIFMTU expects.
-        if unsafe { libc::ioctl(sock, libc::SIOCSIFMTU as _, &ifr) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // SAFETY: `sock` is a valid socket fd; `ifr_name` is still set from
-        // the SIOCGIFINDEX call above (the kernel only writes the `ifr_ifru`
-        // union on success, leaving `ifr_name` intact).
-        if unsafe { libc::ioctl(sock, libc::SIOCGIFFLAGS as _, &mut ifr) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        // SAFETY: SIOCGIFFLAGS populates the `ifru_flags` union variant on
-        // success; the ioctl returned >= 0 above.
-        ifr.ifr_ifru.ifru_flags = unsafe { ifr.ifr_ifru.ifru_flags } | libc::IFF_UP as libc::c_short;
-        // SAFETY: `sock` is a valid socket fd; `ifr` has the interface name
-        // set and the updated flags written into the `ifru_flags` union
-        // variant.
-        if unsafe { libc::ioctl(sock, libc::SIOCSIFFLAGS as _, &ifr) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        Ok(())
-    })();
-
-    // SAFETY: `sock` is the fd from the `socket` call above; it has not
-    // escaped this function and is no longer used.
-    unsafe { libc::close(sock) };
-    result
-}
-
 // ── NodeHandle ──────────────────────────────────────────────────────────────
 
 /// Upper bound on how long node teardown waits for the background Tokio
@@ -206,14 +56,6 @@ pub struct NodeHandle {
     /// teardown is synchronous: once the join completes the runtime is gone
     /// and any TUN interface the node created has been removed.
     thread: Option<std::thread::JoinHandle<()>>,
-    /// On Android the `tun` crate does not close the TUN file descriptor on
-    /// drop (it assumes the fd is owned by Android's `VpnService`). Mycelium
-    /// opens this fd itself via [`create_tun_fd`], so it owns it and must
-    /// close it during teardown — otherwise the kernel keeps the
-    /// non-persistent TUN interface alive. Closed in [`Drop`], after the
-    /// background runtime has been joined.
-    #[cfg(target_os = "android")]
-    tun_fd: Option<i32>,
 }
 
 impl NodeHandle {
@@ -222,11 +64,6 @@ impl NodeHandle {
     /// Blocks the calling thread until the node is ready (or fails to start).
     /// The caller provides a fully constructed [`Config`].
     pub fn start(config: Config<NoMetrics>) -> Result<Self, NodeError> {
-        // On Android mycelium opens the TUN fd itself (see `create_tun_fd`),
-        // so the handle owns it and is responsible for closing it on drop.
-        #[cfg(target_os = "android")]
-        let tun_fd = config.tun_fd;
-
         let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -274,17 +111,8 @@ impl NodeHandle {
             Ok(Ok(pair)) => pair,
             other => {
                 // The node failed to start. Wait for the background runtime
-                // to finish tearing down, then release the TUN fd we opened
-                // (on Android nothing else will close it).
+                // to finish tearing down before returning.
                 let _ = thread.join();
-                #[cfg(target_os = "android")]
-                if let Some(fd) = tun_fd {
-                    if fd >= 0 {
-                        // SAFETY: `fd` came from `create_tun_fd`; the runtime
-                        // that used it has been joined, so it is unreferenced.
-                        unsafe { libc::close(fd) };
-                    }
-                }
                 return Err(match other {
                     Ok(Err(e)) => e,
                     _ => NodeError::ThreadPanic,
@@ -297,8 +125,6 @@ impl NodeHandle {
             rt_handle,
             shutdown_tx: Some(shutdown_tx),
             thread: Some(thread),
-            #[cfg(target_os = "android")]
-            tun_fd,
         })
     }
 
@@ -347,20 +173,6 @@ impl Drop for NodeHandle {
         if let Some(thread) = self.thread.take() {
             if let Err(e) = thread.join() {
                 error!("node background thread panicked during shutdown: {e:?}");
-            }
-        }
-        // On Android the `tun` crate does not close the TUN fd on drop (it
-        // assumes Android's `VpnService` owns it). Mycelium opened this fd
-        // itself via `create_tun_fd`, so it must close it here — after the
-        // join above guarantees the runtime, and the tun device using the
-        // fd, are gone. The interface is non-persistent, so closing the last
-        // fd makes the kernel remove it.
-        #[cfg(target_os = "android")]
-        if let Some(fd) = self.tun_fd.take() {
-            if fd >= 0 {
-                // SAFETY: `fd` came from `create_tun_fd`; the runtime that
-                // used it has been joined, so nothing else references it.
-                unsafe { libc::close(fd) };
             }
         }
     }
