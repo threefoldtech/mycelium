@@ -12,6 +12,11 @@ vendored-openssl = ["openssl/vendored"]
 mactunfd = [
   "tun/appstore",
 ] #mactunfd is a flag to specify that macos should provide tun FD instead of tun name
+# androidtunfd is the Android equivalent of mactunfd: when enabled the caller
+# (typically an app using Android's VpnService) provides a pre-configured TUN
+# file descriptor. Default Android builds (e.g. a `cargo ndk` system-service
+# build) open and manage the TUN device themselves via the shared Linux path.
+androidtunfd = []
 # Build a C ABI surface (cdylib + staticlib + generated header) on top of the
 # core node. Used by external daemons that wrap libmycelium without depending
 # on Rust as a build dependency.
@@ -97,6 +102,8 @@ wintun = "0.5.1"
 [target.'cfg(target_os = "android")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }
 libc = "0.2.186"
+nix = { version = "0.31.3", features = ["socket"] }
+mycelium-tun = { path = "../mycelium-tun" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tun = { git = "https://github.com/LeeSmet/rust-tun", features = ["async"] }

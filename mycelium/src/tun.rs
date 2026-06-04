@@ -3,14 +3,16 @@
 #[cfg(any(
     target_os = "linux",
     all(target_os = "macos", not(feature = "mactunfd")),
-    target_os = "windows"
+    target_os = "windows",
+    all(target_os = "android", not(feature = "androidtunfd")),
 ))]
 use crate::subnet::Subnet;
 
 #[cfg(any(
     target_os = "linux",
     all(target_os = "macos", not(feature = "mactunfd")),
-    target_os = "windows"
+    target_os = "windows",
+    all(target_os = "android", not(feature = "androidtunfd")),
 ))]
 pub struct TunConfig {
     pub name: String,
@@ -19,17 +21,26 @@ pub struct TunConfig {
 }
 
 #[cfg(any(
-    target_os = "android",
     target_os = "ios",
     all(target_os = "macos", feature = "mactunfd"),
+    all(target_os = "android", feature = "androidtunfd"),
 ))]
 pub struct TunConfig {
     pub tun_fd: i32,
 }
-#[cfg(target_os = "linux")]
+
+// Android without the `androidtunfd` feature uses the same Linux uAPI as
+// `target_os = "linux"`, so it compiles `tun/linux.rs`.
+#[cfg(any(
+    target_os = "linux",
+    all(target_os = "android", not(feature = "androidtunfd")),
+))]
 mod linux;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(
+    target_os = "linux",
+    all(target_os = "android", not(feature = "androidtunfd")),
+))]
 pub use linux::new;
 
 #[cfg(all(target_os = "macos", not(feature = "mactunfd")))]
@@ -43,9 +54,9 @@ mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::new;
 
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "androidtunfd"))]
 mod android;
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "androidtunfd"))]
 pub use android::new;
 
 #[cfg(any(target_os = "ios", all(target_os = "macos", feature = "mactunfd")))]

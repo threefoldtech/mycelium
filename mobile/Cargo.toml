@@ -19,6 +19,9 @@ once_cell = "1.21.1"
 serde_json = "1.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
+# Android consumers (VpnService.Builder hands in a pre-configured fd) use the
+# fd-handoff TUN path. This feature enables that path in mycelium.
+mycelium = { path = "../mycelium", features = ["vendored-openssl", "androidtunfd"] }
 tracing-android = "0.2.0"
 
 [target.'cfg(target_os = "ios")'.dependencies]
