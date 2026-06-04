@@ -177,20 +177,33 @@ pub unsafe extern "C" fn mycelium_start(
 
     info!(peers = peers_strs.len(), "starting mycelium node");
 
+    let node_key = crypto::SecretKey::from(cfg.priv_key);
+
     #[cfg(target_os = "android")]
-    let tun_fd = match crate::node_handle::create_tun_fd(&tun_name) {
-        Ok(fd) => fd,
-        Err(e) => {
-            error!("Failed to create TUN fd: {e}");
-            error::set(format!("failed to create tun fd: {e}"));
-            return std::ptr::null_mut();
+    let tun_fd = {
+        // MTU matches `LINK_MTU` in `mycelium/src/tun/android.rs`; the prefix
+        // length matches what `tun/linux.rs` uses, so the kernel installs the
+        // on-link route for the global mycelium subnet.
+        let node_addr = crypto::PublicKey::from(&node_key).address();
+        match crate::node_handle::create_tun_fd(
+            &tun_name,
+            node_addr,
+            crate::GLOBAL_SUBNET_PREFIX_LEN,
+            1400,
+        ) {
+            Ok(fd) => fd,
+            Err(e) => {
+                error!("Failed to create TUN fd: {e}");
+                error::set(format!("failed to create tun fd: {e}"));
+                return std::ptr::null_mut();
+            }
         }
     };
     #[cfg(any(target_os = "ios", all(target_os = "macos", feature = "mactunfd")))]
     let tun_fd = cfg.tun_fd;
 
     let config = Config {
-        node_key: crypto::SecretKey::from(cfg.priv_key),
+        node_key,
         peers: endpoints,
         no_tun: false,
         #[cfg(any(
