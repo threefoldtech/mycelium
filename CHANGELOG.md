@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-06-05
+
+### Changed
+
+- Switched the android tun implementation to support both file
+  descriptors (for regular user apps), as well as creating the TUN
+  ourselves (for a system lib). In case of the latter, the TUN code now
+  uses the linux TUN code path with segmentation offloading enabled.
+
 ## [0.7.9] - 2026-05-22
 
 ### Fixed
@@ -794,4 +803,5 @@ This is a breaking change, check the main README file for update info.
 [0.7.7]: https://github.com/threefoldtech/mycelium/compare/v0.7.6...v0.7.7
 [0.7.8]: https://github.com/threefoldtech/mycelium/compare/v0.7.7...v0.7.8
 [0.7.9]: https://github.com/threefoldtech/mycelium/compare/v0.7.8...v0.7.9
-[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.9...HEAD
+[0.7.10]: https://github.com/threefoldtech/mycelium/compare/v0.7.9...v0.7.10
+[unreleased]: https://github.com/threefoldtech/mycelium/compare/v0.7.10...HEAD
