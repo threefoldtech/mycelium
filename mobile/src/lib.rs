@@ -87,7 +87,13 @@ static RESPONSE_CHANNEL: Lazy<ResponseChannelType> = Lazy::new(|| {
 
 #[tokio::main]
 #[allow(unused_variables)] // because tun_fd is only used in android and ios
-pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, enable_dns: bool, enable_api_server: bool) {
+pub async fn start_mycelium(
+    peers: Vec<String>,
+    tun_fd: i32,
+    priv_key: Vec<u8>,
+    enable_dns: bool,
+    enable_api_server: bool,
+) {
     #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     setup_logging_once();
 
@@ -126,6 +132,8 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
         update_workers: 1,
         cdn_cache: None,
         enable_dns,
+        #[cfg(target_os = "linux")]
+        vsock_listen_port: None,
     };
     let node = match Node::new(config).await {
         Ok(node) => {
@@ -141,10 +149,18 @@ pub async fn start_mycelium(peers: Vec<String>, tun_fd: i32, priv_key: Vec<u8>, 
     // Only spawn API servers when enabled.
     let (_http_api, _rpc_api) = if enable_api_server {
         let http_api = mycelium_api::Http::spawn(node.clone(), DEFAULT_HTTP_API_SERVER_ADDRESS);
-        info!("HTTP API server started on {}", DEFAULT_HTTP_API_SERVER_ADDRESS);
+        info!(
+            "HTTP API server started on {}",
+            DEFAULT_HTTP_API_SERVER_ADDRESS
+        );
 
-        let rpc_api = mycelium_api::rpc::JsonRpc::spawn(node.clone(), DEFAULT_JSONRPC_API_SERVER_ADDRESS).await;
-        info!("JSON-RPC API server started on {}", DEFAULT_JSONRPC_API_SERVER_ADDRESS);
+        let rpc_api =
+            mycelium_api::rpc::JsonRpc::spawn(node.clone(), DEFAULT_JSONRPC_API_SERVER_ADDRESS)
+                .await;
+        info!(
+            "JSON-RPC API server started on {}",
+            DEFAULT_JSONRPC_API_SERVER_ADDRESS
+        );
 
         (Some(http_api), Some(rpc_api))
     } else {
