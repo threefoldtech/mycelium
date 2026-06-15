@@ -437,9 +437,9 @@ dependencies = [
 
 [[package]]
 name = "cbindgen"
-version = "0.29.3"
+version = "0.29.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c95537b45400390270fae69ac098d057c8f5399001cde9d04f700c105ddfff2d"
+checksum = "2ecb53484c9c167ba674026b656d8a27d7657a58e6066aa902bfb1a4aa00ae20"
 dependencies = [
  "heck",
  "indexmap",
@@ -824,9 +824,9 @@ dependencies = [
 
 [[package]]
 name = "etherparse"
-version = "0.20.1"
+version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ac016aaf11dfe643edcd088a166234bfcb72e7f06691abfcf21e9af524037f4"
+checksum = "e8b5355e41024c070dd6c1a9b3340e5026a71a4222fb6c64606f21c9f6b502c1"
 dependencies = [
  "arrayvec",
 ]
@@ -2359,9 +2359,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.80"
+version = "0.10.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a45fa2aa886c42762255da344f0a0d313e254066c46aad76f300c3d3da62d967"
+checksum = "77823a27f0babb03091cb9ed9ef80af3b39dbc82f97e8fa530374b7dafd87a45"
 dependencies = [
  "bitflags 2.9.0",
  "cfg-if",
@@ -2393,9 +2393,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.116"
+version = "0.9.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
+checksum = "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695"
 dependencies = [
  "cc",
  "libc",
@@ -2846,9 +2846,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12e6b5f4d8ef33944e833e2b1859ad478deab6e431d7337b30ee2efe21f7543"
+checksum = "f9fd510128eda94d1d49b9f81487744d5c451422431cce41238fe2853d29f4cc"
 dependencies = [
  "arcstr",
  "async-lock",
