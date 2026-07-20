@@ -47,8 +47,8 @@ futures = "0.3.32"
 serde = { version = "1.0.228", features = ["derive"] }
 rand = "0.10.1"
 bytes = "1.11.0"
-x25519-dalek = { version = "2.0.1", features = ["getrandom", "static_secrets"] }
-aes-gcm = "0.10.3"
+x25519-dalek = { version = "3.0.0", features = ["getrandom", "static_secrets"] }
+aes-gcm = "0.11.0"
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing-logfmt = { version = "0.3.7", features = ["ansi_logs"] }
@@ -65,7 +65,7 @@ quinn = { version = "0.11.9", default-features = false, features = [
 ] }
 rustls = { version = "0.23.40", default-features = false, features = ["ring"] }
 rcgen = "0.14.8"
-netdev = "0.44.0"
+netdev = "0.45.0"
 openssl = { version = "0.10.80", optional = true }
 tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.9.1"
