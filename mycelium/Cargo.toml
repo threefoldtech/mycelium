@@ -47,8 +47,8 @@ futures = "0.3.32"
 serde = { version = "1.0.228", features = ["derive"] }
 rand = "0.10.1"
 bytes = "1.11.0"
-x25519-dalek = { version = "2.0.1", features = ["getrandom", "static_secrets"] }
-aes-gcm = "0.10.3"
+x25519-dalek = { version = "3.0.0", features = ["getrandom", "static_secrets"] }
+aes-gcm = "0.11.1"
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing-logfmt = { version = "0.3.7", features = ["ansi_logs"] }
@@ -58,14 +58,14 @@ left-right = "0.11.7"
 ipnet = "2.12.0"
 ip_network_table-deps-treebitmap = "0.5.0"
 blake3 = "1.8.5"
-etherparse = "0.20.1"
+etherparse = "0.21.0"
 quinn = { version = "0.11.9", default-features = false, features = [
   "runtime-tokio",
   "rustls",
 ] }
 rustls = { version = "0.23.40", default-features = false, features = ["ring"] }
 rcgen = "0.14.8"
-netdev = "0.44.0"
+netdev = "0.46.2"
 openssl = { version = "0.10.80", optional = true }
 tokio-openssl = { version = "0.6.5", optional = true }
 arc-swap = "1.9.1"
@@ -86,7 +86,7 @@ async-trait = "0.1.89"
 hickory-resolver = "0.26.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-rtnetlink = "0.21.0"
+rtnetlink = "0.23.0"
 nix = { version = "0.31.3", features = ["socket"] }
 tokio-vsock = { version = "0.7.2" }
 mycelium-tun = { path = "../mycelium-tun" }
