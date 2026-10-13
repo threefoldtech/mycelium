@@ -457,11 +457,10 @@ where
         &self,
         pop: bool,
         topic: Option<Vec<u8>>,
-    ) -> impl Future<Output = ReceivedMessage> + '_ {
-        // First reborrow only the message stack from self, then manually construct a future. This
-        // avoids a lifetime issue on the router, which is not sync. If a regular 'async' fn would
-        // be used here, we can't specify that at this point sadly.
-        let ms = &self.message_stack;
+    ) -> impl Future<Output = ReceivedMessage> + Send + 'static {
+        // Own a clone of the message stack so callers can release the node lock
+        // before awaiting a message.
+        let ms = self.message_stack.clone();
         async move { ms.message(pop, topic).await }
     }
 

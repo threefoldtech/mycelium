@@ -35,3 +35,9 @@ async-trait = "0.1.89"
 
 [dev-dependencies]
 serde_json = "1.0.150"
+tokio = { version = "1.52.3", features = [
+    "macros",
+    "rt-multi-thread",
+    "time",
+    "net",
+] }

@@ -139,31 +139,30 @@ where
     // A timeout of 0 seconds essentially means get a message if there is one, and return
     // immediatly if there isn't. This is the result of the implementation of Timeout, which does a
     // poll of the internal future first, before polling the delay.
-    tokio::time::timeout(
-        Duration::from_secs(query.timeout_secs()),
-        state
-            .node
-            .lock()
-            .await
-            .get_message(!query.peek(), query.topic),
-    )
-    .await
-    .or(Err(StatusCode::NO_CONTENT))
-    .map(|m| {
-        Json(MessageReceiveInfo {
-            id: m.id,
-            src_ip: m.src_ip,
-            src_pk: m.src_pk,
-            dst_ip: m.dst_ip,
-            dst_pk: m.dst_pk,
-            topic: if m.topic.is_empty() {
-                None
-            } else {
-                Some(m.topic)
-            },
-            payload: m.data,
+    let timeout_secs = query.timeout_secs();
+    let message_future = {
+        let node = state.node.lock().await;
+        node.get_message(!query.peek(), query.topic)
+    };
+
+    tokio::time::timeout(Duration::from_secs(timeout_secs), message_future)
+        .await
+        .or(Err(StatusCode::NO_CONTENT))
+        .map(|m| {
+            Json(MessageReceiveInfo {
+                id: m.id,
+                src_ip: m.src_ip,
+                src_pk: m.src_pk,
+                dst_ip: m.dst_ip,
+                dst_pk: m.dst_pk,
+                topic: if m.topic.is_empty() {
+                    None
+                } else {
+                    Some(m.topic)
+                },
+                payload: m.data,
+            })
         })
-    })
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -649,4 +648,63 @@ where
         .await
         .delete_topic_forward_socket(topic_bytes);
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod message_lock_tests {
+    use super::*;
+    use std::{sync::Arc, time::Duration};
+    use tokio::sync::{oneshot, Mutex};
+
+    #[tokio::test]
+    async fn get_message_releases_node_lock_while_waiting() {
+        let config = mycelium::Config {
+            node_key: mycelium::crypto::SecretKey::new(),
+            peers: Vec::new(),
+            no_tun: true,
+            tcp_listen_port: 0,
+            quic_listen_port: None,
+            peer_discovery_port: 0,
+            peer_discovery_mode: mycelium::peer_manager::PeerDiscoveryMode::Disabled,
+            tun_name: "mycelium-test".to_string(),
+            private_network_config: None,
+            metrics: mycelium_metrics::NoMetrics,
+            firewall_mark: None,
+            update_workers: 1,
+            cdn_cache: None,
+            enable_dns: false,
+            topic_config: None,
+            vsock_listen_port: None,
+        };
+
+        let node = mycelium::Node::new(config).await.expect("create test node");
+        let node = Arc::new(Mutex::new(node));
+        let state = ServerState { node: node.clone() };
+
+        let (started_tx, started_rx) = oneshot::channel();
+
+        let request = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            get_message(
+                State(state),
+                Query(GetMessageQuery {
+                    peek: None,
+                    timeout: Some(30),
+                    topic: None,
+                }),
+            )
+            .await
+        });
+
+        started_rx.await.expect("request task should start");
+
+        let guard = tokio::time::timeout(Duration::from_secs(2), node.lock())
+            .await
+            .expect("node lock should be available while waiting for a message");
+
+        drop(guard);
+
+        request.abort();
+        let _ = request.await;
+    }
 }
