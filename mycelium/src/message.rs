@@ -1340,7 +1340,7 @@ where
                         .complete_msges
                         .iter()
                         .enumerate()
-                        .find(|(_, v)| &v.topic == topic)
+                        .find(|(_, v)| v.topic.starts_with(topic))
                     {
                         let msg = if pop {
                             inbox.complete_msges.remove(idx).unwrap()
