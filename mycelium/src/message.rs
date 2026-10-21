@@ -446,27 +446,18 @@ where
             let mut inbox = self.inbox.lock().unwrap();
             if let Some(message) = inbox.pending_msges.get_mut(&message_id) {
                 let mc = MessageChunk::new(mp);
-                // Make sure the data is within bounds of the message being sent.
-                if message.len < mc.chunk_offset() + mc.chunk_size() {
-                    debug!("Dropping invalid message CHUNK for being out of bounds");
-                    return;
-                }
-                // Check max chunk idx.
-                let max_chunk_idx = if message.len == 0 {
-                    0
-                } else {
-                    message.len.div_ceil(MINIMUM_CHUNK_SIZE) - 1
-                };
-                if mc.chunk_idx() > max_chunk_idx {
-                    debug!("Dropping CHUNK because index is too high");
-                    return;
-                }
-                // Check chunk size, allow exception on last chunk.
-                if mc.chunk_size() < MINIMUM_CHUNK_SIZE && mc.chunk_idx() != max_chunk_idx {
+                if let Err(reason) = check_chunk(
+                    message.len,
+                    mc.chunk_idx(),
+                    mc.chunk_offset(),
+                    mc.chunk_size(),
+                ) {
                     debug!(
-                        "Dropping CHUNK {}/{max_chunk_idx} which is too small ({} bytes / {MINIMUM_CHUNK_SIZE} bytes)",
+                        "Dropping CHUNK {} ({} bytes at offset {}) of {} byte message: {reason}",
                         mc.chunk_idx(),
-                        mc.chunk_size()
+                        mc.chunk_size(),
+                        mc.chunk_offset(),
+                        message.len,
                     );
                     return;
                 }
@@ -1909,5 +1900,72 @@ mod tests {
 
         assert!(buf_mut.flags().ack() && buf_mut.flags().init());
         assert_eq!(buf_mut.header[8], 0b1000_0001);
+    }
+}
+
+/// Checks whether a chunk can belong to a message of `message_len` bytes.
+fn check_chunk(
+    message_len: u64,
+    chunk_idx: u64,
+    chunk_offset: u64,
+    chunk_size: u64,
+) -> Result<(), &'static str> {
+    // Make sure the data is within bounds of the message being sent.
+    // Both values come from the network, so their sum may overflow.
+    let chunk_end = chunk_offset
+        .checked_add(chunk_size)
+        .filter(|&end| end <= message_len)
+        .ok_or("out of bounds")?;
+    // Every chunk but the last has at least MINIMUM_CHUNK_SIZE bytes, so no index can
+    // be higher than this. This bounds the chunk array a sender can make us allocate.
+    let max_chunk_idx = message_len.div_ceil(MINIMUM_CHUNK_SIZE).saturating_sub(1);
+    if chunk_idx > max_chunk_idx {
+        return Err("index too high");
+    }
+    // Only the last chunk, the one that ends the message, may be smaller.
+    // Senders split at AVERAGE_CHUNK_SIZE, so its index is generally not `max_chunk_idx`.
+    if chunk_size < MINIMUM_CHUNK_SIZE && chunk_end != message_len {
+        return Err("too small and not the last chunk");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod chunk_reception_tests {
+    use super::{check_chunk, AVERAGE_CHUNK_SIZE};
+
+    #[test]
+    fn every_chunk_of_a_message_is_accepted() {
+        // Lengths around the chunk boundaries. 1301, 1529, 1549, 2601 and 2849 bytes end
+        // in a chunk shorter than MINIMUM_CHUNK_SIZE (250 bytes).
+        for len in [
+            1, 249, 250, 1299, 1300, 1301, 1529, 1549, 1550, 2600, 2601, 2849, 2850, 65_000,
+        ] {
+            // Split the way the sender splits.
+            let data = vec![7u8; len];
+            for (idx, chunk) in data.chunks(AVERAGE_CHUNK_SIZE).enumerate() {
+                let offset = (idx * AVERAGE_CHUNK_SIZE) as u64;
+                assert_eq!(
+                    check_chunk(len as u64, idx as u64, offset, chunk.len() as u64),
+                    Ok(()),
+                    "len {len}, chunk {idx} ({} bytes at {offset})",
+                    chunk.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_chunks_are_rejected() {
+        // Beyond the end of the message.
+        assert!(check_chunk(1000, 0, 900, 200).is_err());
+        // Offset and size whose sum overflows.
+        assert!(check_chunk(1000, 0, u64::MAX, 2).is_err());
+        // Small chunk that doesn't end the message.
+        assert!(check_chunk(2000, 0, 0, 100).is_err());
+        // Index beyond what the minimum chunk size allows.
+        assert!(check_chunk(1000, 4, 999, 1).is_err());
+        // A small chunk that ends the message is fine.
+        assert_eq!(check_chunk(1000, 3, 900, 100), Ok(()));
     }
 }
